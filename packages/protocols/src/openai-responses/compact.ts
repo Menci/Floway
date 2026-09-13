@@ -6,6 +6,7 @@ import type {
   OpenAIResponsesPromptCacheRetention,
   OpenAIResponsesResult,
 } from './index.ts';
+import type { OpenAIResponsesTransport } from '../common/index.ts';
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a
 // strict subset of `/responses` fields — model/input/instructions/
@@ -41,7 +42,10 @@ export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompact
 // (tools/temperature/reasoning/...) cannot leak them onto the compact wire.
 // `model` and `store` are caller-supplied at the dispatch site (model is
 // the resolved upstream id; store is gateway-only).
-export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> => ({
+export const toCompactPayloadShape = (
+  payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>,
+  transport: OpenAIResponsesTransport = 'standard',
+): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> & Pick<CanonicalOpenAIResponsesPayload, 'reasoning' | 'parallel_tool_calls' | 'text'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
@@ -49,6 +53,15 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayl
   ...(payload.prompt_cache_options !== undefined && { prompt_cache_options: payload.prompt_cache_options }),
   ...(payload.prompt_cache_retention !== undefined && { prompt_cache_retention: payload.prompt_cache_retention }),
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
+  // Codex's unary Lite compact request copies these controls from its Responses
+  // request. Its transport test asserts the Lite header and reasoning/parallel
+  // settings on `/responses/compact`; text is retained by CompactionInput.
+  // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L640-L674
+  // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/codex-api/src/common.rs#L46-L66
+  // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/tests/suite/responses_lite.rs#L546-L598
+  ...(transport === 'lite' && payload.reasoning !== undefined && { reasoning: payload.reasoning }),
+  ...(transport === 'lite' && payload.parallel_tool_calls !== undefined && { parallel_tool_calls: payload.parallel_tool_calls }),
+  ...(transport === 'lite' && payload.text !== undefined && { text: payload.text }),
 });
 
 // The `/responses/compact` wire body: `CompactResource` states none of the

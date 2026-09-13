@@ -84,7 +84,7 @@ export type ProviderStreamResult<TEvent> =
 export type ProviderOpenAIResponsesResult =
   | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; modelKey: string; headers?: Headers }
   | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
+  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResult; modelKey: string; headers?: Headers }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
 // Per-call options the gateway threads through to the provider.

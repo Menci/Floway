@@ -6,6 +6,20 @@ import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
 
+test('Codex editor saves the device policy without including OAuth account fields in PATCH', () => {
+  const codex = upstreamRecord('codex', {
+    kind: 'codex', config: { accounts: [] }, state: { accounts: [] },
+  });
+  const values = valuesFromRecord(codex);
+  expect((values.config as { normalizeInstallationId: boolean }).normalizeInstallationId).toBe(false);
+  for (const enabled of [true, false]) {
+    values.config = { ...values.config, normalizeInstallationId: enabled };
+    expect(updateBody(codex, values).config).toEqual({ normalizeInstallationId: enabled });
+    expect(createBody(codex, values).config).toEqual({ accounts: [], normalizeInstallationId: enabled });
+    expect(previewRecord(codex, values).config).toEqual({ accounts: [], normalizeInstallationId: enabled });
+  }
+});
+
 const record = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {

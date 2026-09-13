@@ -382,7 +382,7 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
         openaiResponsesBody = (await request.json()) as Record<string, unknown>;
         visionHeader = request.headers.get('copilot-vision-request');
         initiatorHeader = request.headers.get('x-initiator');
-        return jsonResponse({
+        return Response.json({
           id: 'resp_test',
           object: 'response',
           model: 'gpt-resp',
@@ -390,7 +390,7 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
           output: [{ type: 'compaction', summary: 'compacted state' }],
           incomplete_details: null,
           error: null,
-        });
+        }, { headers: { 'x-request-id': 'compact-trace' } });
       }
 
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -427,6 +427,7 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
       if (!result.ok) throw new Error('expected ok compaction result');
       if (result.action !== 'compact') throw new Error(`expected compact action tag, got ${result.action}`);
       assertEquals(result.result.object, 'response.compaction');
+      assertEquals(result.headers?.get('x-request-id'), 'compact-trace');
     },
   );
 

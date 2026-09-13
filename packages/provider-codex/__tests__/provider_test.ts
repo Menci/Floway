@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
+import { OPENAI_RESPONSES_LITE_HEADER, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -63,6 +64,65 @@ const modelsResponse = (): Response => new Response(JSON.stringify({
     { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
   ],
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+
+test.each(['standard', 'lite', 'compact', 'search'] as const)('upstream device policy reaches %s and keeps client conversations independent', async transport => {
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => transport === 'compact'
+    ? Response.json({ id: 'cmp', object: 'response.compaction', output: [] })
+    : sseResponse());
+  for (const enabled of [undefined, false, true]) {
+    for (const [accountId, deviceId, clientId] of [['acc', 'device-a', 'client-1'], ['acc', 'device-a', 'client-2'], ['other', 'device-b', 'client-1']]) {
+      const account = { ...(recordWithAccessToken().state as CodexUpstreamState).accounts[0], chatgptAccountId: accountId, openaiDeviceId: deviceId };
+      current = {
+        ...recordWithAccessToken(),
+        config: {
+          accounts: [{ email: 'a@b.com', chatgptAccountId: accountId, chatgptUserId: 'usr', planType: 'plus' }],
+          ...(enabled !== undefined ? { normalizeInstallationId: enabled } : {}),
+        },
+        state: { accounts: [account] },
+      };
+      const instance = createCodexProvider(current).instance;
+      const metadata = {
+        installation_id: clientId, session_id: `session-${clientId}`, thread_id: `thread-${clientId}`,
+        turn_id: `turn-${clientId}`, window_id: `thread-${clientId}:3`, parent_thread_id: 'parent',
+        workspaces: { '/home/user/project': { remotes: ['https://example.com/repo'] } },
+      };
+      const body = {
+        input: [], prompt_cache_key: `cache-${clientId}`,
+        client_metadata: {
+          'x-codex-installation-id': clientId,
+          'x-codex-turn-metadata': JSON.stringify(metadata),
+          custom: 'retained',
+        },
+      };
+      const original = structuredClone(body);
+      const headers = new Headers({ 'x-codex-turn-metadata': JSON.stringify(metadata) });
+      if (transport === 'lite') headers.set(OPENAI_RESPONSES_LITE_HEADER, 'true');
+      const options = { ...noopUpstreamCallOptions(), headers };
+      if (transport === 'search') {
+        await instance.callAlphaSearch!(stubProviderModel(), body, undefined, options);
+      } else {
+        const result = await instance.callOpenAIResponses(stubProviderModel(), body, transport === 'compact' ? 'compact' : 'generate', undefined, options);
+        expect(result.ok).toBe(true);
+      }
+      const [, init] = fetchSpy.mock.calls.at(-1)!;
+      const outboundHeaders = new Headers(init?.headers);
+      const turn = JSON.parse(outboundHeaders.get('x-codex-turn-metadata')!) as Record<string, unknown>;
+      const expectedId = enabled === true ? deviceId : clientId;
+      expect(turn).toMatchObject({ ...metadata, installation_id: expectedId });
+      expect(outboundHeaders.get('chatgpt-account-id')).toBe(accountId);
+      const outbound = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
+      if (transport !== 'compact') {
+        const client = outbound.client_metadata as Record<string, unknown>;
+        expect(client['x-codex-installation-id']).toBe(expectedId);
+        expect(JSON.parse(client['x-codex-turn-metadata'] as string)).toMatchObject({ ...metadata, installation_id: expectedId });
+        expect(client.custom).toBe('retained');
+        expect(outbound.prompt_cache_key).toBe(`cache-${clientId}`);
+      }
+      expect(body).toEqual(original);
+      expect((current!.state as CodexUpstreamState).accounts[0].openaiDeviceId).toBe(deviceId);
+    }
+  }
+});
 
 const idToken = (planType = 'plus'): string => [
   Buffer.from('{}').toString('base64url'),
@@ -142,6 +202,39 @@ describe('createCodexProvider', () => {
     const account = (current!.state as CodexUpstreamState).accounts[0];
     expect(account.refresh_token).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_minted');
+  });
+
+  test('discovers Astra behind its upstream minimum client version without changing standard Responses models', async () => {
+    // The released catalog gates Astra at 0.153.0 and selects Lite with
+    // model metadata, independently of its slug and reasoning levels.
+    // https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/models-manager/models.json
+    const astra = {
+      slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', context_window: 272000,
+      input_modalities: ['text', 'image'], use_responses_lite: true,
+      supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort, description: '' })),
+      default_reasoning_level: 'low', multi_agent_reasoning_effort: 'xhigh',
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(String(input));
+      const version = url.searchParams.get('client_version') ?? '0.0.0';
+      const models = [
+        { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, use_responses_lite: false },
+        ...(version.localeCompare('0.153.0', undefined, { numeric: true }) >= 0 ? [astra] : []),
+      ];
+      return new Response(JSON.stringify({ models }), { headers: { 'content-type': 'application/json' } });
+    });
+
+    const models = await createCodexProvider(baseRecord).instance.getProvidedModels(directFetcher);
+    const astraModel = models.find(model => model.id === astra.slug);
+    expect(astraModel).toMatchObject({
+      endpoints: { openaiResponses: { transport: 'lite' } },
+      limits: { max_context_window_tokens: 272000 },
+      chat: {
+        modalities: { input: ['text', 'image'], output: ['text'] },
+        reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'low' } },
+      },
+    });
+    expect(models.find(model => model.id === 'gpt-5.4')?.endpoints).toEqual({ openaiResponses: {} });
   });
 
   test('getProvidedModels propagates catalog fetch failures', async () => {
@@ -242,6 +335,54 @@ describe('createCodexProvider', () => {
       { type: 'message', role: 'user', content: 'hi' },
       { type: 'message', role: 'developer', content: 'inline instructions' },
     ]);
+  });
+
+  test.each((['generate', 'compact'] as const).flatMap(action => ['ultra', 'persistent', 'future_effort'].map(effort => ({ action, effort }))))('native Lite $action keeps instructions in input and explicit $effort unchanged', async ({ action, effort }) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(action === 'generate'
+      ? sseResponse()
+      : new Response(JSON.stringify({ id: 'cmp_result', object: 'response.compaction', output: [] }), { headers: { 'content-type': 'application/json' } }));
+    const input: CanonicalOpenAIResponsesPayload['input'] = [
+      { type: 'additional_tools', role: 'developer', id: 'at_client', tools: [{ type: 'function', name: 'lookup', async: true }] },
+      { type: 'message', role: 'developer', id: 'msg_client', content: 'Native instructions.' },
+      { type: 'message', role: 'user', content: 'Hello.' },
+      { type: 'configuration_update', reasoning: { effort } },
+    ];
+    const opts = noopUpstreamCallOptions();
+    opts.headers.set(OPENAI_RESPONSES_LITE_HEADER, 'true');
+    const result = await createCodexProvider(baseRecord).instance.callOpenAIResponses(
+      stubProviderModel({ id: 'gpt-6-astra', endpoints: { openaiResponses: { transport: 'lite' } } }),
+      { input, reasoning: { effort, context: 'all_turns' }, parallel_tool_calls: false, access_programs: { cyber: 'future_program' } },
+      action, undefined, opts,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.action === 'generate') for await (const _frame of result.events) { /* Drain the upstream stream. */ }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`https://chatgpt.com/backend-api/codex/responses${action === 'compact' ? '/compact' : ''}`);
+    expect(new Headers(init.headers).get(OPENAI_RESPONSES_LITE_HEADER)).toBe('true');
+    const body = await readJsonRequest(init) as Record<string, unknown>;
+    expect(body.input).toEqual(input);
+    expect(body).not.toHaveProperty('instructions');
+    expect(body).not.toHaveProperty('tools');
+    expect(body.reasoning).toEqual({ effort, context: 'all_turns' });
+    expect(body.parallel_tool_calls).toBe(false);
+    expect(body.access_programs).toEqual({ cyber: 'future_program' });
+  });
+
+  test.each(['standard', 'lite'] as const)('forwards current Codex stream options on the %s wire', async transport => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const opts = noopUpstreamCallOptions();
+    if (transport === 'lite') opts.headers.set(OPENAI_RESPONSES_LITE_HEADER, 'true');
+    const payload = {
+      input: [], stream_options: { reasoning_summary_delivery: 'sequential_cutoff', include_obfuscation: false },
+    };
+    const result = await createCodexProvider(baseRecord).instance.callOpenAIResponses(
+      stubProviderModel({ id: 'gpt-6-astra', endpoints: { openaiResponses: { transport } } }),
+      payload, 'generate', undefined, opts,
+    );
+    if (result.ok && result.action === 'generate') for await (const _frame of result.events) { /* Drain the upstream stream. */ }
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
+    expect(body.stream_options).toEqual(payload.stream_options);
   });
 
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {

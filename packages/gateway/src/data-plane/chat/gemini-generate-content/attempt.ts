@@ -11,6 +11,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { OPENAI_RESPONSES_LITE_HEADER } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
@@ -39,6 +40,9 @@ export const geminiGenerateContentAttempt = {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
     const payload = structuredClone(sourcePayload);
     const headers = new Headers(sourceHeaders);
+    // A Responses source marker cannot describe the standard Responses payload
+    // produced by this translator. The target attempt selects its own profile.
+    headers.delete(OPENAI_RESPONSES_LITE_HEADER);
     const targetApi = geminiGenerateContentGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentInterceptors, async () => {

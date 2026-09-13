@@ -3,7 +3,7 @@ import { errorMessageFromPayload } from '../../lib/error-payload';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_LITE_HEADER, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 export interface PlaygroundRequest {
   api: PlaygroundApi;
@@ -20,7 +20,10 @@ const PATH_BY_API: Record<PlaygroundApi, string> = {
   anthropicMessages: '/v1/messages',
   openaiChatCompletions: '/v1/chat/completions',
   openaiResponses: '/v1/responses',
+  openaiResponsesLite: '/v1/responses',
 };
+
+const isOpenAIResponses = (api: PlaygroundApi): boolean => api === 'openaiResponses' || api === 'openaiResponsesLite';
 
 const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => {
   if (!message.imageUrl) return message.text;
@@ -30,7 +33,7 @@ const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => 
       { type: 'image', source: { type: 'url', url: message.imageUrl } },
     ];
   }
-  if (api === 'openaiResponses') {
+  if (isOpenAIResponses(api)) {
     return [
       { type: 'input_text', text: message.text },
       { type: 'input_image', image_url: message.imageUrl },
@@ -43,17 +46,17 @@ const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => 
 };
 
 const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): unknown => {
-  const turns = messages.map(message => ({ role: message.role, content: contentFor(message, api) }));
+  const turns = messages.map(message => ({ type: 'message' as const, role: message.role, content: contentFor(message, api) }));
   if (api === 'anthropicMessages') {
-    return { model, stream: true, ...(system ? { system } : {}), messages: turns, ...options };
+    return { model, stream: true, ...(system ? { system } : {}), messages: turns.map(({ type: _type, ...turn }) => turn), ...options };
   }
-  if (api === 'openaiResponses') {
+  if (api === 'openaiResponses' || api === 'openaiResponsesLite') {
     return { model, stream: true, ...(system ? { instructions: system } : {}), input: turns, ...options };
   }
   return {
     model,
     stream: true,
-    messages: [...(system ? [{ role: 'system', content: system }] : []), ...turns],
+    messages: [...(system ? [{ role: 'system', content: system }] : []), ...turns.map(({ type: _type, ...turn }) => turn)],
     ...options,
   };
 };
@@ -74,7 +77,7 @@ const textDelta = (api: PlaygroundApi, event: unknown): string => {
 
 const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | null => {
   const direct = errorMessageFromPayload(payload);
-  if (direct !== null || api !== 'openaiResponses' || !payload || typeof payload !== 'object') return direct;
+  if (direct !== null || !isOpenAIResponses(api) || !payload || typeof payload !== 'object') return direct;
   const event = payload as OpenAIResponsesStreamEvent;
   if (event.type !== 'response.failed') return null;
   return event.response.error?.message ?? 'Response failed';
@@ -90,6 +93,7 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
       'content-type': 'application/json',
       // https://docs.anthropic.com/en/api/versioning
       ...(api === 'anthropicMessages' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${apiKey}` }),
+      ...(api === 'openaiResponsesLite' ? { [OPENAI_RESPONSES_LITE_HEADER]: 'true' } : {}),
     },
     body: JSON.stringify(bodyFor(request)),
     signal,

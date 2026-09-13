@@ -73,6 +73,7 @@ type OutputBlockInfo =
     itemId: string;
     toolCallId: string;
     toolName: string;
+    toolNamespace?: string;
     wrappedArguments: string;
   };
 
@@ -190,17 +191,19 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
     if (state.customToolNames.has(event.content_block.name)) {
+      const sourceTool = state.namespaceTargetToSource.get(event.content_block.name);
       const itemId = createRandomOpenAIResponsesItemId('custom_tool_call');
       state.blockMap.set(event.index, {
         type: 'custom_tool_use',
         outputIndex,
         itemId,
         toolCallId: event.content_block.id,
-        toolName: event.content_block.name,
+        toolName: sourceTool?.name ?? event.content_block.name,
+        ...(sourceTool !== undefined ? { toolNamespace: sourceTool.namespace } : {}),
         wrappedArguments: '',
       });
 
-      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
+      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, sourceTool?.name ?? event.content_block.name, '', sourceTool?.namespace));
     }
 
     const itemId = createRandomOpenAIResponsesItemId('function_call');
@@ -351,7 +354,7 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
 
   if (info.type === 'custom_tool_use') {
     const input = unwrapCustomToolInput(info.wrappedArguments);
-    const item = openaiResponses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
+    const item = openaiResponses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input, info.toolNamespace);
 
     state.completedItems.push(item);
 

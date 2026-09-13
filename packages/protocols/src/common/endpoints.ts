@@ -27,6 +27,14 @@ export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind 
 // (`/messages/count_tokens` from `anthropicMessages`, `/responses/compact`
 // from `openaiResponses`) are not modeled separately — presence of the base
 // endpoint implies them.
+export type OpenAIResponsesTransport = 'standard' | 'lite';
+
+export interface OpenAIResponsesEndpoint {
+  // Responses Lite is a wire profile on the existing /responses family, not
+  // a separate endpoint. Omitted stays backward-compatible with standard.
+  transport?: OpenAIResponsesTransport;
+}
+
 export interface ModelEndpoints {
   // OpenAI text completions (`/v1/completions`). Passthrough only — we
   // never translate it to or from the three chat endpoints below, so it has
@@ -34,7 +42,7 @@ export interface ModelEndpoints {
   // model can declare any non-empty subset.
   openaiCompletions?: {};
   openaiChatCompletions?: {};
-  openaiResponses?: {};
+  openaiResponses?: OpenAIResponsesEndpoint;
   anthropicMessages?: {};
   openaiEmbeddings?: {};
   openaiImagesGenerations?: {};

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import bundledCatalog from '../../../src/data-plane/codex/catalog/bundled.json' with { type: 'json' };
 import type { CodexCatalogCapabilities } from '../../../src/data-plane/codex/catalog.ts';
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
@@ -38,6 +39,33 @@ const ultraCapabilities: CodexCatalogCapabilities = {
 };
 
 describe('assembleCodexCatalog', () => {
+  test('preserves Astra client tools and reasoning while deriving its wire profile from the routed endpoint', () => {
+    const astra: InternalModel = {
+      ...chat('codex/gpt-6-astra', 'GPT-6-Astra', 272000),
+      endpoints: { openaiResponses: { transport: 'lite' } },
+      chat: { reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'low' } } },
+    };
+    const out = assembleCodexCatalog(bundledCatalog, entries(astra), ultraCapabilities);
+    expect(out.models[0]).toMatchObject({
+      slug: astra.id,
+      use_responses_lite: true,
+      tool_mode: 'code_mode_only',
+      multi_agent_version: 'v2',
+      multi_agent_reasoning_effort: 'xhigh',
+      context_window: 272000,
+      max_context_window: 272000,
+      default_reasoning_level: 'low',
+      supported_reasoning_levels: [
+        ...astra.chat!.reasoning!.effort!.supported.map(effort => ({ effort, description: '' })),
+        ultraCapabilities.ultraReasoningLevel,
+      ],
+    });
+    expect(assembleCodexCatalog(bundledCatalog, entries(astra)).models[0].supported_reasoning_levels)
+      .toEqual(astra.chat!.reasoning!.effort!.supported.map(effort => ({ effort, description: '' })));
+    const standard = assembleCodexCatalog(bundledCatalog, entries({ ...astra, endpoints: { openaiResponses: {} } }));
+    expect(standard.models[0].use_responses_lite).toBe(false);
+  });
+
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
     const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5', 'Custom Display Name', 200000)));
     expect(out.models).toHaveLength(1);

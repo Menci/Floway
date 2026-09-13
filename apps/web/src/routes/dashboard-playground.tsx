@@ -350,7 +350,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {loaderData.keys?.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
         </Dropdown>
       </Field>
-      <Field label={t('dashboard.playground.api')}>
+      <Field
+        hint={playgroundApi === 'openaiResponsesLite' ? t('dashboard.playground.responsesLiteHint') : undefined}
+        label={t('dashboard.playground.api')}
+      >
         <Dropdown
           selectedOptions={[playgroundApi]}
           value={t(`dashboard.playground.apis.${playgroundApi}`)}

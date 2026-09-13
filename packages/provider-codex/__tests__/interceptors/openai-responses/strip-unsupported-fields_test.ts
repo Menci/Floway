@@ -23,7 +23,7 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
   // path rejects; keeping the assertion exhaustive guards against silent
   // drift if the constant inside the interceptor is edited without updating
   // its rationale. Several entries (frequency_penalty, presence_penalty,
-  // user, stream_options) are not on the canonical payload and reach Codex only
+  // user) are not on the canonical payload and reach Codex only
   // through a permissive caller. `prompt_cache_retention` is modeled but
   // explicitly rejected by this provider. Widen through `unknown` so the test
   // covers the complete strip set.
@@ -39,7 +39,6 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
     metadata: { trace_id: 'abc' },
     prompt_cache_retention: '24h',
     safety_identifier: 'caller-supplied',
-    stream_options: { include_usage: true },
   } as unknown as CanonicalOpenAIResponsesPayload);
 
   await stripUnsupportedFields(ctx, stubRequest, okEvents);
@@ -53,7 +52,6 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
   assertFalse('metadata' in ctx.payload);
   assertFalse('prompt_cache_retention' in ctx.payload);
   assertFalse('safety_identifier' in ctx.payload);
-  assertFalse('stream_options' in ctx.payload);
 });
 
 test('leaves supported fields intact', async () => {
@@ -62,6 +60,7 @@ test('leaves supported fields intact', async () => {
     input: [{ type: 'message', role: 'user', content: 'hello' }],
     instructions: 'be terse',
     prompt_cache_options: { mode: 'future_mode', ttl: '1h' },
+    stream_options: { reasoning_summary_delivery: 'future_delivery', include_obfuscation: false },
     stream: true,
     store: false,
     temperature: 0.7,
@@ -73,6 +72,7 @@ test('leaves supported fields intact', async () => {
   assertEquals(ctx.payload.input, [{ type: 'message', role: 'user', content: 'hello' }]);
   assertEquals(ctx.payload.instructions, 'be terse');
   assertEquals(ctx.payload.prompt_cache_options, { mode: 'future_mode', ttl: '1h' });
+  assertEquals(ctx.payload.stream_options, { reasoning_summary_delivery: 'future_delivery', include_obfuscation: false });
   assertEquals(ctx.payload.stream, true);
   assertEquals(ctx.payload.store, false);
   assertFalse('temperature' in ctx.payload);

@@ -167,10 +167,15 @@ export const synthesizeCatalogEntry = (
     service_tiers: deriveServiceTiers(model),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
+    // Codex uses this catalog bit to choose the Responses wire profile. It
+    // must follow the routed model, never the similarly-named client bundle.
+    use_responses_lite: model.endpoints.openaiResponses?.transport === 'lite',
   };
 
-  // Ultra is a client-local v2 orchestration mode whose wire effort remains
-  // Max. The caller supplies this capability only from an exact Codex catalog;
+  // Ultra is a client-local v2 orchestration mode. Codex resolves its inference
+  // effort from multi_agent_reasoning_effort, with Max as the first fallback.
+  // https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L7-L33
+  // The caller supplies this capability only from an exact Codex catalog;
   // a model advertising Max alone does not establish either client behavior.
   if (shouldEnableUltra) entry.multi_agent_version = 'v2';
 

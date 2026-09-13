@@ -1,3 +1,4 @@
+import { declaredOpenAIResponsesTools } from './items/tool-declarations.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
@@ -175,7 +176,7 @@ export const completeResponseResource = (
     completed_at: terminal ? Math.floor(Date.now() / 1000) : null,
     store: sources.stored,
 
-    tools: stated<OpenAIResponsesTool[]>([upstream.tools, request.tools], []).map(completeTool),
+    tools: stated<OpenAIResponsesTool[]>([upstream.tools, declaredOpenAIResponsesTools(request)], []).map(completeTool),
     tool_choice: stated([upstream.tool_choice, request.tool_choice], 'auto'),
     truncation: stated([upstream.truncation, request.truncation], 'disabled'),
     parallel_tool_calls: stated([upstream.parallel_tool_calls, request.parallel_tool_calls], true),

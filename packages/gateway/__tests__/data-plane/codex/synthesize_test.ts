@@ -39,6 +39,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.visibility).toBe('list');
     expect(entry.priority).toBe(0);
     expect(entry.service_tiers).toEqual([]);
+    expect(entry.use_responses_lite).toBe(false);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
     // openai/codex's gpt-5.5 entry) — see synthesized-base-instructions.ts.
     // The opening paragraph names the routed model so an introspection
@@ -48,6 +49,14 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.base_instructions as string).toContain('You are Codex, a coding agent running in the Codex CLI.');
     expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
     expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+  });
+
+  test('derives Responses Lite from the routed model instead of a bundled name match', () => {
+    const lite = synthesizeCatalogEntry({ ...base, endpoints: { openaiResponses: { transport: 'lite' } } });
+    expect(lite.use_responses_lite).toBe(true);
+
+    const standard = synthesizeCatalogEntry(base, { ...synthesizeCatalogEntry(base), use_responses_lite: true });
+    expect(standard.use_responses_lite).toBe(false);
   });
 
   test('base_instructions collapses to a single identity sentence when display_name equals id', () => {

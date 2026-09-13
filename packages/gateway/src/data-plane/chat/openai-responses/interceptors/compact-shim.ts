@@ -28,8 +28,8 @@
 //      is replaced inline with the items it originally encoded — so a
 //      subsequent turn that echoes back the synthesized compaction sees the
 //      summarized history.
-//   2. Outbound: pivot the action to 'generate', prepend a role=system
-//      message carrying the SUMMARIZATION_PROMPT (vendored from
+//   2. Outbound: pivot the action to 'generate', insert a role=system
+//      message before conversation history carrying SUMMARIZATION_PROMPT (vendored from
 //      openai/codex), strip any `compaction_trigger` items, append a
 //      terminal user message if the history ends on a non-user item
 //      (Anthropic Messages rejects assistant prefill), and force
@@ -286,8 +286,8 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
   // system-vs-developer role weighting.
   //
   // Bug-for-bug parity means the shim must reproduce that shape:
-  //   - SUMMARIZATION_PROMPT rides as a role=system input item at the head
-  //     of the history — always injected, never overridable.
+  //   - SUMMARIZATION_PROMPT rides as a role=system input item before
+  //     conversation history — always injected, never overridable.
   //   - The caller's original `instructions` flows through unchanged, so
   //     the same benign/adversarial semantics carry over. Any hijack blast
   //     radius stays confined to the caller's own subsequent blob (that
@@ -303,7 +303,26 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
     role: 'system',
     content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }],
   };
-  const inputForSummarization = [compactorSystemMessage, ...historyItems, terminalUserMessage];
+  // Lite's initial tool declaration and developer instructions are a prompt
+  // prefix. Keep them ahead of the compactor's history prompt, including the
+  // unmarked developer messages Codex sends to custom providers. Displacing
+  // additional_tools also hides the declaration from the server-tool shim.
+  // https://github.com/openai/codex/blob/315195492c80fdade38e917c18f9584efd599304/codex-rs/core/src/client.rs#L794-L820
+  let historyStart = 0;
+  if (historyItems[0]?.type === 'additional_tools' && historyItems[0].role === 'developer') {
+    historyStart = 1;
+    while (historyStart < historyItems.length) {
+      const item = historyItems[historyStart];
+      if (item.type !== 'message' || (item.role !== 'developer' && item.role !== 'system')) break;
+      historyStart++;
+    }
+  }
+  const inputForSummarization = [
+    ...historyItems.slice(0, historyStart),
+    compactorSystemMessage,
+    ...historyItems.slice(historyStart),
+    terminalUserMessage,
+  ];
 
   ctx.payload = {
     ...originalPayload,

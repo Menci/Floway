@@ -4,6 +4,7 @@ import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './ty
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
+import { declaredOpenAIResponsesTools, mapOpenAIResponsesToolDeclarations } from '../items/tool-declarations.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -270,7 +271,9 @@ const restoreEchoedTools = (
 
 export const resolveServerToolName = (baseName: string, tools: readonly OpenAIResponsesTool[]): string => {
   const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
-  const taken = new Set(tools.flatMap(tool => (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
+  const taken = new Set(tools.flatMap(tool => tool.type === 'namespace'
+    ? tool.tools.map(nested => nested.name)
+    : (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
   if (!taken.has(baseName)) return baseName;
   for (let i = 2; i <= MAX_NAME_RESOLUTION_ATTEMPTS; i++) {
     const candidate = `${baseName}_${i}`;
@@ -988,14 +991,17 @@ export const withOpenAIResponsesServerToolShim = (
     if (prepared.type === 'invalid-request') {
       return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
     }
-    const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
+    const currentTools = declaredOpenAIResponsesTools(ctx.payload);
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { hosted } = prepared;
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
     if (hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
-      canonicalHostedTool = rewrite.canonicalHostedTool;
-      ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
+      ctx.payload = mapOpenAIResponsesToolDeclarations(ctx.payload, tools => {
+        if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
+        const rewrite = rewriteToolsForHostedShim(tools, hosted, toolName);
+        canonicalHostedTool = rewrite.canonicalHostedTool;
+        return rewrite.rewritten;
+      });
     }
     const originalToolChoice = hosted !== undefined
       && typeof ctx.payload.tool_choice === 'object'

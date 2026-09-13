@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpenAIResponsesTransport, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
@@ -73,6 +73,18 @@ export const endpointsField = (value: unknown, label: string, options: { allowEm
   for (const [key, sub] of Object.entries(value)) {
     if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
+    if (key === 'openaiResponses') {
+      const unknown = Object.keys(sub).filter(field => field !== 'transport');
+      if (unknown.length > 0) throw new Error(`Malformed ${label}.${key}: unknown fields: ${unknown.join(', ')}`);
+      const transport = sub.transport;
+      if (transport !== undefined && transport !== 'standard' && transport !== 'lite') {
+        throw new Error(`Malformed ${label}.${key}.transport: must be standard or lite`);
+      }
+      endpoints.openaiResponses = transport === undefined ? {} : { transport: transport as OpenAIResponsesTransport };
+      continue;
+    }
+    const unknown = Object.keys(sub);
+    if (unknown.length > 0) throw new Error(`Malformed ${label}.${key}: unknown fields: ${unknown.join(', ')}`);
     endpoints[key as ModelEndpointKey] = {};
   }
   if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);

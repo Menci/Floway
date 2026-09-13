@@ -16,6 +16,12 @@ describe('assertCodexUpstreamRecord (config validation)', () => {
   test('accepts a complete config', () => {
     expect(() => assertCodexUpstreamRecord(wrap(good))).not.toThrow();
   });
+  test.each([true, false])('accepts installation normalization=%s', normalizeInstallationId => {
+    expect(() => assertCodexUpstreamRecord(wrap({ ...good, normalizeInstallationId }))).not.toThrow();
+  });
+  test.each([null, 'true', 1, {}, []])('rejects invalid installation normalization=%j', normalizeInstallationId => {
+    expect(() => assertCodexUpstreamRecord(wrap({ ...good, normalizeInstallationId }))).toThrow('normalizeInstallationId must be a boolean');
+  });
   test.each([
     ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
     ['email type', { accounts: [{ ...goodAccount, email: 123 }] }],

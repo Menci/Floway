@@ -869,6 +869,43 @@ const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => 
   return { updatedAt: record.updatedAt, config: record.config };
 };
 
+test('Codex device policy toggles through PATCH without changing credentials and survives re-import', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  const { id } = await createCodexUpstreamViaExchange(adminSession);
+  const initial = await getRecord(repo, id);
+  for (const enabled of [true, false, true]) {
+    const response = await requestApp(`/api/upstreams/${id}`, {
+      ...authed(adminSession, { config: { normalizeInstallationId: enabled } }), method: 'PATCH',
+    });
+    assertEquals(response.status, 200);
+    const stored = await getRecord(repo, id);
+    assertEquals(stored.config, { ...(initial.config as object), normalizeInstallationId: enabled });
+    assertEquals(stored.state, initial.state);
+    assertEquals(((await response.json()) as JsonObject).config.normalizeInstallationId, enabled);
+  }
+  for (const config of [{ accounts: [] }, { normalizeInstallationId: true, accounts: [] }, { normalizeInstallationId: 'true' }, { normalizeInstallationId: null }]) {
+    const response = await requestApp(`/api/upstreams/${id}`, { ...authed(adminSession, { config }), method: 'PATCH' });
+    assertEquals(response.status, 400);
+  }
+  const envelope = envelopeFromRecord(initial);
+  const response = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+    record: envelope, ...codexAuthJsonImport(),
+  }));
+  assertEquals(response.status, 200);
+  assertEquals(((await response.json()) as JsonObject).patch.config.normalizeInstallationId, true);
+  assertEquals(((await getRecord(repo, id)).config as JsonObject).normalizeInstallationId, true);
+});
+
+test('Codex draft import preserves device policy', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+    record: blueprintEnvelope('codex', { config: { accounts: [], normalizeInstallationId: true } }),
+    ...codexAuthJsonImport(),
+  }));
+  assertEquals(response.status, 200);
+  assertEquals(((await response.json()) as JsonObject).patch.config.normalizeInstallationId, true);
+});
+
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
   const { adminSession } = await setupAppTest();
 

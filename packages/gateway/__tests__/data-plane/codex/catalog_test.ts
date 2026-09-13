@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import bundledCatalog from '../../../src/data-plane/codex/catalog/bundled.json' with { type: 'json' };
+import { CODEX_CLI_VERSION } from '@floway-dev/provider-codex';
 
 const bundled = bundledCatalog as { models: { slug: string }[] };
 
@@ -40,6 +41,17 @@ describe('resolveCodexCatalog', () => {
     const { catalog, capabilities } = await resolve(undefined);
     expect(catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
     expect(capabilities).toEqual({});
+  });
+
+  it('bundles Astra and advertises a provider version compatible with every bundled model', () => {
+    expect(bundledCatalog.models.find(model => model.slug === 'gpt-6-astra')).toMatchObject({
+      use_responses_lite: true,
+      tool_mode: 'code_mode_only',
+      multi_agent_version: 'v2',
+    });
+    for (const model of bundledCatalog.models) {
+      expect(CODEX_CLI_VERSION.localeCompare(model.minimal_client_version, undefined, { numeric: true }), model.slug).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('falls back to bundled when user-agent does not match the codex pattern', async () => {

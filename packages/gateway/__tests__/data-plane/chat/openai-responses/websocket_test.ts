@@ -13,6 +13,7 @@ import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
 import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
+import { OPENAI_RESPONSES_LITE_HEADER, OPENAI_RESPONSES_LITE_WS_METADATA_KEY } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const waitForMessages = async (
@@ -161,11 +162,13 @@ const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): 
 const completeOpenAIResponsesTurn = async (
   client: TestWorkerWebSocket,
   eventId: string,
+  streamId?: string,
 ): Promise<void> => {
   const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
   client.send(JSON.stringify({
     type: 'response.create',
     event_id: eventId,
+    stream_id: streamId,
     response: {
       model: 'gpt-direct-responses',
       input: eventId,
@@ -174,6 +177,462 @@ const completeOpenAIResponsesTurn = async (
   await received;
   await waitForMicrotasks();
 };
+
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+const withCodexWebSocketUpstream = async (
+  respond: (request: Request) => Promise<Response>,
+  run: (setup: Awaited<ReturnType<typeof setupAppTest>>) => Promise<void>,
+) => {
+  const setup = await setupAppTest();
+  await setup.repo.upstreams.save({ ...setup.copilotUpstream, enabled: false });
+  await setup.repo.upstreams.save(buildCodexUpstreamRecord());
+  await withMockedFetch(async request => {
+    const { pathname } = new URL(request.url);
+    if (pathname === '/backend-api/codex/models') return jsonResponse(codexModels([{ slug: 'gpt-6-astra' }]));
+    if (pathname === '/backend-api/codex/responses') return await respond(request);
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => await withWorkerWebSocketRuntime(async () => await run(setup)));
+};
+
+const emptyCodexResponse = () => sseOpenAIResponsesResponse({
+  id: 'resp_upstream', object: 'response', model: 'gpt-6-astra', status: 'completed', output: [],
+});
+
+test('OpenAI Responses WebSocket names lanes without sending stream_id to HTTP and echoes all response and error envelopes', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    bodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+    return emptyCodexResponse();
+  }, async ({ apiKey }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const streamId = 'Lane_1-a.'.padEnd(256, 'z');
+    const completed = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+    socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, event_id: 'named_create', response: { model: 'gpt-6-astra', input: 'hello' } }));
+    const events = await completed;
+    assert(events.every(event => event.stream_id === streamId && event.event_id === 'named_create'));
+    assertEquals(bodies.length, 1);
+    assertEquals(bodies[0].stream_id, undefined);
+
+    const failed = waitForMessages(socket, messages => messages.some(event => event.type === 'error'));
+    socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, event_id: 'named_error', model: 'gpt-6-astra', previous_response_id: 'missing_named_response', input: [] }));
+    const error = (await failed).at(-1)!;
+    assertEquals(error.stream_id, streamId);
+    assertEquals(error.event_id, 'named_error');
+    assertEquals((error.error as Record<string, unknown>).code, 'previous_response_not_found');
+    socket.close();
+  });
+});
+
+test('OpenAI Responses WebSocket runs different lanes concurrently and keeps each lane FIFO', async () => {
+  const turns = ['a1', 'a2', 'b1', 'default'];
+  const started = new Map(turns.map(turn => [turn, deferred()]));
+  const release = new Map(turns.map(turn => [turn, deferred()]));
+  const requests: string[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    const body = JSON.parse(await request.text()) as { client_metadata: { lane_test_turn: string }; stream_id?: unknown };
+    assertEquals(body.stream_id, undefined);
+    const turn = body.client_metadata.lane_test_turn;
+    requests.push(turn);
+    started.get(turn)!.resolve();
+    await release.get(turn)!.promise;
+    return emptyCodexResponse();
+  }, async ({ apiKey }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    try {
+      const completed = waitForMessages(socket, messages => messages.filter(isTerminalResponseEvent).length === 4 || messages.some(event => event.type === 'error'))
+        .then(events => {
+          assertEquals(events.find(event => event.type === 'error'), undefined);
+          return events;
+        });
+      for (const [turn, streamId] of [['a1', 'a'], ['a2', 'a'], ['b1', 'b'], ['default', undefined]]) {
+        socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, event_id: turn, model: 'gpt-6-astra', input: [], client_metadata: { lane_test_turn: turn } }));
+      }
+      await Promise.race([Promise.all(['a1', 'b1', 'default'].map(turn => started.get(turn)!.promise)), completed]);
+      assertEquals(new Set(requests), new Set(['a1', 'b1', 'default']));
+      release.get('a1')!.resolve();
+      await started.get('a2')!.promise;
+      assertEquals(requests.indexOf('a1') < requests.indexOf('a2'), true);
+      for (const gate of release.values()) gate.resolve();
+      const events = await completed;
+      for (const event of events) {
+        const expected = event.event_id === 'default' ? undefined : (event.event_id as string)[0];
+        assertEquals(event.stream_id, expected);
+      }
+    } finally {
+      for (const gate of release.values()) gate.resolve();
+      socket.close();
+    }
+  });
+});
+
+test('OpenAI Responses WebSocket queues the seventeenth active response including the default lane', async () => {
+  const started = Array.from({ length: 17 }, deferred);
+  const release = Array.from({ length: 17 }, deferred);
+  const requests: number[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    const body = JSON.parse(await request.text()) as { client_metadata: { lane_test_turn: string } };
+    const turn = Number(body.client_metadata.lane_test_turn);
+    requests.push(turn);
+    started[turn].resolve();
+    await release[turn].promise;
+    return emptyCodexResponse();
+  }, async ({ apiKey }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    try {
+      const completed = waitForMessages(socket, messages => messages.filter(isTerminalResponseEvent).length === 17 || messages.some(event => event.type === 'error'))
+        .then(events => { assertEquals(events.find(event => event.type === 'error'), undefined); return events; });
+      for (let turn = 0; turn < 17; turn++) {
+        socket.send(JSON.stringify({ type: 'response.create', stream_id: turn === 0 ? undefined : `lane_${turn}`, model: 'gpt-6-astra', input: [], client_metadata: { lane_test_turn: String(turn) } }));
+      }
+      await Promise.race([Promise.all(started.slice(0, 16).map(gate => gate.promise)), completed]);
+      await flushAsyncWork();
+      assertEquals(requests.length, 16);
+      assertEquals(requests.includes(16), false);
+      release[0].resolve();
+      await Promise.race([started[16].promise, completed]);
+      assertEquals(requests.length, 17);
+      for (const gate of release) gate.resolve();
+      await completed;
+    } finally {
+      for (const gate of release) gate.resolve();
+      socket.close();
+    }
+  });
+});
+
+test('OpenAI Responses WebSocket validates stream names and retains all 32 named lanes for reuse', async () => {
+  let requests = 0;
+  await withCodexWebSocketUpstream(async () => { requests++; return emptyCodexResponse(); }, async ({ apiKey }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const send = async (streamId: unknown, eventId: string) => {
+      const received = waitForMessages(socket, messages => messages.some(event => isTerminalResponseEvent(event) || event.type === 'error'));
+      socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, event_id: eventId, model: 'gpt-6-astra', input: [], generate: false, store: false }));
+      return (await received).at(-1)!;
+    };
+    for (const invalid of ['', null, 1, true, {}, [], 'has space', 'slash/name', '中文', 'a'.repeat(257)]) {
+      const error = await send(invalid, 'invalid_name');
+      assertEquals(error.type, 'error');
+      assertEquals(error.status, 400);
+      assertEquals(error.event_id, 'invalid_name');
+      assertEquals(error.stream_id, undefined);
+      assertEquals((error.error as Record<string, unknown>).code, 'invalid_stream_id');
+    }
+    for (let lane = 0; lane < 32; lane++) {
+      const event = await send(`lane_${lane}`, `warm_${lane}`);
+      assertEquals(event.type, 'response.completed');
+      assertEquals(event.stream_id, `lane_${lane}`);
+    }
+    const overflow = await send('lane_32', 'overflow');
+    assertEquals(overflow.type, 'error');
+    assertEquals(overflow.status, 400);
+    assertEquals(overflow.stream_id, 'lane_32');
+    assertEquals((overflow.error as Record<string, unknown>).code, 'websocket_stream_limit_reached');
+    assertEquals((await send(undefined, 'default_after_limit')).stream_id, undefined);
+    assertEquals((await send('lane_0', 'reuse_first')).type, 'response.completed');
+    assertEquals((await send('lane_31', 'reuse_last')).type, 'response.completed');
+    assertEquals(requests, 0, 'prewarming and stream validation must not invoke inference');
+    socket.close();
+  });
+});
+
+test('OpenAI Responses WebSocket preserves a parent after a failed cross-lane fork and evicts a failed same-lane continuation', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    const body = JSON.parse(await request.text()) as Record<string, unknown>;
+    bodies.push(body);
+    if ((body.client_metadata as Record<string, unknown>).fail === 'true') return jsonResponse({ error: { type: 'invalid_request_error', message: 'Rejected test turn.', code: 'test_rejected' } }, 400);
+    return emptyCodexResponse();
+  }, async ({ apiKey }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const send = async (streamId: string, input: unknown, extra: Record<string, unknown> = {}) => {
+      const received = waitForMessages(socket, messages => messages.some(event => isTerminalResponseEvent(event) || event.type === 'error'));
+      socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, model: 'gpt-6-astra', input, store: false, ...extra }));
+      const events = await received;
+      assert(events.every(event => event.stream_id === streamId));
+      return events;
+    };
+    const parentInput = { type: 'message', role: 'user', content: 'Shared parent.' };
+    const parent = terminalResponseId(await send('source', [parentInput], { generate: false }));
+    const fork = await send('fork', [], { previous_response_id: parent, client_metadata: { fail: 'true' } });
+    assertEquals((fork.at(-1)!.error as Record<string, unknown>).code, 'test_rejected', JSON.stringify(fork));
+    assertEquals(bodies.length, 1, 'the failed fork must have hydrated its parent and reached upstream');
+    assertStringIncludes(JSON.stringify(bodies[0].input), 'Shared parent.');
+
+    const continued = terminalResponseId(await send('source', [], { previous_response_id: parent }));
+    assertEquals(bodies.length, 2);
+    assertEquals(bodies[1].input, bodies[0].input);
+    const oldParent = await send('fork', [], { previous_response_id: parent });
+    assertEquals((oldParent.at(-1)!.error as Record<string, unknown>).code, 'previous_response_not_found');
+    assertEquals(bodies.length, 2, 'advancing the source lane must evict its previous local snapshot');
+
+    const failed = await send('source', [], { previous_response_id: continued, client_metadata: { fail: 'true' } });
+    assertEquals((failed.at(-1)!.error as Record<string, unknown>).code, 'test_rejected');
+    const evicted = await send('source', [], { previous_response_id: continued });
+    assertEquals((evicted.at(-1)!.error as Record<string, unknown>).code, 'previous_response_not_found');
+    assertEquals(bodies.length, 3);
+    socket.close();
+  });
+});
+
+test('OpenAI Responses WebSocket closing aborts every active lane and discards queued turns', async () => {
+  const started = [deferred(), deferred()];
+  const aborted = [deferred(), deferred()];
+  let requests = 0;
+  await withCodexWebSocketUpstream(async request => {
+    const index = requests++;
+    started[index].resolve();
+    return await new Promise<Response>((_resolve, reject) => {
+      request.signal.addEventListener('abort', () => {
+        aborted[index].resolve();
+        reject(request.signal.reason);
+      }, { once: true });
+    });
+  }, async ({ apiKey }) => {
+    const { client, sessionLifetime } = await connectOpenAIResponsesWebSocketCapturingSessionLifetime(apiKey.key);
+    let fail!: (error: Error) => void;
+    const failure = new Promise<never>((_resolve, reject) => { fail = reject; });
+    const onMessage = (event: Event) => {
+      const message = JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>;
+      if (message.type === 'error') fail(new Error(JSON.stringify(message)));
+    };
+    client.addEventListener('message', onMessage);
+    for (const streamId of ['a', 'b', 'a', 'b']) client.send(JSON.stringify({ type: 'response.create', stream_id: streamId, model: 'gpt-6-astra', input: [] }));
+    try {
+      await Promise.race([Promise.all(started.map(gate => gate.promise)), failure]);
+      client.close();
+      await Promise.all(aborted.map(gate => gate.promise));
+      await sessionLifetime;
+      assertEquals(requests, 2);
+    } finally {
+      client.removeEventListener('message', onMessage);
+      client.close();
+    }
+  });
+});
+
+test('OpenAI Responses WebSocket keeps concurrent lane authentication policies isolated', async () => {
+  const requests: string[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    const body = JSON.parse(await request.text()) as { client_metadata: { lane_test_turn: string } };
+    requests.push(body.client_metadata.lane_test_turn);
+    return emptyCodexResponse();
+  }, async ({ apiKey, repo }) => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const user = await repo.users.getById(apiKey.userId);
+    assertExists(user);
+    const reads = [deferred(), deferred()];
+    const release = deferred();
+    let usersRead = 0;
+    const keys = vi.spyOn(repo.apiKeys, 'findByRawKey')
+      .mockResolvedValueOnce({ ...apiKey, upstreamIds: null })
+      .mockResolvedValueOnce({ ...apiKey, upstreamIds: [] });
+    const users = vi.spyOn(repo.users, 'getById').mockImplementation(async () => {
+      reads[usersRead++].resolve();
+      await release.promise;
+      return user;
+    });
+    try {
+      const finished = waitForMessages(socket, messages => messages.filter(event => isTerminalResponseEvent(event) || event.type === 'error').length === 2);
+      for (const streamId of ['allowed', 'denied']) socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, model: 'gpt-6-astra', input: [], client_metadata: { lane_test_turn: streamId } }));
+      await Promise.race([Promise.all(reads.map(read => read.promise)), finished]);
+      release.resolve();
+      const events = await finished;
+      assertEquals(events.find(event => event.stream_id === 'allowed' && isTerminalResponseEvent(event))?.type, 'response.completed');
+      assertEquals(events.find(event => event.stream_id === 'denied' && event.type === 'error')?.status, 404);
+      assertEquals(requests, ['allowed']);
+    } finally {
+      release.resolve();
+      keys.mockRestore();
+      users.mockRestore();
+      socket.close();
+    }
+  });
+});
+
+test('OpenAI Responses WebSocket preserves binary then text frame order in the same lane', async () => {
+  const firstStarted = deferred();
+  const releaseFirst = deferred();
+  const inputs: string[] = [];
+  await withCodexWebSocketUpstream(async request => {
+    const body = JSON.parse(await request.text()) as { input: unknown };
+    inputs.push(JSON.stringify(body.input));
+    if (inputs.length === 1) {
+      firstStarted.resolve();
+      await releaseFirst.promise;
+    }
+    return emptyCodexResponse();
+  }, async ({ apiKey, repo }) => {
+    await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+    const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    try {
+      const finished = waitForMessages(socket, messages => messages.filter(isTerminalResponseEvent).length === 2 || messages.some(event => event.type === 'error'));
+      const binary = new TextEncoder().encode('{\n "type": "response.create", "stream_id": "binary_lane", "model": "gpt-6-astra", "input": "第一轮 🌏"\n}');
+      activeRuntime().pairs.at(-1)!.server.dispatchEvent(new MessageEvent('message', { data: binary }));
+      socket.send(JSON.stringify({ type: 'response.create', stream_id: 'binary_lane', model: 'gpt-6-astra', input: 'second turn' }));
+      await Promise.race([firstStarted.promise, finished]);
+      assertEquals(inputs.length, 1);
+      assertStringIncludes(inputs[0], '第一轮 🌏');
+      releaseFirst.resolve();
+      const events = await finished;
+      assertEquals(events.find(event => event.type === 'error'), undefined);
+      assertEquals(inputs.length, 2);
+      assertStringIncludes(inputs[1], 'second turn');
+      assert(events.every(event => event.stream_id === 'binary_lane'));
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 2));
+      assertEquals(dumps.stored[0].record.request.body, binary);
+    } finally {
+      releaseFirst.resolve();
+      socket.close();
+    }
+  });
+});
+
+test('Codex WebSocket preserves Astra Lite continuation and switches to standard per turn', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCodexUpstreamRecord());
+  const upstreamBodies: Record<string, unknown>[] = [];
+  const upstreamLiteHeaders: Array<string | null> = [];
+  const prefix = [
+    { type: 'additional_tools', id: 'at_codex_thread', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, async: true }] },
+    { type: 'message', id: 'msg_codex_instructions', role: 'developer', content: [{ type: 'input_text', text: 'Be concise.' }] },
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Look this up.' }] },
+  ];
+  const toolCall = { type: 'function_call', id: 'fc_async', call_id: 'call_async', name: 'lookup', arguments: '{}', status: 'completed' };
+  const continuation = [
+    { type: 'configuration_update', reasoning: { effort: 'xhigh' } },
+    { type: 'function_call_output', call_id: 'call_async', output: 'Lookup complete.' },
+  ];
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/backend-api/codex/models') {
+        return jsonResponse({ models: codexModels([{ slug: 'gpt-6-astra' }, { slug: 'gpt-5.4' }]).models.map(model => ({ ...model, use_responses_lite: model.slug === 'gpt-6-astra' })) });
+      }
+      if (url.pathname === '/backend-api/codex/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+        upstreamLiteHeaders.push(request.headers.get(OPENAI_RESPONSES_LITE_HEADER));
+        const turn = upstreamBodies.length;
+        return sseOpenAIResponsesResponse({
+          id: `resp_lite_ws_${turn}`, object: 'response', model: turn < 3 ? 'gpt-6-astra' : 'gpt-5.4', status: 'completed',
+          output: turn === 1 ? [toolCall] : [],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const liteMetadata = { [OPENAI_RESPONSES_LITE_WS_METADATA_KEY]: 'true', thread_id: 'codex-thread' };
+      const firstTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', store: false, input: prefix, client_metadata: liteMetadata }));
+      const firstId = terminalResponseId(await firstTerminal);
+
+      const secondTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', store: false, previous_response_id: firstId, input: continuation, client_metadata: liteMetadata }));
+      await secondTerminal;
+
+      const thirdTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-5.4', store: false, instructions: 'Standard instructions.', tools: [], input: 'New standard turn.', client_metadata: { thread_id: 'codex-thread' } }));
+      await thirdTerminal;
+
+      assertEquals(upstreamLiteHeaders, ['true', 'true', null]);
+      assertEquals(upstreamBodies[0].input, prefix);
+      assertEquals(upstreamBodies[1].input, [...prefix, toolCall, ...continuation]);
+      assertEquals(upstreamBodies[1].previous_response_id, undefined);
+      assertEquals(upstreamBodies[2].instructions, 'Standard instructions.');
+      assertEquals(upstreamBodies[2].tools, []);
+      for (const body of upstreamBodies) {
+        assertEquals((body.client_metadata as Record<string, unknown>)[OPENAI_RESPONSES_LITE_WS_METADATA_KEY], undefined);
+      }
+
+      const invalidMarker = waitForMessages(socket, messages => messages.some(message => message.type === 'error'));
+      socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', input: [], client_metadata: { [OPENAI_RESPONSES_LITE_WS_METADATA_KEY]: 'invalid' } }));
+      const error = (await invalidMarker).find(message => message.type === 'error');
+      assertEquals(error?.status, 400);
+      assertEquals((error?.error as Record<string, unknown>).code, 'invalid_value');
+      assertEquals(upstreamBodies.length, 3);
+      socket.close();
+    }),
+  );
+});
+
+test.each([undefined, 'prewarm_lane'].flatMap(streamId => [false, true].map(empty => ({ streamId, empty }))))('Codex Lite WebSocket prewarms without inference and continues its snapshot with empty=$empty stream_id=$streamId', async ({ empty, streamId }) => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.save({ ...copilotUpstream, enabled: false });
+  await repo.upstreams.save(buildCodexUpstreamRecord());
+  const requests: Record<string, unknown>[] = [];
+  const prefix = empty ? [] : [
+    { type: 'additional_tools', id: 'at_prewarm', role: 'developer', tools: [] },
+    { type: 'message', id: 'msg_prewarm', role: 'developer', content: 'Keep the warmed prefix.' },
+  ];
+  const followup = { type: 'message', role: 'user', content: 'Now answer.' };
+  await withMockedFetch(async request => {
+    const { pathname } = new URL(request.url);
+    if (pathname === '/backend-api/codex/models') {
+      return jsonResponse({ models: codexModels([{ slug: 'gpt-6-astra' }]).models.map(model => ({ ...model, use_responses_lite: true })) });
+    }
+    if (pathname !== '/backend-api/codex/responses') throw new Error(`Unhandled fetch ${request.url}`);
+    assertEquals(request.headers.get(OPENAI_RESPONSES_LITE_HEADER), 'true');
+    const body = JSON.parse(await request.text()) as Record<string, unknown>;
+    requests.push(body);
+    return sseOpenAIResponsesResponse({
+      id: `resp_prewarm_${requests.length}`, object: 'response', model: 'gpt-6-astra', status: 'completed',
+      output: [{ type: 'message', id: 'msg_answer', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Answer.', annotations: [] }] }],
+    });
+  }, async () => await withWorkerWebSocketRuntime(async () => {
+    const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
+    const clientMetadata = { [OPENAI_RESPONSES_LITE_WS_METADATA_KEY]: 'true' };
+    const warmed = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+    socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, model: 'gpt-6-astra', input: prefix, generate: false, store: false, client_metadata: clientMetadata }));
+    const warmEvents = await warmed;
+    const warmId = terminalResponseId(warmEvents);
+    assert(warmEvents.every(event => event.stream_id === streamId));
+    assertEquals(requests.length, 0);
+    assertEquals(warmEvents.filter(event => event.type === 'response.output_text.delta').length, 0);
+    assertEquals(warmEvents.at(-1)?.type, 'response.completed');
+    assertEquals((warmEvents.at(-1)?.response as Record<string, unknown>).output, []);
+    await flushAsyncWork();
+    assertEquals(await repo.usage.listAll(), []);
+    assertEquals(await repo.performance.listAll(), []);
+    assertEquals(await repo.openaiResponsesSnapshots.lookup(apiKey.id, warmId, 0), null);
+
+    for (const generate of ['false', null, 0]) {
+      const rejected = waitForMessages(socket, messages => messages.some(event => event.type === 'error'));
+      socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', input: [], generate }));
+      const error = (await rejected).find(event => event.type === 'error');
+      assertEquals(error?.status, 400);
+      assertEquals((error?.error as Record<string, unknown>).param, 'generate');
+    }
+    const missing = waitForMessages(socket, messages => messages.some(event => event.type === 'error'));
+    socket.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', input: [], previous_response_id: 'resp_missing_prewarm', generate: false }));
+    const missingError = (await missing).find(event => event.type === 'error');
+    assertEquals(missingError?.status, 400);
+    assertEquals((missingError?.error as Record<string, unknown>).code, 'previous_response_not_found');
+    assertEquals(requests.length, 0);
+
+    const answered = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+    socket.send(JSON.stringify({ type: 'response.create', stream_id: streamId, model: 'gpt-6-astra', input: [followup], previous_response_id: warmId, generate: true, store: false, client_metadata: clientMetadata }));
+    const answerEvents = await answered;
+    assert(answerEvents.every(event => event.stream_id === streamId));
+    assertEquals(answerEvents.at(-1)?.type, 'response.completed');
+    assertEquals(requests.length, 1);
+    assertEquals(requests[0].generate, undefined);
+    assertEquals(requests[0].stream_id, undefined);
+    assertEquals(requests[0].input, [...prefix, followup]);
+    assertEquals(requests[0].previous_response_id, undefined);
+    socket.close();
+  }));
+});
 
 test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
@@ -297,7 +756,7 @@ test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload byt
       const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
-        await completeOpenAIResponsesTurn(client, '响应-byte-count');
+        await completeOpenAIResponsesTurn(client, '响应-byte-count', 'bytes_lane');
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
 
         const expectedBytes = recorded.messages.reduce(
@@ -306,6 +765,7 @@ test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload byt
         );
         const utf16CodeUnits = recorded.messages.reduce((total, message) => total + message.length, 0);
         assert(expectedBytes > utf16CodeUnits, 'non-ASCII event_id must be counted as UTF-8 bytes');
+        assert(recorded.messages.every(message => (JSON.parse(message) as Record<string, unknown>).stream_id === 'bytes_lane'));
         assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
       } finally {
         recorded.stop();

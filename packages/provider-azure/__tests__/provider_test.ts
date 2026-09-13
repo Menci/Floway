@@ -1,9 +1,10 @@
 import { test } from 'vitest';
 
 import { createAzureProvider } from '../src/provider.ts';
+import { type CanonicalOpenAIResponsesPayload, OPENAI_RESPONSES_LITE_HEADER } from '@floway-dev/protocols/openai-responses';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, noopUpstreamCallOptions, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -45,6 +46,109 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     config: overrideConfig ?? config,
   };
 };
+
+test.each(['lite', 'standard'] as const)('Azure forwards dispatched %s Responses input and projects compact controls on the wire', async transport => {
+  const provider = createAzureProvider(azureRecord());
+  const model = stubProviderModel({ id: 'public-model', providerData: { upstreamModelId: 'upstream-model' } });
+  const body: Omit<CanonicalOpenAIResponsesPayload, 'model'> = {
+    input: [
+      {
+        type: 'additional_tools', id: 'at_client', role: 'developer',
+        tools: [{
+          type: 'namespace', name: 'functions', description: 'Client namespace',
+          tools: [{ type: 'function', name: 'run', parameters: { type: 'object' }, async: true }],
+        }],
+      },
+      {
+        type: 'message', id: 'msg_client', role: 'developer',
+        content: [{ type: 'input_text', text: 'Client instructions' }],
+        internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] },
+      },
+      { type: 'configuration_update', reasoning: { effort: 'future_effort' } },
+      { type: 'function_call', id: 'fc_client', call_id: 'call_client', name: 'run', namespace: 'functions', arguments: '{}', status: 'completed', async: true },
+      { type: 'function_call_output', call_id: 'call_client', output: [{ type: 'input_text', text: 'Completed' }] },
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Continue' }] },
+    ],
+    reasoning: { effort: 'future_effort', context: 'all_turns' },
+    parallel_tool_calls: false,
+    text: { verbosity: 'low' },
+    stream_options: { reasoning_summary_delivery: 'sequential_cutoff' },
+    prompt_cache_key: 'session-cache',
+    prompt_cache_options: { mode: 'explicit', ttl: 'future_ttl' },
+    prompt_cache_retention: 'future_retention',
+    service_tier: 'future_tier',
+    temperature: 0.3,
+    max_output_tokens: 128,
+    store: true,
+  };
+  const originalBody = structuredClone(body);
+  const compactInput: CanonicalOpenAIResponsesPayload['input'] = [...body.input, { type: 'compaction_trigger' }];
+  const outputItem = { type: 'function_call', id: 'fc_next', call_id: 'call_next', name: 'run', arguments: '{}', async: true };
+  const outputEvent = { type: 'response.output_item.done', sequence_number: 0, output_index: 0, item: outputItem };
+  const completedEvent = {
+    type: 'response.completed', sequence_number: 1,
+    response: { id: 'resp_next', object: 'response', status: 'completed', model: 'upstream-model', output: [outputItem] },
+  };
+  const compactResult = {
+    id: 'cmp_response', object: 'response.compaction',
+    output: [{ type: 'compaction', id: 'cmp_output', encrypted_content: 'opaque' }],
+  };
+  const requests: Array<{ url: string; headers: Headers; body: unknown }> = [];
+  await withMockedFetch(
+    async request => {
+      requests.push({ url: request.url, headers: request.headers, body: await request.json() });
+      return request.url.endsWith('/compact')
+        ? Response.json(compactResult, { headers: { 'x-upstream-request': 'compact-id' } })
+        : sseResponse(
+            `event: response.output_item.done\ndata: ${JSON.stringify(outputEvent)}\n\nevent: response.completed\ndata: ${JSON.stringify(completedEvent)}\n\ndata: [DONE]\n\n`,
+            200,
+            { 'x-upstream-request': 'request-id' },
+          );
+    },
+    async () => {
+      const opts = noopUpstreamCallOptions({
+        headers: new Headers(transport === 'lite' ? { [OPENAI_RESPONSES_LITE_HEADER]: 'true' } : {}),
+      });
+      const generated = await provider.instance.callOpenAIResponses(model, body, 'generate', undefined, opts);
+      if (!generated.ok || generated.action !== 'generate') throw new Error('Expected a generated Responses stream');
+      assertEquals(generated.modelKey, 'upstream-model');
+      assertEquals(generated.headers?.get('x-upstream-request'), 'request-id');
+      const events = [];
+      for await (const frame of generated.events) if (frame.type === 'event') events.push(frame.event);
+      assertEquals(events, [outputEvent, completedEvent]);
+
+      const compacted = await provider.instance.callOpenAIResponses(
+        model, { ...body, input: compactInput, tools: [], stream: true }, 'compact', undefined, opts,
+      );
+      if (!compacted.ok || compacted.action !== 'compact') throw new Error('Expected a unary compact response');
+      assertEquals(compacted.modelKey, 'upstream-model');
+      assertEquals(compacted.result, compactResult);
+      assertEquals(compacted.headers?.get('x-upstream-request'), 'compact-id');
+    },
+  );
+
+  assertEquals(requests.length, 2);
+  assertEquals(requests.map(request => request.url), ['https://example.openai.azure.com/openai/v1/responses', 'https://example.openai.azure.com/openai/v1/responses/compact']);
+  for (const request of requests) {
+    assertEquals(request.headers.get(OPENAI_RESPONSES_LITE_HEADER), transport === 'lite' ? 'true' : null);
+    assertEquals(request.headers.get('content-type'), 'application/json');
+  }
+  assertEquals(requests[0].body, { ...originalBody, model: 'upstream-model', stream: true });
+  assertEquals(requests[1].body, {
+    input: compactInput,
+    prompt_cache_key: 'session-cache',
+    prompt_cache_options: { mode: 'explicit', ttl: 'future_ttl' },
+    prompt_cache_retention: 'future_retention',
+    service_tier: 'future_tier',
+    ...(transport === 'lite' ? {
+      reasoning: { effort: 'future_effort', context: 'all_turns' },
+      parallel_tool_calls: false,
+      text: { verbosity: 'low' },
+    } : {}),
+    model: 'upstream-model',
+  });
+  assertEquals(body, originalBody);
+});
 
 test('createAzureProvider projects configured models into upstream models', async () => {
   const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));

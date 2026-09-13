@@ -451,6 +451,10 @@ test('resolveServerToolName returns the first free sequential name', () => {
     { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
     { type: 'custom', name: `${SHIM_TOOL}_2` },
   ]), `${SHIM_TOOL}_3`);
+  assertEquals(resolveServerToolName(SHIM_TOOL, [{
+    type: 'namespace', name: 'functions', description: '',
+    tools: [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }],
+  }]), `${SHIM_TOOL}_2`);
 });
 
 test('prepareToolsForShim rejects invalid hosted fields', () => {

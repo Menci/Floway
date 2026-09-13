@@ -164,6 +164,20 @@ export function ModelDetail({
               }}
             />)}
           </div>
+          {row.config.endpoints.openaiResponses !== undefined && <div className="grid gap-1">
+            <Text weight="semibold">{t('dashboard.upstreamEditor.models.responsesTransport')}</Text>
+            <ChoiceGroup
+              ariaLabel={t('dashboard.upstreamEditor.models.responsesTransport')}
+              items={[
+                { value: 'standard', label: t('dashboard.upstreamEditor.models.responsesStandard') },
+                { value: 'lite', label: t('dashboard.upstreamEditor.models.responsesLite') },
+              ]}
+              onChange={transport => patch({ endpoints: { ...row.config.endpoints, openaiResponses: transport === 'lite' ? { transport: 'lite' } : {} } })}
+              readOnly={fieldsReadOnly}
+              value={row.config.endpoints.openaiResponses.transport ?? 'standard'}
+            />
+            <Text className="text-fui-fg2" size={200}>{t('dashboard.upstreamEditor.models.responsesTransportHint')}</Text>
+          </div>}
         </EditorSection>}
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>

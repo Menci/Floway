@@ -17,7 +17,6 @@ const CODEX_UNSUPPORTED_BODY_FIELDS = [
   'metadata',
   'prompt_cache_retention',
   'safety_identifier',
-  'stream_options',
 ] as const;
 
 export const stripUnsupportedFields = async <TResult>(

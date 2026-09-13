@@ -13,6 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { OPENAI_RESPONSES_LITE_HEADER } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
@@ -32,6 +33,9 @@ export const openaiChatCompletionsAttempt = {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
+    // A Responses source marker cannot describe the standard Responses payload
+    // produced by this translator. The target attempt selects its own profile.
+    headers.delete(OPENAI_RESPONSES_LITE_HEADER);
     const targetApi = openaiChatCompletionsTarget.pick(candidate.model.endpoints);
     const invocation: OpenAIChatCompletionsInvocation = {
       payload,

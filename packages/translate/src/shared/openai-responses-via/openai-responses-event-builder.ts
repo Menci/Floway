@@ -161,11 +161,12 @@ export const functionCallItem = (
   status,
 });
 
-export const customToolCallItem = (id: string, callId: string, name: string, input: string): OpenAIResponsesOutputCustomToolCall => ({
+export const customToolCallItem = (id: string, callId: string, name: string, input: string, namespace?: string): OpenAIResponsesOutputCustomToolCall => ({
   type: 'custom_tool_call',
   id,
   call_id: callId,
   name,
+  ...(namespace !== undefined ? { namespace } : {}),
   input,
 });
 

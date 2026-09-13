@@ -29,3 +29,17 @@ test('toCompactPayloadShape forwards future cache control values verbatim', () =
     prompt_cache_retention: 'future_retention',
   });
 });
+
+test('toCompactPayloadShape retains Lite-only compact controls', () => {
+  assertEquals(toCompactPayloadShape({
+    input: [{ type: 'additional_tools', role: 'developer', tools: [] }],
+    reasoning: { context: 'all_turns' },
+    parallel_tool_calls: false,
+    text: { verbosity: 'low' },
+  }, 'lite'), {
+    input: [{ type: 'additional_tools', role: 'developer', tools: [] }],
+    reasoning: { context: 'all_turns' },
+    parallel_tool_calls: false,
+    text: { verbosity: 'low' },
+  });
+});

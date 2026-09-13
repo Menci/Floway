@@ -441,3 +441,18 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
     'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
 });
+
+test('modelsField preserves Responses Lite endpoint transport', () => {
+  const [model] = modelsField([{
+    upstreamModelId: 'gpt-lite',
+    endpoints: { openaiResponses: { transport: 'lite' } },
+  }], 'custom');
+  expect(model?.endpoints).toEqual({ openaiResponses: { transport: 'lite' } });
+});
+
+test('modelsField rejects an unknown Responses transport', () => {
+  expect(() => modelsField([{
+    upstreamModelId: 'gpt-broken',
+    endpoints: { openaiResponses: { transport: 'turbo' } },
+  }], 'custom')).toThrow(/must be standard or lite/);
+});

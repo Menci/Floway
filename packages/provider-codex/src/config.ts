@@ -17,6 +17,8 @@ export interface CodexAccountIdentity {
 // ordering is operator-controlled and stable.
 export interface CodexUpstreamConfig {
   accounts: [CodexAccountIdentity];
+  // Opt-in device policy; omitted keeps the caller's installation identity.
+  normalizeInstallationId?: boolean;
 }
 
 export type CodexUpstreamRecord = UpstreamRecord & {
@@ -32,9 +34,12 @@ function assertCodexUpstreamConfig(value: unknown): asserts value is CodexUpstre
   // config_json round-trips through canonical serialization, so any surviving
   // key is persisted. Reject unknown keys to keep the on-disk shape closed.
   for (const key of Object.keys(obj)) {
-    if (key !== 'accounts') {
+    if (key !== 'accounts' && key !== 'normalizeInstallationId') {
       throw new TypeError(`CodexUpstreamConfig has unexpected key '${key}'`);
     }
+  }
+  if (obj.normalizeInstallationId !== undefined && typeof obj.normalizeInstallationId !== 'boolean') {
+    throw new TypeError('CodexUpstreamConfig.normalizeInstallationId must be a boolean');
   }
   if (!Array.isArray(obj.accounts)) {
     throw new TypeError('CodexUpstreamConfig.accounts must be an array');

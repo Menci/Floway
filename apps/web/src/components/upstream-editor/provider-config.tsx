@@ -24,6 +24,7 @@ import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
+import { ChoiceGroup } from '../ui/choice-group';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
@@ -300,6 +301,25 @@ function EndpointPicker() {
           }} />;
       })}
     </div>
+    {value.openaiResponses !== undefined && <div className="grid gap-1">
+      <Text weight="semibold">{t('dashboard.upstreamEditor.models.responsesTransport')}</Text>
+      <ChoiceGroup
+        ariaLabel={t('dashboard.upstreamEditor.models.responsesTransport')}
+        items={[
+          { value: 'standard', label: t('dashboard.upstreamEditor.models.responsesStandard') },
+          { value: 'lite', label: t('dashboard.upstreamEditor.models.responsesLite') },
+        ]}
+        onChange={transport => {
+          const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
+          setValue('config', {
+            ...latestConfig,
+            endpoints: { ...latestConfig.endpoints, openaiResponses: transport === 'lite' ? { transport: 'lite' } : {} },
+          }, { shouldDirty: true });
+        }}
+        value={value.openaiResponses.transport ?? 'standard'}
+      />
+      <Text className="text-fui-fg2" size={200}>{t('dashboard.upstreamEditor.models.responsesTransportHint')}</Text>
+    </div>}
   </EditorSection>;
 }
 
@@ -413,6 +433,19 @@ function CopilotConfig({ record, onPatch }: {
 }
 
 type OAuthKind = 'codex' | 'claude-code';
+function CodexInstallationSetting() {
+  const { control } = useFormContext<ValuesForKind<'codex'>>();
+  const { t } = useTranslation();
+  return <Controller control={control} name="config.normalizeInstallationId" render={({ field }) => (
+    <SwitchSetting
+      checked={field.value === true}
+      description={t('dashboard.upstreamEditor.codex.normalizeInstallationIdHint')}
+      label={t('dashboard.upstreamEditor.codex.normalizeInstallationId')}
+      onChange={field.onChange}
+    />
+  )} />;
+}
+
 function OAuthConfig({ record, onPatch }: {
   record: Extract<UpstreamRecord, { kind: OAuthKind }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
@@ -533,6 +566,7 @@ function OAuthConfig({ record, onPatch }: {
           probing={probing}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
+    {record.kind === 'codex' && <CodexInstallationSetting />}
     {hasAccount && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>

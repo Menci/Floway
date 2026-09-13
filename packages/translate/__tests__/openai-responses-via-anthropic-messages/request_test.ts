@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-responses-via-anthropic-messages/request.ts';
+import { TranslatorInputError } from '../../src/translator-input-error.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -89,6 +90,7 @@ test.each([
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as OpenAIResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
+  { name: 'configuration_update', input: [{ type: 'configuration_update', reasoning: { effort: 'xhigh' } }] },
 ] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
     () => buildTargetRequest({ ...minimalPayload, input: [...input] }),
@@ -98,6 +100,14 @@ test.each([
 });
 
 test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
+  await assertRejects(
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{ type: 'function_call', name: 'lookup', call_id: 'pending', arguments: '{}', status: 'completed', async: true }],
+    }),
+    Error,
+    'asynchronous',
+  );
   await assertRejects(
     () => buildTargetRequest({
       ...minimalPayload,
@@ -116,6 +126,23 @@ test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
 test('buildTargetRequest accepts null tool_choice', async () => {
   const result = await buildTargetRequest({ ...minimalPayload, tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);
+});
+
+test.each([
+  [{ type: 'function', name: 'lookup', async: true }],
+  [{ type: 'custom', name: 'lookup', async: true }],
+  [{ type: 'namespace', name: 'research', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, async: true }] }],
+] as OpenAIResponsesTool[][])('buildTargetRequest rejects asynchronous tool semantics unsupported by Anthropic Messages (%j)', async (...tools) => {
+  await assertRejects(
+    () => buildTargetRequest({ ...minimalPayload, tools }),
+    Error,
+    'Asynchronous',
+  );
+});
+
+test('buildTargetRequest preserves synchronous tools with async false', async () => {
+  const { target } = await buildTargetRequest({ ...minimalPayload, tools: [{ type: 'function', name: 'lookup', async: false }] });
+  assertEquals(target.tools?.[0]?.name, 'lookup');
 });
 
 test('buildTargetRequest rejects multimodal custom tool output', async () => {
@@ -661,6 +688,70 @@ test('buildTargetRequest gives a schema-less function tool the empty object sche
       cache_control: { type: 'ephemeral' },
     },
   ]);
+});
+
+test.each([undefined, null])('namespace functions with parameters %j use the same empty schema as ordinary functions', async parameters => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{
+      type: 'namespace', name: 'functions', description: 'Client tools',
+      tools: [{ type: 'function', name: 'ping', ...(parameters === undefined ? {} : { parameters }) }],
+    }],
+    tool_choice: { type: 'function', name: 'functions.ping' },
+    input: [{ type: 'function_call', namespace: 'functions', name: 'ping', call_id: 'call_ping', arguments: '{}' }],
+  });
+  assertEquals(result.target.tools, [{ name: 'functions_ping', input_schema: { type: 'object', properties: {} }, cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'functions_ping' });
+  assertEquals(result.target.messages[0].content, [{ type: 'tool_use', id: 'call_ping', name: 'functions_ping', input: {}, cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.namespaceToolNames.targetToSource.get('functions_ping'), { namespace: 'functions', name: 'ping' });
+});
+
+test.each([[], 'invalid', 123])('namespace functions still reject non-object parameters %j', async parameters => {
+  await assertRejects(() => buildTargetRequest({
+    ...minimalPayload,
+    tools: [{
+      type: 'namespace', name: 'functions', description: 'Client tools',
+      tools: [{ type: 'function', name: 'ping', parameters }],
+    } as unknown as OpenAIResponsesTool],
+  }), TranslatorInputError, 'malformed function child');
+});
+
+test('namespace aliases and collision suffixes stay within the Anthropic name limit while retaining both identities', async () => {
+  const namespace = 'n'.repeat(64);
+  const namePrefix = 't'.repeat(63);
+  const functionName = `${namePrefix}a`;
+  const customName = `${namePrefix}b`;
+  const firstAlias = `${namespace}_${namePrefix}`;
+  const secondAlias = `${firstAlias.slice(0, 126)}_2`;
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    tools: [{
+      type: 'namespace', name: namespace, description: 'Long tool names', tools: [
+        { type: 'function', name: functionName, parameters: { type: 'object' } },
+        { type: 'custom', name: customName },
+      ],
+    }],
+    tool_choice: { type: 'custom', name: `${namespace}.${customName}` },
+    input: [
+      { type: 'function_call', namespace, name: functionName, call_id: 'call_long_function', arguments: '{}' },
+      { type: 'custom_tool_call', namespace, name: customName, call_id: 'call_long_custom', input: 'PATCH' },
+    ],
+  });
+
+  assertEquals(result.target.tools?.map(tool => tool.name), [firstAlias, secondAlias]);
+  assertEquals(result.target.tool_choice, { type: 'tool', name: secondAlias });
+  const history = result.target.messages[0].content;
+  assert(Array.isArray(history));
+  assertEquals(history.map(block => block.type === 'tool_use' ? block.name : undefined), [firstAlias, secondAlias]);
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([
+    [`${namespace}.${functionName}`, firstAlias],
+    [`${namespace}.${customName}`, secondAlias],
+  ]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([
+    [firstAlias, { namespace, name: functionName }],
+    [secondAlias, { namespace, name: customName }],
+  ]));
+  assertEquals(result.customToolNames, new Set([secondAlias]));
 });
 
 test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {

@@ -114,9 +114,13 @@ interface OpenAIChatCompletionsToOpenAIResponsesStreamState {
   pendingFinishReason?: OpenAIChatCompletionsFinishReason;
   completed: boolean;
   customToolNames: ReadonlySet<string>;
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }>;
 }
 
-export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customToolNames: ReadonlySet<string> = new Set()): OpenAIChatCompletionsToOpenAIResponsesStreamState => ({
+export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (
+  customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
+): OpenAIChatCompletionsToOpenAIResponsesStreamState => ({
   responseCreated: false,
   outputIndex: 0,
   sequenceNumber: 0,
@@ -129,6 +133,7 @@ export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customTo
   reasoningItemsSeen: false,
   completed: false,
   customToolNames,
+  namespaceTargetToSource,
 });
 
 const buildResult = (state: OpenAIChatCompletionsToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult =>
@@ -221,14 +226,16 @@ const closeFunctionCalls = (state: OpenAIChatCompletionsToOpenAIResponsesStreamS
 
     if (kind === 'custom') {
       const input = unwrapCustomToolInput(functionCall.arguments);
-      const item = openaiResponses.customToolCallItem(itemId, functionCall.callId, functionCall.name, input);
+      const sourceTool = state.namespaceTargetToSource.get(functionCall.name);
+      const item = openaiResponses.customToolCallItem(itemId, functionCall.callId, sourceTool?.name ?? functionCall.name, input, sourceTool?.namespace);
 
       state.completedItems[outputIndex] = item;
       events.push(...openaiResponses.customToolCallDone(state, outputIndex, itemId, input, item));
       continue;
     }
 
-    const item = openaiResponses.functionCallItem(itemId, functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
+    const sourceTool = state.namespaceTargetToSource.get(functionCall.name);
+    const item = openaiResponses.functionCallItem(itemId, functionCall.callId, sourceTool?.name ?? functionCall.name, functionCall.arguments, 'completed', sourceTool?.namespace);
 
     state.completedItems[outputIndex] = item;
     events.push(...openaiResponses.functionCallDone(state, outputIndex, itemId, functionCall.arguments, item));
@@ -288,10 +295,12 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: OpenAIChatCo
   if (isCustom) {
     // Wrapped custom tool calls buffer arguments fully; we cannot emit input
     // deltas until we can parse the JSON wrap and extract the freeform value.
-    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(streamItem.itemId, current.callId, current.name, ''));
+    const sourceTool = state.namespaceTargetToSource.get(current.name);
+    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(streamItem.itemId, current.callId, sourceTool?.name ?? current.name, '', sourceTool?.namespace));
   }
 
-  const events = openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(streamItem.itemId, current.callId, current.name, '', 'in_progress'));
+  const sourceTool = state.namespaceTargetToSource.get(current.name);
+  const events = openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(streamItem.itemId, current.callId, sourceTool?.name ?? current.name, '', 'in_progress', sourceTool?.namespace));
 
   if (current.arguments) {
     events.push(...openaiResponses.argumentsDelta(state, outputIndex, streamItem.itemId, current.arguments));
@@ -488,8 +497,9 @@ export const flushOpenAIChatCompletionsToOpenAIResponsesEvents = (state: OpenAIC
 export const translateToSourceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(customToolNames);
+  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(customToolNames, namespaceTargetToSource);
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     for (const event of translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk, state)) {

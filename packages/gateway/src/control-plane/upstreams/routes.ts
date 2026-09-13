@@ -298,8 +298,10 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   // OAuth-managed config slices (Copilot githubToken/user, Codex/Claude
   // Code accounts[]) are owned by the per-provider action endpoints, not
   // by generic PATCH. Metadata (name, enabled, sort_order, flag overrides,
-  // disabled model ids) still flows through here.
-  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'codex' || existing.kind === 'claude-code')) {
+  // disabled model ids) and Codex's device policy still flow through here.
+  const codexSettingsPatch = existing.kind === 'codex' && body.config !== undefined
+    && Object.keys(body.config).every(key => key === 'normalizeInstallationId');
+  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'codex' || existing.kind === 'claude-code') && !codexSettingsPatch) {
     const endpoint = existing.kind === 'copilot'
       ? '/api/upstreams/copilot/oauth/device-login/poll'
       : `/api/upstreams/${existing.kind}/oauth/exchange`;

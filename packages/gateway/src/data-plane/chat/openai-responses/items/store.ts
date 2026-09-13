@@ -11,12 +11,18 @@ interface OpenAIResponsesStatefulItemLookup {
   readonly itemHashes: readonly string[];
 }
 
+interface OpenAIResponsesSnapshotRefresh {
+  refresh(snapshot: StoredOpenAIResponsesSnapshot): Promise<void>;
+  finish(): void;
+}
+
 interface OpenAIResponsesStatefulBacking {
   lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]>;
   insertItems(items: readonly StoredOpenAIResponsesItem[]): Promise<void>;
   refreshItems(items: readonly StoredOpenAIResponsesItem[], refreshedAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredOpenAIResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredOpenAIResponsesSnapshot): Promise<void>;
+  beginSnapshotRefresh?(apiKeyId: string, id: string): OpenAIResponsesSnapshotRefresh;
 }
 
 interface LayeredOpenAIResponsesStatefulStoreOptions {
@@ -64,29 +70,42 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
   }
 
   async loadSnapshot(id: string): Promise<StoredOpenAIResponsesSnapshot | null> {
-    for (const backing of this.options.reads) {
-      const snapshot = await backing.lookupSnapshot(this.apiKeyId, id);
-      if (snapshot === null) continue;
-      await this.loadItems({ ids: snapshot.itemIds, itemHashes: [] });
-      if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
-      if (this.options.writes.length > 0) {
-        const refreshedAt = quantizeOpenAIResponsesRefreshedAt(Date.now());
-        const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
-        await this.commitItems(items);
-        const staleItems = items.filter(item => item.refreshedAt < refreshedAt);
-        await Promise.all(this.options.writes.map(async write => {
-          if (staleItems.length > 0) await write.refreshItems(staleItems, refreshedAt);
-          await write.insertSnapshot({ ...snapshot, refreshedAt });
-        }));
-        for (const item of items) {
-          if (item.refreshedAt < refreshedAt) item.refreshedAt = refreshedAt;
+    // Capture cache-write permission before the first lookup, including a
+    // local miss that later hydrates from durable state. A concurrent eviction
+    // invalidates this read's refresh without discarding its loaded history.
+    const refreshes = this.options.writes.map(write => ({
+      write,
+      permission: write.beginSnapshotRefresh?.(this.apiKeyId, id),
+    }));
+    try {
+      for (const backing of this.options.reads) {
+        const snapshot = await backing.lookupSnapshot(this.apiKeyId, id);
+        if (snapshot === null) continue;
+        await this.loadItems({ ids: snapshot.itemIds, itemHashes: [] });
+        if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
+        if (this.options.writes.length > 0) {
+          const refreshedAt = quantizeOpenAIResponsesRefreshedAt(Date.now());
+          const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
+          await this.commitItems(items);
+          const staleItems = items.filter(item => item.refreshedAt < refreshedAt);
+          await Promise.all(refreshes.map(async ({ write, permission }) => {
+            if (staleItems.length > 0) await write.refreshItems(staleItems, refreshedAt);
+            const refreshed = { ...snapshot, refreshedAt };
+            if (permission === undefined) await write.insertSnapshot(refreshed);
+            else await permission.refresh(refreshed);
+          }));
+          for (const item of items) {
+            if (item.refreshedAt < refreshedAt) item.refreshedAt = refreshedAt;
+          }
+          if (snapshot.refreshedAt < refreshedAt) snapshot.refreshedAt = refreshedAt;
         }
-        if (snapshot.refreshedAt < refreshedAt) snapshot.refreshedAt = refreshedAt;
+        this.previousSnapshotItemIds = [...snapshot.itemIds];
+        return cloneStoredOpenAIResponsesSnapshot(snapshot);
       }
-      this.previousSnapshotItemIds = [...snapshot.itemIds];
-      return cloneStoredOpenAIResponsesSnapshot(snapshot);
+      return null;
+    } finally {
+      for (const { permission } of refreshes) permission?.finish();
     }
-    return null;
   }
 
   async loadInputItems(
@@ -132,7 +151,6 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     const itemIds = mode === 'replace'
       ? [...outputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...outputItemIds];
-    if (itemIds.length === 0) return;
     const uniqueRows = [...new Set(itemIds)].map(id => {
       const row = this.loadedItems.get(id);
       if (row === undefined) throw new Error(`OpenAI Responses snapshot item disappeared before commit: ${id}`);
@@ -147,7 +165,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
         if (row.refreshedAt < refreshedAt) row.refreshedAt = refreshedAt;
       }
     }
-    const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
+    const snapshotRefreshedAt = uniqueRows.length === 0 ? refreshedAt : Math.min(...uniqueRows.map(row => row.refreshedAt));
     const snapshot: StoredOpenAIResponsesSnapshot = {
       id: responseId,
       apiKeyId: this.apiKeyId,
@@ -301,6 +319,7 @@ export class RepoOpenAIResponsesStatefulBacking implements OpenAIResponsesStatef
 export class MemoryOpenAIResponsesStatefulBacking implements OpenAIResponsesStatefulBacking {
   private readonly items = new Map<string, StoredOpenAIResponsesItem>();
   private readonly snapshots = new Map<string, StoredOpenAIResponsesSnapshot>();
+  private readonly pendingSnapshotRefreshes = new Map<string, Set<{ valid: boolean }>>();
 
   lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]> {
     const ids = new Set(query.ids);
@@ -361,13 +380,37 @@ export class MemoryOpenAIResponsesStatefulBacking implements OpenAIResponsesStat
     return Promise.resolve();
   }
 
+  // Parallel lanes may still be reading a snapshot when its source lane
+  // evicts it. Separate those read refreshes from new response commits, and
+  // invalidate only reads already in flight: a later store:true request may
+  // hydrate durable state normally. Tokens live only until their read settles,
+  // so eviction does not accumulate a history of tombstones on the connection.
+  // https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works
+  beginSnapshotRefresh(apiKeyId: string, id: string): OpenAIResponsesSnapshotRefresh {
+    const key = scopedOpenAIResponsesKey(apiKeyId, id);
+    const pending = this.pendingSnapshotRefreshes.get(key) ?? new Set<{ valid: boolean }>();
+    const permission = { valid: true };
+    pending.add(permission);
+    this.pendingSnapshotRefreshes.set(key, pending);
+    return {
+      refresh: snapshot => permission.valid ? this.insertSnapshot(snapshot) : Promise.resolve(),
+      finish: () => {
+        permission.valid = false;
+        pending.delete(permission);
+        if (pending.size === 0) this.pendingSnapshotRefreshes.delete(key);
+      },
+    };
+  }
+
   // Beyond `OpenAIResponsesStatefulBacking`: the spec scopes eviction to the
   // connection-local cache, so the delete path deliberately stops at this
   // in-memory backing rather than becoming a contract every backing — the
   // durable one included — has to answer for.
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
   evictSnapshot(apiKeyId: string, id: string): void {
-    this.snapshots.delete(scopedOpenAIResponsesKey(apiKeyId, id));
+    const key = scopedOpenAIResponsesKey(apiKeyId, id);
+    this.snapshots.delete(key);
+    for (const permission of this.pendingSnapshotRefreshes.get(key) ?? []) permission.valid = false;
   }
 }
 

@@ -16,6 +16,13 @@ describe('custom JSON', () => {
     expect(parseCustomJson('openaiChatCompletions', '{"stream":false}')).toMatchObject({ error: 'reserved', fields: ['stream'] });
   });
 
+  it('allows Responses Lite client tools for protocol-owned conversion', () => {
+    expect(parseCustomJson('openaiResponsesLite', '{"tools":[{"type":"function","name":"lookup"}]}')).toMatchObject({
+      error: null,
+      value: { tools: [{ type: 'function', name: 'lookup' }] },
+    });
+  });
+
   it('overrides generated wire fields', () => {
     expect(JSON.parse(mergeWireBody('{"model":"m","temperature":0.2}', { temperature: 0.9, seed: 2 })))
       .toEqual({ model: 'm', temperature: 0.9, seed: 2 });

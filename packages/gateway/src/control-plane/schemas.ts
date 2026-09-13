@@ -50,7 +50,7 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 const modelEndpointsSchema = z.object({
   openaiCompletions: z.object({}).optional(),
   openaiChatCompletions: z.object({}).optional(),
-  openaiResponses: z.object({}).optional(),
+  openaiResponses: z.object({ transport: z.enum(['standard', 'lite']).optional() }).strict().optional(),
   anthropicMessages: z.object({}).optional(),
   openaiEmbeddings: z.object({}).optional(),
   openaiImagesGenerations: z.object({}).optional(),
@@ -386,9 +386,9 @@ export const updateUpstreamBody = z.object({
   hue: upstreamHueSchema.optional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
-  // there (Copilot/Codex/Claude Code reject a config patch outright, since
-  // OAuth-managed slices belong to the action endpoints; the rest run
-  // through `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
+  // there (OAuth-managed slices belong to the action endpoints; Codex allows
+  // its operator device policy, and editable configs run through
+  // `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
   // primitives / arrays / null from reaching the handler as `config`.
   config: z.record(z.string(), z.unknown()).optional(),
 });

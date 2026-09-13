@@ -11,6 +11,7 @@ import {
   type CodexUpstreamConfig,
   type CodexUpstreamState,
   CodexOAuthSessionTerminatedError,
+  assertCodexUpstreamRecord,
   assertCodexUpstreamState,
   ensureCodexAccessToken,
   importCodexFromAuthJson,
@@ -31,6 +32,14 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
   const body = c.req.valid('json');
   const { record } = body;
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+
+  if (record.config === null || typeof record.config !== 'object' || Array.isArray(record.config)) {
+    return c.json({ error: 'config must be an object' }, 400);
+  }
+  const normalization = (record.config as Partial<CodexUpstreamConfig>).normalizeInstallationId;
+  if (normalization !== undefined && typeof normalization !== 'boolean') {
+    return c.json({ error: 'normalizeInstallationId must be a boolean' }, 400);
+  }
 
   let fetcher: Fetcher;
   try {
@@ -55,12 +64,20 @@ export const codexOAuthExchange = async (c: CtxWithJson<typeof codexOAuthExchang
     return c.json({ error: errorMessage(err) }, 400);
   }
 
+  if (normalization !== undefined) ingestion.config.normalizeInstallationId = normalization;
+
   // Edit state: overwrite the credential slice of the stored record.
   // Single-account convention — exchange REPLACES accounts[0], no append.
   if (record.id !== '') {
     const dbRecord = await getRepo().upstreams.getById(record.id);
     if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
     if (dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+    assertCodexUpstreamRecord(dbRecord);
+    // Re-import changes credentials, while generic PATCH owns device policy.
+    delete ingestion.config.normalizeInstallationId;
+    if (dbRecord.config.normalizeInstallationId !== undefined) {
+      ingestion.config.normalizeInstallationId = dbRecord.config.normalizeInstallationId;
+    }
     const next: UpstreamRecord = {
       ...dbRecord,
       config: ingestion.config,

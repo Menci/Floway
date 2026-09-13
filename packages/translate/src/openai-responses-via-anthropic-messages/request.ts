@@ -254,6 +254,9 @@ const translateOpenAIResponsesInput = async (
       break;
     }
     case 'function_call_output':
+      if (typeof item.call_id !== 'string' || item.call_id.length === 0) {
+        throw new TranslatorInputError('Cannot translate function_call_output without call_id to Anthropic Messages.');
+      }
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
@@ -267,7 +270,7 @@ const translateOpenAIResponsesInput = async (
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
-        name: item.name,
+        name: namespaceSourceToTarget.get(item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`) ?? item.name,
         input: { input: item.input },
       });
       break;
@@ -306,8 +309,13 @@ const translateOpenAIResponsesInput = async (
   return { messages, systemBlocks };
 };
 
+// Generated namespace aliases must fit Anthropic's tool name contract, including
+// any collision suffix. Ordinary tool names remain owned by the upstream.
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#specifying-client-tools
+const ANTHROPIC_TOOL_NAME_MAX_LENGTH = 128;
+
 const namespaceTargetName = (namespace: string, tool: string): string =>
-  `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
+  `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, ANTHROPIC_TOOL_NAME_MAX_LENGTH);
 
 const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
   if (!reserved.has(preferred)) {
@@ -315,7 +323,8 @@ const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
     return preferred;
   }
   for (let suffix = 2; ; suffix++) {
-    const candidate = `${preferred}_${suffix}`;
+    const ending = `_${suffix}`;
+    const candidate = `${preferred.slice(0, ANTHROPIC_TOOL_NAME_MAX_LENGTH - ending.length)}${ending}`;
     if (!reserved.has(candidate)) {
       reserved.add(candidate);
       return candidate;
@@ -330,7 +339,7 @@ const translateTools = (
   tools: AnthropicMessagesTool[] | undefined;
   namespaceToolNames: TargetRequestResult['namespaceToolNames'];
 } => {
-  // Anthropic Messages has no namespace container. Flatten each namespace function to
+  // Anthropic Messages has no namespace container. Flatten each namespace function/custom tool to
   // a collision-safe Anthropic Messages tool name and retain a bidirectional map so
   // request history and target events recover the source `namespace.tool`
   // identity. Other hosted/deferred OpenAI Responses tools still require their own
@@ -379,8 +388,17 @@ const translateTools = (
       throw new TranslatorInputError('Cannot translate a namespace tool without a string name and tools array to Anthropic Messages.');
     }
     for (const child of tool.tools) {
-      if (child === null || typeof child !== 'object' || (child as { type?: unknown }).type !== 'function') {
-        throw new TranslatorInputError(`Cannot translate non-function child in namespace '${tool.name}' to Anthropic Messages.`);
+      if (child === null || typeof child !== 'object' || (child.type !== 'function' && child.type !== 'custom')) {
+        throw new TranslatorInputError(`Cannot translate unsupported child in namespace '${tool.name}' to Anthropic Messages.`);
+      }
+      if (child.type === 'custom') {
+        if (typeof child.name !== 'string') throw new TranslatorInputError(`Cannot translate malformed custom child in namespace '${tool.name}' to Anthropic Messages.`);
+        const targetName = uniqueToolName(namespaceTargetName(tool.name, child.name), reservedNames);
+        namespaceToolNames.sourceToTarget.set(`${tool.name}.${child.name}`, targetName);
+        namespaceToolNames.targetToSource.set(targetName, { namespace: tool.name, name: child.name });
+        customToolNames.add(targetName);
+        out.push({ name: targetName, description: child.description, input_schema: buildCustomToolInputSchema(child.format) });
+        continue;
       }
       const functionTool = child as {
         name?: unknown;
@@ -389,9 +407,7 @@ const translateTools = (
         strict?: unknown;
       };
       if (typeof functionTool.name !== 'string'
-        || functionTool.parameters === null
-        || typeof functionTool.parameters !== 'object'
-        || Array.isArray(functionTool.parameters)) {
+        || (functionTool.parameters != null && (typeof functionTool.parameters !== 'object' || Array.isArray(functionTool.parameters)))) {
         throw new TranslatorInputError(`Cannot translate malformed function child in namespace '${tool.name}' to Anthropic Messages.`);
       }
       const sourceName = `${tool.name}.${functionTool.name}`;
@@ -401,7 +417,10 @@ const translateTools = (
       out.push({
         name: targetName,
         ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),
-        input_schema: functionTool.parameters as Record<string, unknown>,
+        // Namespace functions share the ordinary function's optional/nullable
+        // schema contract and Anthropic's required empty-schema default.
+        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L808-L847
+        input_schema: (functionTool.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>,
         ...(typeof functionTool.strict === 'boolean' ? { strict: functionTool.strict } : {}),
       });
     }

@@ -2,8 +2,9 @@
 import type { ControlPlaneModel } from '../../api/types';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
+import { OPENAI_RESPONSES_LITE_HEADER, toLiteOpenAIResponsesPayload, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-export type PlaygroundApi = 'openaiResponses' | 'openaiChatCompletions' | 'anthropicMessages';
+export type PlaygroundApi = 'openaiResponses' | 'openaiResponsesLite' | 'openaiChatCompletions' | 'anthropicMessages';
 
 export interface PlaygroundMessage {
   id: string;
@@ -12,7 +13,7 @@ export interface PlaygroundMessage {
   imageUrl?: string;
 }
 
-export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiChatCompletions', 'anthropicMessages'];
+export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiResponsesLite', 'openaiChatCompletions', 'anthropicMessages'];
 
 export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
@@ -29,6 +30,7 @@ export const defaultMaxOutputTokens = (model: ControlPlaneModel | null): number 
 const reservedFields: Record<PlaygroundApi, readonly string[]> = {
   openaiChatCompletions: ['model', 'messages', 'stream'],
   openaiResponses: ['model', 'input', 'instructions', 'stream'],
+  openaiResponsesLite: ['model', 'input', 'instructions', 'stream'],
   anthropicMessages: ['model', 'messages', 'system', 'stream'],
 };
 
@@ -124,8 +126,16 @@ const normalizeOpenAIResponsesBody = (body: BodyInit | null | undefined): BodyIn
 
 export const createWireFetch = (custom: Record<string, unknown>, api?: PlaygroundApi): typeof fetch => {
   return async (input, init) => {
-    const normalized = api === 'openaiResponses' ? normalizeOpenAIResponsesBody(init?.body) : init?.body;
-    const response = await fetch(input, { ...init, body: mergeWireBody(normalized, custom) });
+    const normalized = api === 'openaiResponses' || api === 'openaiResponsesLite' ? normalizeOpenAIResponsesBody(init?.body) : init?.body;
+    const merged = mergeWireBody(normalized, custom);
+    // Custom JSON is part of the canonical standard request. Convert only
+    // after merging it so client tools cannot leak back onto Lite's top level.
+    const body = api === 'openaiResponsesLite'
+      ? JSON.stringify(toLiteOpenAIResponsesPayload(JSON.parse(merged) as CanonicalOpenAIResponsesPayload))
+      : merged;
+    const headers = api === 'openaiResponsesLite' ? new Headers(init?.headers) : init?.headers;
+    if (headers instanceof Headers && api === 'openaiResponsesLite') headers.set(OPENAI_RESPONSES_LITE_HEADER, 'true');
+    const response = await fetch(input, { ...init, headers, body });
     return api === 'anthropicMessages' ? normalizeAnthropicMessagesStream(response) : response;
   };
 };
@@ -145,7 +155,7 @@ export const generationOptions = (
     };
   }
 
-  if (api === 'openaiResponses') {
+  if (api === 'openaiResponses' || api === 'openaiResponsesLite') {
     return { ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }) };
   }
 

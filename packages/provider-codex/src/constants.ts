@@ -57,13 +57,14 @@ export const CODEX_OPENAI_IMAGES_GENERATIONS_PATH = '/codex/images/generations';
 export const CODEX_OPENAI_IMAGES_EDITS_PATH = '/codex/images/edits';
 
 // codex_cli_rs version we impersonate on the data plane. Bumped against the
-// latest stable release at https://github.com/openai/codex/releases — newer entries in
-// /codex/models gate themselves behind a `minimal_client_version` (e.g.
-// the gpt-5.6 Sol / Terra / Luna family needs 0.144.0+), so a stale value
+// https://github.com/openai/codex/releases/tag/rust-v0.154.0 — newer entries in
+// /codex/models gate themselves behind a `minimal_client_version` (Astra
+// needs 0.153.0+), so a stale value
 // here silently truncates the model list. The same value flows into both
 // the `?client_version=` query param and the User-Agent so the upstream sees
 // a self-consistent client.
-export const CODEX_CLI_VERSION = '0.144.1';
+// https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/models-manager/models.json
+export const CODEX_CLI_VERSION = '0.154.0';
 
 // Shared official Codex data-plane identity for /codex/models and
 // /codex/responses. The User-Agent intentionally includes Codex's normal

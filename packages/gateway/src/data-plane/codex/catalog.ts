@@ -8,9 +8,12 @@
 //   4. Fall back to the bundled snapshot on any failure: missing/unparseable
 //      user-agent, GitHub 404 (unreleased version), network error
 //
-// The bundled snapshot is a frozen copy of
+// The bundled snapshot contains the frozen entries from
 //   https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/models-manager/models.json
-// (Apache-2.0). It is the working fallback for cold starts, clients running
+// plus the Astra entry from
+//   https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/models-manager/models.json
+// (Apache-2.0). Existing entries retain their prompts and picker visibility.
+// It is the working fallback for cold starts, clients running
 // unreleased prerelease builds, and operators behind network egress
 // restrictions. Refresh it whenever a newer codex release ships material
 // changes to the catalog:

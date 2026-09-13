@@ -7,8 +7,9 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { parseSSEText } from '../../../test-utils/app.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_LITE_HEADER, toLiteOpenAIResponsesPayload, openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -167,6 +168,82 @@ const queueCompletedResponse = (id = 'resp_test') => {
   queueResolution([makeCandidate({ callOpenAIResponses })]);
   return callOpenAIResponses;
 };
+
+test.each([
+  { source: 'standard', target: 'lite', stream: true },
+  { source: 'standard', target: 'lite', stream: false },
+  { source: 'lite', target: 'standard', stream: true },
+  { source: 'lite', target: 'standard', stream: false },
+] as const)('HTTP $source to $target restores client echoes with stream=$stream', async ({ source, target, stream }) => {
+  installRepo();
+  const standard: CanonicalOpenAIResponsesPayload = {
+    model: 'test-model', input: [{ type: 'message', role: 'user', content: 'hello' }],
+    instructions: 'Client instructions', tools: [{ type: 'function', name: 'lookup' }],
+    parallel_tool_calls: true, reasoning: { effort: 'high', summary: 'auto' }, stream,
+  };
+  const payload = source === 'lite' ? toLiteOpenAIResponsesPayload(standard) : standard;
+  let called = false;
+  queueResolution([makeCandidate({
+    endpoints: { openaiResponses: { transport: target } },
+    callOpenAIResponses: async () => {
+      called = true;
+      const upstream = { ...makeOpenAIResponsesResult(), tools: [], instructions: 'Converted wire', reasoning: { effort: 'low', context: 'all_turns' }, parallel_tool_calls: false };
+      return {
+        action: 'generate', ok: true, modelKey: 'test-model-key',
+        headers: new Headers({ [OPENAI_RESPONSES_LITE_HEADER]: target === 'lite' ? 'true' : 'false', 'x-request-id': 'trace' }),
+        events: makeProviderEvents(openaiResponsesResultToEvents(upstream).map(frame => frame.event)),
+      };
+    },
+  })]);
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST', headers: { 'content-type': 'application/json', [OPENAI_RESPONSES_LITE_HEADER]: String(source === 'lite') },
+    body: JSON.stringify(payload),
+  });
+  assertEquals(response.status, 200);
+  const resources = stream
+    ? parseSSEText(await response.text()).filter(frame => frame.event === 'response.created' || frame.event === 'response.completed').map(frame => (JSON.parse(frame.data) as { response: Record<string, unknown> }).response)
+    : [await response.json() as Record<string, unknown>];
+  assertEquals(resources.length, stream ? 2 : 1);
+  for (const resource of resources) {
+    assertEquals(resource.instructions, payload.instructions ?? null);
+    assertEquals(resource.reasoning, payload.reasoning);
+    assertEquals(resource.parallel_tool_calls, payload.parallel_tool_calls);
+    assertEquals((resource.tools as { name: string }[])[0]?.name, 'lookup');
+  }
+  assertEquals(response.headers.get(OPENAI_RESPONSES_LITE_HEADER), source === 'lite' ? 'true' : null);
+  assertEquals(response.headers.get('x-request-id'), 'trace');
+  assert(called);
+});
+
+test.each(['standard', 'lite'] as const)('HTTP %s compact forwards safe upstream headers through every layer', async source => {
+  installRepo();
+  let calls = 0;
+  queueResolution([makeCandidate({
+    endpoints: { openaiResponses: { transport: source } },
+    callOpenAIResponses: async (_model, _body, action) => {
+      assertEquals(action, 'compact');
+      calls++;
+      return {
+        action: 'compact', ok: true, modelKey: 'test-model-key',
+        result: { id: 'cmp_upstream', object: 'response.compaction', output: [], usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 } },
+        headers: new Headers({ 'x-request-id': 'compact-trace', 'x-codex-primary-used-percent': '42', 'set-cookie': 'private=secret', 'content-type': 'application/vendor+json', 'content-length': '999', [OPENAI_RESPONSES_LITE_HEADER]: 'true' }),
+      };
+    },
+  })]);
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST', headers: { 'content-type': 'application/json', [OPENAI_RESPONSES_LITE_HEADER]: String(source === 'lite') },
+    body: JSON.stringify({ model: 'test-model', input: [] }),
+  });
+  assertEquals(response.status, 200);
+  assertEquals((await response.json() as { object: string }).object, 'response.compaction');
+  assertEquals(calls, 1);
+  assertEquals(response.headers.get('x-request-id'), 'compact-trace');
+  assertEquals(response.headers.get('x-codex-primary-used-percent'), '42');
+  assertEquals(response.headers.get('set-cookie'), null);
+  assertEquals(response.headers.get('content-length'), null);
+  assertEquals(response.headers.get('content-type'), 'application/json');
+  assertEquals(response.headers.get(OPENAI_RESPONSES_LITE_HEADER), source === 'lite' ? 'true' : null);
+});
 
 test('POST /v1/responses streams a successful SSE body', async () => {
   installRepo();

@@ -13,6 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { OPENAI_RESPONSES_LITE_HEADER } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
 import { translateAnthropicMessagesViaOpenAIChatCompletions, translateAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
@@ -49,6 +50,9 @@ export const anthropicMessagesAttempt = {
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     headers.delete('anthropic-beta');
+    // A Responses source marker cannot describe the standard Responses payload
+    // produced by this translator. The target attempt selects its own profile.
+    headers.delete(OPENAI_RESPONSES_LITE_HEADER);
     const targetApi = anthropicMessagesGenerateTarget.pick(candidate.model.endpoints);
     const invocation: AnthropicMessagesInvocation = {
       payload,

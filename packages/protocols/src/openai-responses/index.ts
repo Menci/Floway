@@ -31,7 +31,20 @@ export interface OpenAIResponsesPayload {
   tools?: OpenAIResponsesTool[] | null;
   tool_choice?: OpenAIResponsesToolChoice | null;
   metadata?: Record<string, unknown> | null;
+  // Codex WebSocket mode carries per-message transport headers here because
+  // a single connection may switch between standard Responses and Lite.
+  client_metadata?: Record<string, string> | null;
+  // Codex carries provider-owned access selections on generate and compact.
+  // https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/codex-api/src/common.rs#L28-L65
+  access_programs?: Record<string, string> | null;
   stream?: boolean | null;
+  // Public streaming options and Codex's concurrent reasoning-summary control.
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L11047-L11064
+  // https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/codex-api/src/common.rs#L190-L197
+  stream_options?: {
+    include_obfuscation?: boolean;
+    reasoning_summary_delivery?: 'sequential_cutoff' | (string & {});
+  } | null;
   store?: boolean | null;
   parallel_tool_calls?: boolean | null;
   reasoning?: {
@@ -103,6 +116,7 @@ export type OpenAIResponsesInputItem =
   | OpenAIResponsesContextCompactionItem
   | OpenAIResponsesCompactionItem
   | OpenAIResponsesCompactionTriggerItem
+  | OpenAIResponsesConfigurationUpdateItem
   | OpenAIResponsesInputImageGenerationCall
   | OpenAIResponsesCodeInterpreterCallItem
   | OpenAIResponsesLocalShellCallItem
@@ -125,6 +139,7 @@ export interface OpenAIResponsesInputMessage {
   role: 'user' | 'assistant' | 'system' | 'developer';
   content: string | OpenAIResponsesInputContent[];
   phase?: OpenAIResponsesMessagePhase;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
 // The OpenAI Responses request schema's EasyInputMessage makes the constant
@@ -228,14 +243,24 @@ export interface OpenAIResponsesFunctionToolCallItem {
   name: string;
   namespace?: string;
   arguments: string;
-  status: 'completed' | 'in_progress' | 'incomplete';
+  // Input history need not carry an output lifecycle status.
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L3607-L3616
+  status?: 'completed' | 'in_progress' | 'incomplete' | (string & {});
   caller?: OpenAIResponsesToolCaller | null;
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L3597-L3600
+  async?: boolean;
 }
 
 export interface OpenAIResponsesFunctionCallOutputItem {
   type: 'function_call_output';
   id?: string;
-  call_id: string;
+  // Codex also serializes named tool outputs without a call id. Native
+  // Responses preserves that shape; synchronous translators require an id.
+  // https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/models.rs#L1082-L1102
+  call_id?: string;
+  name?: string;
+  namespace?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | OpenAIResponsesToolOutputContent[];
@@ -255,6 +280,8 @@ export interface OpenAIResponsesCustomToolCallItem {
   namespace?: string;
   status?: string;
   caller?: OpenAIResponsesToolCaller | null;
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L2745-L2748
+  async?: boolean;
 }
 
 export interface OpenAIResponsesCustomToolCallOutputItem {
@@ -486,6 +513,15 @@ export interface OpenAIResponsesCompactionTriggerItem {
   type: 'compaction_trigger';
 }
 
+// Durable reasoning control: its position in input history determines which
+// later turns it governs. Keep future effort values intact for the upstream.
+// https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L2507-L2542
+export interface OpenAIResponsesConfigurationUpdateItem {
+  type: 'configuration_update';
+  id?: string | null;
+  reasoning?: { effort?: string | null };
+}
+
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1852-L1915
 export interface OpenAIResponsesCodeInterpreterCallItem {
   type: 'code_interpreter_call';
@@ -658,6 +694,8 @@ export interface OpenAIResponsesFunctionTool {
   allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
   output_schema?: Record<string, unknown> | null;
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L846-L854
+  async?: boolean;
 }
 
 // Codex and other OpenAI Responses clients ship hosted server tools (web_search,
@@ -725,6 +763,8 @@ export interface OpenAIResponsesCustomTool {
   format?: Record<string, unknown>;
   allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L674-L678
+  async?: boolean;
 }
 
 // Namespace descriptions remain required, but OpenAI deliberately permits an
@@ -1083,6 +1123,8 @@ export interface OpenAIResponsesOutputFunctionCall {
   arguments: string;
   status: string;
   caller?: OpenAIResponsesToolCaller | null;
+  // https://github.com/openai/openai-node/blob/fe2d6a382623b00753f002de539f8a26c936b5be/src/resources/responses/responses.ts#L3597-L3600
+  async?: boolean;
 }
 
 export type OpenAIResponsesOutputCustomToolCall = OpenAIResponsesCustomToolCallItem;
@@ -1414,3 +1456,17 @@ export { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtoc
 export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemType } from './item-id.ts';
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
+export {
+  convertOpenAIResponsesTransport,
+  OpenAIResponsesLiteInputError,
+  OPENAI_RESPONSES_LITE_BASE_INSTRUCTIONS_KIND,
+  OPENAI_RESPONSES_LITE_HEADER,
+  OPENAI_RESPONSES_LITE_WS_METADATA_KEY,
+  type OpenAIResponsesLiteConversionOptions,
+  isOpenAIResponsesLiteBaseInstructionsMessage,
+  openAIResponsesTransportForEndpoint,
+  openAIResponsesTransportForRequest,
+  replaceOpenAIResponsesAdditionalTools,
+  toLiteOpenAIResponsesPayload,
+  toStandardOpenAIResponsesPayload,
+} from './responses-lite.ts';

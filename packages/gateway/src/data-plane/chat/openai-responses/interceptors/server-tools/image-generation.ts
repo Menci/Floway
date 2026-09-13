@@ -5,6 +5,7 @@ import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/ga
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
+import { declaredOpenAIResponsesTools } from '../../items/tool-declarations.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
@@ -1395,7 +1396,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     return { type: 'inactive' };
   }
 
-  const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
+  const tools = declaredOpenAIResponsesTools(invocation.payload);
   const hasHostedTool = tools.some(isHostedImageGenerationTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };

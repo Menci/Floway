@@ -36,7 +36,7 @@ import { scheduleOllamaUsageProbe } from './usage-probe.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_LITE_HEADER, parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
@@ -187,11 +187,11 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const rawModelId = rawModelIdOf(model);
         const response = await withProbes(opts, ollamaFetchOpenAIResponsesCompact(
           config,
-          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
+          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body, opts.headers.get(OPENAI_RESPONSES_LITE_HEADER) === 'true' ? 'lite' : 'standard'), model: rawModelId }), signal },
           { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId, headers: response.headers }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
       }
       default:

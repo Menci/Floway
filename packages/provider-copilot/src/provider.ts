@@ -402,7 +402,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
             const generated = (await response.json()) as OpenAIResponsesResult;
-            return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+            return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id, headers: response.headers };
           }
           default:
             ctx.action satisfies never;

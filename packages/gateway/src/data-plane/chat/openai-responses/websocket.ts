@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { createOpenAIResponsesWsSession } from './items/store.ts';
+import { prewarmOpenAIResponses } from './prewarm.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { openaiResponsesServe } from './serve.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
@@ -33,6 +34,14 @@ interface OpenAIResponsesWebSocketSocket {
 }
 
 const UTF8_ENCODER = new TextEncoder();
+
+// Limits include the default lane's active response, but only named lanes
+// count toward the connection's lifetime stream inventory.
+// https://developers.openai.com/api/docs/guides/websocket-mode#limits-per-connection
+const MAX_ACTIVE_RESPONSES = 16;
+const MAX_NAMED_STREAMS = 32;
+// https://developers.openai.com/api/docs/guides/websocket-mode#run-conversations-in-parallel
+const STREAM_ID = /^[A-Za-z0-9_.-]{1,256}$/;
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
 // every unprefixed type for itself, gives `acme:trace_event` as the form, and
@@ -78,9 +87,34 @@ declare const WebSocketPair: {
 type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayload> & {
   type: string;
   event_id?: string;
-  response?: Partial<OpenAIResponsesRequestPayload>;
+  response?: Partial<OpenAIResponsesRequestPayload> & { generate?: unknown; stream_id?: unknown };
   [key: string]: unknown;
 };
+
+// Authentication is refreshed per turn. Concurrent lanes must not replace
+// each other's auth variables on the upgraded HTTP context. Keep the original
+// request, environment, execution context, and middleware variables available.
+const createOpenAIResponsesWsTurnContext = (parent: AuthedContext): AuthedContext => {
+  const variables = new Map<string, unknown>(Object.entries(parent.var));
+  return new Proxy(parent, {
+    get: (target, property) => {
+      if (property === 'get') return (key: string) => variables.get(key);
+      if (property === 'set') return (key: string, value: unknown) => { variables.set(key, value); };
+      if (property === 'var') return Object.fromEntries(variables);
+      // Hono accessors use private fields; keep their receiver as the original
+      // context while only the middleware variable map is isolated per turn.
+      return Reflect.get(target, property, target);
+    },
+  });
+};
+
+interface PreparedWebSocketMessage {
+  readonly requestBody?: { bytes: Uint8Array; streamError: null };
+  readonly message?: OpenAIResponsesWebSocketClientEvent;
+  readonly eventId?: string;
+  readonly streamId?: string;
+  error?: unknown;
+}
 
 export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
@@ -112,8 +146,58 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
   const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createOpenAIResponsesWsSession();
   let closed = false;
-  let activeAbortController: AbortController | undefined;
-  let queue = Promise.resolve();
+  const activeAbortControllers = new Set<AbortController>();
+  let activeResponses = 0;
+  const waitingForSlot: Array<(acquired: boolean) => void> = [];
+  const responseLanes = new Map<string, string>();
+  const latestResponses = new Map<string, string>();
+  const lanes = new Map<string | undefined, Promise<void>>([[undefined, Promise.resolve()]]);
+
+  const acquireSlot = async (): Promise<boolean> => {
+    if (closed) return false;
+    if (activeResponses < MAX_ACTIVE_RESPONSES) {
+      activeResponses++;
+      return true;
+    }
+    return await new Promise(resolve => waitingForSlot.push(resolve));
+  };
+  const releaseSlot = (): void => {
+    const next = waitingForSlot.shift();
+    if (next !== undefined) next(true);
+    else activeResponses--;
+  };
+
+  const sessionForLane = (streamId: string | undefined): typeof session => ({
+    createStore: (...args) => {
+      const store = session.createStore(...args);
+      const commitSnapshot = store.commitSnapshot.bind(store);
+      store.commitSnapshot = async (...snapshotArgs) => {
+        await commitSnapshot(...snapshotArgs);
+        const responseId = snapshotArgs[0];
+        // Named lanes retain their latest response locally. The default lane
+        // keeps its existing retention behavior. Older durable snapshots can
+        // still be hydrated through the ordinary store:true fallback.
+        // https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works
+        if (streamId === undefined) return;
+        const laneKey = JSON.stringify([store.apiKeyId, streamId]);
+        const previous = latestResponses.get(laneKey);
+        if (previous !== undefined && previous !== responseId) {
+          session.evictSnapshot(store.apiKeyId, previous);
+          responseLanes.delete(JSON.stringify([store.apiKeyId, previous]));
+        }
+        responseLanes.set(JSON.stringify([store.apiKeyId, responseId]), streamId);
+        latestResponses.set(laneKey, responseId);
+      };
+      return store;
+    },
+    evictSnapshot: (apiKeyId, responseId) => {
+      const key = JSON.stringify([apiKeyId, responseId]);
+      // A failed cross-lane fork must leave its source lane's parent usable.
+      // https://developers.openai.com/api/docs/guides/websocket-mode#how-continuation-works
+      if (responseLanes.get(key) !== streamId) return;
+      session.evictSnapshot(apiKeyId, responseId);
+    },
+  });
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
   //
@@ -167,7 +251,8 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
 
   const closeActiveRequest = (): void => {
     closed = true;
-    activeAbortController?.abort();
+    for (const controller of activeAbortControllers) controller.abort();
+    for (const waiting of waitingForSlot.splice(0)) waiting(false);
     sessionClosedResolve?.();
   };
 
@@ -175,23 +260,38 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
     onClose: closeActiveRequest,
     onError: closeActiveRequest,
     onMessage: (event, socket) => {
-      queue = queue
+      if (closed) return;
+      const prepared = prepareWebSocketMessage(event.data);
+      const { streamId, eventId } = prepared;
+      let laneId = streamId;
+      if (!lanes.has(laneId)) {
+        if (prepared.error !== undefined || prepared.message?.type !== 'response.create') laneId = undefined;
+        else if (lanes.size - 1 >= MAX_NAMED_STREAMS) {
+          prepared.error = new TranslatorInputError('The WebSocket connection has reached its named stream limit. Reuse a stream_id or open a new connection.', { param: 'stream_id', code: 'websocket_stream_limit_reached' });
+          laneId = undefined;
+        } else lanes.set(laneId, Promise.resolve());
+      }
+      const queue = lanes.get(laneId)!
         .then(async () => {
-          if (closed) return;
+          if (!(await acquireSlot())) return;
           const abortController = new AbortController();
-          activeAbortController = abortController;
+          activeAbortControllers.add(abortController);
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+            if (closed) return;
+            const turnContext = createOpenAIResponsesWsTurnContext(c);
+            await handleClientMessage(turnContext, socket, sessionForLane(streamId), prepared, authenticatedRawKey, abortController, () => closed, sessionScheduler);
           } finally {
-            if (activeAbortController === abortController) activeAbortController = undefined;
+            activeAbortControllers.delete(abortController);
+            releaseSlot();
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
         // an open socket, so we serialize the error inline as the spec's
         // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
-          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+          if (!closed) sendError(socket, 500, serverErrorEnvelope(error), eventId, undefined, streamId);
         });
+      lanes.set(laneId, queue);
       sessionScheduler(queue);
     },
   };
@@ -206,13 +306,14 @@ const handleClientMessage = async (
   c: AuthedContext,
   socket: OpenAIResponsesWebSocketSocket,
   session: ReturnType<typeof createOpenAIResponsesWsSession>,
-  data: unknown,
+  prepared: PreparedWebSocketMessage,
   authenticatedRawKey: string,
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
   const signal = downstreamAbortController.signal;
+  const { streamId } = prepared;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
   let previousResponseId: string | undefined;
@@ -238,7 +339,7 @@ const handleClientMessage = async (
     },
     fail: (status, error) => {
       turnFailure.evict();
-      sendError(socket, status, error, eventId, ctx?.dump);
+      sendError(socket, status, error, eventId, ctx?.dump, streamId);
     },
   };
 
@@ -247,7 +348,6 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       turnFailure.fail(401, {
         type: 'authentication_error',
@@ -256,16 +356,10 @@ const handleClientMessage = async (
       });
       return;
     }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
-    } catch (cause) {
-      throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
-    eventId = parsed && typeof parsed === 'object' && typeof (parsed as { event_id?: unknown }).event_id === 'string'
-      ? (parsed as { event_id: string }).event_id
-      : undefined;
-    const message = validateClientMessage(parsed);
+    eventId = prepared.eventId;
+    if (prepared.error !== undefined) throw prepared.error;
+    const { message, requestBody } = prepared;
+    if (message === undefined || requestBody === undefined) throw new Error('WebSocket message was not prepared.');
     if (message.type !== 'response.create') {
       turnFailure.fail(400, {
         type: 'invalid_request_error',
@@ -278,7 +372,11 @@ const handleClientMessage = async (
     const source = message.response && typeof message.response === 'object'
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
-    const payload = openaiResponsesPayloadFromClientSource(source);
+    const { generate, stream_id: _streamId, ...requestSource } = source;
+    if (generate !== undefined && typeof generate !== 'boolean') {
+      throw new TranslatorInputError('WebSocket generate must be a boolean.', { param: 'generate', code: 'invalid_value' });
+    }
+    const payload = openaiResponsesPayloadFromClientSource(requestSource);
     previousResponseId = payload.previous_response_id ?? undefined;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
@@ -294,7 +392,25 @@ const handleClientMessage = async (
 
     let result;
     try {
-      result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      if (generate === false) {
+        const warmed = await prewarmOpenAIResponses({ payload, ctx, headers: inboundHeaders(c) });
+        if (warmed.kind === 'prepared') {
+          if (signal.aborted || isClosed()) return;
+          for (const event of warmed.events) {
+            ctx.dump?.frame({ type: 'event', event });
+            if (!sendOpenAIResponsesEvent(socket, event, eventId, ctx.dump, streamId)) {
+              ctx.dump?.failed('WebSocket closed during prewarm');
+              ctx.dump?.finalize(499, []);
+              return;
+            }
+          }
+          ctx.dump?.finalize(200, []);
+          return;
+        }
+        result = warmed.result;
+      } else {
+        result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      }
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
@@ -314,7 +430,7 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
+    await respondOpenAIResponsesWebSocket({ socket, eventId, streamId, signal, isClosed, result, ctx, payload, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -364,6 +480,34 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
   return parsed as OpenAIResponsesWebSocketClientEvent;
 };
 
+const prepareWebSocketMessage = (data: unknown): PreparedWebSocketMessage => {
+  let eventId: string | undefined;
+  let streamId: string | undefined;
+  try {
+    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
+    } catch (cause) {
+      throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+    if (parsed && typeof parsed === 'object') {
+      const envelope = parsed as Record<string, unknown>;
+      if (typeof envelope.event_id === 'string') eventId = envelope.event_id;
+      const rawStreamId = envelope.stream_id;
+      if (rawStreamId !== undefined) {
+        if (typeof rawStreamId !== 'string' || !STREAM_ID.test(rawStreamId)) {
+          throw new TranslatorInputError('WebSocket stream_id must contain 1–256 letters, numbers, underscores, hyphens, or periods.', { param: 'stream_id', code: 'invalid_stream_id' });
+        }
+        streamId = rawStreamId;
+      }
+    }
+    return { requestBody, message: validateClientMessage(parsed), eventId, streamId };
+  } catch (error) {
+    return { error, eventId, streamId };
+  }
+};
+
 // The transport always streams, whatever the client sent.
 const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
   ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
@@ -371,6 +515,7 @@ const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAI
 const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
   readonly eventId: string | undefined;
+  readonly streamId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
@@ -378,7 +523,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
   readonly payload: CanonicalOpenAIResponsesPayload;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure } = input;
+  const { socket, eventId, streamId, signal, isClosed, result, ctx, payload, turnFailure } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
@@ -487,7 +632,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
           // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
           if (!streamed) continue;
-          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
+          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump, streamId)) {
             stopForDownstream();
             return;
           }
@@ -527,7 +672,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendOpenAIResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
+        if (!sendOpenAIResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump, streamId)) {
           stopForDownstream();
           return;
         }
@@ -547,7 +692,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (!sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
+    if (!sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump, streamId)) {
       completion = 'cancel';
       return;
     }
@@ -717,8 +862,9 @@ const sendError = (
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
+  streamId?: string,
 ): void => {
-  sendJson(socket, { type: 'error', status, error }, eventId, dump);
+  sendJson(socket, { type: 'error', status, error }, eventId, dump, streamId);
 };
 
 // A turn's own frames go out through this entry, which accepts only a stream
@@ -734,18 +880,20 @@ const sendOpenAIResponsesEvent = (
   event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
   dump?: DumpAccumulator | null,
-): boolean => sendJson(socket, event, eventId, dump);
+  streamId?: string,
+): boolean => sendJson(socket, event, eventId, dump, streamId);
 
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
   dump?: DumpAccumulator | null,
+  streamId?: string,
 ): boolean => {
   if (socket.readyState !== 1) return false;
-  const payload = eventId === undefined || !value || typeof value !== 'object'
+  const payload = !value || typeof value !== 'object'
     ? value
-    : { ...value, event_id: eventId };
+    : { ...value, ...(eventId !== undefined && { event_id: eventId }), ...(streamId !== undefined && { stream_id: streamId }) };
   let text: string;
   try {
     text = JSON.stringify(payload);

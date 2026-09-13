@@ -31,6 +31,15 @@ describe('playground wire requests', () => {
       ],
     },
     {
+      name: 'Responses Lite',
+      api: 'openaiResponsesLite' as const,
+      path: '/v1/responses',
+      custom: { seed: 9 },
+      events: [
+        { type: 'response.output_text.delta', sequence_number: 1, item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'ok' },
+      ],
+    },
+    {
       name: 'OpenAI Chat Completions',
       api: 'openaiChatCompletions' as const,
       path: '/v1/chat/completions',
@@ -77,6 +86,57 @@ describe('playground wire requests', () => {
     expect(calls[0]!.url).toBe(path);
     const body = JSON.parse(String(calls[0]!.init.body));
     expect(body).toMatchObject({ model: 'test-model', stream: true, ...generationOptions(api, undefined), ...custom });
+  });
+
+  it('builds the Responses Lite profile and transport header', async () => {
+    let captured: RequestInit | undefined;
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      captured = init;
+      return new Response(sseBody(['[DONE]']), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+    await collect(streamPlaygroundText({
+      api: 'openaiResponsesLite', apiKey: 'secret', model: 'test-model', system: 'Be concise.',
+      messages: [{ id: '1', role: 'user', text: 'hello' }],
+      options: { reasoning: { effort: 'high' } },
+      signal: new AbortController().signal,
+      fetchImpl: createWireFetch({
+        tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, async: true }],
+        tool_choice: { type: 'function', name: 'lookup' },
+      }, 'openaiResponsesLite'),
+    }));
+    expect(new Headers(captured?.headers).get('x-openai-internal-codex-responses-lite')).toBe('true');
+    const body = JSON.parse(String(captured?.body)) as Record<string, unknown>;
+    expect(body.instructions).toBeUndefined();
+    expect(body.parallel_tool_calls).toBe(false);
+    expect(body.reasoning).toEqual({ effort: 'high', context: 'all_turns' });
+    expect(body.tool_choice).toEqual({ type: 'function', name: 'lookup' });
+    expect(body.input).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
+        tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, async: true }],
+      }),
+      expect.objectContaining({ type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/) }),
+      expect.objectContaining({ type: 'message', role: 'user' }),
+    ]));
+  });
+
+  it('prepares Responses Lite image input with the protocol converter', async () => {
+    let captured: RequestInit | undefined;
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      captured = init;
+      return new Response(sseBody(['[DONE]']), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+    await collect(streamPlaygroundText({
+      api: 'openaiResponsesLite', apiKey: 'secret', model: 'test-model', system: '',
+      messages: [{ id: '1', role: 'user', text: 'describe', imageUrl: 'https://example.com/image.png' }], options: {},
+      signal: new AbortController().signal, fetchImpl: createWireFetch({}, 'openaiResponsesLite'),
+    }));
+    const body = JSON.parse(String(captured?.body)) as { input: Array<{ role?: string; content?: unknown }> };
+    const user = body.input.find(item => item.role === 'user');
+    expect(user?.content).toEqual([
+      { type: 'input_text', text: 'describe' },
+      { type: 'input_image', image_url: 'https://example.com/image.png' },
+    ]);
   });
 
   it('sends the API key the way each protocol authenticates', async () => {

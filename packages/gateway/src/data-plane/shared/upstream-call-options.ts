@@ -9,9 +9,14 @@ export const buildUpstreamCallOptions = (
   candidate: ModelCandidate,
   ctx: GatewayCtx,
   headers: Headers,
+  protocolHeaders?: HeadersInit,
 ): UpstreamCallOptions => ({
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
-  headers: filterInboundHeadersForProvider(headers, candidate.provider),
+  headers: (() => {
+    const filtered = filterInboundHeadersForProvider(headers, candidate.provider);
+    for (const [key, value] of new Headers(protocolHeaders)) filtered.set(key, value);
+    return filtered;
+  })(),
   wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
 });

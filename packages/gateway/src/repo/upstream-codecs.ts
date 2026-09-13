@@ -16,10 +16,13 @@ import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 // unusual-but-valid own keys such as `__proto__`.
 const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
 const endpointSchema = z.object({}).passthrough();
+const openAIResponsesEndpointSchema = z.object({
+  transport: z.enum(['standard', 'lite']).optional(),
+}).strict();
 const endpointsSchema = z.object({
   openaiCompletions: endpointSchema.optional(),
   openaiChatCompletions: endpointSchema.optional(),
-  openaiResponses: endpointSchema.optional(),
+  openaiResponses: openAIResponsesEndpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
   openaiEmbeddings: endpointSchema.optional(),
   openaiImagesGenerations: endpointSchema.optional(),

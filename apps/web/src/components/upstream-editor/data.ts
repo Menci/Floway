@@ -218,7 +218,9 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
       ? { ...structuredClone(record.config), apiKey: '' }
       : record.kind === 'ollama'
         ? { ...structuredClone(record.config), apiKey: '' }
-        : structuredClone(record.config);
+        : record.kind === 'codex'
+          ? { ...structuredClone(record.config), normalizeInstallationId: record.config.normalizeInstallationId ?? false }
+          : structuredClone(record.config);
   const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
   return {
     name: record.name,
@@ -313,6 +315,9 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     ...(manualModelsSupported(record) ? { config: configFromValues(record, values) } : {}),
+    ...(record.kind === 'codex' ? {
+      config: { normalizeInstallationId: (values.config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).normalizeInstallationId ?? false },
+    } : {}),
   } as UpdateUpstreamBody;
 };
 

@@ -7,13 +7,12 @@ import type { OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent } from '
 export const translateOpenAIResponsesViaOpenAIChatCompletions: TranslateTrip<
   OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
 > = async src => {
-  // customToolNames is produced inside the request translator (it sees the
-  // tools first) and read by the events translator so wrapped function calls
-  // can be projected back into `custom_tool_call` outputs.
-  const { target, customToolNames } = buildTargetRequest(src);
+  // Request-derived names let target events recover wrapped custom calls and
+  // namespace function identities throughout the streamed response.
+  const { target, customToolNames, namespaceToolNames } = buildTargetRequest(src);
 
   return {
     target,
-    events: frames => translateToSourceEvents(frames, customToolNames),
+    events: frames => translateToSourceEvents(frames, customToolNames, namespaceToolNames.targetToSource),
   };
 };

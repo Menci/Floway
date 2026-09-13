@@ -111,4 +111,21 @@ describe('provider inbound header policies', () => {
     });
     expect(source.get('x-client-request-id')).toBe('request-1');
   });
+
+  test('protocol-owned headers are applied after provider filtering', () => {
+    const source = new Headers({
+      'x-openai-internal-codex-responses-lite': 'false',
+      'x-client-request-id': 'request-1',
+    });
+    const options = buildUpstreamCallOptions(
+      stubModelCandidate({ provider: provider(['x-client-request-id']) }),
+      mockGatewayCtx(),
+      source,
+      { 'x-openai-internal-codex-responses-lite': 'true' },
+    );
+    expect(headerRecord(options.headers)).toEqual({
+      'x-client-request-id': 'request-1',
+      'x-openai-internal-codex-responses-lite': 'true',
+    });
+  });
 });

@@ -13,14 +13,14 @@ describe('fetchCodexCatalog', () => {
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [
-        { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
+        { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000, use_responses_lite: true },
         { slug: 'gpt-5.4-mini', display_name: 'GPT-5.4-Mini', visibility: 'list', context_window: 272000, max_context_window: 272000 },
         { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
       ],
     }));
     const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
     expect(catalog).toHaveLength(3);
-    expect(catalog[0]).toEqual({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 });
+    expect(catalog[0]).toEqual({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, use_responses_lite: true });
     expect(catalog[2]).toEqual({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 });
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = spy.mock.calls[0];
@@ -110,6 +110,44 @@ describe('fetchCodexCatalog', () => {
     }));
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/reasoning level entry malformed/);
   });
+
+  test('throws on malformed use_responses_lite', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, use_responses_lite: 'yes' }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/use_responses_lite malformed/);
+  });
+
+  test('uses Astra catalog metadata to advertise inference efforts instead of client-local Ultra', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{
+        slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', context_window: 272000,
+        supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort, description: '' })),
+        default_reasoning_level: 'ultra', multi_agent_reasoning_effort: 'xhigh', use_responses_lite: true,
+      }],
+    }));
+    const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(raw.multi_agent_reasoning_effort).toBe('xhigh');
+    const model = codexRawToProviderModel(raw, new Set());
+    expect(model.chat?.reasoning?.effort).toEqual({ supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'xhigh' });
+    expect(model.endpoints.openaiResponses?.transport).toBe('lite');
+    expect(raw.reasoning_efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+  });
+
+  test.each([42, '', false])('rejects malformed multi_agent_reasoning_effort %j', async value => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-test', display_name: 'Test', context_window: 272000, multi_agent_reasoning_effort: value }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/multi_agent_reasoning_effort malformed/);
+  });
+
+  test('accepts absent multi-agent effort metadata serialized as null', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-old', display_name: 'Old', context_window: 272000, multi_agent_reasoning_effort: null }],
+    }));
+    const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(raw.multi_agent_reasoning_effort).toBeUndefined();
+  });
 });
 
 describe('codexRawToProviderModel', () => {
@@ -117,6 +155,20 @@ describe('codexRawToProviderModel', () => {
   // these unit tests exercise the rest of the shape with the empty set, and
   // a dedicated test asserts the threading.
   const noFlags: ReadonlySet<FlagId> = new Set();
+
+  test.each([
+    { name: 'Max fallback', levels: ['low', 'max', 'ultra'], selected: 'ultra', configured: 'unavailable', supported: ['low', 'max'], expected: 'max' },
+    { name: 'last supported fallback', levels: ['low', 'high', 'ultra'], selected: 'ultra', configured: 'ultra', supported: ['low', 'high'], expected: 'high' },
+    { name: 'empty inference fallback', levels: ['ultra'], selected: 'ultra', configured: undefined, supported: ['medium'], expected: 'medium' },
+    { name: 'custom effort', levels: ['low', 'future_effort', 'ultra'], selected: 'ultra', configured: 'future_effort', supported: ['low', 'future_effort'], expected: 'future_effort' },
+    { name: 'persistent alias', levels: ['low', 'persistent', 'disabled', 'future_effort'], selected: 'persistent', configured: undefined, supported: ['low', 'disabled', 'future_effort'], expected: 'disabled' },
+  ])('projects Codex $name from metadata without inspecting the model name', ({ levels, selected, configured, supported, expected }) => {
+    const model = codexRawToProviderModel({
+      id: 'arbitrary-model', display_name: 'Test', context_window: 272000,
+      reasoning_efforts: levels, default_reasoning_effort: selected, multi_agent_reasoning_effort: configured,
+    }, noFlags);
+    expect(model.chat?.reasoning?.effort).toEqual({ supported, default: expected });
+  });
 
   test('shapes raw → ProviderModel with responses-only endpoint and per-request context window', () => {
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
@@ -126,6 +178,11 @@ describe('codexRawToProviderModel', () => {
     expect(m.kind).toBe('chat');
     expect(m.limits.max_context_window_tokens).toBe(272000);
     expect(m.owned_by).toBe('openai');
+  });
+
+  test('projects upstream Responses Lite capability into endpoint transport', () => {
+    const m = codexRawToProviderModel({ id: 'gpt-5.6', display_name: 'GPT-5.6', context_window: 272000, use_responses_lite: true }, noFlags);
+    expect(m.endpoints).toEqual({ openaiResponses: { transport: 'lite' } });
   });
 
   test('attaches OpenAI-API-rate pricing for known slugs and treats codex-auto-review as gpt-5.4', () => {

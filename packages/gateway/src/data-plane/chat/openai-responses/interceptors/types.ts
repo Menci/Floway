@@ -24,6 +24,7 @@ export type OpenAIResponsesAttemptResult<Result = OpenAIResponsesResult> =
     readonly modelIdentity: TelemetryModelIdentity;
     readonly usage: TokenUsage | null;
     readonly performance: EventResultMetadata['performance'];
+    readonly headers?: Headers;
   };
 
 export type OpenAIResponsesInterceptor = Interceptor<

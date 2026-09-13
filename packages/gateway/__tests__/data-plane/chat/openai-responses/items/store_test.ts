@@ -25,6 +25,16 @@ const installRepo = (): InMemoryRepo => {
 };
 
 describe('OpenAIResponsesStatefulStore', () => {
+  test('an empty snapshot remains chainable with a finite retention timestamp', async () => {
+    installRepo();
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY);
+    const writer = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
+    await writer.commitSnapshot('resp_empty', 'append', []);
+    const reader = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
+    expect(await reader.loadSnapshot('resp_empty')).toMatchObject({ itemIds: [], refreshedAt: quantizeOpenAIResponsesRefreshedAt(TEST_DAY) });
+  });
+
   test('HTTP store=false performs no state writes', async () => {
     const repo = installRepo();
     const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
@@ -325,6 +335,67 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.openaiResponsesItems.lookupMany('key-a', snapshot.itemIds, 0)).toHaveLength(snapshot.itemIds.length);
+  });
+
+  test.each([false, true])('WebSocket concurrent reads cannot restore an evicted local snapshot with input=%s', async withInput => {
+    installRepo();
+    const session = createOpenAIResponsesWsSession();
+    const policy = { id: 'key-a', openaiResponsesRetentionSeconds: 0 };
+    const parent = session.createStore(policy, Date.now(), false);
+    if (withInput) await parent.stageInputItems([{ type: 'message', role: 'user', content: 'Shared parent.' }]);
+    await parent.commitSnapshot('resp_parent', 'append', []);
+
+    const forks = [session.createStore(policy, Date.now(), false), session.createStore(policy, Date.now(), false)];
+    // Each lookup has captured the parent before its first await. Eviction
+    // happens before either reader can refresh it back into the local cache.
+    const pending = forks.map(fork => fork.loadSnapshot('resp_parent'));
+    session.evictSnapshot(policy.id, 'resp_parent');
+    for (const snapshot of await Promise.all(pending)) expect(snapshot?.id).toBe('resp_parent');
+    expect(await session.createStore(policy, Date.now(), false).loadSnapshot('resp_parent')).toBeNull();
+
+    // Already admitted forks still own their loaded history and can finish.
+    await forks[0].commitSnapshot('resp_fork', 'append', []);
+    expect((await session.createStore(policy, Date.now(), false).loadSnapshot('resp_fork'))?.itemIds)
+      .toHaveLength(withInput ? 1 : 0);
+  });
+
+  test('WebSocket eviction invalidates an in-flight first hydration without blocking later durable fallback', async () => {
+    const repo = installRepo();
+    const policy = testOpenAIResponsesStatePolicy();
+    const parent = createOpenAIResponsesHttpStore(policy, Date.now(), true);
+    await parent.stageInputItems([{ type: 'message', role: 'user', content: 'Persisted parent.' }]);
+    await parent.commitSnapshot('resp_parent', 'append', []);
+
+    let start!: () => void;
+    const started = new Promise<void>(resolve => { start = resolve; });
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    const lookup = repo.openaiResponsesSnapshots.lookup.bind(repo.openaiResponsesSnapshots);
+    const lookupSpy = vi.spyOn(repo.openaiResponsesSnapshots, 'lookup').mockImplementationOnce(async (...args) => {
+      const snapshot = await lookup(...args);
+      start();
+      await released;
+      return snapshot;
+    });
+    const session = createOpenAIResponsesWsSession();
+    const localPolicy = { ...policy, openaiResponsesRetentionSeconds: 0 };
+    try {
+      const pending = session.createStore(policy, Date.now(), true).loadSnapshot('resp_parent');
+      await started;
+      session.evictSnapshot(policy.id, 'resp_parent');
+      release();
+      expect((await pending)?.id).toBe('resp_parent');
+      expect(await session.createStore(localPolicy, Date.now(), false).loadSnapshot('resp_parent')).toBeNull();
+      expect(await lookup(policy.id, 'resp_parent', 0)).not.toBeNull();
+
+      // A fresh store:true lookup may hydrate persisted state after eviction;
+      // only the read that crossed the eviction loses its cache-write permit.
+      expect(await session.createStore(policy, Date.now(), true).loadSnapshot('resp_parent')).not.toBeNull();
+      expect(await session.createStore(localPolicy, Date.now(), false).loadSnapshot('resp_parent')).not.toBeNull();
+    } finally {
+      release();
+      lookupSpy.mockRestore();
+    }
   });
 
   test('per-attempt private payloads reset on each beginAttempt', () => {

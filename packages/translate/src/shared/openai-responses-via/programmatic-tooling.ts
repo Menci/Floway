@@ -9,6 +9,19 @@ export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponse
   if (payload.tools?.some(hasDeferredTool) === true) {
     throw new TranslatorInputError(`Deferred OpenAI Responses tooling cannot be translated to ${target}.`);
   }
+  // Async tools may finish after later model output. Synchronous target tool
+  // turns cannot preserve that ordering by dropping the flag.
+  // https://developers.openai.com/api/docs/guides/async-tool-calling
+  if (payload.tools?.some(hasAsynchronousTool) === true) {
+    throw new TranslatorInputError(`Asynchronous OpenAI Responses tooling cannot be translated to ${target}.`);
+  }
+};
+
+const hasAsynchronousTool = (tool: unknown): boolean => {
+  if (typeof tool !== 'object' || tool === null) return false;
+  const record = tool as Record<string, unknown>;
+  if (record.async === true) return true;
+  return Array.isArray(record.tools) && record.tools.some(hasAsynchronousTool);
 };
 
 const hasProgrammaticCaller = (tool: unknown): boolean => {
@@ -35,5 +48,8 @@ const isProgramCaller = (item: OpenAIResponsesInputItem): item is OpenAIResponse
 export const rejectProgramCaller = (item: OpenAIResponsesInputItem): void => {
   if (isProgramCaller(item)) {
     throw new TranslatorInputError(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
+  }
+  if ('async' in item && item.async === true) {
+    throw new TranslatorInputError(`Cannot translate asynchronous ${item.type} history.`);
   }
 };

@@ -81,18 +81,40 @@ const projectFunctionCallOutput = (item: OpenAIResponsesFunctionCallOutputItem):
   };
 };
 
-const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | undefined, customToolNames: Set<string>): OpenAIChatCompletionsTool[] | undefined => {
+const namespaceTargetName = (namespace: string, name: string, reserved: Set<string>): string => {
+  // Chat function names admit only letters, digits, underscores and dashes,
+  // with a maximum of 64 characters. Reserve ordinary tool names first and
+  // keep the suffix inside that limit when namespace names collide.
+  // https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools
+  const preferred = `${namespace}_${name}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  let candidate = preferred;
+  for (let suffix = 2; reserved.has(candidate); suffix++) {
+    const ending = `_${suffix}`;
+    candidate = `${preferred.slice(0, 64 - ending.length)}${ending}`;
+  }
+  reserved.add(candidate);
+  return candidate;
+};
+
+const translateOpenAIResponsesTools = (
+  tools: OpenAIResponsesTool[] | null | undefined,
+  customToolNames: Set<string>,
+  namespaceToolNames: TargetRequestResult['namespaceToolNames'],
+): OpenAIChatCompletionsTool[] | undefined => {
   // Translated OpenAI Chat Completions targets do not currently have a faithful
   // bridge for hosted/deferred OpenAI Responses tools (`web_search`,
-  // `tool_search`, `namespace`, `image_generation`, and future builtin
+  // `tool_search`, `image_generation`, and future builtin
   // names). Native OpenAI Responses targets receive those entries unchanged; this
-  // translator narrows to function and Freeform `custom` tools, recording
+  // translator narrows to functions (including namespace functions) and
+  // Freeform `custom` tools, recording
   // the latter in `customToolNames` so the events translator can recover
   // the freeform shape on the way back. The shim's web_search
   // function tool is in `payload.tools` under its resolved name (the shim
   // injects it on every request that uses hosted web_search) and reaches
   // here as an ordinary function tool — no special carve-out needed.
   const out: OpenAIChatCompletionsTool[] = [];
+  const reservedNames = new Set((tools ?? []).flatMap(tool =>
+    (tool.type === 'function' || tool.type === 'custom') && typeof tool.name === 'string' ? [tool.name] : []));
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
@@ -120,19 +142,63 @@ const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | und
           ...(tool.description ? { description: tool.description } : {}),
         },
       });
+      continue;
+    }
+    if (tool.type !== 'namespace') continue;
+    if (typeof tool.name !== 'string' || !Array.isArray(tool.tools)) {
+      throw new TranslatorInputError('Cannot translate a namespace tool without a string name and tools array to OpenAI Chat Completions.');
+    }
+    for (const child of tool.tools) {
+      if (child === null || typeof child !== 'object' || (child.type !== 'function' && child.type !== 'custom')) {
+        throw new TranslatorInputError(`Cannot translate unsupported child in namespace '${tool.name}' to OpenAI Chat Completions.`);
+      }
+      if (child.type === 'custom') {
+        if (typeof child.name !== 'string') throw new TranslatorInputError(`Cannot translate malformed custom child in namespace '${tool.name}' to OpenAI Chat Completions.`);
+        const targetName = namespaceTargetName(tool.name, child.name, reservedNames);
+        namespaceToolNames.sourceToTarget.set(`${tool.name}.${child.name}`, targetName);
+        namespaceToolNames.targetToSource.set(targetName, { namespace: tool.name, name: child.name });
+        customToolNames.add(targetName);
+        out.push({
+          type: 'function', function: {
+            name: targetName, parameters: buildCustomToolInputSchema(child.format), strict: false,
+            ...(child.description ? { description: child.description } : {}),
+          },
+        });
+        continue;
+      }
+      const fn = child as { name?: unknown; description?: unknown; parameters?: unknown; strict?: unknown };
+      if (typeof fn.name !== 'string'
+        || (fn.parameters != null && (typeof fn.parameters !== 'object' || Array.isArray(fn.parameters)))) {
+        throw new TranslatorInputError(`Cannot translate malformed function child in namespace '${tool.name}' to OpenAI Chat Completions.`);
+      }
+      const targetName = namespaceTargetName(tool.name, fn.name, reservedNames);
+      namespaceToolNames.sourceToTarget.set(`${tool.name}.${fn.name}`, targetName);
+      namespaceToolNames.targetToSource.set(targetName, { namespace: tool.name, name: fn.name });
+      out.push({
+        type: 'function',
+        function: {
+          name: targetName,
+          ...(fn.parameters == null ? {} : { parameters: fn.parameters as Record<string, unknown> }),
+          ...(typeof fn.description === 'string' ? { description: fn.description } : {}),
+          ...(typeof fn.strict === 'boolean' ? { strict: fn.strict } : {}),
+        },
+      });
     }
   }
 
   return out.length > 0 ? out : undefined;
 };
 
-const translateOpenAIResponsesToolChoice = (choice?: OpenAIResponsesToolChoice | null): OpenAIChatCompletionsPayload['tool_choice'] => {
+const translateOpenAIResponsesToolChoice = (
+  choice: OpenAIResponsesToolChoice | null | undefined,
+  namespaceSourceToTarget: ReadonlyMap<string, string>,
+): OpenAIChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
   // choices since they share the function-tool wire shape after translation.
   if (choice.type !== 'function' && choice.type !== 'custom') return undefined;
-  return { type: 'function', function: { name: choice.name } };
+  return { type: 'function', function: { name: namespaceSourceToTarget.get(choice.name) ?? choice.name } };
 };
 
 const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['text']): OpenAIChatCompletionsPayload['response_format'] | undefined => {
@@ -169,12 +235,18 @@ export interface TargetRequestResult {
    * `custom_tool_call` outputs.
    */
   customToolNames: Set<string>;
+  namespaceToolNames: {
+    sourceToTarget: Map<string, string>;
+    targetToSource: Map<string, { namespace: string; name: string }>;
+  };
 }
 
 export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): TargetRequestResult => {
   const payload = canonicalizeOpenAIResponsesPayload(source);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
+  const namespaceToolNames: TargetRequestResult['namespaceToolNames'] = { sourceToTarget: new Map(), targetToSource: new Map() };
+  const tools = translateOpenAIResponsesTools(payload.tools, customToolNames, namespaceToolNames);
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
   const messages: OpenAIChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
   const pendingToolOutputImages: OpenAIChatCompletionsContentPart[] = [];
@@ -214,11 +286,15 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     }
 
     if (item.type === 'function_call') {
-      assistant = appendAssistantToolCall(assistant, item);
+      const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
+      assistant = appendAssistantToolCall(assistant, { ...item, name: namespaceToolNames.sourceToTarget.get(sourceName) ?? item.name });
       continue;
     }
 
     if (item.type === 'function_call_output') {
+      if (typeof item.call_id !== 'string' || item.call_id.length === 0) {
+        throw new TranslatorInputError('Cannot translate function_call_output without call_id to OpenAI Chat Completions.');
+      }
       flushAssistant();
       const projected = projectFunctionCallOutput(item);
       messages.push({
@@ -235,7 +311,7 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
       // so the translated target sees a coherent tool-call history.
       assistant = appendAssistantToolCall(assistant, {
         call_id: item.call_id,
-        name: item.name,
+        name: namespaceToolNames.sourceToTarget.get(item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`) ?? item.name,
         arguments: JSON.stringify({ input: item.input }),
       });
       continue;
@@ -291,7 +367,6 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
   flushAssistant();
   flushToolOutputImages();
 
-  const tools = translateOpenAIResponsesTools(payload.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // OpenAI-Responses-only state such as `previous_response_id` remains native-only.
   const target: OpenAIChatCompletionsPayload = {
@@ -313,8 +388,8 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     // OpenAI Chat Completions has no request-level counterpart for OpenAI Responses
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
-    tool_choice: translateOpenAIResponsesToolChoice(payload.tool_choice),
+    tool_choice: translateOpenAIResponsesToolChoice(payload.tool_choice, namespaceToolNames.sourceToTarget),
   };
 
-  return { target, customToolNames };
+  return { target, customToolNames, namespaceToolNames };
 };

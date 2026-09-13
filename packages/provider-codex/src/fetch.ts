@@ -21,11 +21,11 @@ import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_LITE_HEADER, parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
-  | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
+  | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string; headers?: Headers }
   | { ok: false; response: Response; modelKey: string };
 
 // Hooks for repo-side state transitions. Refresh-token rotations and
@@ -43,6 +43,7 @@ export interface CodexCallEffects {
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
+  normalizeInstallationId?: boolean;
   model: ProviderModel;
   headers: Headers;
   signal?: AbortSignal;
@@ -247,6 +248,7 @@ const buildCodexRequestIdentity = (
   // a caller can split its identity across surfaces and we still emit
   // consistent values everywhere, and a long-lived socket's frozen handshake
   // headers never outrank the current turn's body.
+  // The operator's installation normalization overrides only the device id.
   const sessionId = stringField(clientMetadata, 'session_id')
     ?? stringField(clientTurnMetadata, 'session_id')
     ?? trimHeader(opts.headers, 'session-id')
@@ -263,9 +265,11 @@ const buildCodexRequestIdentity = (
   // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/codex-api/src/endpoint/responses.rs#L87-L91
   // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/client.rs#L1134-L1136
   const clientRequestId = trimHeader(opts.headers, 'x-client-request-id') ?? threadId;
-  const installationId = stringField(clientMetadata, 'x-codex-installation-id')
-    ?? stringField(clientTurnMetadata, 'installation_id')
-    ?? opts.account.openaiDeviceId;
+  const installationId = opts.normalizeInstallationId === true
+    ? opts.account.openaiDeviceId
+    : stringField(clientMetadata, 'x-codex-installation-id')
+      ?? stringField(clientTurnMetadata, 'installation_id')
+      ?? opts.account.openaiDeviceId;
   // Codex advances the window on every auto-compaction — the id is
   // `{thread_id}:{auto_compact_window_number}` — and a reused socket carries
   // the advanced value in the frame body alone:
@@ -389,7 +393,37 @@ const buildCodexOpenAIResponsesBody = (
     },
   };
   if (body.prompt_cache_key === undefined) body.prompt_cache_key = identity.threadId;
+  // Codex always asks the Responses backend to return its opaque reasoning
+  // state so the next turn can replay it. Preserve an explicit caller list,
+  // but provide the native default for gateway-generated Lite requests.
+  // https://github.com/openai/codex/blob/84c989acf9af93f35c2f3c36b297cd4dc0f830b3/codex-rs/core/src/client.rs#L879-L909
+  if (opts.headers.get(OPENAI_RESPONSES_LITE_HEADER) === 'true' && body.include === undefined) {
+    body.include = ['reasoning.encrypted_content'];
+  }
   return body;
+};
+
+// Optional account installation policy applies at the shared outbound boundary,
+// including compact/search bodies that otherwise pass through unchanged. Codex
+// keeps this identifier in both metadata projections:
+// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L184-L189
+const normalizeTurnInstallation = (raw: string | null, installationId: string): string | null => {
+  const metadata = parseClientTurnMetadataJson(raw);
+  return metadata === null ? raw : JSON.stringify({ ...metadata, installation_id: installationId });
+};
+
+const normalizeBodyInstallation = (body: Record<string, unknown>, installationId: string): Record<string, unknown> => {
+  if (!isPlainObject(body.client_metadata)) return body;
+  const metadata = body.client_metadata;
+  const raw = metadata['x-codex-turn-metadata'];
+  return {
+    ...body,
+    client_metadata: {
+      ...metadata,
+      'x-codex-installation-id': installationId,
+      ...(typeof raw === 'string' ? { 'x-codex-turn-metadata': normalizeTurnInstallation(raw, installationId) } : {}),
+    },
+  };
 };
 
 // One upstream round-trip with quota-header persistence and terminal-401
@@ -409,6 +443,10 @@ const dispatchCodexHttpCall = async (
   identity: CodexRequestIdentity,
   turnMetadataJson: string | null,
 ): Promise<Response> => {
+  if (opts.normalizeInstallationId === true) {
+    body = normalizeBodyInstallation(body, opts.account.openaiDeviceId);
+    turnMetadataJson = normalizeTurnInstallation(turnMetadataJson, opts.account.openaiDeviceId);
+  }
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
@@ -421,6 +459,9 @@ const dispatchCodexHttpCall = async (
   headers.set('x-client-request-id', identity.clientRequestId);
   headers.set('x-codex-window-id', identity.windowId);
   if (turnMetadataJson !== null) headers.set('x-codex-turn-metadata', turnMetadataJson);
+  if (opts.headers.get(OPENAI_RESPONSES_LITE_HEADER) === 'true') {
+    headers.set(OPENAI_RESPONSES_LITE_HEADER, 'true');
+  }
 
   const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
@@ -603,7 +644,7 @@ const performUnaryCompactCall = async (
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
   const result = await response.json() as OpenAIResponsesCompactionResult;
-  return { ok: true, modelKey: opts.model.id, result };
+  return { ok: true, modelKey: opts.model.id, result, headers: response.headers };
 };
 
 const performAlphaSearchCall = async (
@@ -692,9 +733,11 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
 // (observed in production: only x-codex-* + standard CDN headers come back).
 // The shared `streamingProviderCall` rejects 2xx responses lacking the SSE
 // content-type as a contract violation, so we synthesize the header on the
-// way through. Body stream is preserved verbatim.
+// successful path. Errors retain their original media type for downstream
+// error decoding. Body streams are preserved verbatim.
+// https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/codex-api/src/endpoint/responses.rs
 const ensureSseContentType = (response: Response): Response => {
-  if (isEventStreamMediaType(response.headers.get('content-type'))) return response;
+  if (!response.ok || isEventStreamMediaType(response.headers.get('content-type'))) return response;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
