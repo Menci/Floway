@@ -62,6 +62,79 @@ export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: Op
   };
 };
 
+const anthropicMessagesUsageWithTier = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  usage: OpenAIChatCompletionsStreamEvent['usage'],
+): AnthropicMessagesResult['usage'] => {
+  const mapped = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(usage);
+  if (state.upstreamServiceTier === 'fast') mapped.speed = 'fast';
+  else if (state.upstreamServiceTier !== undefined) mapped.service_tier = state.upstreamServiceTier;
+  return mapped;
+};
+
+const ensureMessageStart = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  events: AnthropicMessagesStreamEvent[],
+): void => {
+  if (state.messageStartSent || state.upstreamId === undefined || state.upstreamModel === undefined) return;
+
+  events.push({
+    type: 'message_start',
+    message: {
+      id: toAnthropicMessagesId(state.upstreamId),
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: state.upstreamModel,
+      stop_reason: null,
+      stop_sequence: null,
+      usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+    },
+  });
+  state.messageStartSent = true;
+  // `message_start` already states the opening counter; only surface later
+  // `message_delta` updates that actually advance it.
+  state.lastReportedUsageOutputTokens = state.pendingUsage?.completion_tokens ?? 0;
+};
+
+// `continuous_usage_stats` upstreams repeat cumulative counters on every chunk.
+// Anthropic permits multiple `message_delta` events, each repeating the
+// cumulative whole-message counters, so a rising completion count is surfaced
+// immediately instead of only on the final stop event.
+const emitUsageProgress = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  events: AnthropicMessagesStreamEvent[],
+): void => {
+  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage === undefined) return;
+
+  const outputTokens = state.pendingUsage.completion_tokens;
+  const advanced = state.lastReportedUsageOutputTokens === undefined || outputTokens > state.lastReportedUsageOutputTokens;
+  if (advanced === false) return;
+
+  state.lastReportedUsageOutputTokens = outputTokens;
+  events.push({
+    type: 'message_delta',
+    delta: { stop_reason: null, stop_sequence: null },
+    usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+  });
+};
+
+// A chunk that carries user-visible output (or the terminal stop) must not be
+// held back waiting for usage that a non-`continuous_usage_stats` upstream will
+// only send at the very end. In that case we open `message_start` immediately
+// with the historical 0-valued counters so streaming latency is unchanged.
+const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => {
+  const choice = chunk.choices[0];
+  if (choice === undefined) return false;
+  if (choice.finish_reason !== null && choice.finish_reason !== undefined) return true;
+  const delta = choice.delta;
+  return Boolean(delta.content)
+    || delta.reasoning_text != null
+    || delta.reasoning_opaque != null
+    || delta.refusal != null
+    || (delta.tool_calls?.length ?? 0) > 0;
+};
+
 const UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.';
 
 const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<OpenAIChatCompletionsStreamEvent> {
@@ -112,6 +185,13 @@ interface OpenAIChatCompletionsToAnthropicMessagesStreamState {
   refusalText: string;
   sawRefusal: boolean;
   pendingUsage?: OpenAIChatCompletionsStreamEvent['usage'];
+  // Captured from the first chunk so `message_start` can be deferred until a
+  // usage-bearing chunk supplies the real input-token count.
+  upstreamId?: string;
+  upstreamModel?: string;
+  // Latest cumulative completion_tokens already stated to the client, used to
+  // suppress duplicate `message_delta` usage updates.
+  lastReportedUsageOutputTokens?: number;
   // Captured from any chunk's service_tier for speed pass-through.
   upstreamServiceTier?: string;
   finalMessageSent?: boolean;
@@ -327,12 +407,13 @@ const handleFinishReason = (
 };
 
 const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
-  if (!state.pendingFinishReason || state.finalMessageSent) return;
+  if (state.pendingFinishReason === undefined || state.finalMessageSent === true) return;
 
-  const usage = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(state.pendingUsage);
+  // Defensive: a stream that never produced a startable chunk still needs the
+  // message envelope before the terminal events.
+  if (state.messageStartSent === false) ensureMessageStart(state, events);
 
-  if (state.upstreamServiceTier === 'fast') usage.speed = 'fast';
-  else if (state.upstreamServiceTier !== undefined) usage.service_tier = state.upstreamServiceTier;
+  const usage = anthropicMessagesUsageWithTier(state, state.pendingUsage);
 
   const refused = state.sawRefusal || state.pendingFinishReason === 'content_filter';
 
@@ -358,6 +439,7 @@ const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessages
   );
 
   state.finalMessageSent = true;
+  state.lastReportedUsageOutputTokens = usage.output_tokens;
   state.pendingFinishReason = undefined;
 };
 
@@ -373,12 +455,22 @@ export const createOpenAIChatCompletionsToAnthropicMessagesStreamState = (): Ope
 export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chunk: OpenAIChatCompletionsStreamEvent, state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
   const events: AnthropicMessagesStreamEvent[] = [];
 
+  state.upstreamId ??= chunk.id;
+  state.upstreamModel ??= chunk.model;
   if (chunk.service_tier != null) state.upstreamServiceTier = chunk.service_tier;
+  if (chunk.usage) state.pendingUsage = chunk.usage;
+
+  // A usage-bearing chunk is the earliest point at which the real input-token
+  // count is known. Open `message_start` here, before any content, so the
+  // Anthropic client sees real `input_tokens` instead of the historical 0.
+  if (state.pendingUsage !== undefined && state.messageStartSent === false) {
+    ensureMessageStart(state, events);
+  }
 
   if (chunk.choices.length === 0) {
     if (chunk.usage) {
-      state.pendingUsage = chunk.usage;
       emitFinalMessageIfReady(state, events);
+      emitUsageProgress(state, events);
     }
 
     return events;
@@ -389,21 +481,12 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
   // can be represented; choices[1+] are dropped.
   const choice = chunk.choices[0];
 
-  if (!state.messageStartSent) {
-    events.push({
-      type: 'message_start',
-      message: {
-        id: toAnthropicMessagesId(chunk.id),
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: chunk.model,
-        stop_reason: null,
-        stop_sequence: null,
-        usage: mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(chunk.usage),
-      },
-    });
-    state.messageStartSent = true;
+  // Fallback for upstreams that ignored `continuous_usage_stats`: they stream
+  // content before any usage is available, so waiting for usage would buffer
+  // the whole answer. Open the message with the zero-valued placeholder and
+  // keep streaming immediately.
+  if (state.messageStartSent === false && chunkOpensMessage(chunk)) {
+    ensureMessageStart(state, events);
   }
 
   handleReasoningDelta(choice.delta, state, events);
@@ -434,6 +517,8 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
 
   if (choice.finish_reason) {
     handleFinishReason(choice.finish_reason, chunk, state, events);
+  } else if (chunk.usage) {
+    emitUsageProgress(state, events);
   }
 
   return events;

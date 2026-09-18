@@ -26,8 +26,15 @@ export interface OpenAIChatCompletionsPayload {
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   tools?: OpenAIChatCompletionsTool[] | null;
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
-  /** Request usage stats in streaming responses */
-  stream_options?: { include_usage: boolean } | null;
+  /**
+   * Request usage stats in streaming responses. `include_usage` is the
+   * OpenAI-standard flag emitting one final usage chunk; `continuous_usage_stats`
+   * is the vLLM/SGLang extension that additionally stamps cumulative usage on
+   * every streaming chunk so a caller can read the real prompt-token count
+   * before generation starts. Ref:
+   * https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
+   */
+  stream_options?: { include_usage: boolean; continuous_usage_stats?: boolean } | null;
 }
 
 export interface OpenAIChatCompletionsTool {
