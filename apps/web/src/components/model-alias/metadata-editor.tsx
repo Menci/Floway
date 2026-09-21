@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
@@ -8,7 +8,7 @@ import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import type { AnnouncedMetadata, ModelKind } from '@floway-dev/protocols/common';
 
-const { Field, Option } = fluentComponents;
+const { Field, Option, Text } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
 const commaSeparatedValues = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
@@ -24,6 +24,7 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
   value: AnnouncedMetadata;
 }) {
   const { t } = useTranslation();
+  const imageInputLabelId = useId();
   const patchLimit = (key: 'max_context_window_tokens' | 'max_prompt_tokens' | 'max_output_tokens', raw: string) => {
     const limits = { ...(value.limits ?? {}), [key]: numberValue(raw) };
     if (limits[key] === undefined) delete limits[key];
@@ -56,29 +57,33 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
         </div>
       </section>
       {kind === 'chat' && <>
-        <section className={SECTION_STACK_CLASS}>
-          <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.modalities')} />
-          <Switch
-            checked={imageInput}
-            disabled={disabled}
-            readOnly={readOnly}
-            label={t('dashboard.modelAliases.metadata.imageInput')}
-            // Dropping image input drops the detail claim with it: a model with
-            // no image modality cannot be accepting detail 'original', so leaving
-            // the flag behind would announce a capability the modality list
-            // already denies.
-            onChange={(_, data) => patchChat({
-              modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
-              image_detail_original: data.checked ? value.chat?.image_detail_original : undefined,
-            })}
-          />
-          {imageInput && <Switch
-            checked={value.chat?.image_detail_original === true}
-            disabled={disabled}
-            readOnly={readOnly}
-            label={t('dashboard.modelAliases.metadata.imageDetailOriginal')}
-            onChange={(_, data) => patchChat({ image_detail_original: data.checked })}
-          />}
+        {/* Image input leads the group that depends on it, which is the shape
+            the upstream editor's capabilities pane gives the same two fields. */}
+        <section aria-labelledby={imageInputLabelId} className={SECTION_STACK_CLASS} role="group">
+          <Text id={imageInputLabelId} weight="semibold">{t('dashboard.modelAliases.metadata.imageInput')}</Text>
+          <div className="flex flex-wrap gap-4">
+            <Switch
+              checked={imageInput}
+              disabled={disabled}
+              readOnly={readOnly}
+              label={t('dashboard.modelAliases.metadata.imageInput')}
+              // Dropping image input drops the detail claim with it: a model with
+              // no image modality cannot be accepting detail 'original', so leaving
+              // the flag behind would announce a capability the modality list
+              // already denies.
+              onChange={(_, data) => patchChat({
+                modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
+                image_detail_original: data.checked ? value.chat?.image_detail_original : undefined,
+              })}
+            />
+            {imageInput && <Switch
+              checked={value.chat?.image_detail_original === true}
+              disabled={disabled}
+              readOnly={readOnly}
+              label={t('dashboard.modelAliases.metadata.imageDetailOriginal')}
+              onChange={(_, data) => patchChat({ image_detail_original: data.checked })}
+            />}
+          </div>
         </section>
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />

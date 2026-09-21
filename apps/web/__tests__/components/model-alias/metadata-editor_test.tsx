@@ -47,6 +47,23 @@ describe('model alias metadata editor', () => {
     expect(input.value).toBe('low, custom');
   });
 
+  it('holds both image switches in one row of the group that names them', () => {
+    // The detail claim only means anything under image input, and the group
+    // shows that: one heading over one row carrying both switches, the shape
+    // the upstream editor's capabilities pane already gives these fields. A
+    // second full-width row would read as a setting of its own.
+    renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
+    const group = screen.getByRole('group', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') });
+
+    // A switch is `input.fui-Switch > div.fui-Switch`, so the row is the second
+    // ancestor up.
+    expect(group.querySelector('h4')).toBeNull();
+    // `Switch` alone supplies the switch's accessible name, so the group heading
+    // is free to name the group without the kind being announced twice.
+    expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
+      .toBe(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal') }).parentElement?.parentElement);
+  });
+
   it('hides the detail switch until image input is on', () => {
     renderInApp(<DetailHarness initial={{}} />);
     const detailLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
