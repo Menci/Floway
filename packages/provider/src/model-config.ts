@@ -241,8 +241,16 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
       output: modalityArrayField(value.modalities.output, `${label}.modalities.output`),
     };
   }
+  if (value.image_detail_original !== undefined) {
+    if (typeof value.image_detail_original !== 'boolean') {
+      throw new Error(`Malformed ${label}.image_detail_original: must be a boolean`);
+    }
+    // Unlike reasoning.adaptive / reasoning.mandatory, false is a fact about the
+    // upstream rather than the absence of one, so it round-trips as false.
+    out.image_detail_original = value.image_detail_original;
+  }
   if (value.reasoning !== undefined) out.reasoning = reasoningField(value.reasoning, `${label}.reasoning`);
-  if (out.modalities === undefined && out.reasoning === undefined) return undefined;
+  if (out.modalities === undefined && out.image_detail_original === undefined && out.reasoning === undefined) return undefined;
   return out;
 };
 

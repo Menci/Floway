@@ -23,6 +23,14 @@ function Harness() {
   </>;
 }
 
+function DetailHarness({ initial }: { initial: AnnouncedMetadata }) {
+  const [value, setValue] = useState(initial);
+  return <>
+    <MetadataEditor disabled={false} issues={{}} kind="chat" onChange={setValue} readOnly={false} value={value} />
+    <output data-testid="detail">{String(value.chat?.image_detail_original)}</output>
+  </>;
+}
+
 describe('model alias metadata editor', () => {
   it('preserves a comma while another supported effort is being entered', () => {
     renderInApp(<Harness />);
@@ -37,5 +45,33 @@ describe('model alias metadata editor', () => {
 
     fireEvent.blur(input);
     expect(input.value).toBe('low, custom');
+  });
+
+  it('hides the detail switch until image input is on', () => {
+    renderInApp(<DetailHarness initial={{}} />);
+    const detailLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
+    expect(screen.queryByRole('switch', { name: detailLabel })).toBeNull();
+
+    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+    expect(screen.getByRole('switch', { name: detailLabel })).toBeDefined();
+  });
+
+  it('drops the detail claim when image input is switched off', () => {
+    // A model with no image modality cannot be accepting detail 'original', so
+    // the flag must not outlive the modality that justifies it.
+    renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
+    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+
+    expect(screen.getByTestId('detail').textContent).toBe('undefined');
+  });
+
+  it('round-trips a false detail claim rather than collapsing it to absent', () => {
+    // `false` is the upstream stating it rejects detail 'original', not the
+    // absence of a statement, so switching the claim off stores `false` rather
+    // than deleting the field the way `reasoning.adaptive` does.
+    renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
+    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal') }));
+
+    expect(screen.getByTestId('detail').textContent).toBe('false');
   });
 });

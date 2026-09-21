@@ -168,6 +168,13 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   });
   if (modalities !== undefined) result.modalities = modalities;
 
+  // Conjunction, not agreement: detail 'original' is servable only where EVERY
+  // target accepts it, and a target that rejects it fails the request outright.
+  // A split verdict is therefore `false`, not a dropped field — the client
+  // treats both as "do not send original", and `false` states why.
+  const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
+  if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
+
   const reasoning = intersectField(chats, c => c.reasoning, intersectReasoning);
   if (reasoning !== undefined) result.reasoning = reasoning;
 

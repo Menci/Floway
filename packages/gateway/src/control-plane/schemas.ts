@@ -126,6 +126,10 @@ const reasoningSchema = z.object({
 
 const chatSchema = z.object({
   modalities: modalitiesSchema.optional(),
+  // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
+  // the upstream stating it rejects detail 'original', not the absence of a
+  // statement, so it is not narrowed to z.literal(true).
+  image_detail_original: z.boolean().optional(),
   reasoning: reasoningSchema.optional(),
 });
 

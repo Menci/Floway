@@ -13,6 +13,26 @@ const base: InternalModel = {
   providerModels: {},
 };
 
+// A realistic bundled entry — richer than the miss-path BASELINE and used as
+// `source` when the caller matched the registry model against the codex
+// bundled catalog.
+const bundledBase: CatalogModel = {
+  slug: 'gpt-5.5',
+  display_name: 'GPT-5.5',
+  priority: 1,
+  visibility: 'list',
+  input_modalities: ['text', 'image'],
+  supports_image_detail_original: true,
+  web_search_tool_type: 'text_and_image',
+  supported_reasoning_levels: [{ effort: 'medium', description: '' }],
+  default_reasoning_level: 'medium',
+  context_window: 272_000,
+  max_context_window: 272_000,
+  service_tiers: [{ id: 'priority', name: 'priority', description: '' }],
+  base_instructions: 'BUNDLED PROMPT',
+  truncation_policy: { mode: 'tokens', limit: 20000 },
+};
+
 const ultraCapabilities: CodexCatalogCapabilities = {
   ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
 };
@@ -80,9 +100,38 @@ describe('synthesizeCatalogEntry', () => {
     });
     expect(entry.input_modalities).toEqual(['text', 'image']);
     expect(entry.web_search_tool_type).toBe('text_and_image');
-    expect(entry.supports_image_detail_original).toBe(true);
     expect(entry.supported_reasoning_levels).toEqual([]);
     expect(entry.default_reasoning_level).toBeUndefined();
+  });
+
+  // The two facts are independent: taking images says nothing about accepting
+  // detail 'original', and only the upstream that owns the model knows the
+  // latter. `gpt-5.2` in the vendored catalog is exactly this shape, so an
+  // entry that derives one from the other announces a capability the upstream
+  // will reject the request for.
+  test('image input does not imply original detail support', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+    });
+    expect(entry.supports_image_detail_original).toBe(false);
+  });
+
+  test('registry chat.image_detail_original reaches the catalog entry', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true },
+    });
+    expect(entry.input_modalities).toEqual(['text', 'image']);
+    expect(entry.supports_image_detail_original).toBe(true);
+  });
+
+  test('registry chat.image_detail_original=false overrides a base that advertises support', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { image_detail_original: false },
+    }, { ...bundledBase, supports_image_detail_original: true, input_modalities: ['text', 'image'] });
+    expect(entry.supports_image_detail_original).toBe(false);
   });
 
   test('propagates reasoning levels as {effort, description} preset', () => {
@@ -183,26 +232,6 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   describe('with a bundled base', () => {
-    // A realistic bundled entry — richer than the miss-path BASELINE and
-    // used as `source` when the caller matched the registry model against
-    // the codex bundled catalog.
-    const bundledBase: CatalogModel = {
-      slug: 'gpt-5.5',
-      display_name: 'GPT-5.5',
-      priority: 1,
-      visibility: 'list',
-      input_modalities: ['text', 'image'],
-      supports_image_detail_original: true,
-      web_search_tool_type: 'text_and_image',
-      supported_reasoning_levels: [{ effort: 'medium', description: '' }],
-      default_reasoning_level: 'medium',
-      context_window: 272_000,
-      max_context_window: 272_000,
-      service_tiers: [{ id: 'priority', name: 'priority', description: '' }],
-      base_instructions: 'BUNDLED PROMPT',
-      truncation_policy: { mode: 'tokens', limit: 20000 },
-    };
-
     test('slug always overrides to model.id (bundled base carries the upstream slug)', () => {
       const entry = synthesizeCatalogEntry({ ...base, id: 'openrouter/gpt-5.5:nitro' }, bundledBase);
       expect(entry.slug).toBe('openrouter/gpt-5.5:nitro');
@@ -228,14 +257,24 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.web_search_tool_type).toBe('text_and_image');
     });
 
-    test('registry chat.modalities overrides bundled input_modalities and redrives image-support fields', () => {
+    test('registry chat.modalities overrides bundled input_modalities and redrives web_search', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
         chat: { modalities: { input: ['text'], output: ['text'] } },
       }, bundledBase);
       expect(entry.input_modalities).toEqual(['text']);
-      expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text');
+    });
+
+    test('narrowing modalities leaves the bundled original-detail claim alone', () => {
+      // The operator narrowed the modality list; they did not make a statement
+      // about detail 'original'. The bundled entry's own answer stands, exactly
+      // as the other fields this type does not touch.
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      }, bundledBase);
+      expect(entry.supports_image_detail_original).toBe(true);
     });
 
     test('bundled supported_reasoning_levels preserved when registry omits chat.reasoning', () => {

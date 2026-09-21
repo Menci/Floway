@@ -29,14 +29,18 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
     if (limits[key] === undefined) delete limits[key];
     onChange({ ...value, limits: Object.keys(limits).length ? limits : undefined });
   };
+  const patchChat = (patch: Partial<NonNullable<AnnouncedMetadata['chat']>>) => {
+    const chat = { ...(value.chat ?? {}), ...patch };
+    onChange({ ...value, chat: chat.image_detail_original !== undefined || chat.modalities || chat.reasoning ? chat : undefined });
+  };
   const patchReasoning = (patch: Record<string, unknown>) => {
     const reasoning = { ...(value.chat?.reasoning ?? {}), ...patch } as NonNullable<NonNullable<AnnouncedMetadata['chat']>['reasoning']>;
     for (const [key, item] of Object.entries(reasoning)) if (item === undefined) delete (reasoning as Record<string, unknown>)[key];
-    const chat = { ...(value.chat ?? {}), reasoning: Object.keys(reasoning).length ? reasoning : undefined };
-    onChange({ ...value, chat: chat.modalities || chat.reasoning ? chat : undefined });
+    patchChat({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
   const effort = value.chat?.reasoning?.effort;
   const budget = value.chat?.reasoning?.budget_tokens;
+  const imageInput = value.chat?.modalities?.input.includes('image') ?? false;
   const issueProps = (field: AnnouncedMetadataField) => issues[field] === undefined
     ? {}
     : { validationMessage: t(issues[field]), validationState: 'error' as const };
@@ -55,15 +59,26 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.modalities')} />
           <Switch
-            checked={value.chat?.modalities?.input.includes('image') ?? false}
+            checked={imageInput}
             disabled={disabled}
             readOnly={readOnly}
             label={t('dashboard.modelAliases.metadata.imageInput')}
-            onChange={(_, data) => {
-              const chat = { ...(value.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined };
-              onChange({ ...value, chat: chat.modalities || chat.reasoning ? chat : undefined });
-            }}
+            // Dropping image input drops the detail claim with it: a model with
+            // no image modality cannot be accepting detail 'original', so leaving
+            // the flag behind would announce a capability the modality list
+            // already denies.
+            onChange={(_, data) => patchChat({
+              modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
+              image_detail_original: data.checked ? value.chat?.image_detail_original : undefined,
+            })}
           />
+          {imageInput && <Switch
+            checked={value.chat?.image_detail_original === true}
+            disabled={disabled}
+            readOnly={readOnly}
+            label={t('dashboard.modelAliases.metadata.imageDetailOriginal')}
+            onChange={(_, data) => patchChat({ image_detail_original: data.checked })}
+          />}
         </section>
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />

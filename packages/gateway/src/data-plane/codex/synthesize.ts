@@ -23,12 +23,19 @@
 //      Registry-supplied limits win; else preserve the base's value (official
 //      entries carry a real OpenAI-vendored window); else the conservative
 //      default so codex's `(cw * 9) / 10` auto-compact math never sees zero.
-//   5. `input_modalities` (and its derived siblings `supports_image_detail_original`
-//      and `web_search_tool_type`) — `chat.modalities.input ?? source.input_modalities`.
-//      When the operator declared `chat.modalities`, honour it (even if the
-//      upstream base advertised more); else keep the base's list. The two
-//      "does this model see images" derivations always follow the final
-//      modality list so they cannot drift from it.
+//   5. `input_modalities` (and its derived sibling `web_search_tool_type`) —
+//      `chat.modalities.input ?? source.input_modalities`. When the operator
+//      declared `chat.modalities`, honour it (even if the upstream base
+//      advertised more); else keep the base's list. `web_search_tool_type`
+//      follows the final modality list so it cannot drift from it.
+//
+//      `supports_image_detail_original` is NOT derived from the modality list:
+//      a model can take images while rejecting detail 'original' (gpt-5.2 in
+//      the vendored catalog is exactly that), and only the upstream that owns
+//      the model knows which. Its chain is the ordinary
+//      `registry ?? source ?? BASELINE` one, so an upstream that states the
+//      fact on its own catalog carries it and every other upstream falls back
+//      to the vendored entry.
 //   6. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
@@ -123,6 +130,9 @@ export const synthesizeCatalogEntry = (
     ?? source.input_modalities
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
+  const imageDetailOriginal = (model.chat?.image_detail_original
+    ?? source.supports_image_detail_original
+    ?? BASELINE.supports_image_detail_original) as boolean;
 
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
   // reasoning (`supported_reasoning_levels: [{effort, description}]` +
@@ -161,7 +171,7 @@ export const synthesizeCatalogEntry = (
     slug: model.id,
     display_name: model.display_name ?? source.display_name ?? model.id,
     input_modalities: [...inputModalities],
-    supports_image_detail_original: hasImage,
+    supports_image_detail_original: imageDetailOriginal,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
     supported_reasoning_levels: advertisedReasoning,
     service_tiers: deriveServiceTiers(model),
