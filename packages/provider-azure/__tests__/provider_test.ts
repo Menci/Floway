@@ -70,6 +70,10 @@ test('createAzureProvider projects configured models into upstream models', asyn
       },
     ],
   );
+  assertEquals(models.map(model => model.opaqueBlobCompatibilityScope), [
+    { bindToUpstream: true },
+    { bindToUpstream: true },
+  ]);
   assertEquals(models[0].limits.max_context_window_tokens, 128000);
 });
 

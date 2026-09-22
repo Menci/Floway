@@ -144,7 +144,7 @@ describe('upstream model workspace field-array transitions', () => {
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-a');
   });
 
-  it('reports a missing model ID only after it prevents returning to the list', () => {
+  it('reports a missing model ID only after it prevents returning to the list', async () => {
     renderInApp(<Harness />);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
@@ -158,6 +158,10 @@ describe('upstream model workspace field-array transitions', () => {
     expect(screen.queryByText(models('upstreamIdRequired'))).toBe(null);
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
     expect(screen.getByRole('table', { name: models('title') })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: models('editAsYaml') }));
+    const yaml = (await screen.findByLabelText('YAML models') as HTMLTextAreaElement).value;
+    expect(yaml).toContain('upstreamModelId: model-new');
+    expect(yaml).toContain('opaqueBlobCompatibilityScope:\n    bindToUpstream: true');
   });
 
   it('reports a missing endpoint at its section after a blocked return', () => {

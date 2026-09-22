@@ -72,6 +72,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
+    assertEquals(gptoss.opaqueBlobCompatibilityScope, { bindToUpstream: true });
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
     assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
@@ -112,6 +113,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['openaiChatCompletions']);
     assertEquals(models[0].chat, { image_detail_original: true });
+    assertEquals(models[0].opaqueBlobCompatibilityScope, { bindToUpstream: true });
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);

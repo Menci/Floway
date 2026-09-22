@@ -290,7 +290,12 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
   const addModel = () => {
     const manualIndex = manual.length;
-    append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) });
+    append({
+      upstreamModelId: '',
+      kind: 'chat',
+      ...shapeForKind('chat', { endpoints: {} }),
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
+    });
     onOpenModel({ locator: '', manualIndex, rowKey: null });
   };
   useEffect(() => {

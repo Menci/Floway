@@ -338,9 +338,7 @@ export const discoveredModelsFromResponse = (
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),
       ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
-      ...(model.opaqueBlobCompatibilityScope !== undefined
-        ? { opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope }
-        : {}),
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
     };
   });
 };
