@@ -121,8 +121,7 @@ const emitUsageProgress = (
 };
 
 const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => {
-  const choice = chunk.choices[0];
-  if (choice === undefined) return false;
+  const choice = chunk.choices[0]!;
   if (choice.finish_reason !== null && choice.finish_reason !== undefined) return true;
   const delta = choice.delta;
   return Boolean(delta.content)
@@ -397,7 +396,6 @@ const handleFinishReason = (
   flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
-  if (chunk.usage) state.pendingUsage = chunk.usage;
   if (chunk.usage) emitFinalMessageIfReady(state, events);
 };
 
