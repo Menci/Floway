@@ -1,6 +1,13 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 
-import { shortAccountId } from './account-id';
+import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
+import { dateTime, relativeTime } from '../../lib/format-time';
+import { useLocale } from '../../lib/use-locale';
+import { useNow } from '../../lib/use-now';
+import { StatusBadge } from '../ui/status-badge';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
+import { shortAccountId } from '../upstreams/account-id';
 import {
   accountStatus,
   actionableDisabledReason,
@@ -10,21 +17,14 @@ import {
   rawEntries,
   readProbeSnapshot,
   subscriptionLabel,
-} from './claude-code-account';
-import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
-import { fluentComponents } from '../../fluent';
-import { useTranslation } from '../../i18n/translation';
-import { dateTime, relativeTime } from '../../lib/format-time';
-import { clampPercent, percentText } from '../../lib/percent';
-import { useLocale } from '../../lib/use-locale';
-import { useNow } from '../../lib/use-now';
-import { StatusBadge } from '../ui/status-badge';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
+} from '../upstreams/claude-code-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
+import { QuotaProgressRow } from '../upstreams/quota-progress-row';
+import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
-  MessageBar, MessageBarBody, ProgressBar, Spinner, Text, Tooltip,
+  MessageBar, MessageBarBody, Spinner, Text, Tooltip,
 } = fluentComponents;
 
 export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
@@ -41,7 +41,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   const quota = credential?.quotaSnapshot?.data ?? null;
   const probe = readProbeSnapshot(credential);
   const windows = quotaWindows(credential);
-  const status = accountStatus(lookup, windows);
+  const status = accountStatus(lookup, windows, now);
   const disabledReason = actionableDisabledReason(credential);
 
   const accountUuidShort = shortAccountId(account.accountUuid);
@@ -94,25 +94,20 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
 
     {windows.length > 0 && <div className="grid gap-3">
       {windows.map(row => {
-        const percent = clampPercent(row.percent);
-        return <div key={row.key} className="grid gap-1">
-          <div className="flex items-baseline justify-between gap-3">
-            <Text size={200}>{t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}</Text>
-            <div className="flex items-baseline gap-2">
-              <Text size={200} className="text-fui-fg2">{percentText(percent)}</Text>
-              {row.status && <Text size={200} className="text-fui-fg3">{row.status}</Text>}
-            </div>
-          </div>
-          <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        return <QuotaProgressRow
+          key={row.key}
+          label={t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
+          percent={row.percent}
+          right={row.status && <Text size={200} className="text-fui-fg3">{row.status}</Text>}
+          footer={<div className="flex flex-wrap items-baseline justify-between gap-x-3">
             {row.resetAt && <Text size={200} className="text-fui-fg3">
               {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
             </Text>}
             <Text size={200} className="text-fui-fg3">
               {t('dashboard.upstreamEditor.claudeCode.observed', { time: dateTime(row.fetchedAt, locale) })}
             </Text>
-          </div>
-        </div>;
+          </div>}
+        />;
       })}
     </div>}
 

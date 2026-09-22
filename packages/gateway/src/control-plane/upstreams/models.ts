@@ -1,6 +1,7 @@
 import { modelsCacheStatus } from './models-cache-status.ts';
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { createPreviewProvider } from '../../data-plane/providers/registry.ts';
 import { isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
@@ -9,21 +10,12 @@ import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels } from '@floway-dev/provider-custom';
 
-// `upstreamModelId` is the wire-side identifier the provider will send when
-// a caller invokes the public `model.id` — Claude Code exposes
-// `claude-sonnet-4-5` publicly while sending `claude-sonnet-4-5-20250929`
-// on the wire. `providerData` is opaque provider-private invocation data,
-// not a universal upstream-id field: only the providers that shape it as
-// `{ upstreamModelId }` surface a distinct wire id here, and the rest
-// (Copilot carries its raw variant list there) report the public id.
-const reshapeModelForDashboard = (model: ProviderModel): UpstreamModelConfig => {
-  const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
-  const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
+const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
   return {
-    upstreamModelId: wireId,
+    upstreamModelId: model.upstreamModelId,
     publicModelId: model.id,
     kind: model.kind,
     endpoints: model.endpoints,
@@ -31,6 +23,7 @@ const reshapeModelForDashboard = (model: ProviderModel): UpstreamModelConfig => 
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
     ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
+    opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope,
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };
 };
@@ -84,10 +77,10 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
       const result = await fetchCustomModels(assertedConfig, fetcher);
-      return c.json({ data: projectCustomDiscoveredModels(synthRecord, result) });
+      return c.json({ kind, data: projectCustomDiscoveredModels(synthRecord, result) });
     }
     const models = await createPreviewProvider(synthRecord).instance.getProvidedModels(fetcher);
-    return c.json({ data: models.map(reshapeModelForDashboard) });
+    return c.json({ kind, data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
@@ -114,7 +107,7 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
     if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
     const data = record.kind === 'custom' ? result.discovered : refreshed.modelsCache?.models.map(reshapeModelForDashboard);
     if (data === undefined) throw new Error(`Upstream ${id} models refresh did not publish a catalog`);
-    return c.json({ data, modelsCache: modelsCacheStatus(refreshed) });
+    return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);

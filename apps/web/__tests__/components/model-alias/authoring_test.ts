@@ -51,6 +51,29 @@ describe('announced metadata', () => {
     expect(result.chat?.reasoning?.effort).toEqual({ supported: ['low'], default: 'low' });
   });
 
+  it('announces detail original only when every target states it', () => {
+    const both = computeAnnouncedMetadata([target('a'), target('b')], 'chat', indexCatalog([
+      catalogModel('a', { chat: { image_detail_original: true } }),
+      catalogModel('b', { chat: { image_detail_original: true } }),
+    ]));
+    expect(both.chat?.image_detail_original).toBe(true);
+
+    // A split verdict is a stated `false`, matching the data plane's
+    // intersection: the alias must not promise detail 'original' above any
+    // single target's own answer.
+    const split = computeAnnouncedMetadata([target('a'), target('b')], 'chat', indexCatalog([
+      catalogModel('a', { chat: { image_detail_original: true } }),
+      catalogModel('b', { chat: { image_detail_original: false } }),
+    ]));
+    expect(split.chat?.image_detail_original).toBe(false);
+
+    const silent = computeAnnouncedMetadata([target('a'), target('b')], 'chat', indexCatalog([
+      catalogModel('a', { chat: { image_detail_original: true } }),
+      catalogModel('b', { chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+    ]));
+    expect(silent.chat?.image_detail_original).toBeUndefined();
+  });
+
   it('removes a capability from the intersection when a target rule pins it', () => {
     const result = computeAnnouncedMetadata([target('a', { reasoning: { effort: 'low' } })], 'chat', indexCatalog([
       catalogModel('a', { chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } } }),

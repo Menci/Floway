@@ -2,7 +2,7 @@ import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher, type FetchInit, type HttpHeaderLines } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -209,7 +209,7 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
 }
 
 export interface CopilotFetchOptions {
-  headers?: Headers;
+  headers?: HttpHeaderLines;
   /** Per-request proxy-aware indirection. Used for both the data-plane
    *  request and the selected GitHub host's token exchange so a single
    *  fallback chain covers both paths under restricted egress. */
@@ -225,9 +225,9 @@ export interface CopilotAuth {
   githubToken: string;
 }
 
-export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
+export async function copilotAuthedFetch(path: string, init: FetchInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
   const signal = init.signal ?? undefined;
-  let ownedInit: RequestInit | undefined = init;
+  let ownedInit: FetchInit | undefined = init;
   // The token exchange is the only await before the data-plane dispatch. Keep
   // the body in an explicit owner and replace the generator parameter so the
   // final network wait cannot retain both copies after ownership transfers.

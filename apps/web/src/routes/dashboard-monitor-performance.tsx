@@ -45,7 +45,7 @@ import { useLocale } from '../lib/use-locale';
 
 const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
-interface UpstreamName { id: string; name: string }
+interface UpstreamMetadata { id: string; name: string; hue: number }
 
 interface LoaderData {
   currentUserId: string;
@@ -55,9 +55,9 @@ interface LoaderData {
   // render zeroes the page does not know to be true.
   overview: PerformanceOverviewResponse | null;
   state: PerformanceUrlState;
-  // Null on the same terms: without the names, a group labels itself with an
-  // upstream id the page would be presenting as a name.
-  upstreamNames: UpstreamName[] | null;
+  // Null on the same terms: upstream metadata owns both the visible name and
+  // the series hue, so a partial response cannot faithfully render the group.
+  upstreams: UpstreamMetadata[] | null;
   regionAvailable: boolean | null;
   view: PerformanceView;
 }
@@ -98,7 +98,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     overview: overview.data ?? null,
     regionAvailable,
     state: normalization.state,
-    upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
+    upstreams: upstreams.data?.map(({ id, name, hue }) => ({ id, name, hue })) ?? null,
     view,
   };
 }
@@ -122,7 +122,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
-  const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
+  const [upstreams] = useState(loaderData.upstreams);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const locale = useLocale();
@@ -254,7 +254,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
   const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
-  const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
+  const labels = useMemo(() => overview && upstreams && performanceLabels(overview, upstreams), [overview, upstreams]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [

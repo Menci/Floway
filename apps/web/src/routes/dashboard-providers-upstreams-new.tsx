@@ -11,7 +11,7 @@ import {
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { pickDistinctHue } from '../lib/hue';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
 
 export const handle = dashboardWorkspaceHandle;
 

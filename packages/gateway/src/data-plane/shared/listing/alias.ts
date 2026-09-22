@@ -38,7 +38,7 @@ import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, OpaqueBlobCompatibilityScope, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
@@ -168,6 +168,15 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   });
   if (modalities !== undefined) result.modalities = modalities;
 
+  // Conjunction, not agreement: the announced metadata must not promise detail
+  // 'original' above any single target's own answer, so a split verdict between
+  // targets that declared the field is a stated `false` rather than a dropped
+  // one — `false` is the field's own answer, not a re-encoding of absence. A
+  // target that leaves the field undeclared still drops it, as `intersectField`
+  // requires of every sub-field here.
+  const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
+  if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
+
   const reasoning = intersectField(chats, c => c.reasoning, intersectReasoning);
   if (reasoning !== undefined) result.reasoning = reasoning;
 
@@ -187,6 +196,19 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
     if (value !== undefined) result[key] = value;
   }
   return result;
+};
+
+const commonOpaqueBlobCompatibilityScope = (
+  models: readonly InternalModel[],
+): OpaqueBlobCompatibilityScope => {
+  const [first, ...rest] = models;
+  const scope = first?.opaqueBlobCompatibilityScope;
+  if (scope !== undefined && rest.every(model =>
+    model.opaqueBlobCompatibilityScope?.bindToUpstream === scope.bindToUpstream
+    && model.opaqueBlobCompatibilityScope?.key === scope.key)) {
+    return scope;
+  }
+  return { bindToUpstream: true };
 };
 
 // `narrowTargets=true` filters `targets` to those the caller's addressable
@@ -304,6 +326,7 @@ const synthesizeOne = (
     limits,
     kind: alias.kind,
     endpoints,
+    opaqueBlobCompatibilityScope: commonOpaqueBlobCompatibilityScope(gatewayAvailable.map(({ real }) => real)),
     aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
     ...(chat !== undefined ? { chat } : {}),
     ...(singleTargetPricing !== undefined ? { pricing: singleTargetPricing } : {}),

@@ -134,7 +134,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       {
         method: 'GET',
         path: anchor.path,
-        headers: { 'User-Agent': 'floway-proxy-test/1' },
+        headers: [['User-Agent', 'floway-proxy-test/1']],
       },
       {
         socketDial: getSocketDial(),

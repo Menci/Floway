@@ -1,5 +1,5 @@
-// Plain base64url(JSON) codec used by both the Messages web-search shim and
-// the Responses compact shim to round-trip private payloads through an
+// Plain base64url(JSON) codec used by both the Anthropic Messages web-search shim and
+// the OpenAI Responses compact shim to round-trip private payloads through an
 // opaque-string slot on the wire (`encrypted_content`, `encrypted_index`).
 // No envelope or prefix marker — foreign upstream blobs are detected
 // structurally by decode failure or shim-side schema mismatch, so the same

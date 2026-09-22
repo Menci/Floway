@@ -1,14 +1,14 @@
 // Copy this file to wrangler.jsonc and fill in the <YOUR_*> placeholders.
 // wrangler.jsonc is gitignored so that each contributor's own Cloudflare
 // account id, D1 database id, and Worker name stay local. Every concrete
-// value here is load-bearing — `scripts/check-wrangler.ts` gates dev and
-// deploy on real wrangler.jsonc mirroring this example exactly in both
-// directions, except that <YOUR_*> placeholders may (and must) be
-// replaced with your own values, and `account_id` may additionally
-// appear only in wrangler.jsonc since it is per-contributor. Anything
-// else the real config needs (extra bindings, extra compat flags, `vars`
-// blocks) belongs in this example first so every contributor and the
-// deploy gate agree on the Worker's shape.
+// value here is load-bearing — `scripts/require-wrangler-config.ts`
+// gates dev and deploy on real wrangler.jsonc mirroring this example
+// exactly in both directions, except that <YOUR_*> placeholders may
+// (and must) be replaced with your own values, and `account_id` may
+// additionally appear only in wrangler.jsonc since it is
+// per-contributor. Anything else the real config needs (extra bindings,
+// extra compat flags, `vars` blocks) belongs in this example first so
+// every contributor and the deploy gate agree on the Worker's shape.
 //
 // 1. Optionally set CLOUDFLARE_ACCOUNT_ID in the environment, or run
 //    `pnpm wrangler login`. If neither is in place, add an `account_id`
@@ -21,7 +21,7 @@
 //    `database_id` below; `database_name` is the same value you passed.
 // 4. Run `pnpm wrangler r2 bucket create <bucket_name>` for the FILES
 //    bucket. It stores file-backed request/response dump bodies and oversized
-//    Stateful Responses item payloads. Put its name in `bucket_name` below.
+//    Stateful OpenAI Responses item payloads. Put its name in `bucket_name` below.
 // 5. Run `pnpm wrangler kv namespace create <name>` and paste the returned
 //    id into `kv_namespaces[0].id`.
 {
@@ -34,7 +34,9 @@
   // cannot resolve those modules at cold start without the Node compat flag.
   "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
   "triggers": {
-    "crons": ["17 * * * *"]
+    // Minute scheduling provides catch-up throughput while bounded deletion
+    // and collection batches keep each tick's D1 write load predictable.
+    "crons": ["* * * * *"]
   },
   "assets": {
     "directory": "apps/web/dist/client",
@@ -44,7 +46,7 @@
     // Workers Static Assets as a SPA fallback) restates, for production on
     // Cloudflare, the set two other files restate for their topologies:
     //
-    //   - The `location ~` regexes in docker/nginx.conf (the docker-compose
+    //   - `isGatewayPath` in apps/platform-node/src/static-web.ts (the Node
     //     self-host topology).
     //   - `wranglerProxiedPaths` in apps/web/gateway-paths.ts (the `vite dev`
     //     proxy-to-wrangler-dev topology).

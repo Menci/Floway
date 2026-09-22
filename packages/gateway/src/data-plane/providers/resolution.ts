@@ -64,9 +64,8 @@ const enumerateOneUpstreamCandidates = async (
 
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
-// Client disconnect prevents snapshot work that has not dispatched. Once a
-// refresh reaches its execution cell, it is detached from the request. Inference lifecycle
-// policy is applied later, where a selected candidate is actually dispatched.
+// Cancellation (`AbortError`) propagates so a disconnected request cannot
+// mask its rejection while inspecting the snapshots.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
@@ -80,16 +79,14 @@ export const enumerateRealModelCandidates = async (
   context: {
     fetcherForUpstream: (upstreamId: string) => Fetcher;
     scheduleRefresh: ModelsRefreshScheduler;
-    clientDisconnectSignal?: AbortSignal;
   },
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const { fetcherForUpstream, scheduleRefresh, clientDisconnectSignal } = context;
+  const { fetcherForUpstream, scheduleRefresh } = context;
   const settled = await Promise.allSettled(providers.map(provider => {
-    clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(
       provider,
       modelId,
@@ -107,7 +104,6 @@ export const enumerateRealModelCandidates = async (
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
       const error = result.reason;
-      clientDisconnectSignal?.throwIfAborted();
       if (isAbortError(error)) throw error;
       failedUpstreams.push(providers[index].name);
       continue;
@@ -192,19 +188,19 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // missing" (404) from "model wrong kind" (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
-// `model.endpoints`, or checking the specific `imagesEdits` /
-// `imagesGenerations` / `audioTranscriptions` / `completions` endpoint key —
+// `model.endpoints`, or checking the specific `openaiImagesEdits` /
+// `openaiImagesGenerations` / `openaiAudioTranscriptions` / `openaiCompletions` endpoint key —
 // is the caller's job.
 // This function stays endpoint-blind so the same path serves chat,
-// embeddings, image generation/edits, rerank, audio transcription, and
-// completions.
+// OpenAI Embeddings, OpenAI Images Generations/Edits, rerank, OpenAI Audio
+// Transcriptions, and OpenAI Completions.
 //
 // The alias walk is a natural top-of-chain check: by construction an
 // alias's target id is a real model id, so the shadow pattern (an alias
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation, clientDisconnectSignal,
+  upstreamIds, model, kind, scheduler, runtimeLocation,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
@@ -215,7 +211,6 @@ export const enumerateModelCandidates = async ({
   // Threaded into the per-request fetcher so colo-scoped fallback entries
   // can be honoured at dial time.
   runtimeLocation: string;
-  clientDisconnectSignal?: AbortSignal;
 }): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
@@ -226,7 +221,6 @@ export const enumerateModelCandidates = async ({
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
-    clientDisconnectSignal,
   };
 
   const alias = await getRepo().modelAliases.getByName(model);

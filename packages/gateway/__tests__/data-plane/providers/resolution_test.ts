@@ -25,84 +25,33 @@ const testScheduler = (promise: Promise<unknown>): void => {
 };
 const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
-test('enumerateModelCandidates blocks a cold catalog fetch after client disconnect', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
-    config: {
-      baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
-      ingressHeadersRules: [],
-      apiKey: 'sk-custom',
-      endpoints: { messages: {} },
-    },
-  }));
-  const controller = new AbortController();
-  const reason = new Error('client disconnected');
-  controller.abort(reason);
-  let fetches = 0;
-
-  await withMockedFetchRaw(
-    () => {
-      fetches += 1;
-      return jsonResponse({ object: 'list', data: [] });
-    },
-    async () => {
-      let caught: unknown;
-      try {
-        await enumerateModelCandidates({
-          upstreamIds: null,
-          model: 'gpt-test',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-          clientDisconnectSignal: controller.signal,
-        });
-      } catch (error) {
-        caught = error;
-      }
-      assertEquals(caught, reason);
-      assertEquals(fetches, 0);
-    },
-  );
-});
-
-test('a scheduled cold refresh survives disconnect after execution starts', async () => {
+test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord());
-  const originalBegin = repo.upstreams.beginModelsRefresh.bind(repo.upstreams);
-  let releaseBegin: (() => void) | null = null;
-  vi.spyOn(repo.upstreams, 'beginModelsRefresh').mockImplementation(async input => {
-    await new Promise<void>(resolve => { releaseBegin = resolve; });
-    return await originalBegin(input);
-  });
-  const controller = new AbortController();
   const background: Promise<unknown>[] = [];
-  let fetches = 0;
+  let releaseFetch: ((response: Response) => void) | undefined;
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { releaseFetch = resolve; }));
 
   await withMockedFetchRaw(
-    () => {
-      fetches++;
-      return jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] });
-    },
+    fetch,
     async () => {
-      await enumerateModelCandidates({
+      const result = await enumerateModelCandidates({
         upstreamIds: null,
         model: 'eventual-model',
         kind: 'chat',
         scheduler: promise => { background.push(promise); },
         runtimeLocation: 'TEST',
-        clientDisconnectSignal: controller.signal,
       });
-      await vi.waitFor(() => expect(releaseBegin).not.toBeNull());
-      controller.abort(new Error('client disconnected'));
-      releaseBegin!();
+      expect(result.candidates).toEqual([]);
+      expect(background).toHaveLength(1);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+      releaseFetch!(jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] }));
       await Promise.all(background);
     },
   );
 
-  expect(fetches).toBe(1);
+  expect(fetch).toHaveBeenCalledOnce();
   expect((await repo.upstreams.getById('up_custom'))?.modelsCache).toMatchObject({
     lastError: null,
     models: [{ id: 'eventual-model' }],
@@ -119,7 +68,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
         authStyle: 'bearer',
         ingressHeadersRules: [],
         apiKey: 'sk-custom',
-        endpoints: { messages: {} },
+        endpoints: { anthropicMessages: {} },
       },
     }),
   );
@@ -174,7 +123,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
         authStyle: 'bearer',
         ingressHeadersRules: [],
         apiKey: 'sk-custom',
-        endpoints: { messages: {} },
+        endpoints: { anthropicMessages: {} },
       },
     }),
   );
@@ -209,7 +158,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
         authStyle: 'bearer',
         ingressHeadersRules: [],
         apiKey: 'sk-custom',
-        endpoints: { messages: {} },
+        endpoints: { anthropicMessages: {} },
       },
     }),
   );
@@ -243,13 +192,13 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
 
   const providers = await listModelProviders(null);
@@ -302,8 +251,8 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-key',
       models: [
-        { upstreamModelId: 'enabled-model', endpoints: { chatCompletions: {} } },
-        { upstreamModelId: 'disabled-model', endpoints: { chatCompletions: {} } },
+        { upstreamModelId: 'enabled-model', endpoints: { openaiChatCompletions: {} } },
+        { upstreamModelId: 'disabled-model', endpoints: { openaiChatCompletions: {} } },
       ],
     },
     flagOverrides: {},
@@ -330,7 +279,7 @@ test('a recorded refresh failure is irrelevant when the prefix policy cannot add
     id: 'up_prefixed_failure',
     name: 'Prefixed failure',
     modelPrefix: { prefix: 'tenant/', addressable: ['prefixed'], listed: ['prefixed'] },
-    config: { baseUrl: 'https://prefixed-failure.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://prefixed-failure.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -362,13 +311,13 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
-    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -412,7 +361,7 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
     id: 'up_chat_only',
     name: 'ChatOnly',
     sortOrder: 1,
-    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -452,7 +401,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -487,7 +436,7 @@ test('an AbortError from background catalog refresh does not abort model resolut
     id: 'up_aborting',
     name: 'Aborting',
     sortOrder: 1,
-    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -566,11 +515,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_a', name: 'A', sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_b', name: 'B', sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
   };
 

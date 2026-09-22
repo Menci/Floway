@@ -1,10 +1,10 @@
 export type {
-  ChatCompletionsInvocation,
-  GeminiInvocation,
+  OpenAIChatCompletionsInvocation,
+  GeminiGenerateContentInvocation,
   ChatTargetApi,
-  MessagesInvocation,
+  AnthropicMessagesInvocation,
   ModelCandidate,
-  ResponsesInvocation,
+  OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
 
@@ -22,6 +22,7 @@ export type {
 export {
   apiErrorToResponse,
   decodeApiErrorBody,
+  discardUpstreamResponse,
   eventResult,
   internalErrorResult,
   plainResult,
@@ -51,17 +52,17 @@ export type {
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
-  MessagesUpstreamCallOptions,
-  ProviderResponsesResult,
+  AnthropicMessagesUpstreamCallOptions,
+  ProviderOpenAIResponsesResult,
   ProviderStreamResult,
-  ResponsesAction,
+  OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export { headersForMessagesCall } from './messages.ts';
-export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsRequest } from './images.ts';
-export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
-export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
+export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
+export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
+export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
+export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 
@@ -92,16 +93,21 @@ export {
   modelsField,
   nonEmptyStringField,
   optionalStringField,
+  opaqueBlobCompatibilityScopeField,
+  pricingField,
   publicModelId,
 } from './model-config.ts';
 
 export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
-export type { Fetcher, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
+export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody, UpstreamFetchOptions } from './options.ts';
+export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody } from './options.ts';
 
 export { isAbortError } from './abort.ts';
+
+export { jsonRequestBody } from './json-request.ts';
+export { sha256Json, sha256JsonHex } from './json-hash.ts';
 
 export {
   base64ToBytes,

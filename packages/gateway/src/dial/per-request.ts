@@ -2,8 +2,8 @@ import { createFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
-import { getSocketDial } from '@floway-dev/platform';
-import { directFetcher, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { getFetch, getSocketDial } from '@floway-dev/platform';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 export class InvalidProxyConfigurationError extends Error {
@@ -68,7 +68,7 @@ const createFetcherResolver = async (
       runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,
-      runDirectFetch: directFetcher,
+      runDirectFetch: getFetch(),
       runDirectConnect: runDirectConnectRequest,
       socketDial: getSocketDial,
     });

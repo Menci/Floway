@@ -165,7 +165,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
     });
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     await expect(
-      runProxiedRequest(config, target, { method: 'GET', path: '/', headers: {} }, baseOptions()),
+      runProxiedRequest(config, target, { method: 'GET', path: '/', headers: [] }, baseOptions()),
     ).rejects.toBeInstanceOf(Error);
     expect(cancelCalls).toBeGreaterThan(0);
     expect(lastCancelReason).toBeInstanceOf(Error);
@@ -212,7 +212,7 @@ describe('runDirectConnectRequest', () => {
     const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
     const response = await runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
-      { method: 'POST', path: '/responses?stream=1', headers: {}, body: new TextEncoder().encode('body') },
+      { method: 'POST', path: '/responses?stream=1', headers: [], body: new TextEncoder().encode('body') },
       { socketDial: direct.socketDial },
     );
 
@@ -228,7 +228,7 @@ describe('runDirectConnectRequest', () => {
     const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
     const response = await runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       { socketDial: direct.socketDial },
     );
 
@@ -240,11 +240,61 @@ describe('runDirectConnectRequest', () => {
     const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n');
     const response = await runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       { socketDial: direct.socketDial },
     );
 
     await expect(response.text()).rejects.toThrow('upstream EOF');
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  // Reading the body to EOF and cancelling it both require someone to still be
+  // holding the body. An abandoned response has neither, so the caller's signal
+  // is the only teardown left once the dial has resolved.
+  it('closes its socket when the caller aborts after the response was returned', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const controller = new AbortController();
+    await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(direct.closeCalls()).toBe(0);
+    controller.abort('client gone');
+    await Promise.resolve();
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  // addEventListener on an already-aborted signal never fires, so the abort
+  // that lands while the request is in flight has to be picked up synchronously.
+  it('closes its socket when the caller aborted while the request was in flight', async () => {
+    const controller = new AbortController();
+    // Abort once the socket exists but before the response is handed back, so
+    // the dial itself still succeeds and the abort lands in the window the
+    // listener install would otherwise miss.
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok', () => controller.abort('client gone'));
+    await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('closes its socket once when an abort follows a completed body', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const controller = new AbortController();
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(await response.text()).toBe('ok');
+    controller.abort('client gone');
+    await Promise.resolve();
     expect(direct.closeCalls()).toBe(1);
   });
 
@@ -259,7 +309,7 @@ describe('runDirectConnectRequest', () => {
 
     await expect(runDirectConnectRequest(
       { host: 'api.example.com', port: 443, tls: true },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       { socketDial, dialTimeoutMs: 20 },
     )).rejects.toMatchObject({
       name: 'ProxyDialError',
@@ -320,7 +370,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: api.example.com\r\n');
@@ -332,7 +382,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 8080, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: api.example.com:8080\r\n');
@@ -347,7 +397,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 443, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: api.example.com:443\r\n');
@@ -359,7 +409,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: 'cdn.example.com', port: 443, tls: false },
-      { method: 'GET', path: '/', headers: { Host: 'origin.example.com:9000' } },
+      { method: 'GET', path: '/', headers: [['Host', 'origin.example.com:9000']] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: origin.example.com:9000\r\n');
@@ -375,7 +425,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: '2001:db8::1', port: 8080, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: [2001:db8::1]:8080\r\n');
@@ -387,7 +437,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     await runProxiedRequest(
       socks,
       { host: '::1', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: {} },
+      { method: 'GET', path: '/', headers: [] },
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: [::1]\r\n');

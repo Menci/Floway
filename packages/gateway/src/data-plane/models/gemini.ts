@@ -6,7 +6,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
+import { geminiGenerateContentStatusForHttpStatus } from '../chat/gemini-generate-content/errors.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
@@ -51,7 +51,7 @@ const toGeminiModel = (model: InternalModel): GeminiModel => {
 
 const geminiError = (status: number, message: string): Response =>
   Response.json(
-    { error: { code: status, message, status: geminiStatusForHttpStatus(status) } },
+    { error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) } },
     { status: status as 400 | 404 | 500 | 502 },
   );
 

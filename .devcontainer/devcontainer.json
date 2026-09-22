@@ -1,0 +1,13 @@
+{
+    "name": "Floway",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "securityOpt": [
+        // Fixes VS Code terminal sandbox & Claude Code sandbox
+        // https://github.com/containers/bubblewrap/issues/505#issuecomment-5708882071
+        // These two parameters lowers a rootful container’s security barriers, so please only use with a rootless container engine (rootless Docker or rootless Podman).
+        "seccomp=unconfined",
+        "systempaths=unconfined"
+    ]
+}

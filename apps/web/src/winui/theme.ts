@@ -1,5 +1,6 @@
 import type { Theme } from '@fluentui/react-components';
 
+import { toLegacyCssColor } from '../lib/legacy-css-color';
 import { flowayDarkTheme, flowayLightTheme } from '../theme';
 
 // Shared and status colors have no one-to-one WinUI counterpart and are spent
@@ -147,24 +148,28 @@ const radii = {
 // list whose first layer is the elevation, and `none` is only valid as a whole
 // box-shadow, so it invalidates the list and drops the focus ring entirely.
 const shadows = {
-  shadow2: '0 0 #0000',
-  shadow2Brand: '0 0 #0000',
-  shadow4: '0 0 #0000',
-  shadow4Brand: '0 0 #0000',
-  shadow8: '0 0 #0000',
-  shadow8Brand: '0 0 #0000',
+  shadow2: '0 0 rgba(0, 0, 0, 0)',
+  shadow2Brand: '0 0 rgba(0, 0, 0, 0)',
+  shadow4: '0 0 rgba(0, 0, 0, 0)',
+  shadow4Brand: '0 0 rgba(0, 0, 0, 0)',
+  shadow8: '0 0 rgba(0, 0, 0, 0)',
+  shadow8Brand: '0 0 rgba(0, 0, 0, 0)',
 } as const satisfies Partial<Theme>;
 
-export const winuiLightTheme: Theme = {
+const legacyTheme = (theme: Theme): Theme => Object.fromEntries(
+  Object.entries(theme).map(([token, value]) => [token, typeof value === 'string' ? toLegacyCssColor(value) : value]),
+) as unknown as Theme;
+
+export const winuiLightTheme: Theme = legacyTheme({
   ...flowayLightTheme,
   ...palette,
   ...radii,
   ...shadows,
-};
+});
 
-export const winuiDarkTheme: Theme = {
+export const winuiDarkTheme: Theme = legacyTheme({
   ...flowayDarkTheme,
   ...palette,
   ...radii,
   ...shadows,
-};
+});

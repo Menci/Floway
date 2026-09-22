@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseModels, serializeModels } from '../../../src/components/upstream-editor/models-yaml';
 
-const CHAT_MODEL = { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { chatCompletions: {} } } as const;
+const CHAT_MODEL = { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } } as const;
 const RERANK_MODEL = { upstreamModelId: 'rerank-v2', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } } as const;
 
 describe('models YAML round trip', () => {
@@ -12,8 +12,17 @@ describe('models YAML round trip', () => {
   });
 
   it('accepts a hand-written YAML list', () => {
-    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    chatCompletions: {}\n', { allowRerank: false });
+    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n', { allowRerank: false });
     expect(parsed.ok).toBe(true);
+  });
+
+  it('preserves opaque blob compatibility scope metadata', () => {
+    const model = {
+      ...CHAT_MODEL,
+      opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'openai' },
+    } as const;
+    expect(parseModels(serializeModels([{ ...model }]), { allowRerank: false }))
+      .toEqual({ ok: true, models: [model] });
   });
 });
 
@@ -42,6 +51,11 @@ describe('models YAML rejection', () => {
 
   it('rejects a rerank model with no target, which the gateway would refuse', () => {
     const parsed = parseModels('- upstreamModelId: r\n  kind: rerank\n  endpoints:\n    rerank: {}\n', { allowRerank: true });
+    expect(parsed.ok).toBe(false);
+  });
+
+  it('rejects an empty opaque blob compatibility key', () => {
+    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n  opaqueBlobCompatibilityScope:\n    bindToUpstream: true\n    key: ""\n', { allowRerank: false });
     expect(parsed.ok).toBe(false);
   });
 });

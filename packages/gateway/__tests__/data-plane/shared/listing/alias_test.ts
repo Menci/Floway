@@ -25,7 +25,7 @@ const realModel = (
 ): InternalModel => ({
   kind: 'chat',
   limits: {},
-  endpoints: { chatCompletions: {}, messages: {}, responses: {} },
+  endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} },
   providerModels: {},
   ...overrides,
 });
@@ -41,6 +41,26 @@ const listed = (models: readonly InternalModel[]): AddressableIdEntry[] =>
 const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [] });
 
 describe('synthesizeListedAliases', () => {
+  test('publishes a common opaque-blob scope and falls back for mixed targets', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const common = { bindToUpstream: true, key: 'openai' } as const;
+    const matching = [
+      realModel({ id: 'a', opaqueBlobCompatibilityScope: common }),
+      realModel({ id: 'b', opaqueBlobCompatibilityScope: common }),
+    ];
+    const [shared] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(matching), callerAddressableModelIds: listed(matching), narrowTargets: false });
+    expect(shared.opaqueBlobCompatibilityScope).toEqual(common);
+
+    const mixed = [matching[0], realModel({ id: 'b', opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'openai' } })];
+    const [fallback] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(mixed), callerAddressableModelIds: listed(mixed), narrowTargets: false });
+    expect(fallback.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true });
+  });
+
   test('single-target alias with a pinned reasoning.effort drops the effort block', () => {
     const aliases = [aliasFixture({
       name: 'gpt-fast',
@@ -130,6 +150,55 @@ describe('synthesizeListedAliases', () => {
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
+  });
+
+  test('multi-target alias announces detail original only when every target accepts it', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { image_detail_original: true } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBe(true);
+  });
+
+  test('a split verdict on detail original announces false rather than dropping the field', () => {
+    // Conjunction, not agreement: the announced metadata must not promise detail
+    // 'original' above any single target's own answer. Both targets declare the
+    // field here, so the split yields a stated `false` — the field's own answer,
+    // not a re-encoding of absence.
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { image_detail_original: false } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBe(false);
+  });
+
+  test('detail original drops when a target does not declare it at all', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBeUndefined();
   });
 
   test('multi-target with disjoint output modalities omits the modalities block entirely', () => {
@@ -351,18 +420,18 @@ describe('synthesizeListedAliases', () => {
     })];
     const realModels = [
       // Target a serves the three chat endpoints + /completions.
-      realModel({ id: 'a', endpoints: { chatCompletions: {}, messages: {}, responses: {}, completions: {} } }),
+      realModel({ id: 'a', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {}, openaiCompletions: {} } }),
       // Target b only serves the three chat endpoints.
-      realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
+      realModel({ id: 'b', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} } }),
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // Union: every key surfaces. Resolver narrows to the supporting subset
     // at request time, so first-available / random stays sound per-endpoint.
     expect(entry.endpoints).toEqual({
-      chatCompletions: {},
-      messages: {},
-      responses: {},
-      completions: {},
+      openaiChatCompletions: {},
+      anthropicMessages: {},
+      openaiResponses: {},
+      openaiCompletions: {},
     });
   });
 
@@ -375,11 +444,11 @@ describe('synthesizeListedAliases', () => {
       ],
     })];
     const realModels = [
-      realModel({ id: 'gen', kind: 'image', endpoints: { imagesGenerations: {} } }),
-      realModel({ id: 'edit', kind: 'image', endpoints: { imagesEdits: {} } }),
+      realModel({ id: 'gen', kind: 'image', endpoints: { openaiImagesGenerations: {} } }),
+      realModel({ id: 'edit', kind: 'image', endpoints: { openaiImagesEdits: {} } }),
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
-    expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
+    expect(entry.endpoints).toEqual({ openaiImagesGenerations: {}, openaiImagesEdits: {} });
   });
 
   test('endpoints is an empty list (no entry emitted) when no target is currently available', () => {
@@ -417,7 +486,7 @@ describe('synthesizeListedAliases', () => {
     });
     expect(entry.id).toBe('fast-claude');
     expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
-    expect(entry.endpoints).toEqual({ chatCompletions: {}, messages: {}, responses: {} });
+    expect(entry.endpoints).toEqual({ openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} });
   });
 
   test('metadata is computed gateway-wide — same numbers regardless of caller cap', () => {

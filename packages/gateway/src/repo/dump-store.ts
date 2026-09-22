@@ -23,6 +23,7 @@ import type {
   StoredDumpResponse,
   StoredDumpResponseBody,
 } from '../dump/types.ts';
+import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
@@ -74,23 +75,13 @@ const hourBucket = (ms: number): string => {
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
-const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
-const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
 const putRawBody = async (
   files: FileStore,
   key: string,
   rawBytes: Uint8Array,
   type: 'bytes' | 'events',
 ): Promise<DumpBodyDescriptor> => {
-  const gz = await gzip(rawBytes);
+  const gz = await gzipBytes(rawBytes);
   await files.put(key, gz);
   return { key, type };
 };
@@ -100,7 +91,7 @@ const putPreparedBody = async (
   key: string,
   prepared: PreparedDumpRequestBody,
 ): Promise<DumpBodyDescriptor> => {
-  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzip(prepared.bytes);
+  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzipBytes(prepared.bytes);
   await files.put(key, gz);
   return { key, type: 'bytes' };
 };
@@ -108,7 +99,7 @@ const putPreparedBody = async (
 const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
-  return await gunzip(gz);
+  return await gunzipBytes(gz);
 };
 
 export class FileDumpStore implements DumpStore {
@@ -117,7 +108,7 @@ export class FileDumpStore implements DumpStore {
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {
       encoding: 'gzip',
-      bytes: await gzip(body),
+      bytes: await gzipBytes(body),
       decodedByteLength: body.byteLength,
     };
   }
@@ -285,6 +276,11 @@ export class FileDumpStore implements DumpStore {
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
+    // D1 derives meta.changes from total_changes(), so the dump retirement trigger
+    // can add spilled_files writes. RETURNING counts only dump rows.
+    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L131
+    // https://www.sqlite.org/c3ref/total_changes.html
+    // https://www.sqlite.org/lang_returning.html
     const active = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
@@ -298,11 +294,12 @@ export class FileDumpStore implements DumpStore {
              AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, now, limit)
-      .run();
-    const activeDeleted = active.meta.changes ?? 0;
+      .all<{ rowid: number }>();
+    const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
     const inactive = await this.db
       .prepare(
@@ -317,11 +314,12 @@ export class FileDumpStore implements DumpStore {
              )
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, limit - activeDeleted)
-      .run();
-    return activeDeleted + (inactive.meta.changes ?? 0);
+      .all<{ rowid: number }>();
+    return activeDeleted + inactive.results.length;
   }
 
   async findOldestCreatedAt(keyId: string): Promise<number | null> {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backfill Usage Pricing"
+  short_description: "Plan and apply verified usage price backfills"
+  default_prompt: "Use $backfill-usage-pricing to inspect and safely reprice the requested usage slice."

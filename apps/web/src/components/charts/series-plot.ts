@@ -1,7 +1,7 @@
 import type { LineChartPoints } from '@fluentui/react-charts';
 import { curveMonotoneX } from 'd3-shape';
 
-import { colorForSlot } from './palette';
+import { colorForHue } from './palette';
 import type { ChartSeries } from './series-legends';
 
 // The stroke every plot in this dashboard draws a series with: 2px, on a
@@ -10,7 +10,7 @@ import type { ChartSeries } from './series-legends';
 // `pointOptions`, so markers here would size points twice.
 export const areaSeries = (entry: ChartSeries, data: LineChartPoints['data']): LineChartPoints => ({
   legend: entry.legend,
-  color: colorForSlot(entry.colorSlot),
+  color: colorForHue(entry.hue),
   lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
   data,
 });

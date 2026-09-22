@@ -1,9 +1,10 @@
+import type { InfoButtonProps } from '@fluentui/react-components';
 import type { ReactNode } from 'react';
 
 import { HEADER_ROW_CLASS, TIGHT_STACK_CLASS } from './layout';
 import { fluentComponents } from '../../fluent';
 
-const { Text, mergeClasses } = fluentComponents;
+const { InfoButton, Text, mergeClasses } = fluentComponents;
 
 // Level 2 is WinUI's Subtitle (20px), level 4 its BodyStrong (14px, the WinUI
 // Gallery settings section heading); level 3's 16px is ours, as WinUI steps
@@ -16,9 +17,10 @@ const { Text, mergeClasses } = fluentComponents;
 // and #L421-L424
 const TITLE_SIZE = { 2: 500, 3: 400, 4: 300 } as const;
 
-export function SectionHeader({ actions, description, level, title, titleId, truncate = false }: {
+export function SectionHeader({ actions, description, info, level, title, titleId, truncate = false }: {
   actions?: ReactNode;
   description?: ReactNode;
+  info?: InfoButtonProps['info'];
   level: 2 | 3 | 4;
   title: ReactNode;
   titleId?: string;
@@ -26,7 +28,7 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
 }) {
   // Fluent's `truncate` contributes the ellipsis alone; the clip and the single
   // line come from `wrap={false}`, so a title that trims needs both.
-  const heading = <Text
+  const headingText = <Text
     as={(`h${level}`) as 'h2'}
     className={description === undefined ? 'm-0 min-w-0' : 'm-0'}
     id={titleId}
@@ -35,6 +37,9 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
     weight="semibold"
     wrap={!truncate}
   >{title}</Text>;
+  const heading = info === undefined
+    ? headingText
+    : <div className="inline-flex items-center gap-1 min-w-0">{headingText}<InfoButton info={info} /></div>;
 
   const block = description === undefined
     ? heading

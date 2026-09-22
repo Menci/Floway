@@ -19,7 +19,7 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
     baseUrl: `https://${id}.example.com`,
     authStyle: 'bearer',
     apiKey: 'key',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,

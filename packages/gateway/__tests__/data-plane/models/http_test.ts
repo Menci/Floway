@@ -53,7 +53,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-test',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -324,7 +324,9 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
             kind: 'chat',
-            endpoints: { messages: {} },
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
+            chat: { image_detail_original: false },
+            endpoints: { anthropicMessages: {} },
             pricing: {
               entries: [
                 { rates: { input_tokens: '0.000005', output_tokens: '0.000025', input_cache_read_tokens: '0.0000005', input_cache_write_tokens: '0.00000625' } },
@@ -339,7 +341,8 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
-            endpoints: { embeddings: {} },
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
+            endpoints: { openaiEmbeddings: {} },
           },
           {
             id: 'gpt-image-2',
@@ -348,7 +351,8 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'gpt-image-2',
             limits: {},
             kind: 'image',
-            endpoints: { imagesGenerations: {}, imagesEdits: {} },
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
+            endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
           },
         ],
       });
@@ -369,7 +373,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -411,7 +415,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-h',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -423,7 +427,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-b',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -464,7 +468,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -510,7 +514,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -548,7 +552,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -720,7 +724,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-test',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
   // Two aliases: one shadows a real id (`gpt-4o`) so the alias entry must
@@ -826,7 +830,7 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-shadow',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
   await repo.modelAliases.insert({

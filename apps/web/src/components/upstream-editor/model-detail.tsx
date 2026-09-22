@@ -1,13 +1,13 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
+import { type ModelValidationField, modelValidationIssues } from './model-validation';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
-import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
@@ -18,7 +18,7 @@ import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
-import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const {
   Button,
@@ -35,8 +35,10 @@ export function ModelDetail({
   onChange,
   onDelete,
   onSourceChange,
+  onUpstreamModelIdCommit,
   readOnly,
   record,
+  revealValidation,
   row,
   section,
   upstreamFlags,
@@ -44,15 +46,19 @@ export function ModelDetail({
   onChange: (value: UpstreamModelConfig) => void;
   onDelete: () => void;
   onSourceChange: (source: 'auto' | 'manual') => void;
+  onUpstreamModelIdCommit: (upstreamModelId: string) => void;
   readOnly: boolean;
   record: UpstreamRecord;
+  revealValidation: boolean;
   row: ModelRow;
   section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
+  const imageInputLabelId = useId();
   const reasoningLabelId = useId();
+  const upstreamIdRef = useRef<HTMLInputElement>(null);
   const fieldsReadOnly = readOnly || row.source !== 'manual';
   const patch = (next: Partial<UpstreamModelConfig>) => {
     if (fieldsReadOnly) return;
@@ -83,11 +89,36 @@ export function ModelDetail({
     patch({ chat });
   };
 
-  const validationError = modelValidationError(row.config, t);
+  const validationIssues = revealValidation ? modelValidationIssues(row.config) : [];
+  const validationMessage = (field: ModelValidationField) => {
+    const issue = validationIssues.find(candidate => candidate.field === field);
+    return issue ? t(issue.message) : undefined;
+  };
+  const upstreamIdError = validationMessage('upstreamModelId');
+  const summaryError = validationIssues.find(issue => issue.field === 'configuration' || issue.field === 'pricing' || issue.field === 'reasoning');
   const effort = row.config.chat?.reasoning?.effort;
   const budget = row.config.chat?.reasoning?.budget_tokens;
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
+  const imageInput = row.config.chat?.modalities?.input.includes('image') === true;
+  const opaqueBlobCompatibilityScope = row.config.opaqueBlobCompatibilityScope;
+  const bindOpaqueBlobsToUpstream = opaqueBlobCompatibilityScope?.bindToUpstream ?? true;
+
+  const updateOpaqueBlobCompatibilityScope = (
+    update: Partial<NonNullable<UpstreamModelConfig['opaqueBlobCompatibilityScope']>>,
+  ) => {
+    const next = {
+      bindToUpstream: bindOpaqueBlobsToUpstream,
+      ...opaqueBlobCompatibilityScope,
+      ...update,
+    };
+    if (next.key === undefined) delete next.key;
+    patch({ opaqueBlobCompatibilityScope: next });
+  };
+
+  useEffect(() => {
+    if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
+  }, [revealValidation, upstreamIdError]);
 
   return (
     <div className="grid gap-3 min-w-0">
@@ -110,7 +141,7 @@ export function ModelDetail({
         value={row.config.flagOverrides ?? {}}
         onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}
       /> : <>
-        {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
+        {summaryError && <MessageBar intent="error"><MessageBarBody>{t(summaryError.message)}</MessageBarBody></MessageBar>}
 
         <EditorSection level={3} title={t('dashboard.upstreamEditor.models.identity')}>
           {/* This sits beside a 380px sidebar, so the available width and the
@@ -126,8 +157,8 @@ export function ModelDetail({
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
               </Dropdown>
             </Field>
-            <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
-              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} value={row.config.upstreamModelId} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
+            <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
+              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} ref={upstreamIdRef} value={row.config.upstreamModelId} onBlur={() => onUpstreamModelIdCommit(row.config.upstreamModelId)} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
               <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
@@ -135,7 +166,31 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
-        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
+        <EditorSection
+          info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
+          level={3}
+          title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
+        >
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Input
+              aria-label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}
+              className="min-w-[220px] flex-1 font-mono"
+              placeholder={row.config.upstreamModelId}
+              readOnly={fieldsReadOnly}
+              value={opaqueBlobCompatibilityScope?.key ?? ''}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ key: data.value || undefined })}
+            />
+            <Switch
+              checked={bindOpaqueBlobsToUpstream}
+              className="flex-none"
+              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+              readOnly={fieldsReadOnly}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
+            />
+          </div>
+        </EditorSection>
+
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
@@ -151,7 +206,7 @@ export function ModelDetail({
           </div>
         </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
@@ -162,12 +217,27 @@ export function ModelDetail({
             <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
           </div>
           {row.config.kind === 'chat' && <>
-            <Switch
-              checked={row.config.chat?.modalities?.input.includes('image') === true}
-              readOnly={fieldsReadOnly}
-              label={t('dashboard.upstreamEditor.models.imageInput')}
-              onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
-            />
+            <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
+              <Text id={imageInputLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
+              <div className="flex flex-wrap gap-4">
+                <Switch
+                  checked={imageInput}
+                  readOnly={fieldsReadOnly}
+                  label={t('dashboard.upstreamEditor.models.imageInput')}
+                  // Dropping image input drops the detail claim with it: the detail
+                  // switch is only reachable while image input is on, so a claim
+                  // left behind would be announced while the operator can no
+                  // longer see or clear it.
+                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original ?? false : undefined }) })}
+                />
+                {imageInput && <Switch
+                  checked={row.config.chat?.image_detail_original === true}
+                  readOnly={fieldsReadOnly}
+                  label={t('dashboard.upstreamEditor.models.imageDetailOriginal')}
+                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), image_detail_original: data.checked }) })}
+                />}
+              </div>
+            </div>
             <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
               <Text id={reasoningLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
@@ -243,39 +313,9 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   }
 };
 
-const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
-  const effort = model.chat?.reasoning?.effort;
-  if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return 'dashboard.upstreamEditor.models.invalidEffort';
-  const budget = model.chat?.reasoning?.budget_tokens;
-  if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return 'dashboard.upstreamEditor.models.invalidBudget';
-  if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return 'dashboard.upstreamEditor.models.invalidPricing';
-  return null;
-};
-
-const modelValidationError = (model: UpstreamModelConfig, t: TFunction): string | null => {
-  const issue = editorFieldIssue(model);
-  if (issue) return t(issue);
-  try {
-    modelsField([model], 'model');
-  } catch {
-    return t('dashboard.upstreamEditor.models.invalidContract');
-  }
-  return null;
-};
-
-export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
-  if (models.some(model => editorFieldIssue(model) !== null)) return false;
-  try {
-    modelsField([...models], 'models');
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.reasoning ? chat : undefined;
+const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.image_detail_original !== undefined || chat.reasoning ? chat : undefined;
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);

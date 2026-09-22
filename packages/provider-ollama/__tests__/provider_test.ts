@@ -1,9 +1,17 @@
 import { test } from 'vitest';
 
 import { createOllamaProvider } from '../src/provider.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+
+// A cloud upstream writes its usage snapshot after the calls it serves, so the
+// provider needs a repo to write into wherever those calls are exercised.
+initProviderRepo(() => ({
+  upstreams: {
+    getById: async () => null,
+    saveState: async () => {},
+  },
+}));
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -58,12 +66,13 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
 test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-compat endpoints', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
-    assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
+    assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
+    assertEquals(gptoss.opaqueBlobCompatibilityScope, { bindToUpstream: true });
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
     assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
@@ -71,13 +80,13 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
   });
 });
 
-test('getProvidedModels routes embedding-capability models to kind=embedding with only the embeddings endpoint', async () => {
+test('getProvidedModels routes embedding-capability models to kind=embedding with only the openaiEmbeddings endpoint', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
-    assertEquals(Object.keys(embed.endpoints), ['embeddings']);
+    assertEquals(Object.keys(embed.endpoints), ['openaiEmbeddings']);
   });
 });
 
@@ -89,19 +98,22 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
       models: [{
         upstreamModelId: 'gpt-oss:120b',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Pinned 120B',
+        chat: { image_detail_original: true },
         pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
       }],
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     // Manual entry appears first; the auto duplicate is filtered out so the
     // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
-    assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
+    assertEquals(Object.keys(models[0].endpoints), ['openaiChatCompletions']);
+    assertEquals(models[0].chat, { image_detail_original: true });
+    assertEquals(models[0].opaqueBlobCompatibilityScope, { bindToUpstream: true });
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
@@ -116,12 +128,12 @@ test('manual known models inherit built-in pricing when no override is configure
       models: [{
         upstreamModelId: 'deepseek-v4-flash',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
       }],
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
@@ -131,7 +143,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }],
     },
   }));
   let transcription: Request | undefined;
@@ -146,9 +158,10 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       throw new Error(`unexpected request ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
-      await instance.instance.callAudioTranscriptions(models[0], {
+      assertEquals(models[0]?.chat, undefined);
+      await instance.instance.callOpenAIAudioTranscriptions(models[0], {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
           { name: 'model', value: 'public-model' },
@@ -190,12 +203,12 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       return new Response('unexpected', { status: 500 });
     },
     async () => {
-      const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
-      const result = await instance.instance.callChatCompletions(
+      const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
+      const result = await instance.instance.callOpenAIChatCompletions(
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+        noopUpstreamCallOptions(),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },
@@ -208,7 +221,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   assertEquals(body.stream, true);
 });
 
-test('Messages methods serialize typed anthropic-beta metadata only on Messages wire calls', async () => {
+test('Anthropic Messages methods serialize typed anthropic-beta metadata only on Anthropic Messages wire calls', async () => {
   const instance = createOllamaProvider(buildRecord());
   const betas: Record<string, string | null> = {};
 
@@ -223,6 +236,10 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
           model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
         });
       }
+      // A cloud call arms the background usage probe. It is not a wire call
+      // of the protocol under test, so it stays out of the beta record.
+      if (path === '/api/usage') return jsonResponse({ limits: {} });
+      if (path === '/api/me') return jsonResponse({ Plan: 'free' });
       betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/messages') {
         return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
@@ -231,10 +248,10 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await instance.instance.getProvidedModels(directFetcher);
-      const opts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      const [model] = await instance.instance.getProvidedModels(testFetcher);
+      const opts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      await instance.instance.callAnthropicMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await instance.instance.callAnthropicMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
     },
   );
 
@@ -247,7 +264,7 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
 test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.chat, {
       reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },

@@ -20,8 +20,8 @@ export const messageBarCss = `
 /* InfoBarMinHeight, and InfoBarContentRootPadding — the thickness 16,0,0,0, so
    leading only. The stroke is restated because InfoBar takes InfoBarBorderBrush
    from the card stroke family where Fluent's border reads the neutral control
-   stroke; the two agree in light (#0000000f) but not in dark (#00000019 against
-   #ffffff12).
+   stroke; the two agree in light (rgba(0, 0, 0, 0.058824)) but not in dark
+   (rgba(0, 0, 0, 0.098039) against rgba(255, 255, 255, 0.070588)).
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L66
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L75
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L20 */

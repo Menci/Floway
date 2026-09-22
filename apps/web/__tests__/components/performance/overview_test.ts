@@ -98,22 +98,24 @@ describe('performance overview query', () => {
 });
 
 describe('performance chart series', () => {
+  const record = (group: string): PerformanceDisplayRecord => ({
+    bucket: 'bucket-1',
+    group,
+    requests: 1,
+    errors: 0,
+    ttftSamples: 1,
+    tpotSamples: 1,
+    neutral: 0,
+    ttftMsP50: 10,
+    ttftMsP95: 20,
+    ttftMsP99: 30,
+    tpotUsP50: 10_000,
+    tpotUsP95: 20_000,
+    tpotUsP99: 30_000,
+  });
+  const buckets = [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }];
+
   it('uses stable group ids when two API keys have the same name', () => {
-    const record = (group: string): PerformanceDisplayRecord => ({
-      bucket: 'bucket-1',
-      group,
-      requests: 1,
-      errors: 0,
-      ttftSamples: 1,
-      tpotSamples: 1,
-      neutral: 0,
-      ttftMsP50: 10,
-      ttftMsP95: 20,
-      ttftMsP99: 30,
-      tpotUsP50: 10_000,
-      tpotUsP95: 20_000,
-      tpotUsP99: 30_000,
-    });
     const overview = emptyOverview();
     overview.keys = [
       { id: 'key-1', name: 'Shared name', createdAt: '' },
@@ -124,8 +126,8 @@ describe('performance chart series', () => {
       'ttft',
       'p95',
       'keyId',
-      performanceLabels(overview, new Map()),
-      [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }],
+      performanceLabels(overview, []),
+      buckets,
       'today',
     );
 
@@ -133,5 +135,21 @@ describe('performance chart series', () => {
     expect(chart.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
     expect(chart.data.lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
     expect(chart.details.get(0)?.get('key-1')).toEqual({ outputSpeed: 50, ttft: 20 });
+  });
+
+  it('uses configured hues for upstream series', () => {
+    const overview = emptyOverview();
+    const chart = buildPerformanceChart(
+      [record('up-1')],
+      'ttft',
+      'p95',
+      'upstream',
+      performanceLabels(overview, [{ id: 'up-1', name: 'Copilot seat', hue: 217 }]),
+      buckets,
+      'today',
+    );
+
+    expect(chart.entries[0]).toMatchObject({ id: 'up-1', label: 'Copilot seat', hue: 217 });
+    expect(chart.data.lineChartData?.[0]?.color).toBe('#00b1d3');
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { collectBody, makeFakeDuplex } from './test-utils.ts';
 import { fetchOnStream } from '../src/fetch-on-stream.ts';
@@ -13,15 +13,15 @@ describe('fetchOnStream — request line and headers', () => {
       {
         method: 'POST',
         path: '/v1/messages?stream=true',
-        headers: {
-          Host: 'api.openai.com',
-          Authorization: 'Bearer xxx',
+        headers: [
+          ['Host', 'api.openai.com'],
+          ['Authorization', 'Bearer xxx'],
           // These three are stripped by fetchOnStream — the buffered body
           // length is the source of truth.
-          'Content-Length': '999',
-          'Transfer-Encoding': 'chunked',
-          Connection: 'keep-alive',
-        },
+          ['Content-Length', '999'],
+          ['Transfer-Encoding', 'chunked'],
+          ['Connection', 'keep-alive'],
+        ],
         body: new TextEncoder().encode('payload'),
       },
     );
@@ -42,11 +42,34 @@ describe('fetchOnStream — request line and headers', () => {
     expect(head).toMatch(/\r\n\r\npayload$/);
   });
 
+  it('writes one field line per entry, so a repeated name stays repeated', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'GET',
+        path: '/',
+        headers: [['Host', 'h'], ['X-Route', 'one'], ['X-Other', 'between'], ['X-Route', 'two'], ['X-Route', '']],
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+
+    const head = decodeAscii(fake.written());
+    expect(head.split('\r\n').filter(line => line.startsWith('X-'))).toEqual([
+      'X-Route: one',
+      'X-Other: between',
+      'X-Route: two',
+      'X-Route: ',
+    ]);
+  });
+
   it('does not set Content-Length when there is no body', async () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -66,7 +89,7 @@ describe('fetchOnStream — request line and headers', () => {
     });
     const promise = fetchOnStream(
       { readable: fake.readable, writable: writableTap },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
       new TextEncoder().encode('PREFIX-BYTES'),
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
@@ -84,7 +107,7 @@ describe('fetchOnStream — body-bearing responses', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
     );
     fake.respond([
       'HTTP/1.1 200 OK',
@@ -103,7 +126,7 @@ describe('fetchOnStream — body-bearing responses', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhello world');
     fake.endResponse();
@@ -115,7 +138,7 @@ describe('fetchOnStream — body-bearing responses', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
     );
     fake.respond('HTTP/1.0 200 OK\r\n\r\nhello there');
     fake.endResponse();
@@ -133,7 +156,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
     const fake = makeFakeDuplex();
     return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h', [name]: 'v' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h'], [name, 'v']] },
     ).catch((e: unknown) => e);
   };
 
@@ -182,7 +205,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
     const fake = makeFakeDuplex();
     return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h', 'X-Test': value } },
+      { method: 'GET', path: '/', headers: [['Host', 'h'], ['X-Test', value]] },
     ).catch((e: unknown) => e);
   };
 
@@ -214,7 +237,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
       {
         method: 'GET',
         path: '/',
-        headers: { Host: 'h', 'X-Test': 'a;b,c=d (e) [f] {g} <h>/?@' },
+        headers: [['Host', 'h'], ['X-Test', 'a;b,c=d (e) [f] {g} <h>/?@']],
       },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
@@ -230,7 +253,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
       {
         method: 'GET',
         path: '/',
-        headers: { Host: 'h', 'X-Test': '!#$%&\'*+-.^_`|~' },
+        headers: [['Host', 'h'], ['X-Test', '!#$%&\'*+-.^_`|~']],
       },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
@@ -258,7 +281,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
       {
         method: 'GET',
         path: '/',
-        headers: { Host: 'h', 'X-Test': 'a\tb' },
+        headers: [['Host', 'h'], ['X-Test', 'a\tb']],
       },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
@@ -273,7 +296,7 @@ describe('fetchOnStream — request-method handling', () => {
     const fake = makeFakeDuplex();
     await expect(fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'HEAD', path: '/', headers: { Host: 'h' } },
+      { method: 'HEAD', path: '/', headers: [['Host', 'h']] },
     )).rejects.toMatchObject({
       name: 'HttpProtocolError',
       code: 'HEAD_REQUEST_REJECTED',
@@ -284,7 +307,7 @@ describe('fetchOnStream — request-method handling', () => {
     const fake = makeFakeDuplex();
     await expect(fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'head', path: '/', headers: { Host: 'h' } },
+      { method: 'head', path: '/', headers: [['Host', 'h']] },
     )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
   });
 
@@ -292,7 +315,7 @@ describe('fetchOnStream — request-method handling', () => {
     const fake = makeFakeDuplex();
     await expect(fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'Head', path: '/', headers: { Host: 'h' } },
+      { method: 'Head', path: '/', headers: [['Host', 'h']] },
     )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
   });
 });
@@ -305,14 +328,14 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
     const fake = makeFakeDuplex();
     return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method, path: '/', headers: { Host: 'h' } },
+      { method, path: '/', headers: [['Host', 'h']] },
     ).catch((e: unknown) => e);
   };
   const dialPath = async (path: string): Promise<unknown> => {
     const fake = makeFakeDuplex();
     return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path, headers: { Host: 'h' } },
+      { method: 'GET', path, headers: [['Host', 'h']] },
     ).catch((e: unknown) => e);
   };
 
@@ -368,7 +391,7 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/v1/messages?stream=true&q=hi%20there', headers: { Host: 'h' } },
+      { method: 'GET', path: '/v1/messages?stream=true&q=hi%20there', headers: [['Host', 'h']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -383,7 +406,7 @@ describe('fetchOnStream — request body serialization', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -407,7 +430,7 @@ describe('fetchOnStream — request body serialization', () => {
     });
     const promise = fetchOnStream(
       { readable: fake.readable, writable: writableTap },
-      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -415,6 +438,94 @@ describe('fetchOnStream — request body serialization', () => {
     // First write is the head; the next eight are 16 KiB each.
     expect(writeSizes.length).toBe(9);
     expect(writeSizes.slice(1)).toEqual([16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384]);
+  });
+
+  it('writes a declared-length stream without changing its HTTP framing', async () => {
+    const fake = makeFakeDuplex();
+    const chunks = ['streamed ', 'body'];
+    let pulls = 0;
+    const body = {
+      contentLength: 13,
+      open: () => new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const chunk = chunks[pulls++];
+          if (chunk === undefined) controller.close();
+          else controller.enqueue(new TextEncoder().encode(chunk));
+        },
+      }),
+    };
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+
+    await promise;
+
+    const text = decodeAscii(fake.written());
+    expect(text).toContain('Content-Length: 13\r\n');
+    expect(text.endsWith('\r\n\r\nstreamed body')).toBe(true);
+    expect(pulls).toBe(3);
+  });
+
+  it('does not pull the next body chunk while the writer is backpressured', async () => {
+    const fake = makeFakeDuplex();
+    const blocked = Promise.withResolvers<void>();
+    let pulls = 0;
+    let writes = 0;
+    const writable = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        writes += 1;
+        if (writes === 2) await blocked.promise;
+        const writer = fake.writable.getWriter();
+        try {
+          await writer.write(chunk);
+        } finally {
+          writer.releaseLock();
+        }
+      },
+    });
+    const body = {
+      contentLength: 2,
+      open: () => new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          if (pulls <= 2) controller.enqueue(new Uint8Array([0x60 + pulls]));
+          else controller.close();
+        },
+      }, { highWaterMark: 0 }),
+    };
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body },
+    );
+
+    await vi.waitFor(() => expect(writes).toBe(2));
+    expect(pulls).toBe(1);
+    blocked.resolve();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+
+    await promise;
+    expect(pulls).toBe(3);
+  });
+
+  it.each([
+    { contentLength: 0, payload: 'x', title: 'exceeds zero', message: 'exceeded' },
+    { contentLength: 2, payload: 'one', title: 'exceeds', message: 'exceeded' },
+    { contentLength: 4, payload: 'one', title: 'ends before', message: 'ended before' },
+  ])('rejects a stream that $title its declared length', async ({ contentLength, payload, message }) => {
+    const fake = makeFakeDuplex();
+    const body = {
+      contentLength,
+      open: () => new Blob([payload]).stream(),
+    };
+
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body },
+    )).rejects.toThrow(message);
   });
 
   it('does not write any body bytes when body is undefined', async () => {
@@ -429,7 +540,7 @@ describe('fetchOnStream — request body serialization', () => {
     });
     const promise = fetchOnStream(
       { readable: fake.readable, writable: writableTap },
-      { method: 'GET', path: '/', headers: { Host: 'h' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -449,22 +560,99 @@ describe('fetchOnStream — request body serialization', () => {
     });
     const promise = fetchOnStream(
       { readable: fake.readable, writable: writableTap },
-      { method: 'POST', path: '/', headers: { Host: 'h' }, body: new Uint8Array(0) },
+      { method: 'POST', path: '/', headers: [['Host', 'h']], body: new Uint8Array(0) },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
     await promise;
     expect(writeCount.n).toBe(1);
-    // No Content-Length is added for a zero-byte body — matches the
-    // current policy (only set CL when bodyLen > 0).
-    expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
+    expect(decodeAscii(fake.written())).toContain('Content-Length: 0\r\n');
+  });
+
+  it('preserves fixed framing for a zero-length replayable body', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: [['Host', 'h']],
+        body: { contentLength: 0, open: () => new Blob([]).stream() },
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('Content-Length: 0\r\n');
+  });
+
+  it('cancels the source with the original writer failure', async () => {
+    const fake = makeFakeDuplex();
+    const failure = new Error('socket write failed');
+    const cancel = vi.fn(() => {
+      throw new Error('source cancellation failed');
+    });
+    let writes = 0;
+    const writable = new WritableStream<Uint8Array>({
+      write() {
+        writes += 1;
+        if (writes === 2) throw failure;
+      },
+    });
+
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: [['Host', 'h']],
+        body: {
+          contentLength: 1,
+          open: () => new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+            cancel,
+          }),
+        },
+      },
+    );
+
+    await expect(promise).rejects.toBe(failure);
+    expect(cancel).toHaveBeenCalledWith(failure);
+  });
+
+  it('cancels the source when a chunk exceeds its declared length', async () => {
+    const fake = makeFakeDuplex();
+    const cancel = vi.fn();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: [['Host', 'h']],
+        body: {
+          contentLength: 0,
+          open: () => new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+            cancel,
+          }),
+        },
+      },
+    );
+
+    await expect(promise).rejects.toThrow('exceeded its declared content length');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(cancel.mock.calls[0]![0]).toBeInstanceOf(RangeError);
   });
 
   it('preserves a caller-supplied Accept-Encoding header', async () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h', 'Accept-Encoding': 'gzip' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h'], ['Accept-Encoding', 'gzip']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -477,7 +665,7 @@ describe('fetchOnStream — request body serialization', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h', 'CONNECTION': 'keep-alive' } },
+      { method: 'GET', path: '/', headers: [['Host', 'h'], ['CONNECTION', 'keep-alive']] },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();
@@ -494,7 +682,7 @@ describe('fetchOnStream — request body serialization', () => {
       {
         method: 'POST',
         path: '/',
-        headers: { Host: 'h', 'transfer-encoding': 'chunked' },
+        headers: [['Host', 'h'], ['transfer-encoding', 'chunked']],
         body: new TextEncoder().encode('x'),
       },
     );
@@ -518,7 +706,7 @@ describe('fetchOnStream — writer-lock release on rejected calls', () => {
     await expect(
       fetchOnStream(
         { readable: fake.readable, writable: fake.writable },
-        { method: 'POST', path: '/', headers: { 'X\rEvil': 'v' }, body: undefined },
+        { method: 'POST', path: '/', headers: [['X\rEvil', 'v']], body: undefined },
       ),
     ).rejects.toMatchObject({ code: 'BAD_HEADERS' });
     // After rejection, the writable must be unlocked so the caller can
@@ -533,7 +721,7 @@ describe('fetchOnStream — writer-lock release on rejected calls', () => {
     const fake = makeFakeDuplex();
     const promise = fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: { Host: 'h' }, body: undefined },
+      { method: 'GET', path: '/', headers: [['Host', 'h']], body: undefined },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
     fake.endResponse();

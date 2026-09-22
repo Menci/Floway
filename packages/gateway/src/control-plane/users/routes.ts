@@ -53,7 +53,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   };
   await repo.apiKeys.save(defaultKey);
 

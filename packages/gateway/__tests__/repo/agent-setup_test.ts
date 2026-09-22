@@ -122,6 +122,60 @@ test('migration 0068 adds the Claude fable override without replacing existing c
   }
 });
 
+test('migration 0080 adds the Claude opt-out toggles without replacing existing choices', async () => {
+  const db = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0080_agent_setup_claude_opt_outs.sql') break;
+      db.run(sql);
+    }
+    const baseConfiguration = {
+      apiKeyId: 'key-a',
+      claudeCode: {
+        model: null,
+        defaultFableModel: null,
+        defaultOpusModel: null,
+        defaultSonnetModel: null,
+        defaultHaikuModel: null,
+        effortLevel: null,
+        cleanupPeriodDays: null,
+        optOutAiAttribution: false,
+        modelDiscovery: true,
+      },
+      codex: { model: null, reasoningEffort: null },
+    };
+    db.run(
+      `INSERT INTO agent_setup
+        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
+      [
+        'legacy', 1, JSON.stringify(baseConfiguration),
+        'opted-out', 1, JSON.stringify({
+          ...baseConfiguration,
+          claudeCode: { ...baseConfiguration.claudeCode, disableAutoMemory: true, disableAgentView: true },
+        }),
+      ],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0080_agent_setup_claude_opt_outs.sql');
+    if (migration === undefined) throw new Error('missing migration 0080_agent_setup_claude_opt_outs.sql');
+    db.run(migration[1]);
+
+    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
+    if (rows === undefined) throw new Error('migration 0080 returned no agent_setup rows');
+    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
+      token as string,
+      JSON.parse(json as string) as AgentSetupConfiguration,
+    ]));
+    expect(configurations.legacy?.claudeCode.disableAutoMemory).toBe(false);
+    expect(configurations.legacy?.claudeCode.disableAgentView).toBe(false);
+    expect(configurations['opted-out']?.claudeCode.disableAutoMemory).toBe(true);
+    expect(configurations['opted-out']?.claudeCode.disableAgentView).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
 const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertForUser']>[0]> = {}) =>
   repo.agentSetup.insertForUser({
     userId: 7,

@@ -3,6 +3,7 @@ export * from './channel-broker.ts';
 export * from './env.ts';
 export * from './execution-cell.ts';
 export * from './external-resource-fetcher.ts';
+export * from './fetch.ts';
 export * from './file-store.ts';
 export * from './image-cache-store.ts';
 export * from './image-processor.ts';

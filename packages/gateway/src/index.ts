@@ -6,6 +6,6 @@ export { MODEL_CATALOG_REVISION } from './repo/models-cache-contract.ts';
 export { initBackgroundSchedulerResolver } from './runtime/background.ts';
 export { initExecutionCellNamespace } from './runtime/execution.ts';
 export { initDumpBroker, initDumpStore } from './dump/registry.ts';
-export { initResponsesWebSocketUpgradeResolver } from './data-plane/chat/responses/websocket.ts';
+export { initOpenAIResponsesWebSocketUpgradeResolver } from './data-plane/chat/openai-responses/websocket.ts';
 export { runScheduledMaintenance } from './scheduled.ts';
 export { handleExecutionRequest } from './execution/handler.ts';

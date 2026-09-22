@@ -1,4 +1,4 @@
-import { parseHex } from 'culori/fn';
+import { parse, parseHex } from 'culori';
 import { describe, expect, it } from 'vitest';
 
 import { blendHex } from '../../src/lib/color';
@@ -85,7 +85,7 @@ describe('folded winui derivations', () => {
     const schemes = declarationsByScheme(winuiTokenCss);
     // The rule appears once at the top level and once under the dark query, in
     // that order, and the source already carries an alpha of its own.
-    const declared = [...listCss.matchAll(/\[aria-disabled='true'\]\s*\{[^}]*?color:\s*(#[0-9a-f]{8})/g)].map(([, hex]) => hex);
+    const declared = [...listCss.matchAll(/\[aria-disabled='true'\]\s*\{[^}]*?color:\s*(rgba\([^)]+\))/g)].map(([, color]) => color);
     expect(declared).toHaveLength(2);
     const shares = statedShare(listCss, '--winui-text-fill-primary');
     expect(shares).toHaveLength(2);
@@ -93,10 +93,19 @@ describe('folded winui derivations', () => {
     const stale: string[] = [];
     for (const [index, scheme] of (['light', 'dark'] as const).entries()) {
       const source = resolve(schemes[index]!, '--winui-text-fill-primary');
-      const sourceAlpha = source.length === 9 ? parseInt(source.slice(7, 9), 16) / 255 : 1;
+      const sourceColor = parse(source);
+      const declaredColor = parse(declared[index]!);
+      if (sourceColor?.mode !== 'rgb' || declaredColor?.mode !== 'rgb') throw new TypeError('Expected RGB colors');
       const share = shares[index]!;
-      const expected = `${source.slice(0, 7)}${Math.round(sourceAlpha * share * 255).toString(16).padStart(2, '0')}`;
-      if (declared[index] !== expected) stale.push(`${scheme} disabled row is ${declared[index]}, but ${share * 100}% of ${source} is ${expected}`);
+      const expectedAlpha = Math.round((sourceColor.alpha ?? 1) * share * 255) / 255;
+      if (
+        declaredColor.r !== sourceColor.r
+        || declaredColor.g !== sourceColor.g
+        || declaredColor.b !== sourceColor.b
+        || Math.abs((declaredColor.alpha ?? 1) - expectedAlpha) > 0.000001
+      ) {
+        stale.push(`${scheme} disabled row is ${declared[index]}, but ${share * 100}% of ${source} has alpha ${expectedAlpha}`);
+      }
     }
     expect(stale).toEqual([]);
   });

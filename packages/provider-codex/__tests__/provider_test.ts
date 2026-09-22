@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER } from '../src/constants.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -33,6 +34,11 @@ const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken):
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
 });
 
+const accessOnlyRecord = (entry: CodexAccessTokenEntry): UpstreamRecord => ({
+  ...baseRecord,
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
+});
+
 let current: UpstreamRecord | null;
 let repo: UpstreamStateRepoStub;
 
@@ -59,15 +65,28 @@ const sseResponse = (): Response => new Response(
 
 const modelsResponse = (): Response => new Response(JSON.stringify({
   models: [
-    { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
-    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000, use_responses_lite: false },
+    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000, use_responses_lite: true },
   ],
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+
+const idToken = (planType = 'plus'): string => [
+  Buffer.from('{}').toString('base64url'),
+  Buffer.from(JSON.stringify({
+    email: 'a@b.com',
+    'https://api.openai.com/auth': {
+      chatgpt_account_id: 'acc',
+      chatgpt_user_id: 'usr',
+      chatgpt_plan_type: planType,
+    },
+  })).toString('base64url'),
+  Buffer.from('signature').toString('base64url'),
+].join('.');
 
 const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number }> = {}): Response => new Response(JSON.stringify({
   access_token: overrides.access_token ?? 'at_minted',
   refresh_token: overrides.refresh_token ?? 'rt_v2',
-  id_token: 'id_token_v2',
+  id_token: idToken(),
   expires_in: overrides.expires_in ?? 3600,
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
@@ -76,10 +95,12 @@ describe('createCodexProvider', () => {
     const provider = createCodexProvider(baseRecord);
 
     expect(provider.inboundHeaderAllowlist).toEqual([
+      'originator',
       'session-id',
       'session_id',
       'thread-id',
       'x-client-request-id',
+      'x-codex-image-turn-id',
       'x-codex-turn-metadata',
       'x-codex-window-id',
     ]);
@@ -98,10 +119,32 @@ describe('createCodexProvider', () => {
     const models = await instance.instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
-    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
-    expect(models[0].endpoints).toEqual({ responses: {} });
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
+    expect(models[0].endpoints).toEqual({ openaiResponses: {} });
+    expect(models[0].providerData).toEqual({ useResponsesLite: false });
+    expect(models[1].providerData).toEqual({ useResponsesLite: true });
+    expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
+  });
+
+  test('getProvidedModels uses an unknown-expiry access-only token without an OAuth refresh', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: null, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const models = await createCodexProvider(record).instance.getProvidedModels(directFetcher);
+    // Unknown plan fails open, so the provider-owned image model is surfaced too.
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_only');
+  });
+
+  test('getProvidedModels reports an expired access-only token before fetching', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(createCodexProvider(record).instance.getProvidedModels(directFetcher)).rejects.toThrow(/expired.*re-import/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
@@ -114,7 +157,7 @@ describe('createCodexProvider', () => {
     });
     const instance = createCodexProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
-    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
@@ -132,6 +175,41 @@ describe('createCodexProvider', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
     const instance = createCodexProvider(baseRecord);
     await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
+  });
+
+  test('getProvidedModels omits image models only for an explicit Free plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const models = await createCodexProvider(freeRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+  });
+
+  test('getProvidedModels fails open for an unknown future plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const futureRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'future-plan' }] },
+    };
+    const models = await createCodexProvider(futureRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toContain('gpt-image-2');
+  });
+
+  test('getProvidedModels uses the refreshed access-token plan over import-time config', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => modelsResponse());
+    current = recordWithAccessToken({ ...freshAccessToken, planType: 'free' });
+    const downgraded = await createCodexProvider(baseRecord).instance.getProvidedModels(directFetcher);
+    expect(downgraded.map(model => model.id)).not.toContain('gpt-image-2');
+
+    const importedFree: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    current = recordWithAccessToken({ ...freshAccessToken, planType: 'plus' });
+    const upgraded = await createCodexProvider(importedFree).instance.getProvidedModels(directFetcher);
+    expect(upgraded.map(model => model.id)).toContain('gpt-image-2');
   });
 
   test('getProvidedModels propagates OAuth refresh failures', async () => {
@@ -153,21 +231,21 @@ describe('createCodexProvider', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const recordWithOverride: UpstreamRecord = {
       ...baseRecord,
-      flagOverrides: { 'responses-web-search-shim': true },
+      flagOverrides: { 'openai-responses-web-search-shim': true },
     };
     const instance = createCodexProvider(recordWithOverride);
     const models = await instance.instance.getProvidedModels(directFetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
-      expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);
+      expect(m.enabledFlags.has('openai-responses-web-search-shim')).toBe(true);
     }
   });
 
-  test('callResponses preserves developer messages on the Codex wire', async () => {
+  test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+    const result = await instance.instance.callOpenAIResponses(
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       {
         input: [
           { type: 'message', role: 'developer', content: 'base instructions' },
@@ -183,8 +261,8 @@ describe('createCodexProvider', () => {
     expect(result.ok).toBe(true);
     expect(result.action).toBe('generate');
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(init).toBeDefined();
-    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    if (init === undefined) throw new Error('expected a Codex upstream request');
+    const body = await readJsonRequest(init) as Record<string, unknown>;
     expect(body.instructions).toBe("You're a helpful assistant.");
     expect(body.input).toEqual([
       { type: 'message', role: 'developer', content: 'base instructions' },
@@ -193,11 +271,53 @@ describe('createCodexProvider', () => {
     ]);
   });
 
-  test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
+  test.each(['generate', 'compact'] as const)('%s retains the full Standard body through interceptors before private Lite encoding', async action => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
+      ? sseResponse()
+      : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
+    const provider = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
+    const input = [
+      { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] },
+      { type: 'message' as const, role: 'developer' as const, content: 'inline instructions' },
+      { type: 'message' as const, role: 'user' as const, content: 'hello' },
+    ];
+    const options = noopUpstreamCallOptions();
+    options.headers.set(CODEX_RESPONSES_LITE_HEADER, 'true');
+    const result = await provider.instance.callOpenAIResponses(model, {
+      input,
+      tools: [{ type: 'custom', name: 'patch' }],
+      text: { verbosity: 'low' },
+      client_metadata: { [CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
+    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], action, undefined, options);
+    expect(result.ok).toBe(true);
+    expect(result.action).toBe(action);
+    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('instructions');
+    expect(wire).not.toHaveProperty('tools');
+    expect(wire.text).toEqual({ verbosity: 'low' });
+    expect(wire.input).toEqual([
+      {
+        type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
+        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }, tool] }],
+      },
+      {
+        type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/),
+        content: [{ type: 'input_text', text: "You're a helpful assistant." }],
+        internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] },
+      },
+      ...input.slice(1),
+    ]);
+    expect(input).toHaveLength(3);
+    expect(options.headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
+  });
+
+  test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
     repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+    const result = await instance.instance.callOpenAIResponses(
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       { input: [], stream: true },
       'generate',
       undefined,
@@ -207,17 +327,90 @@ describe('createCodexProvider', () => {
     if (!result.ok) expect(result.response.status).toBe(503);
   });
 
+  test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      created: 1,
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const instance = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const options = noopUpstreamCallOptions();
+    options.headers.set('x-codex-image-turn-id', 'turn-image');
+    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
+    expect(result.response.status).toBe(200);
+    expect(result.modelKey).toBe('gpt-image-2');
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at');
+    expect(headers.get('chatgpt-account-id')).toBe('acc');
+    expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
+    expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
+  });
+
+  test('callOpenAIImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const instance = createCodexProvider(freeRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
+    expect(result.response.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('callOpenAIImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const instance = createCodexProvider(freeRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await instance.instance.callOpenAIImagesEdits(model, {
+      images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
+      parameters: { prompt: 'edit' },
+    }, undefined, noopUpstreamCallOptions());
+    expect(result.response.status).toBe(403);
+    expect(await result.response.json()).toEqual({
+      error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' },
+    });
+  });
+
+  test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      created: 1,
+      data: [{ b64_json: 'ZWRpdA==' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const instance = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const options = noopUpstreamCallOptions();
+    options.headers.set('originator', 'chatgpt_cca');
+    const result = await instance.instance.callOpenAIImagesEdits(model, {
+      images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
+      parameters: { prompt: 'make it blue' },
+    }, undefined, options);
+    expect(result.response.status).toBe(200);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
+    expect(new Headers((init as RequestInit).headers).get('originator')).toBe('chatgpt_cca');
+    expect(await readJsonRequest(init as RequestInit)).toEqual({
+      prompt: 'make it blue',
+      images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }],
+      model: 'gpt-image-2',
+    });
+  });
+
   test.each([
-    'callEmbeddings',
-    'callImagesGenerations',
-    'callImagesEdits',
-    'callAudioTranscriptions',
-    'callChatCompletions',
-    'callMessagesCountTokens',
-    'callMessages',
+    'callOpenAIEmbeddings',
+    'callOpenAIAudioTranscriptions',
+    'callOpenAIChatCompletions',
+    'callAnthropicMessagesCountTokens',
+    'callAnthropicMessages',
   ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
+    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
     const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };
