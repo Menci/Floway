@@ -404,7 +404,7 @@ test('compact + flag off: passes through to run() unchanged', async () => {
   assertEquals(inv.action, 'compact');
 });
 
-test('compact decrypt: replays each native compaction after a system exact-repeat prompt and returns gateway-readable plaintext', async () => {
+test('compact decrypt: replays each native compaction before a system exact-repeat prompt and returns gateway-readable plaintext', async () => {
   const inv = makeInvocation(
     {
       input: [{ type: 'message', role: 'user', content: 'compact me' }],
@@ -454,7 +454,7 @@ test('compact decrypt: replays each native compaction after a system exact-repea
     assertEquals(inv.payload.instructions, undefined);
     assertEquals(inv.payload.tools, undefined);
     assertEquals(inv.payload.input.length, 2);
-    const [prompt, compaction] = inv.payload.input;
+    const [compaction, prompt] = inv.payload.input;
     assertEquals(prompt.type, 'message');
     if (prompt.type !== 'message') throw new Error('expected prompt message');
     assertEquals(prompt.role, 'system');

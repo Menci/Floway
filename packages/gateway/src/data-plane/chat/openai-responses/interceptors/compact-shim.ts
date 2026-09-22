@@ -55,8 +55,8 @@
 //
 // When `openai-responses-compact-decrypt` is enabled while the shim is off,
 // native compaction runs first. Each returned opaque compaction item is then
-// replayed through the same model as exactly two input items: a system-role
-// exact-repeat instruction followed by the compaction item. The recovered
+// replayed through the same model as exactly two input items: the compaction
+// item followed by a system-role exact-repeat instruction. The recovered
 // plaintext is packed into the same gateway-owned base64url envelope used by
 // the shim, so later requests expand it before reaching the upstream.
 
@@ -446,12 +446,12 @@ const decryptNativeCompaction = async (
     ctx.payload = {
       model: originalModel,
       input: [
+        item,
         {
           type: 'message',
           role: 'system',
           content: [{ type: 'input_text', text: EXACT_REPEAT_PROMPT }],
         },
-        item,
       ],
       store: false,
     };
