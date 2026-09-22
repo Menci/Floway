@@ -62,7 +62,17 @@ const useStyles = makeStyles({
       '--floway-select-fill': 'var(--colorSubtleBackgroundPressed)',
       '--floway-select-fill-hover': 'var(--colorSubtleBackgroundPressed)',
     },
-    '& .fui-Dropdown__button': { paddingInlineStart: '16px' },
+    '& .fui-Dropdown__button': {
+      paddingInlineStart: 'var(--floway-panel-inset)',
+      paddingBlock: 'var(--spacingVerticalM)',
+    },
+  },
+  toolbar: {
+    flexShrink: 0,
+    paddingBottom: 'var(--spacingVerticalS)',
+    // The fixed band and scrolling rows meet at WinUI's divider brush.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
+    borderBottom: '1px solid var(--winui-divider-stroke-default)',
   },
   list: { outlineStyle: 'none' },
   selectionRow: {
@@ -95,7 +105,7 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
     outlineStyle: 'none',
-    padding: '6px 0 6px var(--spacingHorizontalS)',
+    padding: '6px 0 6px var(--spacingHorizontalL)',
     position: 'relative',
     flex: 1,
     minWidth: 0,
@@ -324,7 +334,7 @@ export function RequestListPanel(props: RequestListProps) {
       >
         {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
       </Dropdown>
-      <div className={`${PANEL_INSET_CLASS} flex flex-col gap-2 border-b border-[var(--winui-divider-stroke-default)]`}>
+      <div className={mergeClasses(PANEL_INSET_CLASS, 'flex flex-col gap-2', s.toolbar)}>
         {props.onFilterChange && <RequestFilters key={`${props.q}-${props.failures}`} q={props.q ?? ''} failures={props.failures ?? false} onChange={props.onFilterChange} />}
         <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />
       </div>
