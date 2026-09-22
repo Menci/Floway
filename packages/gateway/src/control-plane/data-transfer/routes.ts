@@ -1,7 +1,7 @@
 // Data transfer routes — export/import operator-managed database data as JSON.
 //
-// Ephemeral stored Responses state is omitted from exports and cleared on
-// replace imports; clients can regenerate it through normal Responses use.
+// Ephemeral stored OpenAI Responses state is omitted from exports and cleared on
+// replace imports; clients can regenerate it through normal OpenAI Responses use.
 //
 // The export contains all persisted authentication material, including raw API
 // keys and server secrets, user password hashes, provider tokens, and
@@ -162,8 +162,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.upstreams.deleteAll(),
       repo.proxies.deleteAll(),
       repo.proxyBackoffs.deleteAll(),
-      repo.responsesSnapshots.deleteAll(),
-      repo.responsesItems.deleteAll(),
+      repo.openaiResponsesSnapshots.deleteAll(),
+      repo.openaiResponsesItems.deleteAll(),
       repo.users.deleteAll(),
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());

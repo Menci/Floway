@@ -7,6 +7,7 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      language: 'Language',
       loading: shellLoadingLabel,
       on: 'On',
       off: 'Off',
@@ -124,7 +125,7 @@ const en = {
         emptyResponse: '(empty response)',
         noKey: 'Create an API key before using the playground',
         noKeyOption: 'No API Keys',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'OpenAI Responses', openaiChatCompletions: 'OpenAI Chat Completions', anthropicMessages: 'Anthropic Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
         edit: { title: 'Edit message', message: 'Message', imageUrl: 'Image URL' },
@@ -201,9 +202,9 @@ const en = {
         endpointNames: {
           openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
-          openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses compaction', openAiResponsesWs: 'Responses WebSocket',
+          openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses compaction', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',
-          geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent (SSE)', geminiCount: 'Gemini countTokens',
+          geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent (SSE)', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex alpha search',
@@ -284,7 +285,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope',
+        description: 'When off, all selectable upstreams are available',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -294,7 +295,7 @@ const en = {
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
         upstreamDisabled: 'Upstream disabled',
-        validation: 'Select at least one upstream, or turn off the limit.',
+        emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
@@ -359,8 +360,8 @@ const en = {
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
           viewCapturedRequests: 'View captured requests',
-          responsesRetention: 'Stateful Responses retention',
-          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
+          openaiResponsesRetention: 'Stateful OpenAI Responses retention',
+          openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
         },
@@ -389,10 +390,10 @@ const en = {
               'Saving will delete this key\'s captured requests.',
           warningShrink:
               'Saving will delete captured requests older than the new window.',
-          responsesWarningDisable:
-              'Saving will delete this key\'s stored Responses items. A follow-up request that references one by id will no longer find it.',
-          responsesWarningShrink:
-              'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
+          openaiResponsesWarningDisable:
+              'Saving will delete this key\'s stored OpenAI Responses items. A follow-up request that references one by id will no longer find it.',
+          openaiResponsesWarningShrink:
+              'Saving will delete stored OpenAI Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
           title: 'Set Up Your Agents',
@@ -425,6 +426,7 @@ const en = {
           refresh: 'Refresh upstreams',
           delete: 'Delete upstream',
           editNamed: 'Edit upstream {{name}}',
+          copyNamed: 'Copy upstream {{name}}',
           deleteNamed: 'Delete upstream {{name}}',
           toggle: 'Toggle upstream {{name}}',
           moveUp: 'Move upstream {{name}} up',
@@ -486,6 +488,9 @@ const en = {
           copilot: 'GitHub Copilot account',
           noAccount: 'No account connected',
         },
+        copy: {
+          nameSuffix: '{{name}} copy',
+        },
         errors: {
           missing: 'That upstream no longer exists.',
           models: 'Model counts are unavailable: {{message}}',
@@ -512,6 +517,7 @@ const en = {
         },
         documentTitleNew: 'New upstream',
         documentTitleEdit: 'Upstream details',
+        documentTitleCopy: 'Copy upstream',
         optional: 'optional',
         unsaved: 'Unsaved changes',
         secretKeep: 'Leave blank to keep unchanged.',
@@ -574,8 +580,8 @@ const en = {
           empty: '(empty)',
           validation: {
             invalidName: 'Enter a valid HTTP header name.',
-            duplicateName: 'Each header name can appear only once.',
-            messagesOwned: 'The Messages protocol manages this header.',
+            duplicatePassthrough: 'A header name can pass the client value through only once.',
+            anthropicMessagesOwned: 'The Anthropic Messages protocol manages this header.',
             transportOwned: 'Floway’s HTTP transport manages this header.',
             invalidValue: 'Enter a valid HTTP header value without control characters.',
           },
@@ -628,25 +634,30 @@ const en = {
               description:
                   "Kimi's API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.",
             },
-            'messages-web-search-shim': {
-              label: 'Messages Web Search Shim',
+            'anthropic-messages-web-search-shim': {
+              label: 'Anthropic Messages Web Search Shim',
               description:
-                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Messages API.',
+                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
             },
-            'responses-web-search-shim': {
-              label: 'Responses Web Search Shim',
+            'openai-responses-web-search-shim': {
+              label: 'OpenAI Responses Web Search Shim',
               description:
-                  'The Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Responses API.',
+                  'The OpenAI Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
-            'responses-image-generation-shim': {
-              label: 'Responses Image Generation Shim',
+            'openai-responses-image-generation-shim': {
+              label: 'OpenAI Responses Image Generation Shim',
               description:
-                  'The Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the Responses API.',
+                  'The OpenAI Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
-            'responses-compact-shim': {
-              label: 'Responses Context Compaction Shim',
+            'openai-responses-compact-shim': {
+              label: 'OpenAI Responses Context Compaction Shim',
               description:
-                  "The Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the Responses API.",
+                  "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
+            },
+            'openai-responses-compact-decrypt': {
+              label: 'OpenAI Responses Context Compaction Decryption',
+              description:
+                  'When native context compaction returns an opaque compaction item, Floway sends that item back to the same model with an exact-repeat instruction, then replaces it with a gateway-readable compaction item containing the recovered plaintext.\nThis adds one billed generation request per compaction item and applies only when the context compaction shim is disabled.',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
@@ -661,7 +672,7 @@ const en = {
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
-                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
+                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Anthropic Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
             },
             'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
@@ -743,6 +754,7 @@ const en = {
           promptTokens: 'Prompt tokens',
           outputTokens: 'Output tokens',
           imageInput: 'Image input',
+          imageDetailOriginal: 'Image detail "original"',
           reasoning: 'Reasoning',
           effortLevels: 'Effort levels',
           supportedEfforts: 'Supported effort levels',
@@ -840,16 +852,50 @@ const en = {
           waiting: 'Waiting for authorization…',
         },
         codex: {
+          accessOnly: 'Access only',
           activeLimit: 'active limit',
           credits: 'credits: {{balance, number}}',
+          expires: 'Expires {{time}}',
+          expiryUnknown: 'Expiry unknown',
+          expiryUnknownAccessOnly: 'Expiry unknown - usable until the upstream rejects it',
           noCredits: 'no credits',
           noSnapshot: 'No quota snapshots yet - Codex calls populate them.',
           observed: 'Observed {{time}}',
           rateLimitedUntil: 'Rate-limited until {{time}}',
+          renewable: 'Renewable',
           resetsAt: 'Resets at {{time}}',
           stateUpdated: 'State updated {{time}}',
+          unknownAccountId: 'Account ID unknown',
+          unknownEmail: 'Email unknown',
+          unknownPlan: 'Plan unknown',
           window: { primary: 'Primary window', secondary: 'Secondary window' },
           windowMinutes: '{{minutes, number}} min window',
+          import: {
+            tabJson: 'Paste JSON',
+            tabOAuth: 'Paste login URL',
+            tabManual: 'Manual',
+            jsonHint: 'Paste ~/.codex/auth.json or an OpenAI OAuth account export. Floway detects the structure and previews each account before importing.',
+            jsonWarning: 'Keep what you paste private - it may contain access or refresh tokens. Token values are never shown in the preview.',
+            preview: 'Preview accounts',
+            candidates: 'Account to import',
+            accountFallback: 'Account {{index, number}}',
+            pasteFirst: 'Paste credential JSON first.',
+            previewFirst: 'Preview the current JSON before importing.',
+            noValidAccounts: 'No importable OpenAI OAuth accounts were found.',
+            selectAccount: 'Select one importable account.',
+            oauthHint: 'Open the authorization page in a browser signed in to ChatGPT, complete consent, then paste the localhost callback URL.',
+            manualHint: 'Only the access token is required. What you type wins over the matching token claim; what you leave blank is read from the ID token first, then from the access token when it is a JWT.',
+            accessToken: 'Access token',
+            refreshToken: 'Refresh token',
+            refreshTokenHint: 'Leave blank for an access-only credential that cannot be renewed.',
+            idToken: 'ID token',
+            accountId: 'ChatGPT account ID',
+            email: 'Email',
+            planType: 'Plan type',
+            expiresAt: 'Expires at',
+            expiresAtHint: 'Unix seconds or an ISO 8601 timestamp.',
+            accessTokenRequired: 'Access token is required.',
+          },
           status: {
             active: 'Active',
             heavy: 'Heavy usage ({{percent, number}}%)',
@@ -1143,7 +1189,7 @@ const en = {
       searchConfig: {
         heading: 'Search Provider',
         description:
-            'Configure web search providers for Anthropic Messages / Responses API tool calling',
+            'Configure web search providers for Anthropic Messages / OpenAI Responses API tool calling',
         providerLabel: 'Provider',
         providerHint: 'The service that answers web search tool calls',
         provider: {
@@ -1154,7 +1200,7 @@ const en = {
         },
         passthrough: {
           title: 'Passthrough OpenAI search',
-          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream',
+          description: 'Route /alpha/search and OpenAI Responses hosted search through a selected Codex or OpenAI-compatible upstream',
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
@@ -1179,15 +1225,16 @@ const en = {
         description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
-        actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
-        dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}' },
+        actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', copyNamed: 'Copy alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
+        dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
+        copy: { nameSuffix: '{{name}} copy' },
         form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },
         target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', moveUp: 'Move target up', moveDown: 'Move target down', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
         rules: { effort: 'Reasoning effort', budget: 'Reasoning budget tokens', adaptive: 'Adaptive reasoning', adaptiveAuto: 'Auto (defer to model)', adaptiveOn: 'On (force adaptive)', adaptiveOff: 'Off (force non-adaptive)', summary: 'Reasoning summary', verbosity: 'Verbosity', serviceTier: 'Service tier' },
-        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', modalities: 'Modalities', imageInput: 'Image input', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
+        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
         delete: { title: 'Delete alias', message: 'Delete alias {{name}}? This cannot be undone.' },

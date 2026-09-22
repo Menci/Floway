@@ -14,7 +14,7 @@ const upstream = (provider: string, config: unknown, modelsCache: unknown = null
 
 const manual = (upstreamModelId: string, pricing = basePricing({ input_tokens: '0.01' })) => ({
   kind: 'chat',
-  endpoints: { responses: {} },
+  endpoints: { openaiResponses: {} },
   upstreamModelId,
   pricing,
 });
@@ -64,7 +64,7 @@ test('custom disabled model fetching does not reuse cached pricing', () => {
   const resolved = resolveUsagePricing(
     upstream('custom', {
       modelsFetch: { enabled: false },
-      models: [{ kind: 'chat', endpoints: { responses: {} }, upstreamModelId: 'wire' }],
+      models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire' }],
     }, cache),
     { model: 'public', modelKey: 'wire' },
     Date.UTC(2026, 0, 1, 1),

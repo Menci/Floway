@@ -63,7 +63,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const response = await requestApp(
@@ -93,7 +93,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
   await repo.usage.set({
     keyId: apiKey.id,
@@ -144,7 +144,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
   await repo.usage.set({
     keyId: 'key_actor_secondary',

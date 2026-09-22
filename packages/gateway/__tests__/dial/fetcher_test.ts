@@ -531,7 +531,7 @@ describe('createFetcher', () => {
     fd.append('field', 'value');
     await fetcher('https://api.openai.com/v1/upload', { method: 'POST', body: fd });
     expect(captured).toHaveLength(1);
-    const contentType = captured[0]!.headers['content-type'];
+    const contentType = captured[0]!.headers.find(([name]) => name === 'content-type')?.[1];
     expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
   });
 
@@ -556,7 +556,7 @@ describe('createFetcher', () => {
       body: fd,
       headers: { 'Content-Type': 'application/x-explicit-override' },
     });
-    expect(captured[0]!.headers['content-type']).toBe('application/x-explicit-override');
+    expect(captured[0]!.headers.find(([name]) => name === 'content-type')?.[1]).toBe('application/x-explicit-override');
   });
 
   it('rejects ReadableStream bodies upfront', async () => {

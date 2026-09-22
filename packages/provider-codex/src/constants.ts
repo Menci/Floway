@@ -31,7 +31,7 @@ export const CODEX_OAUTH_SCOPE = 'openid profile email offline_access';
 export const CODEX_OAUTH_USER_AGENT = 'codex-cli/0.91.0';
 
 export const CODEX_BACKEND_BASE = 'https://chatgpt.com/backend-api';
-export const CODEX_RESPONSES_PATH = '/codex/responses';
+export const CODEX_OPENAI_RESPONSES_PATH = '/codex/responses';
 // Codex appends `alpha/search` to its ChatGPT model-provider base.
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
 export const CODEX_ALPHA_SEARCH_PATH = '/codex/alpha/search';
@@ -39,12 +39,12 @@ export const CODEX_ALPHA_SEARCH_PATH = '/codex/alpha/search';
 // `RemoteCompactionV2` path that re-uses `/codex/responses` with an appended
 // `compaction_trigger` item, but the server still serves this canonical
 // `/responses/compact` URL — the same one Azure OpenAI and the public
-// `api.openai.com` Responses surface expose — and the Codex CLI's
+// `api.openai.com` OpenAI Responses surface expose — and the Codex CLI's
 // `ApiCompactClient` keeps it as the fallback transport. We prefer the unary
 // endpoint so the provider behaves identically to every other
 // `/responses/compact` upstream and skips the SSE drain entirely.
 // Reference: https://github.com/openai/codex/blob/f5f812389ee49ab4c9ef1237781ea1013e733fdc/codex-rs/core/src/client.rs#L155
-export const CODEX_RESPONSES_COMPACT_PATH = '/codex/responses/compact';
+export const CODEX_OPENAI_RESPONSES_COMPACT_PATH = '/codex/responses/compact';
 export const CODEX_MODELS_PATH = '/codex/models';
 
 // Codex's image extension does not discover this model through /codex/models.
@@ -53,17 +53,26 @@ export const CODEX_MODELS_PATH = '/codex/models';
 // https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/ext/image-generation/src/tool.rs#L51-L59
 // https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/codex-api/src/endpoint/images.rs#L33-L70
 export const CODEX_IMAGE_MODEL_ID = 'gpt-image-2';
-export const CODEX_IMAGES_GENERATIONS_PATH = '/codex/images/generations';
-export const CODEX_IMAGES_EDITS_PATH = '/codex/images/edits';
+export const CODEX_OPENAI_IMAGES_GENERATIONS_PATH = '/codex/images/generations';
+export const CODEX_OPENAI_IMAGES_EDITS_PATH = '/codex/images/edits';
 
 // codex_cli_rs version we impersonate on the data plane. Bumped against the
-// latest stable release at https://github.com/openai/codex/releases — newer entries in
+// stable release at https://github.com/openai/codex/releases/tag/rust-v0.154.0 — newer entries in
 // /codex/models gate themselves behind a `minimal_client_version` (e.g.
-// the gpt-5.6 Sol / Terra / Luna family needs 0.144.0+), so a stale value
-// here silently truncates the model list. The same value flows into both
-// the `?client_version=` query param and the User-Agent so the upstream sees
-// a self-consistent client.
-export const CODEX_CLI_VERSION = '0.144.1';
+// gpt-6-astra needs 0.153.0+), so a stale value silently truncates the model
+// list. The same value flows into the `?client_version=` query param, the
+// `version` header, and the User-Agent so the upstream sees a consistent client.
+// https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/model-provider-info/src/lib.rs#L386-L400
+// https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/models-manager/models.json#L1-L70
+export const CODEX_CLI_VERSION = '0.154.0';
+
+// Official Codex HTTP/WS markers. Only private catalog metadata may select
+// the outbound HTTP marker; caller markers never select a model's wire format.
+// https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L163-L169
+export const CODEX_RESPONSES_LITE_HEADER =
+  'x-openai-internal-codex-responses-lite';
+export const CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY =
+  'ws_request_header_x_openai_internal_codex_responses_lite';
 
 // Shared official Codex data-plane identity for /codex/models and
 // /codex/responses. The User-Agent intentionally includes Codex's normal

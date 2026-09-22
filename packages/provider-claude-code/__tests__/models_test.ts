@@ -181,7 +181,7 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('every model advertises only the messages endpoint and chat kind', () => {
     for (const m of models) {
-      expect(m.endpoints).toEqual({ messages: {} });
+      expect(m.endpoints).toEqual({ anthropicMessages: {} });
       expect(m.kind).toBe('chat');
       expect(m.owned_by).toBe('anthropic');
     }

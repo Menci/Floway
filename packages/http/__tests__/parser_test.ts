@@ -9,6 +9,16 @@ import { describe, expect, it } from 'vitest';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
+const gzip = async (text: string): Promise<Uint8Array> =>
+  new Uint8Array(await new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    }).pipeThrough(new CompressionStream('gzip') as never),
+  ).arrayBuffer());
+
 describe('parseHttpResponse — status-line grammar', () => {
   it('accepts HTTP/1.0 200 OK', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n'));
@@ -242,6 +252,33 @@ describe('parseHttpResponse — header name grammar (RFC 9110 §5.1 token)', () 
       `HTTP/1.1 200 OK\r\n${name}: v\r\nContent-Length: 0\r\n\r\n`,
     ));
     expect(r.headers.get(name.toLowerCase())).toBe('v');
+  });
+
+  it('keeps every field line of a repeated name, in wire order and casing', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nX-Route: one\r\nX-Other: between\r\nx-route: two\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nContent-Length: 0\r\n\r\n',
+    ));
+
+    expect(r.headerLines.filter(([name]) => name.toLowerCase() === 'x-route')).toEqual([
+      ['X-Route', 'one'],
+      ['x-route', 'two'],
+    ]);
+    expect(r.headerLines.filter(([name]) => name.toLowerCase() === 'set-cookie')).toEqual([
+      ['Set-Cookie', 'a=1'],
+      ['Set-Cookie', 'b=2'],
+    ]);
+    // The Headers view merges the repeated name; headerLines is the view that
+    // does not.
+    expect(r.headers.get('x-route')).toBe('one, two');
+  });
+
+  it('drops the decoded Transfer-Encoding from both header views', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Route: one\r\n\r\n0\r\n\r\n',
+    ));
+
+    expect(r.headerLines.map(([name]) => name.toLowerCase())).toEqual(['x-route']);
+    expect(r.headers.has('transfer-encoding')).toBe(false);
   });
 
   it('accepts mixed-case header names and exposes them lowercased via Headers', async () => {
@@ -842,12 +879,44 @@ describe('toWebResponse', () => {
     expect(r.body).toBeNull();
   });
 
+  it('decodes a gzip body and removes stale content-coding framing headers', async () => {
+    const compressed = await gzip('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    const head = new TextEncoder().encode(
+      `HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.byteLength}\r\n\r\n`,
+    );
+    const bytes = new Uint8Array(head.byteLength + compressed.byteLength);
+    bytes.set(head);
+    bytes.set(compressed, head.byteLength);
+    const response = toWebResponse(await parseHttpResponse(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    })));
+
+    expect(await response.text()).toBe('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBeNull();
+  });
+
+  it('rejects a content coding the socket transport cannot decode', async () => {
+    await expect(async () => {
+      toWebResponse(await parseHttpResponse(respondAndEnd(
+        'HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n',
+      )));
+    }).rejects.toMatchObject({
+      name: 'HttpProtocolError',
+      code: 'UNSUPPORTED_CONTENT_ENCODING',
+      message: expect.stringContaining('br'),
+    });
+  });
+
   it('throws BAD_STATUS_LINE when handed a status the Fetch standard refuses to model', () => {
     // parseHttpResponse will never produce a 1xx (it skips them internally),
     // but the bridge function still validates. A handcrafted struct mirrors
     // what an out-of-spec caller could pass.
     const fake = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
-    expect(() => toWebResponse({ status: 99, statusText: 'X', headers: new Headers(), body: fake })).toThrow(
+    expect(() => toWebResponse({ status: 99, statusText: 'X', headers: new Headers(), headerLines: [], body: fake })).toThrow(
       expect.objectContaining({ name: 'HttpProtocolError', code: 'BAD_STATUS_LINE' }),
     );
   });

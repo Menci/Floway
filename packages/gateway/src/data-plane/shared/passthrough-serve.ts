@@ -2,12 +2,12 @@
 // bypass the chat source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
 // matching endpoint and the upstream response is passed through back to
-// the client. Embeddings and images run the `json` branch (single-shot
-// body, OpenAI-shape `usage` block); /v1/completions runs the `sse` branch
-// (frame-level transformFrame closure + settleUsage). Endpoint-owned response
-// strategies handle specialized media-type state machines. Usage and
-// request-performance writes are scheduled through the runtime's
-// background scheduler so transient repo failures cannot turn a
+// the client. OpenAI Embeddings and OpenAI Images run the `json` branch
+// (single-shot body, OpenAI-shape `usage` block); /v1/completions runs the
+// `sse` branch (frame-level transformFrame closure + settleUsage).
+// Endpoint-owned response strategies handle specialized media-type state
+// machines. Usage and request-performance writes are scheduled through the
+// runtime's background scheduler so transient repo failures cannot turn a
 // successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
@@ -30,11 +30,12 @@ import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStrea
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
-// `json` (embeddings, images): single-shot body, `extractBilling` reads
-// usage / metadata off the parsed root. `sse` (/v1/completions): frame
-// stream, `transformFrame` mutates or drops frames (return null), then
-// `settleUsage` reports billing once the stream ends. `strategy` delegates
-// response handling after candidate selection to the owning endpoint.
+// `json` (OpenAI Embeddings, OpenAI Images): single-shot body,
+// `extractBilling` reads usage / metadata off the parsed root. `sse`
+// (/v1/completions): frame stream, `transformFrame` mutates or drops frames
+// (return null), then `settleUsage` reports billing once the stream ends.
+// `strategy` delegates response handling after candidate selection to the
+// owning endpoint.
 type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -127,7 +128,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
     // Endpoint-level pre-filter: drop candidates whose upstream model
     // exists for the requested kind but doesn't expose this endpoint's
-    // specific capability (e.g. an embeddings-kind model on an upstream
+    // specific capability (e.g. an embedding-kind model on an upstream
     // that only exposes chat). An empty viable set is the same "model
     // exists but no upstream serves this endpoint" 400 the empty-candidate
     // branch above surfaces.

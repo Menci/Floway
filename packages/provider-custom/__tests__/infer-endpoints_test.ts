@@ -5,11 +5,11 @@ import { createCustomProvider } from '../src/provider.ts';
 import { directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const EMBEDDINGS = { embeddings: {} };
-const IMAGES = { imagesGenerations: {}, imagesEdits: {} };
-const AUDIO = { audioTranscriptions: {} };
+const OPENAI_EMBEDDINGS = { openaiEmbeddings: {} };
+const OPENAI_IMAGES = { openaiImagesGenerations: {}, openaiImagesEdits: {} };
+const OPENAI_AUDIO = { openaiAudioTranscriptions: {} };
 
-test('inferEndpointsFromModelId returns embeddings for known OpenAI / Voyage / Cohere / Mistral families', () => {
+test('inferEndpointsFromModelId returns OpenAI Embeddings for known OpenAI / Voyage / Cohere / Mistral families', () => {
   for (const id of [
     'text-embedding-3-small',
     'text-embedding-3-large',
@@ -21,11 +21,11 @@ test('inferEndpointsFromModelId returns embeddings for known OpenAI / Voyage / C
     'embed-multilingual-light-v3.0',
     'mistral-embed',
   ]) {
-    assertEquals(inferEndpointsFromModelId(id), EMBEDDINGS);
+    assertEquals(inferEndpointsFromModelId(id), OPENAI_EMBEDDINGS);
   }
 });
 
-test('inferEndpointsFromModelId returns embeddings for common local / open-weight embedding families', () => {
+test('inferEndpointsFromModelId returns OpenAI Embeddings for common local / open-weight embedding families', () => {
   for (const id of [
     'bge-large-en-v1.5',
     'BAAI/bge-large-en',
@@ -36,7 +36,7 @@ test('inferEndpointsFromModelId returns embeddings for common local / open-weigh
     'mxbai-embed-large-v1',
     'WhereIsAI/UAE-Large-V1',
   ]) {
-    assertEquals(inferEndpointsFromModelId(id), EMBEDDINGS);
+    assertEquals(inferEndpointsFromModelId(id), OPENAI_EMBEDDINGS);
   }
 });
 
@@ -65,7 +65,7 @@ test('inferEndpointsFromModelId returns both image endpoints for the gpt-image-*
     'gpt-image-2',
     'gpt-image-2-2026-04-21',
   ]) {
-    assertEquals(inferEndpointsFromModelId(id), IMAGES);
+    assertEquals(inferEndpointsFromModelId(id), OPENAI_IMAGES);
   }
 });
 
@@ -92,7 +92,7 @@ test('inferEndpointsFromModelId returns audio transcription for standard transcr
     'whisper-1',
     'openai/whisper-large-v3',
   ]) {
-    assertEquals(inferEndpointsFromModelId(id), AUDIO);
+    assertEquals(inferEndpointsFromModelId(id), OPENAI_AUDIO);
   }
 });
 
@@ -109,7 +109,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       baseUrl: 'https://custom.example.com',
       authStyle: 'bearer',
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
     state: null,
@@ -132,7 +132,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
       assertEquals(models[0].kind, 'image');
-      assertEquals(models[0].endpoints, IMAGES);
+      assertEquals(models[0].endpoints, OPENAI_IMAGES);
     },
   );
 });

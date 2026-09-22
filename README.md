@@ -38,7 +38,7 @@ the password. Then:
 
 The data-plane and control-plane APIs are also exposed directly at
 <http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
-Stateful Responses item payloads persist in the `floway-data` volume.
+Stateful OpenAI Responses item payloads persist in the `floway-data` volume.
 
 The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,
@@ -82,7 +82,7 @@ responses retain their upstream wire shape.
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client | Live inference catalog plus the account's built-in GPT Image capability |
+| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend, plus the account's built-in GPT Image capability |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
 | Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
@@ -111,13 +111,14 @@ update and rollback flow by default. A deployment named as new first runs an
 isolated binding-probe bootstrap and requires its `Hello World` response before
 publishing Floway.
 
-For a manual production update, configure the admin secret, apply the remote
-migrations, and deploy:
+For a manual production update, configure the admin secret, then apply the
+remote migrations and deploy as one step — publishing the code that reads a
+migration's result is part of applying it, and stopping in between leaves the
+previous build serving rewritten configuration:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
-pnpm run db:migrate:remote
-pnpm run deploy
+pnpm run db:migrate:remote && pnpm run deploy
 ```
 
 ### Node.js
@@ -146,14 +147,20 @@ pnpm run dev
 pnpm run verify
 ```
 
-`verify` chains every check `.github/workflows/verify.yaml` runs, so a green run
-locally is a green run on a pull request. Each link is also a script of its own,
-in the order the chain runs them: `typegen`, `lint`, `typecheck`, `test`,
-`test:installers`, `check:agents-md`, `check:generated-assets`,
-`check:verify-parity`, and `build:web`, which carries the assertions about the
-emitted bundle. `typegen` comes first because the generated route types are not
-checked in and the lint configuration is type-aware, so a fresh clone has to
-produce them before anything else can read the dashboard's sources.
+`verify` chains every check in `.github/workflows/verify.yaml`: `typegen`,
+`lint`, `typecheck`, `test`, `test:installers`, `check:agents-md`,
+`check:generated-assets`, `check:verify-parity`, and `build:web`. Each check is
+also available as a root script. Route type generation runs first because the
+web app's generated types are not checked in and its lint configuration is
+type-aware. The web build includes assertions on the emitted bundle.
+
+The protocol tests cover opaque-value wire compatibility, lossless UTF-16
+code-unit recovery, and retained-memory growth during history replay. The
+memory regression runs a bounded fixture in a separate Node.js process with
+explicit garbage collection, samples the retained heap before content checks
+can flatten strings, and then verifies every decoded value. It runs through
+`pnpm run test` and `pnpm run verify` without additional setup; this local
+regression is not a measurement of a production Worker's peak memory.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
 indexes its CI workflows, skills, workspace packages, and their responsibilities.

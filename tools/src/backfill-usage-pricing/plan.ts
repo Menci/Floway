@@ -451,7 +451,13 @@ const applyStatement = (plan: BackfillPlan, guards: PlanGuards): SqlStatement =>
       plan.intent.upstream,
       guards.upstreamConfigJson,
       guards.guardModelsCache ? 1 : 0,
-      guards.upstreamModelsCacheJson,
+      // Only a guarded plan carries the catalog into the statement. The column
+      // is 73 KB on a live Copilot upstream and doubles under hex encoding, and
+      // every provider except a cache-priced custom one short-circuits the
+      // comparison on the flag above — so inlining it unguarded pushed the
+      // statement past what `--command` can carry and failed a 6-row backfill
+      // with SQLITE_TOOBIG before any row was written.
+      guards.guardModelsCache ? guards.upstreamModelsCacheJson : null,
       guards.pricedSiblingExists ? 1 : 0,
     ],
   };

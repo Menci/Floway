@@ -26,7 +26,7 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 });
 
 const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({

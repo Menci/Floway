@@ -27,7 +27,7 @@ const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       }],
     },
     state: null,

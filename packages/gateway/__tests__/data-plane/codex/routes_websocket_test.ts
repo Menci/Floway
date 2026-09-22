@@ -2,7 +2,7 @@ import type { ExecutionContext } from 'hono';
 import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../../src/app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, setupAppTest, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../test-utils/worker-websocket.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -38,7 +38,7 @@ const withWorkerWebSocketRuntime = async <T>(run: (runtime: ReturnType<typeof in
   }
 };
 
-const connectCodexResponsesWebSocket = async (
+const connectCodexOpenAIResponsesWebSocket = async (
   runtime: ReturnType<typeof installWorkerWebSocketRuntime>,
   apiKey: string,
 ): Promise<TestWorkerWebSocket> => {
@@ -69,7 +69,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return terminal!.response!.id as string;
 };
 
-it('chains previous_response_id on the Codex Responses WebSocket', async () => {
+it('chains previous_response_id on the Codex OpenAI Responses WebSocket', async () => {
   const { apiKey } = await setupAppTest();
   const upstreamBodies: unknown[] = [];
   let turn = 0;
@@ -87,7 +87,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
       if (url.pathname === '/responses') {
         upstreamBodies.push(JSON.parse(await request.text()));
         turn += 1;
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_codex_ws_${turn}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -105,7 +105,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async runtime => {
-      const client = await connectCodexResponsesWebSocket(runtime, apiKey.key);
+      const client = await connectCodexOpenAIResponsesWebSocket(runtime, apiKey.key);
       const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',

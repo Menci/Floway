@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { isClaudeCodeShapedRequest, parseMetadataUserID } from '../src/detection.ts';
-import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 
 const validUserIdLegacy
   = 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -25,11 +25,11 @@ const baseHeaders = (overrides: Record<string, string> = {}): Headers => {
   return new Headers(init);
 };
 
-const bodyWithSystem = (systemText: string, userId: string = validUserIdLegacy): MessagesPayload => ({
+const bodyWithSystem = (systemText: string, userId: string = validUserIdLegacy): AnthropicMessagesPayload => ({
   model: 'claude-sonnet-4-5-20250929',
   max_tokens: 1024,
   messages: [{ role: 'user', content: 'hi' }],
-  system: [{ type: 'text', text: systemText } satisfies MessagesTextBlock],
+  system: [{ type: 'text', text: systemText } satisfies AnthropicMessagesTextBlock],
   metadata: { user_id: userId },
 });
 
@@ -219,7 +219,7 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
 
 describe('isClaudeCodeShapedRequest — system shape variants', () => {
   test('accepts a system string when its content matches an identity template', () => {
-    const body: MessagesPayload = {
+    const body: AnthropicMessagesPayload = {
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1,
       messages: [{ role: 'user', content: 'hi' }],

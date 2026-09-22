@@ -55,7 +55,7 @@ test('API key users only see their own key in /api/keys', async () => {
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const response = await requestApp('/api/keys', {

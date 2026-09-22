@@ -168,6 +168,15 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   });
   if (modalities !== undefined) result.modalities = modalities;
 
+  // Conjunction, not agreement: the announced metadata must not promise detail
+  // 'original' above any single target's own answer, so a split verdict between
+  // targets that declared the field is a stated `false` rather than a dropped
+  // one — `false` is the field's own answer, not a re-encoding of absence. A
+  // target that leaves the field undeclared still drops it, as `intersectField`
+  // requires of every sub-field here.
+  const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
+  if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
+
   const reasoning = intersectField(chats, c => c.reasoning, intersectReasoning);
   if (reasoning !== undefined) result.reasoning = reasoning;
 

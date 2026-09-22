@@ -2,7 +2,8 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import type { CodexQuotaSnapshot } from './quota.ts';
+import { assertAllowedObjectKeys, assertStringOrNull, isUnsafeObjectKey } from './auth/guards.ts';
+import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
@@ -12,7 +13,10 @@ export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 're
 // token, its lifetime, and the account's latest observed capability metadata.
 export interface CodexAccessTokenEntry {
   token: string;
-  expiresAt: number;       // unix ms
+  // Unix ms, or null when the import source did not state the bearer's expiry
+  // and the token itself is opaque. A null expiry is not "expired" — it means
+  // the upstream's rejection is the only signal we have.
+  expiresAt: number | null;
   refreshedAt: string;     // ISO 8601
   // Observed from refresh id_tokens and retained across later tokens that omit
   // the claim. It is absent only when no refresh has supplied it and legacy
@@ -22,6 +26,30 @@ export interface CodexAccessTokenEntry {
   // so out-of-order token writes cannot promote an older plan observation.
   planObservedAt?: string;
 }
+
+// Parsed Codex quota reading derived from upstream response headers by the
+// parser in quota.ts, embedded into persisted state by CodexQuotaSnapshotEntry.
+export interface CodexQuotaSnapshot {
+  observed_at: string;
+  active_limit?: string;
+  plan_type?: string;
+
+  primary_used_percent?: number;
+  primary_window_minutes?: number;
+  primary_reset_after_at?: string;
+
+  secondary_used_percent?: number;
+  secondary_window_minutes?: number;
+  secondary_reset_after_at?: string;
+
+  credits_has_credits?: boolean;
+  credits_balance?: number;
+
+  // Present only when this snapshot was written as a result of a 429.
+  ratelimited_until?: string;
+}
+
+export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
 // Most recent quota observation derived from upstream response headers.
 // `fetchedAt` is unix ms; `data` is the parsed snapshot, validated by quota.ts
@@ -36,10 +64,14 @@ export type CodexQuotaSnapshotEntryMap = Record<string, CodexQuotaSnapshotEntry>
 // One account's autonomous credential state, joined back to its identity in
 // CodexUpstreamConfig.accounts via `chatgptAccountId`.
 export interface CodexAccountCredential {
-  chatgptAccountId: string;
+  // Null when no import source could name the account. Under the one-account-
+  // per-upstream invariant that is still a stable slot: the config carries the
+  // same null and the two join on it like any other value.
+  chatgptAccountId: string | null;
   // OpenAI rotates refresh_token on every /oauth/token call. Stored in D1
-  // (not KV) so KV eviction never forces operator re-import.
-  refresh_token: string;
+  // (not KV) so KV eviction never forces operator re-import. Null marks an
+  // access-only credential that cannot be renewed at all.
+  refresh_token: string | null;
   state: CodexAccountCredentialHealth;
   state_message?: string;
   // ISO 8601, written on every state transition (initial import, rotation,
@@ -66,7 +98,7 @@ export interface CodexUpstreamState {
   accounts: CodexAccountCredential[];
 }
 
-export const findCodexAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
+export const findCodexAccountIndex = (state: CodexUpstreamState, accountId: string | null): number =>
   state.accounts.findIndex(account => account.chatgptAccountId === accountId);
 
 export const replaceCodexAccount = (
@@ -89,9 +121,13 @@ const ALLOWED_CREDENTIAL_KEYS_MAP: Record<keyof CodexAccountCredential, true> = 
   quotaSnapshot: true,
 };
 
+const CREDENTIAL_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_CREDENTIAL_KEYS_MAP));
+
 const ALLOWED_STATE_KEYS_MAP: Record<keyof CodexUpstreamState, true> = {
   accounts: true,
 };
+
+const STATE_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_STATE_KEYS_MAP));
 
 const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> = {
   token: true,
@@ -101,26 +137,22 @@ const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> =
   planObservedAt: true,
 };
 
+const ACCESS_TOKEN_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_ACCESS_TOKEN_KEYS_MAP));
+
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CodexQuotaSnapshotEntry, true> = {
   fetchedAt: true,
   data: true,
 };
 
+const QUOTA_SNAPSHOT_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP));
+
 const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_ACCESS_TOKEN_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, where, ACCESS_TOKEN_ALLOWED_KEYS);
   if (typeof obj.token !== 'string' || obj.token === '') {
     throw new TypeError(`${where}.token must be a non-empty string`);
   }
-  if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
-    throw new TypeError(`${where}.expiresAt must be a finite number`);
+  if (obj.expiresAt !== null && (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt))) {
+    throw new TypeError(`${where}.expiresAt must be a finite number or null`);
   }
   if (typeof obj.refreshedAt !== 'string' || obj.refreshedAt === '') {
     throw new TypeError(`${where}.refreshedAt must be a non-empty string`);
@@ -141,15 +173,7 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
 // only confirm the wrapper is a plain object so an unrelated key (array,
 // scalar) doesn't slip past.
 const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, where, QUOTA_SNAPSHOT_ALLOWED_KEYS);
   if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
@@ -158,15 +182,13 @@ const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
   }
 };
 
-const isUnsafeMapKey = (key: string): boolean => key === '' || key === '__proto__' || key === 'constructor' || key === 'prototype';
-
 const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    if (isUnsafeMapKey(key)) {
+    if (key === '' || isUnsafeObjectKey(key)) {
       throw new TypeError(`${where} has invalid active limit key '${key}'`);
     }
     assertCodexQuotaSnapshotEntry(obj[key], `${where}.${key}`);
@@ -174,21 +196,9 @@ const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void =
 };
 
 const assertCodexAccountCredential = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_CREDENTIAL_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
-  if (typeof obj.chatgptAccountId !== 'string' || obj.chatgptAccountId === '') {
-    throw new TypeError(`${where}.chatgptAccountId must be a non-empty string`);
-  }
-  if (typeof obj.refresh_token !== 'string' || obj.refresh_token === '') {
-    throw new TypeError(`${where}.refresh_token must be a non-empty string`);
-  }
+  const obj = assertAllowedObjectKeys(value, where, CREDENTIAL_ALLOWED_KEYS);
+  assertStringOrNull(obj.chatgptAccountId, `${where}.chatgptAccountId`);
+  assertStringOrNull(obj.refresh_token, `${where}.refresh_token`);
   if (obj.state !== 'active' && obj.state !== 'session_terminated' && obj.state !== 'refresh_failed') {
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
   }
@@ -215,17 +225,9 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
 };
 
 export function assertCodexUpstreamState(value: unknown): asserts value is CodexUpstreamState {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('CodexUpstreamState must be a plain object');
-  }
-  const obj = value as Record<string, unknown>;
   // state_json round-trips through canonical serialization, so any surviving
   // key is persisted. Reject unknown keys to keep the on-disk shape closed.
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_STATE_KEYS_MAP, key)) {
-      throw new TypeError(`CodexUpstreamState has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, 'CodexUpstreamState', STATE_ALLOWED_KEYS);
   if (!Array.isArray(obj.accounts)) {
     throw new TypeError('CodexUpstreamState.accounts must be an array');
   }
@@ -254,4 +256,84 @@ export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
       quotaSnapshot: account.quotaSnapshot ?? null,
     })),
   };
+};
+
+// State-transition writes for both planes. The operator-facing refresh handler
+// in the gateway delegates to these so the provider owns its own state writes,
+// and the data plane's createCodexProvider routes the same fields through the
+// same helpers. The control plane no-ops on a missing account rather than
+// throw, matching the refresh contract that a state slot it cannot address
+// should be left alone (saveState skips the write when the mutator returns
+// state unchanged), while the data plane passes onMissing:'throw' so a lost
+// credential fails loudly instead of silently persisting nothing.
+
+// Shared state-write scaffold: stamps state_updated_at on every successful
+// account patch and no-ops on a missing account, so the transitions below
+// can't silently drop the write timestamp or address a state slot they can't
+// find. Pass { onMissing: 'throw' } to fail loudly on a missing account.
+const updateCodexAccountState = async (
+  upstreamId: string,
+  accountId: string | null,
+  stamp: string,
+  patch: (account: CodexAccountCredential) => CodexAccountCredential,
+  options?: { onMissing: 'noop' | 'throw' },
+): Promise<void> => {
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) {
+      if (options?.onMissing === 'throw') {
+        throw new TypeError(`Codex upstream ${upstreamId} state has no credential for account ${accountId}`);
+      }
+      return current;
+    }
+    return replaceCodexAccount(state, idx, account => ({ ...patch(account), state_updated_at: stamp }));
+  });
+};
+
+export const persistCodexRefreshTokenRotation = async (
+  upstreamId: string,
+  accountId: string | null,
+  newRefreshToken: string,
+  options?: { onMissing: 'noop' | 'throw' },
+): Promise<void> => {
+  // OpenAI rotates the refresh_token on every /oauth/token call. Stamped
+  // before the write so a replay against a winning sibling produces the same
+  // document rather than a later timestamp.
+  const rotatedAt = new Date().toISOString();
+  await updateCodexAccountState(upstreamId, accountId, rotatedAt, account => ({
+    ...account,
+    refresh_token: newRefreshToken,
+  }), options);
+};
+
+export const persistCodexRefreshFailure = async (
+  upstreamId: string,
+  accountId: string | null,
+  message: string,
+): Promise<void> => {
+  return await persistCodexTerminalState(upstreamId, accountId, 'refresh_failed', message);
+};
+
+export const persistCodexTerminalState = async (
+  upstreamId: string,
+  accountId: string | null,
+  state: 'session_terminated' | 'refresh_failed',
+  message: string,
+  options?: { onMissing: 'noop' | 'throw' },
+): Promise<void> => {
+  // Stamped before the write so a replay against a winning sibling produces
+  // the same document rather than a later timestamp.
+  const flippedAt = new Date().toISOString();
+  await updateCodexAccountState(upstreamId, accountId, flippedAt, account => {
+    // Clear any cached access token on the terminal flip — once the
+    // credential is dead the cached token is dead too, and leaving it would
+    // confuse the dashboard's status panel.
+    return {
+      ...account,
+      state,
+      state_message: message,
+      accessToken: null,
+    };
+  }, options);
 };
