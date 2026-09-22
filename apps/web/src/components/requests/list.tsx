@@ -330,7 +330,7 @@ export function RequestListPanel(props: RequestListProps) {
       </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (
-        <EmptyState className="flex-1 p-6" title={t('dashboard.requests.empty')} />
+        <EmptyState className="flex-1 p-6" title={t(props.q || props.failures ? 'dashboard.requests.noMatches' : 'dashboard.requests.empty')} />
       ) : (
         <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
           <List

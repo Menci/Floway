@@ -979,6 +979,8 @@ const zhHansCN = {
         hideValue: '隐藏值',
         decodeError: '无法解码此内容（{{error}}），以下显示原始 base64。',
         streamView: '响应体视图',
+        noMatches: '没有符合筛选条件的请求',
+        formattedBody: '格式化正文',
         collected: '聚合结果',
         events: '事件（{{count, number}}）',
         headers: '请求头 / 响应头（{{count}}）',

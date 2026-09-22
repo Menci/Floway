@@ -1,6 +1,6 @@
 import { MoreHorizontalRegular, SearchRegular } from '@fluentui/react-icons';
 import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
+import './monaco-workers';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { EmptyStateLine } from './empty-state';
@@ -13,9 +13,6 @@ import { useTranslation } from '../../i18n/translation';
 import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
-(globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment ??= {
-  getWorker: () => new EditorWorker(),
-};
 
 export default function BodyEditor({ text, json, label, toolbarStart, emptyText }: { text: string; json: boolean; label: string; toolbarStart?: ReactNode; emptyText?: string }) {
   const { t } = useTranslation();

@@ -109,7 +109,7 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
     upstreamResponse: t('dashboard.requests.upstreamResponse'), response: t('dashboard.requests.clientResponse'),
   };
   const viewLabels: Record<string, string> = {
-    collected: t('dashboard.requests.collected'), events: t('dashboard.requests.events', { count: body.type === 'stream' ? body.events.length : 0 }),
+    collected: t(body.type === 'stream' ? 'dashboard.requests.collected' : 'dashboard.requests.formattedBody'), events: t('dashboard.requests.events', { count: body.type === 'stream' ? body.events.length : 0 }),
     raw: raw?.body.encoding === 'base64' ? t('dashboard.requests.base64') : t('dashboard.requests.raw'),
   };
   const chooseSource = (value: string | undefined) => {

@@ -1026,6 +1026,8 @@ const en = {
         hideValue: 'Hide value',
         decodeError: 'Could not decode this body ({{error}}); showing raw base64.',
         streamView: 'Response body view',
+        noMatches: 'No requests match these filters',
+        formattedBody: 'Formatted body',
         collected: 'Collected',
         events: 'Events ({{count, number}})',
         headers: 'Headers ({{count}})',
