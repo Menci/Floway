@@ -6,6 +6,7 @@ const zhHansCN = {
     },
     common: {
       bodyViewer: {
+        options: '正文选项',
         find: '搜索正文',
         fold: '折叠 JSON',
         unfold: '全部展开',
@@ -969,9 +970,7 @@ const zhHansCN = {
         noKeys: '没有 API 密钥启用请求保留',
         noKeysDescription: '在 API 密钥上启用请求转储保留后，即可开始捕获请求。',
         apiKeysLink: 'API 密钥',
-        request: '请求',
         requestBody: '请求体',
-        response: '响应',
         responseBody: '响应体',
         emptyBody: '响应体为空',
         truncatedStream: '记录中没有结束标记。下面仍展示已解析内容，完整性未知。',
@@ -989,6 +988,10 @@ const zhHansCN = {
         noUpstreamCapture: '这条记录没有可用的上游 HTTP 采集。',
         upstreamCall: '上游交互',
         callNumber: '第 {{number}} / {{count}} 次调用',
+        upstreamRequest: '上游请求',
+        upstreamResponse: '上游响应',
+        metadata: '详情',
+        diagnostics: '诊断（{{count}}）',
         clientRequest: '客户端请求',
         clientResponse: '客户端响应',
         exportRecord: '导出记录',

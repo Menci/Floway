@@ -1,21 +1,27 @@
+import { MoreHorizontalRegular, SearchRegular } from '@fluentui/react-icons';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { Checkbox } from './fluent-form-controls';
+import { EmptyStateLine } from './empty-state';
 import { PANEL_BAND_CLASS } from './panel';
+import { TooltipIconButton } from './tooltip-icon-button';
+import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from './use-copy-to-clipboard';
 import { fluentComponents } from '../../fluent';
 import { monospaceStack } from '../../font-stacks';
 import { useTranslation } from '../../i18n/translation';
 import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
-const { Button } = fluentComponents;
+const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 (globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment ??= {
   getWorker: () => new EditorWorker(),
 };
 
-export default function BodyEditor({ text, json, label }: { text: string; json: boolean; label: string }) {
+export default function BodyEditor({ text, json, label, toolbarStart, emptyText }: { text: string; json: boolean; label: string; toolbarStart?: ReactNode; emptyText?: string }) {
   const { t } = useTranslation();
+  const [wrap, setWrap] = useState(true);
+  const { copy, outcomeFor } = useCopyToClipboard();
+  const copyLabel = useCopyLabel();
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const dark = useMediaQuery(DARK_SCHEME_QUERY);
@@ -62,12 +68,26 @@ export default function BodyEditor({ text, json, label }: { text: string; json: 
   useEffect(() => { editorRef.current?.updateOptions({ theme: dark ? 'vs-dark' : 'vs' }); }, [dark]);
 
   return <div className="h-full min-h-0 flex flex-col">
-    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
-      <Button size="small" onClick={() => void editorRef.current?.getAction('actions.find')?.run()}>{t('common.bodyViewer.find')}</Button>
-      {json && <Button size="small" onClick={() => void editorRef.current?.getAction('editor.foldLevel2')?.run()}>{t('common.bodyViewer.fold')}</Button>}
-      {json && <Button size="small" onClick={() => void editorRef.current?.getAction('editor.unfoldAll')?.run()}>{t('common.bodyViewer.unfold')}</Button>}
-      <Checkbox defaultChecked label={t('common.bodyViewer.wrap')} onChange={(_, data) => editorRef.current?.updateOptions({ wordWrap: data.checked ? 'on' : 'off' })} />
+    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0`}>
+      <div className="min-w-0">{toolbarStart}</div>
+      <div className="ml-auto flex items-center gap-1 shrink-0">
+        <TooltipIconButton icon={<SearchRegular />} label={t('common.bodyViewer.find')} onClick={() => void editorRef.current?.getAction('actions.find')?.run()} />
+        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />
+        <Menu checkedValues={{ wrap: wrap ? ['on'] : [] }} onCheckedValueChange={(_, data) => {
+          const enabled = data.checkedItems.includes('on');
+          setWrap(enabled);
+          editorRef.current?.updateOptions({ wordWrap: enabled ? 'on' : 'off' });
+        }}>
+          <MenuTrigger disableButtonEnhancement><Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={t('common.bodyViewer.options')} /></MenuTrigger>
+          <MenuPopover><MenuList>
+            {json && <MenuItem onClick={() => void editorRef.current?.getAction('editor.foldLevel2')?.run()}>{t('common.bodyViewer.fold')}</MenuItem>}
+            {json && <MenuItem onClick={() => void editorRef.current?.getAction('editor.unfoldAll')?.run()}>{t('common.bodyViewer.unfold')}</MenuItem>}
+            <MenuItemCheckbox name="wrap" value="on">{t('common.bodyViewer.wrap')}</MenuItemCheckbox>
+          </MenuList></MenuPopover>
+        </Menu>
+      </div>
     </div>
+    {!text && emptyText && <EmptyStateLine className="p-4">{emptyText}</EmptyStateLine>}
     <div className="flex-1 min-h-0 min-w-0" ref={containerRef} />
   </div>;
 }

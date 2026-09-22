@@ -8,6 +8,7 @@ const en = {
     },
     common: {
       bodyViewer: {
+        options: 'Body options',
         find: 'Find in body',
         fold: 'Collapse JSON',
         unfold: 'Expand all',
@@ -1016,9 +1017,7 @@ const en = {
         noKeys: 'No API key has request retention enabled',
         noKeysDescription: 'Enable request dump retention on an API key to start capturing requests.',
         apiKeysLink: 'API Keys',
-        request: 'Request',
         requestBody: 'Request body',
-        response: 'Response',
         responseBody: 'Response body',
         emptyBody: 'Empty body',
         truncatedStream: 'No terminal marker was recorded. The assembled content is shown; completeness is unknown.',
@@ -1036,6 +1035,10 @@ const en = {
         noUpstreamCapture: 'No HTTP upstream capture is available for this record.',
         upstreamCall: 'Upstream calls',
         callNumber: 'Call {{number}} of {{count}}',
+        upstreamRequest: 'Upstream request',
+        upstreamResponse: 'Upstream response',
+        metadata: 'Details',
+        diagnostics: 'Issues ({{count}})',
         clientRequest: 'Client request',
         clientResponse: 'Client response',
         exportRecord: 'Export record',

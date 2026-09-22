@@ -1,25 +1,27 @@
-import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import { ArrowDownloadRegular, EyeOffRegular, EyeRegular, InfoRegular, WarningRegular } from '@fluentui/react-icons';
 import { lazy, Suspense, useMemo, useState } from 'react';
 
 import { contentTypeOf, renderBody } from './body-render';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
-import { collectKindFromTargetApi, detectCollectKind, renderStreamEvents, type CollectedStream, type CollectKind } from './stream-render';
+import { collectKindFromTargetApi, detectCollectKind, renderStreamEvents, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { DialogShell } from '../ui/dialog-shell';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
-import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpCapture, DumpRecord, DumpResponseBody } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord, DumpResponseBody } from '@floway-dev/gateway/dump-types';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
-const { Button, Option, Spinner, Tab, TabList, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Option, Spinner, Text } = fluentComponents;
+
+type Source = 'request' | 'upstreamRequest' | 'upstreamResponse' | 'response';
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
@@ -28,105 +30,22 @@ function CopyButton({ text }: { text: string }) {
   return <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />;
 }
 
-function HeadersView({ headers }: { headers: Array<[string, string]> }) {
+function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  return <>
-    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2`}>
-      <Button size="small" aria-expanded={open} onClick={() => setOpen(!open)}>{t('dashboard.requests.headers', { count: String(headers.length) })}</Button>
-      {open && <CopyButton text={headers.map(([name, value]) => `${name}: ${value}`).join('\n')} />}
-    </div>
-    {open && <ScrollArea axes="both" className="max-h-[25vh] shrink-0">
-      <table className="w-full font-mono text-left"><tbody>
-        {headers.map(([name, value], index) => <tr key={index}>
-          <th className="align-top py-2 pl-[var(--floway-panel-inset)] pr-2 font-normal text-fui-fg3">{name}</th>
-          <td className="py-2 pl-2 pr-[var(--floway-panel-inset)] break-all">
-            {isSensitiveHeader(name) && !revealed.has(index) ? redactHeaderValue(value) : value}
-            {isSensitiveHeader(name) && <TooltipIconButton
-              icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
-              label={revealed.has(index) ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
-              onClick={() => setRevealed(current => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}
-            />}
-          </td>
-        </tr>)}
-      </tbody></table>
-    </ScrollArea>}
-  </>;
-}
-
-function BodyPane({ body, headers, collected, kind, raw }: {
-  body: DumpResponseBody;
-  headers: Array<[string, string]>;
-  collected?: CollectedStream | null;
-  kind?: CollectKind | null;
-  raw?: NonNullable<DumpCapture['response']>;
-}) {
-  const { t } = useTranslation();
-  const [selectedView, setView] = useState('collected');
-  const displayed = useMemo(() => {
-    if (selectedView === 'raw' && raw) return { text: raw.body.data, isJson: false, decodeError: null };
-    if (body.type === 'bytes') return renderBody(body.body, contentTypeOf(headers));
-    if (body.type === 'stream' && selectedView === 'events') {
-      const text = renderStreamEvents(kind ?? null, body.events).map((event, index) =>
-        `# ${index + 1} +${event.timestamp}ms ${event.event ?? ''}\n${event.text}`).join('\n\n');
-      return { text, isJson: false, decodeError: null };
-    }
-    return { text: collected?.result == null ? '' : JSON.stringify(collected.result, null, 2), isJson: true, decodeError: null };
-  }, [body, collected, headers, kind, raw, selectedView]);
-  return <div className="flex-1 min-h-0 flex flex-col">
-    <HeadersView headers={headers} />
-    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
-      {(body.type === 'stream' || raw) && <TabList aria-label={t('dashboard.requests.streamView')} selectedValue={selectedView} onTabSelect={(_, data) => setView(String(data.value))} size="small">
-        <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
-        {body.type === 'stream' && <Tab value="events">{t('dashboard.requests.events', { count: body.events.length })}</Tab>}
-        {raw && <Tab value="raw">{t('dashboard.requests.raw')}</Tab>}
-      </TabList>}
-      {selectedView === 'raw' && raw && <Text size={200}>{raw.body.encoding === 'base64' ? t('dashboard.requests.base64') : t('dashboard.requests.raw')}</Text>}
-      <span className="ml-auto"><CopyButton text={displayed.text} /></span>
-    </div>
-    <ScrollArea axes="vertical" className="max-h-[25vh] shrink-0">
-      {raw && !raw.complete && <OutcomeMessageBar intent="warning">{t('dashboard.requests.partialCapture')}</OutcomeMessageBar>}
-      {raw?.error && <OutcomeMessageBar>{raw.error}</OutcomeMessageBar>}
-      {selectedView === 'collected' && collected?.error && <OutcomeMessageBar>{collected.error}</OutcomeMessageBar>}
-      {selectedView === 'collected' && collected?.truncated && !collected.error && <OutcomeMessageBar intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
-      {displayed.decodeError && <OutcomeMessageBar intent="warning">{t('dashboard.requests.decodeError', { error: displayed.decodeError })}</OutcomeMessageBar>}
-    </ScrollArea>
-    <div className="flex-1 min-h-0">
-      {displayed.text ? <Suspense fallback={<Spinner />}><BodyEditor text={displayed.text} json={displayed.isJson} label={t('dashboard.requests.responseBody')} /></Suspense>
-        : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>}
-    </div>
-  </div>;
-}
-
-function UpstreamPane({ record, collected }: { record: DumpRecord; collected: CollectedStream | null }) {
-  const { t } = useTranslation();
-  const exchanges = record.capture?.exchanges ?? [];
-  const [index, setIndex] = useState(Math.max(0, exchanges.length - 1));
-  const [side, setSide] = useState('response');
-  const exchange = exchanges[index];
-  const legacy = record.response.upstream;
-  if (!exchange) return legacy
-    ? <BodyPane body={legacy.body} headers={legacy.headers} collected={collected} kind={collectKindFromTargetApi(record.meta.targetApi)} />
-    : <EmptyStateLine className="p-4">{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>;
-  const response = exchange.response;
-  const body: DumpResponseBody = side === 'request' ? { type: 'bytes', body: exchange.request.body }
-    : index === exchanges.length - 1 && legacy ? legacy.body
-      : response ? { type: 'bytes', body: response.body } : { type: 'none' };
-  return <>
-    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
-      <Dropdown aria-label={t('dashboard.requests.upstreamCall')} selectedOptions={[String(index)]} value={t('dashboard.requests.callNumber', { number: String(index + 1), count: String(exchanges.length) })} onOptionSelect={(_, data) => setIndex(Number(data.optionValue))}>
-        {exchanges.map((item, i) => <Option key={i} value={String(i)} text={String(i + 1)}>{i + 1}. {item.request.method} {item.response?.status ?? '—'}</Option>)}
-      </Dropdown>
-      <TabList aria-label={t('dashboard.requests.upstreamCall')} selectedValue={side} onTabSelect={(_, data) => setSide(String(data.value))} size="small">
-        <Tab value="request">{t('dashboard.requests.request')}</Tab><Tab value="response">{t('dashboard.requests.response')}</Tab>
-      </TabList>
-      {response && <HttpStatusBadge severity={requestSeverity(response.status, null)}>{response.status}</HttpStatusBadge>}
-    </div>
-    <Text className={`${PANEL_BAND_CLASS} break-all font-mono`} size={200}>{exchange.request.method} {exchange.request.url}</Text>
-    {exchange.error && <OutcomeMessageBar>{exchange.error}</OutcomeMessageBar>}
-    <BodyPane key={`${index}-${side}`} body={body} headers={side === 'request' ? exchange.request.headers : response?.headers ?? []} raw={side === 'response' ? response ?? undefined : undefined} collected={collected} kind={collectKindFromTargetApi(record.meta.targetApi)} />
-  </>;
+  return <table className="w-full font-mono text-left"><tbody>
+    {headers.map(([name, value], index) => <tr key={index}>
+      <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-all">{name}</th>
+      <td className="py-2 pl-2 break-all">
+        {isSensitiveHeader(name) && !revealed.has(index) ? redactHeaderValue(value) : value}
+        {isSensitiveHeader(name) && <TooltipIconButton
+          icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
+          label={revealed.has(index) ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
+          onClick={() => setRevealed(current => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}
+        />}
+      </td>
+    </tr>)}
+  </tbody></table>;
 }
 
 export function RequestDetailPanel({ collected, upstreamCollected, error, record, recordId, retainLastRecord }: {
@@ -149,23 +68,88 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
 
 function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
   const { t } = useTranslation();
-  const [section, setSection] = useState('response');
-  const responseError = errorLabel(record.meta.error);
+  const [source, setSource] = useState<Source>('response');
+  const [view, setView] = useState('collected');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const exchanges = record.capture?.exchanges ?? [];
+  const [index, setIndex] = useState(Math.max(0, exchanges.length - 1));
+  const upstream = source === 'upstreamRequest' || source === 'upstreamResponse';
+  const request = source === 'request' || source === 'upstreamRequest';
+  const exchange = upstream ? exchanges[index] : undefined;
+  const legacy = record.response.upstream;
+  const headers = useMemo(() => upstream ? (request ? exchange?.request.headers : exchange?.response?.headers ?? legacy?.headers) ?? []
+    : request ? record.request.headers : record.response.headers, [exchange, legacy, record, request, upstream]);
+  const status = upstream ? exchange?.response?.status ?? legacy?.status ?? null : record.response.status;
+  const endpoint = upstream ? exchange?.request.url : record.request.path;
+  const method = upstream ? exchange?.request.method : record.request.method;
+  const raw = request ? undefined : upstream ? exchange?.response ?? undefined : record.capture?.response;
+  const result = request ? null : upstream ? (!exchange || index === exchanges.length - 1 ? upstreamCollected : null) : collected;
+  const kind = upstream ? collectKindFromTargetApi(record.meta.targetApi) : detectCollectKind(record.meta.path);
+  const body = useMemo<DumpResponseBody>(() => upstream
+    ? request ? exchange ? { type: 'bytes', body: exchange.request.body } : { type: 'none' }
+      : (!exchange || index === exchanges.length - 1) && legacy ? legacy.body : raw ? { type: 'bytes', body: raw.body } : { type: 'none' }
+    : request ? { type: 'bytes', body: record.request.body } : record.response.body, [upstream, request, exchange, index, exchanges.length, legacy, raw, record]);
+  const displayed = useMemo(() => {
+    if (view === 'raw' && raw) return { text: raw.body.data, isJson: false, decodeError: null };
+    if (body.type === 'bytes') return renderBody(body.body, contentTypeOf(headers));
+    if (body.type === 'stream' && view === 'events') return {
+      text: renderStreamEvents(kind, body.events).map((event, i) => `# ${i + 1} +${event.timestamp}ms ${event.event ?? ''}\n${event.text}`).join('\n\n'),
+      isJson: false, decodeError: null,
+    };
+    return { text: result?.result == null ? '' : JSON.stringify(result.result, null, 2), isJson: true, decodeError: null };
+  }, [body, headers, kind, raw, result, view]);
+  const diagnostics = [...new Set([
+    errorLabel(record.meta.error), exchange?.error, raw?.error, result?.error,
+    raw && !raw.complete ? t('dashboard.requests.partialCapture') : null,
+    result?.truncated && !result.error ? t('dashboard.requests.truncatedStream') : null,
+    displayed.decodeError ? t('dashboard.requests.decodeError', { error: displayed.decodeError }) : null,
+  ].filter((value): value is string => Boolean(value)))];
+  const labels: Record<Source, string> = {
+    request: t('dashboard.requests.clientRequest'), upstreamRequest: t('dashboard.requests.upstreamRequest'),
+    upstreamResponse: t('dashboard.requests.upstreamResponse'), response: t('dashboard.requests.clientResponse'),
+  };
+  const viewLabels: Record<string, string> = {
+    collected: t('dashboard.requests.collected'), events: t('dashboard.requests.events', { count: body.type === 'stream' ? body.events.length : 0 }),
+    raw: raw?.body.encoding === 'base64' ? t('dashboard.requests.base64') : t('dashboard.requests.raw'),
+  };
+  const chooseSource = (value: string | undefined) => {
+    if (value === undefined) return;
+    setSource(value as Source);
+    setView('collected');
+  };
   return <div className="h-full min-h-0 flex flex-col">
-    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
-      <HttpMethodBadge method={record.request.method} />
-      <HttpStatusBadge severity={requestSeverity(record.response.status, record.meta.error)}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-      <Text className="break-all font-mono" size={200}>{record.request.path}</Text>
-      <Button size="small" className="!ml-auto" onClick={() => downloadRecords([record])}>{t('dashboard.requests.exportRecord')}</Button>
+    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
+      <Dropdown size="small" className="flex-1" aria-label={t('dashboard.requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
+        {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
+      </Dropdown>
+      <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
+        {diagnostics.length ? t('dashboard.requests.diagnostics', { count: String(diagnostics.length) }) : t('dashboard.requests.metadata')}
+      </Button>
+      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
-    {responseError && <OutcomeMessageBar>{responseError}</OutcomeMessageBar>}
-    <TabList className="px-[var(--floway-panel-inset)]" aria-label={t('dashboard.requests.detailTitle')} selectedValue={section} onTabSelect={(_, data) => setSection(String(data.value))}>
-      <Tab value="request">{t('dashboard.requests.clientRequest')}</Tab>
-      <Tab value="upstream">{t('dashboard.requests.upstreamCall')}</Tab>
-      <Tab value="response">{t('dashboard.requests.clientResponse')}</Tab>
-    </TabList>
-    {section === 'request' && <BodyPane key="request" body={{ type: 'bytes', body: record.request.body }} headers={record.request.headers} />}
-    {section === 'upstream' && <UpstreamPane record={record} collected={upstreamCollected} />}
-    {section === 'response' && <BodyPane key="response" body={record.response.body} headers={record.response.headers} collected={collected} kind={detectCollectKind(record.meta.path)} raw={record.capture?.response} />}
+    <div className="flex-1 min-h-0">
+      <Suspense fallback={<Spinner />}><BodyEditor
+        text={displayed.text} json={displayed.isJson} label={labels[source]}
+        emptyText={upstream && !exchange && !legacy ? t('dashboard.requests.noUpstreamCapture') : t('dashboard.requests.emptyBody')}
+        toolbarStart={<div className="flex items-center gap-2 min-w-0">
+          {upstream && exchanges.length > 1 && <Dropdown size="small" aria-label={t('dashboard.requests.upstreamCall')} selectedOptions={[String(index)]} value={`${index + 1} / ${exchanges.length}`} onOptionSelect={(_, data) => { setIndex(Number(data.optionValue)); setView('collected'); }}>
+            {exchanges.map((item, i) => <Option key={i} value={String(i)} text={String(i + 1)}>{t('dashboard.requests.callNumber', { number: String(i + 1), count: String(exchanges.length) })}. {item.request.method} {item.response?.status ?? '—'}</Option>)}
+          </Dropdown>}
+          {(body.type === 'stream' || raw) ? <Dropdown size="small" aria-label={t('dashboard.requests.streamView')} selectedOptions={[view]} value={viewLabels[view]} onOptionSelect={(_, data) => { if (data.optionValue) setView(data.optionValue); }}>
+            <Option value="collected">{viewLabels.collected}</Option>
+            {body.type === 'stream' && <Option value="events">{viewLabels.events}</Option>}
+            {raw && <Option value="raw">{viewLabels.raw}</Option>}
+          </Dropdown> : <Text size={200} className="text-fui-fg3">{t(request ? 'dashboard.requests.requestBody' : 'dashboard.requests.responseBody')}</Text>}
+        </div>}
+      /></Suspense>
+    </div>
+    <DialogShell width="editor" open={detailsOpen} onOpenChange={(_, data) => setDetailsOpen(data.open)} title={<DialogTitle>{labels[source]}</DialogTitle>} actions={<DialogActions><Button onClick={() => setDetailsOpen(false)}>{t('common.dismiss')}</Button></DialogActions>}>
+      <div className="flex items-center gap-2"><HttpMethodBadge method={method ?? record.request.method} /><Text className="font-mono break-all">{endpoint ?? record.request.path}</Text><CopyButton text={endpoint ?? record.request.path} /></div>
+      {diagnostics.map((message, i) => <OutcomeMessageBar key={i} intent="warning">{message}</OutcomeMessageBar>)}
+      {upstream && !exchange && !legacy && <EmptyStateLine>{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>}
+      <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={headers.map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
+      <HeaderTable key={`${source}-${index}`} headers={headers} />
+    </DialogShell>
   </div>;
 }
