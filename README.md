@@ -77,27 +77,6 @@ Audio transcription is a buffered multipart passthrough for Custom, Azure, and
 Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
 responses retain their upstream wire shape.
 
-### Codex Collaboration
-
-The OpenAI Responses collaboration shim is enabled by default for every
-provider. It sends the reserved `collaboration` namespace upstream as
-`collaboration-optimize`, using `collaboration-optimize-2`, `-3`, and so on
-only when a name is occupied. Action names remain unchanged. The three message
-actions (`spawn_agent`, `send_message`, and `followup_task`) use plaintext
-schemas; returned calls regain the client namespace and an explicit empty
-`encrypted_function_args` marker. Encrypted or malformed markers on these
-calls fail the request rather than being labeled plaintext.
-
-The shim covers explicitly supplied history, deferred tool inventories, tool
-choices, response snapshots, and streaming calls. It wraps the complete
-server-tool loop and also works through OpenAI Chat Completions and Anthropic
-Messages translation. Operators can disable **OpenAI Responses Collaboration
-Shim** for an upstream or model that should retain its native contract.
-
-Stateful Responses integration remains a TODO: continuation hydration,
-persisted snapshots, and alias allocation must use one consistent full-history
-mapping. Connection-level WebSocket state is outside this shim's scope.
-
 ### Upstreams
 
 | Provider | Connection | Model catalog |
