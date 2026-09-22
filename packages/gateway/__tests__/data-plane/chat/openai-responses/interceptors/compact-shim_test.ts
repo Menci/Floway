@@ -458,6 +458,10 @@ test('compact decrypt: replays each native compaction after a system exact-repea
     assertEquals(prompt.type, 'message');
     if (prompt.type !== 'message') throw new Error('expected prompt message');
     assertEquals(prompt.role, 'system');
+    assertEquals(prompt.content, [{
+      type: 'input_text',
+      text: 'Repeat the following text exactly, which may contain a compaction summary, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.',
+    }]);
     assertEquals(compaction, nativeResponse.output[calls - 1]);
     const replay = await fakeUpstreamRun(`EXACT DECRYPTED SUMMARY ${calls - 1}`)();
     if (replay.type !== 'events') throw new Error('expected replay events');

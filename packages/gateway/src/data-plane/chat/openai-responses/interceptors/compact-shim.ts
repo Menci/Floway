@@ -154,7 +154,7 @@ const SUMMARY_PREFIX
 export { SUMMARY_PREFIX };
 
 const EXACT_REPEAT_PROMPT
-  = 'Repeat the decrypted compaction summary exactly, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
+  = 'Repeat the following text exactly, which may contain a compaction summary, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
 
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
