@@ -49,7 +49,7 @@ initOpenAIResponsesWebSocketUpgradeResolver((c, events) =>
 
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
-const hostname = String(getEnvOptional('HOST', '127.0.0.1'));
+const hostname = getEnvOptional('HOST', '127.0.0.1');
 const fetch = createNodeFetchHandler(app.fetch, { distDir: nodeWebDistDir() });
 
 // Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
