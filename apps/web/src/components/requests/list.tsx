@@ -66,9 +66,24 @@ const useStyles = makeStyles({
   },
   list: { outlineStyle: 'none' },
   selectionRow: {
+    backgroundColor: 'transparent',
     display: 'flex',
     paddingInline: 'var(--floway-panel-inset)',
+    // A divider rather than a card stroke, shared by the selection cell and content.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
     borderBottom: '1px solid var(--winui-divider-stroke-default)',
+    // The full row owns the fill; the content link and selection cell share it.
+    // ../../winui/controls/list.css.ts
+    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
+    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L90
+    '@media (forced-colors: active)': {
+      ':hover': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':active': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':hover *': { color: 'HighlightText' },
+      ':active *': { color: 'HighlightText' },
+    },
   },
   row: {
     backgroundColor: 'transparent',
@@ -76,10 +91,6 @@ const useStyles = makeStyles({
     // the user-agent link colour and underline.
     color: 'inherit',
     textDecorationLine: 'none',
-    // A divider rather than a card stroke: the card stroke is black in both
-    // themes and disappears against a dark page.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
     cursor: 'pointer',
     display: 'grid',
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
@@ -88,13 +99,9 @@ const useStyles = makeStyles({
     position: 'relative',
     flex: 1,
     minWidth: 0,
-    // ../../winui/controls/list.css.ts
-    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
-    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
     // Two concentric strokes held a pixel clear of the row's edge, keeping the
     // ring off the divider shared with the row above. The inner stroke's
-    // pseudo-element resolves against the row, which is a containing block only
-    // because the virtualizer positions every row absolutely.
+    // pseudo-element resolves against the relatively positioned content link.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
@@ -112,16 +119,6 @@ const useStyles = makeStyles({
       inset: '3px',
       boxShadow: 'inset 0 0 0 1px var(--winui-focus-stroke-inner)',
       pointerEvents: 'none',
-    },
-    // A forced palette repaints every colour it can reach, so the foreground is
-    // restated on the descendants, which carry colours of their own.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L84
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L89-L90
-    '@media (forced-colors: active)': {
-      ':hover': { backgroundColor: 'Highlight', color: 'HighlightText' },
-      ':active': { backgroundColor: 'Highlight', color: 'HighlightText' },
-      ':hover *': { color: 'HighlightText' },
-      ':active *': { color: 'HighlightText' },
     },
   },
   // Restated per state because the row's hover rule is a pseudo-class and would
@@ -219,12 +216,12 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
   };
 
   return (
-    <div style={style} className={s.selectionRow}>
+    <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
       <Checkbox aria-label={t('dashboard.requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
       <a
         {...address}
         aria-selected={selected}
-        className={mergeClasses(s.row, selected && s.selected)}
+        className={s.row}
         data-record-index={index}
         onKeyDown={handleKeyDown}
         role="option"
