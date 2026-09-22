@@ -68,13 +68,12 @@ const upstreamNamespace = (occupied: ReadonlySet<string>): string => {
   throw new Error('Unable to resolve a free collaboration namespace within 1000 attempts');
 };
 
-const rewriteMessageSchema = <T extends OpenAIResponsesTool>(tool: T, encrypted: boolean, markers?: ReadonlyMap<string, unknown>): T => {
+const stripMessageEncryption = <T extends OpenAIResponsesTool>(tool: T): T => {
   if (tool.type !== 'function' || !MESSAGE_ACTIONS.has(tool.name) || !isRecord(tool.parameters)) return tool;
   const properties = tool.parameters.properties;
   if (!isRecord(properties) || !isRecord(properties.message)) return tool;
   const message = { ...properties.message };
-  if (encrypted && markers?.has(tool.name)) message.encrypted = markers.get(tool.name);
-  else delete message.encrypted;
+  delete message.encrypted;
   return {
     ...tool,
     parameters: {
@@ -88,15 +87,13 @@ const rewriteTools = (
   tools: readonly OpenAIResponsesTool[],
   fromNamespace: string,
   toNamespace: string,
-  encrypted: boolean,
-  markers?: ReadonlyMap<string, unknown>,
 ): OpenAIResponsesTool[] => {
   return tools.map(tool => {
     if (tool.type !== 'namespace' || tool.name !== fromNamespace) return tool;
     return {
       ...tool,
       name: toNamespace,
-      tools: tool.tools.map(child => rewriteMessageSchema(child, encrypted, markers)),
+      ...(fromNamespace === CLIENT_NAMESPACE ? { tools: tool.tools.map(stripMessageEncryption) } : {}),
     };
   });
 };
@@ -146,7 +143,7 @@ const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, 
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
-      tools: rewriteTools(item.tools, CLIENT_NAMESPACE, upstreamNamespace, false),
+      tools: rewriteTools(item.tools, CLIENT_NAMESPACE, upstreamNamespace),
     };
   }
   if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
@@ -169,11 +166,11 @@ const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, 
   return { ...rest, namespace: upstreamNamespace };
 };
 
-const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, names: ReadonlySet<string>, markers: ReadonlyMap<string, unknown>): OpenAIResponsesOutputItem => {
+const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesOutputItem => {
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
-      tools: rewriteTools(item.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers),
+      tools: rewriteTools(item.tools, upstreamNamespace, CLIENT_NAMESPACE),
     };
   }
   if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
@@ -195,13 +192,13 @@ const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, 
   };
 };
 
-const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: string, names: ReadonlySet<string>, markers: ReadonlyMap<string, unknown>): OpenAIResponsesResult => {
+const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesResult => {
   const record = response as OpenAIResponsesResult & { tools?: OpenAIResponsesTool[] | null };
   return {
     ...response,
-    output: response.output.map(item => clientItem(item, upstreamNamespace, names, markers)),
+    output: response.output.map(item => clientItem(item, upstreamNamespace, names)),
     ...(Object.hasOwn(record, 'tools')
-      ? { tools: record.tools == null ? record.tools : rewriteTools(record.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers) }
+      ? { tools: record.tools == null ? record.tools : rewriteTools(record.tools, upstreamNamespace, CLIENT_NAMESPACE) }
       : {}),
     ...(response.tool_choice !== undefined
       ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE, names, new Set()) }
@@ -213,7 +210,7 @@ const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: stri
 // coordinates prevents later snapshots or argument completion from changing
 // the dispatch identity established by output_item.added.
 // https://github.com/lidge-jun/opencodex/blob/e45692f8d8e4dedfb4e9b0217fc245080fb2fba8/src/responses/plaintext-v2-agent-messages.ts#L827-L902
-const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet<string>, markers: ReadonlyMap<string, unknown>) => {
+const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet<string>) => {
   type Binding = { name?: string; namespace?: string; encrypted: boolean; keys: Set<string> };
   const bindings = new Map<string, Binding>();
   const bind = (value: Record<string, unknown>, outputIndex?: number): Record<string, unknown> => {
@@ -262,7 +259,7 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
       const item = event.item.type === 'function_call'
         ? bind(event.item as unknown as Record<string, unknown>, event.output_index) as unknown as OpenAIResponsesOutputItem
         : event.item;
-      return { ...event, item: clientItem(item, upstreamNamespace, names, markers) };
+      return { ...event, item: clientItem(item, upstreamNamespace, names) };
     }
     if (event.type === 'response.function_call_arguments.delta' || event.type === 'response.function_call_arguments.done') {
       const record = event as unknown as Record<string, unknown>;
@@ -283,7 +280,7 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
         output: event.response.output.map((item, index) => item.type === 'function_call'
           ? bind(item as unknown as Record<string, unknown>, index) as unknown as OpenAIResponsesOutputItem : item),
       };
-      return { ...event, response: clientResponse(response, upstreamNamespace, names, markers) };
+      return { ...event, response: clientResponse(response, upstreamNamespace, names) };
     }
     return event;
   };
@@ -301,34 +298,13 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
 export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-collaboration-shim')) return await run();
   const toolLists = toolInventories(ctx.payload);
-  const collaborationCounts = toolLists.map(tools =>
-    (tools ?? []).filter(tool => tool.type === 'namespace' && tool.name === CLIENT_NAMESPACE).length);
   if (!hasCollaborationNamespace(ctx.payload)) return await run();
-  if (collaborationCounts.some(count => count > 1)) {
-    throw new TypeError('OpenAIResponses request carries multiple collaboration namespaces in one tool inventory');
-  }
 
   const names = new Set<string>();
   const flatNames = new Set<string>();
-  const markers = new Map<string, unknown>();
-  const observedSchemas = new Set<string>();
   for (const tools of toolLists) for (const tool of tools ?? []) {
     if (tool.type === 'namespace' && tool.name === CLIENT_NAMESPACE) {
-      for (const child of tool.tools) {
-        names.add(child.name);
-        if (child.type !== 'function' || !MESSAGE_ACTIONS.has(child.name)) continue;
-        const properties = child.parameters?.properties;
-        if (isRecord(properties) && isRecord(properties.message)) {
-          const marker = properties.message.encrypted;
-          // Removing different markers would make identical upstream schemas
-          // impossible to restore to their original client contracts.
-          if (observedSchemas.has(child.name) && !Object.is(markers.get(child.name), marker)) {
-            throw new TypeError(`Conflicting collaboration message schemas for '${child.name}'`);
-          }
-          observedSchemas.add(child.name);
-          if (Object.hasOwn(properties.message, 'encrypted')) markers.set(child.name, marker);
-        }
-      }
+      for (const child of tool.tools) names.add(child.name);
     } else if (tool.type === 'function' || tool.type === 'custom') flatNames.add(tool.name);
   }
   for (const item of ctx.payload.input) {
@@ -337,12 +313,12 @@ export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = 
   const targetNamespace = upstreamNamespace(namespaceNames(ctx.payload));
   ctx.payload = {
     ...ctx.payload,
-    tools: ctx.payload.tools == null ? ctx.payload.tools : rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace, false),
+    tools: ctx.payload.tools == null ? ctx.payload.tools : rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace),
     tool_choice: rewriteToolChoice(ctx.payload.tool_choice, CLIENT_NAMESPACE, targetNamespace, names, flatNames),
     input: ctx.payload.input.map(item => requestItem(item, targetNamespace, names, flatNames)),
   };
 
-  const restoreEvent = createClientEventRestorer(targetNamespace, names, markers);
+  const restoreEvent = createClientEventRestorer(targetNamespace, names);
   const result = await run();
   if (result.type !== 'events') return result;
   return {

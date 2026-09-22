@@ -161,7 +161,7 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   expect(terminal.response.output[0]).toMatchObject({ namespace: 'collaboration', encrypted_function_args: [] });
   const restoredNamespace = terminal.response.tools?.[0] as unknown as { name: string; tools: Array<{ name: string; parameters?: Record<string, unknown> }> };
   expect(restoredNamespace.name).toBe('collaboration');
-  expect((restoredNamespace.tools[0].parameters?.properties as Record<string, Record<string, unknown>>).message.encrypted).toBe(true);
+  expect((restoredNamespace.tools[0].parameters?.properties as Record<string, Record<string, unknown>>).message).not.toHaveProperty('encrypted');
   expect(terminal.response.tool_choice).toMatchObject({
     tools: [
       { type: 'namespace', name: 'collaboration' },
@@ -277,13 +277,31 @@ test('keeps one plaintext projection across a multi-turn downstream loop', async
   }
 });
 
-test('rejects ambiguous duplicate collaboration namespaces', async () => {
+test('projects duplicate collaboration containers together and preserves their separate declarations', async () => {
   const ctx = invocation();
-  ctx.payload = { ...ctx.payload, tools: [collaborationTool(), collaborationTool()] };
-  await expect(withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
-    'OpenAIResponses request carries multiple collaboration namespaces in one tool inventory',
-  );
+  const tool = collaborationTool();
+  if (tool.type !== 'namespace') throw new Error('Expected namespace');
+  ctx.payload.tools = [
+    { ...tool, tools: tool.tools.slice(0, 2) },
+    { ...tool, tools: tool.tools.slice(2) },
+  ];
+  const original = structuredClone(ctx.payload.tools);
+  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    expect(ctx.payload.tools?.map(tool => tool.type === 'namespace' ? tool.name : undefined)).toEqual(['collaboration-optimize', 'collaboration-optimize']);
+    return eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.completed', response: response([], ctx.payload.tools ?? [], 'collaboration-optimize') });
+    })(), testTelemetryModelIdentity);
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  for await (const frame of result.events) {
+    if (frame.type !== 'event' || frame.event.type !== 'response.completed') continue;
+    const tools = frame.event.response.tools;
+    expect(tools).toHaveLength(2);
+    expect(tools?.map(tool => tool.type === 'namespace' ? tool.name : undefined)).toEqual(['collaboration', 'collaboration']);
+    expect(tools?.map(tool => tool.type === 'namespace' ? tool.tools.map(child => child.name) : [])).toEqual(
+      original.map(tool => tool.type === 'namespace' ? tool.tools.map(child => child.name) : []),
+    );
+  }
 });
 
 test.each([null, ['message']] as const)('rejects explicitly encrypted history marker %j', async marker => {
@@ -532,22 +550,6 @@ test('remembers encrypted evidence arriving before a sparse call identity', asyn
   await expect(async () => { for await (const frame of result.events) void frame; }).rejects.toThrow('encrypted arguments');
 });
 
-test.each([false, undefined])('restores the original schema encryption spelling %j', async encrypted => {
-  const ctx = invocation();
-  const tool = ctx.payload.tools?.[0];
-  if (tool?.type !== 'namespace' || tool.tools[0].type !== 'function') throw new Error('Expected namespace function');
-  tool.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', ...(encrypted === undefined ? {} : { encrypted }) } } };
-  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.completed', response: response([], ctx.payload.tools ?? [], 'collaboration-optimize') });
-    })(), testTelemetryModelIdentity));
-  if (result.type !== 'events') throw new Error('Expected events');
-  for await (const frame of result.events) {
-    if (frame.type !== 'event' || frame.event.type !== 'response.completed') continue;
-    expect(frame.event.response.tools?.[0]).toMatchObject({ tools: [{ name: 'spawn_agent', parameters: tool.tools[0].parameters }, {}, {}, {}] });
-  }
-});
-
 test.each(['.', '__'])('restores a standalone qualified argument event with %s', async separator => {
   const ctx = invocation();
   const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
@@ -561,15 +563,33 @@ test.each(['.', '__'])('restores a standalone qualified argument event with %s',
   }
 });
 
-test.each([false, undefined])('rejects irreversible schema marker conflicts %j across inventories atomically', async encrypted => {
+test.each([false, undefined])('preserves upstream schema echoes with differing client inventory marker %j', async encrypted => {
   const ctx = invocation();
   const deferred = collaborationTool();
   if (deferred.type !== 'namespace' || deferred.tools[0].type !== 'function') throw new Error('Expected namespace function');
   deferred.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', ...(encrypted === undefined ? {} : { encrypted }) } } };
   ctx.payload.input.push({ type: 'additional_tools', role: 'developer', tools: [deferred] });
-  const before = ctx.payload;
-  await expect(withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    throw new Error('Must not invoke upstream');
-  })).rejects.toThrow('Conflicting collaboration message schemas');
-  expect(ctx.payload).toBe(before);
+  let upstreamTools: OpenAIResponsesTool[] = [];
+  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    const input = ctx.payload.input[1];
+    if (input.type !== 'additional_tools' || input.tools[0].type !== 'namespace') throw new Error('Expected deferred namespace');
+    const child = input.tools[0].tools[0];
+    if (child.type !== 'function') throw new Error('Expected function');
+    expect((child.parameters?.properties as Record<string, Record<string, unknown>>).message).not.toHaveProperty('encrypted');
+    upstreamTools = structuredClone(ctx.payload.tools ?? []);
+    const tool = upstreamTools[0];
+    if (tool.type !== 'namespace' || tool.tools[0].type !== 'function') throw new Error('Expected namespace function');
+    tool.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', encrypted: false, description: 'Upstream schema' } } };
+    return eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: { type: 'tool_search_output', id: 'tso_echo', tools: upstreamTools } });
+      yield eventFrame({ type: 'response.completed', response: response([], upstreamTools, 'collaboration-optimize') });
+    })(), testTelemetryModelIdentity);
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  const expected = upstreamTools.map(tool => ({ ...tool, name: 'collaboration' }));
+  for await (const frame of result.events) {
+    if (frame.type !== 'event') continue;
+    if (frame.event.type === 'response.completed') expect(frame.event.response.tools).toEqual(expected);
+    if (frame.event.type === 'response.output_item.done') expect(frame.event.item).toMatchObject({ tools: expected });
+  }
 });
