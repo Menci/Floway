@@ -8,6 +8,7 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-web-search-shim': true,
   'openai-responses-image-generation-shim': true,
   'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,

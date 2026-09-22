@@ -21,6 +21,7 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-web-search-shim': false,
   'openai-responses-image-generation-shim': false,
   'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,

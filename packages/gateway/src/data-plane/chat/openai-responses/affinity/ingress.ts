@@ -9,6 +9,7 @@ import {
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
+import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -47,7 +48,8 @@ const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const itemInheritsRequiredTarget = (item: OpenAIResponsesInputItem): boolean =>
-  ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
+  !isOpenAIResponsesCompactShimItem(item)
+  && ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
 const blobRequiresOriginalTarget = (item: OpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
   item.type === 'context_compaction'
@@ -61,7 +63,7 @@ const opaqueBlobLocations = async (
   const locations: OpenAIResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
     const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
-    if (typeof topLevel === 'string') {
+    if (typeof topLevel === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
       locations.push({
         itemIndex,
         slot: 'encrypted_content',

@@ -654,6 +654,11 @@ const en = {
               description:
                   "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
             },
+            'openai-responses-compact-decrypt': {
+              label: 'OpenAI Responses Context Compaction Decryption',
+              description:
+                  'When native context compaction returns an opaque compaction item, Floway sends that item back to the same model with an exact-repeat instruction, then replaces it with a gateway-readable compaction item containing the recovered plaintext.\nThis adds one billed generation request per compaction item and applies only when the context compaction shim is disabled.',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
               description:

@@ -1550,7 +1550,9 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCodexUpstreamRecord());
+  await repo.upstreams.save(buildCodexUpstreamRecord({
+    flagOverrides: { 'openai-responses-compact-decrypt': false },
+  }));
   const upstreamBodies: Record<string, unknown>[] = [];
 
   // The handshake carries the connection's first turn, exactly as the Codex

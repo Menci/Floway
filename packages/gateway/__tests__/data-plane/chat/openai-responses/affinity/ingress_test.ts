@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
+import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { AffinityCodec, type AffinityRequestAnalysis, type AffinityTarget, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -50,6 +52,26 @@ test('reuses a payload with no affinity carriers', async () => {
 
   expect(materialized).toBe(payload);
   expect(materialized.input[0]).toBe(image);
+});
+
+test('treats gateway-owned compaction payloads as portable across affinity targets', async () => {
+  const item = {
+    type: 'compaction' as const,
+    id: 'cmp_shim',
+    encrypted_content: encodeBase64UrlJson([{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'portable summary' }],
+    }]),
+  };
+  expect(isOpenAIResponsesCompactShimItem(item)).toBe(true);
+  const payload: CanonicalOpenAIResponsesPayload = { model: 'model', input: [item] };
+  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
+
+  expect(prepared.requiredTargets).toEqual([]);
+  expect(prepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize()).toBe(payload);
 });
 
 test('copies only paths carrying an affinity projection', async () => {

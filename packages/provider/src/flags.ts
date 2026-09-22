@@ -27,6 +27,7 @@ export const OPTIONAL_FLAG_IDS = [
   'openai-responses-web-search-shim',
   'openai-responses-image-generation-shim',
   'openai-responses-compact-shim',
+  'openai-responses-compact-decrypt',
   'disable-reasoning-on-forced-tool-choice',
   'rewrite-mid-conv-system-to-user',
   'rewrite-developer-to-system',

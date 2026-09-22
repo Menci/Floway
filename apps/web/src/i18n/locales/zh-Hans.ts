@@ -624,6 +624,11 @@ const zhHansCN = {
               description:
                   'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
+            'openai-responses-compact-decrypt': {
+              label: 'OpenAI Responses 上下文压缩解密',
+              description:
+                  '当原生上下文压缩返回不透明的 compaction item 时，Floway 会将该 item 与逐字复述指令一并发回同一模型，再用恢复出的明文替换为网关可读取的 compaction item。\n每个 compaction item 会额外产生一次计费生成请求，且仅在上下文压缩兼容层关闭时生效。',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',
               description:

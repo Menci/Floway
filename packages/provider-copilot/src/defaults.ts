@@ -17,6 +17,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
   // has a compaction wire.
   'openai-responses-compact-shim': false,
+  'openai-responses-compact-decrypt': true,
   'disable-reasoning-on-forced-tool-choice': false,
   // Upstream default is off; Claude models below 4.8 flip it on via the
   // per-model default. See `defaultFlagsForCopilotModel` for the empirical

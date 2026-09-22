@@ -13,6 +13,7 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   // shim stays off by default. Operator can turn it on for a specific
   // upstream that lacks native compact.
   'openai-responses-compact-shim': false,
+  'openai-responses-compact-decrypt': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
