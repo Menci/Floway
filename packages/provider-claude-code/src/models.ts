@@ -206,7 +206,7 @@ export const buildClaudeCodeCatalog = (
     kind: 'chat',
     endpoints: { anthropicMessages: {} },
     enabledFlags,
-    opaqueBlobCompatibilityScope: { bindToUpstream: false, key: alias },
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
     limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,
     ...(pricing ? { pricing } : {}),
