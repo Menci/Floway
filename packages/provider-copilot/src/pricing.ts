@@ -29,9 +29,22 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }),
     tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }, { serviceTier: 'fast' }),
   )],
+  // Copilot's public billing card exposes only the base Opus 5.5 lane. The
+  // Claude API offers Fast mode, but the Copilot provider activates a lane
+  // only when GitHub publishes a matching raw `-fast` sibling.
+  // https://github.blog/changelog/2026-09-22-claude-opus-5-5-is-now-available-in-github-copilot
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/opus-5-5/overview
+  ['claude-opus-5-5', tokenBasePricing({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
+  // Fable 5.1 keeps Fable 5's input/output rates and cuts cache reads to
+  // 0.025×. GitHub lists no separate Fast lane.
+  // https://github.blog/changelog/2026-09-01-claude-fable-5-1-generally-available-in-github-copilot
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/fable-5-1/overview
+  ['claude-fable-5-1', tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' })],
   // Two Copilot accounts began returning GPT-6 Astra on 2026-09-05 and served
   // a real `/responses` request as `model: "gpt-6-astra"` with
   // `service_tier: "default"`. Their catalogs quote exactly OpenAI's standard
@@ -43,6 +56,29 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['gpt-6-astra', modelPricing(
     tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
     tokenPricingEntry({ input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '75' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // Copilot already publishes the base GPT-6 Sol and Luna ids. OpenAI's
+  // public card prices their accelerated lane at exactly 2x Standard, in both
+  // context bands. Keep that lane ready before GitHub adds the conventional
+  // `-fast` raw siblings: until then no request can select these entries, and
+  // once the siblings appear the existing variant merger will expose them as
+  // `service_tier: "priority"` on the public base model.
+  // https://github.blog/changelog/2026-09-22-openais-gpt-6-sol-and-gpt-6-luna-now-available
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/anomalyco/models.dev/blob/67cb71f2b5ea59a6d076a70a509cdbe663e152c7/providers/openai/models/gpt-6-sol.toml
+  // https://github.com/anomalyco/models.dev/blob/67cb71f2b5ea59a6d076a70a509cdbe663e152c7/providers/openai/models/gpt-6-luna.toml
+  ['gpt-6-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-6-luna', modelPricing(
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '0.75' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.5' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   // GPT-5.6 Sol, and the lane Copilot publishes as the separate raw variant
   // `gpt-5.6-sol-fast` and this table reaches through the merged public id.
@@ -145,6 +181,16 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // $0.50/$1.00, so this entry carries no counterpart to the cached-read
   // conflict recorded on 4.5 above.
   ['grok-4.6', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '6' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '1', output_tokens: '12' }, { inputTokens: { operator: 'gte', value: 200000 } }),
+  )],
+  // Grok 4.7 retains 4.6's two whole-request context bands. Copilot's live
+  // catalog exposes the same 500k limit and `/responses` endpoint, and a
+  // direct request through the first production account completed successfully.
+  // https://docs.x.ai/developers/models/grok-4-7
+  // https://docs.x.ai/developers/pricing
+  // https://github.com/anomalyco/models.dev/blob/3d6dcd13b178feed787d98a6c3e5efb9cc4f4c9d/providers/xai/models/grok-4.7.toml
+  ['grok-4.7', modelPricing(
     tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '6' }),
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '1', output_tokens: '12' }, { inputTokens: { operator: 'gte', value: 200000 } }),
   )],

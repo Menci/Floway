@@ -9,14 +9,14 @@
 //      user-agent, GitHub 404 (unreleased version), network error
 //
 // The bundled snapshot is a frozen copy of
-//   https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/models-manager/models.json
+//   https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
 // (Apache-2.0). It is the working fallback for cold starts, clients running
 // unreleased prerelease builds, and operators behind network egress
-// restrictions. Refresh it whenever a newer codex release ships material
-// changes to the catalog:
-//   curl -sf https://raw.githubusercontent.com/openai/codex/rust-v<NEW>/codex-rs/models-manager/models.json \
+// restrictions. Refresh it whenever a newer Codex commit ships material
+// changes that clients need before the next release tag contains them:
+//   curl -sf https://raw.githubusercontent.com/openai/codex/<COMMIT>/codex-rs/models-manager/models.json \
 //     > packages/gateway/src/data-plane/codex/catalog/bundled.json
-// then bump the tag reference in this comment to match.
+// then bump the commit permalink in this comment to match.
 
 import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
 

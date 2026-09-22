@@ -14,6 +14,10 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-8'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { inputTokens: 0 }).rates, OPUS_BASE);
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });
 
 test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
@@ -72,6 +76,12 @@ test('Copilot Grok 4.5 long-context band starts at the 200k prompt itself', () =
   assertEquals(priceRequest(pricing, { inputTokens: 200000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }));
 });
 
+test('Copilot Grok 4.7 applies its long-context band starting at 200k tokens', () => {
+  const pricing = pricingForCopilotPublicModelId('grok-4.7');
+  assertEquals(priceRequest(pricing, { inputTokens: 199999 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '6' }));
+  assertEquals(priceRequest(pricing, { inputTokens: 200000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '1', output_tokens: '12' }));
+});
+
 test('Copilot Gemini 3.6, 3.7 and 3.8 Flash share one rate across every prompt length', () => {
   const base = published({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' });
   for (const id of ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
@@ -122,4 +132,29 @@ test('Copilot GPT-6 Astra prices the standard short and long bands its catalog s
     priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates,
     published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
   );
+});
+
+test('Copilot GPT-6 Sol and Luna price Standard and the anticipated Fast mode lanes', () => {
+  const cases = {
+    'gpt-6-sol': {
+      standardShort: { input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' },
+      standardLong: { input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '15' },
+      priorityShort: { input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' },
+      priorityLong: { input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' },
+    },
+    'gpt-6-luna': {
+      standardShort: { input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' },
+      standardLong: { input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '0.75' },
+      priorityShort: { input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1' },
+      priorityLong: { input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.5' },
+    },
+  } satisfies Record<string, Record<string, PriceVector>>;
+
+  for (const [id, rates] of Object.entries(cases)) {
+    const pricing = pricingForCopilotPublicModelId(id);
+    assertEquals(priceRequest(pricing, { inputTokens: 272000 }).rates, published(rates.standardShort));
+    assertEquals(priceRequest(pricing, { inputTokens: 272001 }).rates, published(rates.standardLong));
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 }).rates, published(rates.priorityShort));
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272001 }).rates, published(rates.priorityLong));
+  }
 });
