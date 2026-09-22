@@ -3,7 +3,7 @@ import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cach
 import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamChatModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -20,22 +20,42 @@ interface ProviderModelsResult {
   failedUpstreams: string[];
 }
 
+// A public id may route to any chat provider behind it, so this safety
+// capability is the conjunction of their explicit answers. Other chat metadata
+// retains the catalog's established first-provider-wins behavior.
+const mergedChatMetadata = (
+  first: UpstreamChatModelConfig | undefined,
+  providerModels: Readonly<Record<string, ProviderModel>>,
+): UpstreamChatModelConfig | undefined => {
+  const chatModels = Object.values(providerModels).filter(model => model.kind === 'chat');
+  if (chatModels.length === 0) return first;
+  return {
+    ...(first ?? {}),
+    image_detail_original: chatModels.every(model => model.chat?.image_detail_original === true),
+  };
+};
+
 // Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
 // `providerModels` with the sole entry keyed on the emitting upstream id.
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
   const { providerData, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const providerModels = { [upstreamId]: providerModel };
+  const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {
     ...metadata,
+    ...(chat === undefined ? {} : { chat }),
     endpoints: { ...endpoints },
-    providerModels: { [upstreamId]: providerModel },
+    providerModels,
   };
 };
 
 // When multiple upstreams expose the same public model id, the first wins
 // for `/models` metadata and later ones union-merge their endpoint capability
 // map — the merged `endpoints` is the gateway-wide reach for that public id.
+// `chat.image_detail_original` is the safety exception: it is true only when
+// every chat provider behind the id explicitly accepts it.
 // `kind` is recomputed from the union so a chat-only id that later acquires
 // an embedding-capable upstream gets correctly reclassified. Each contribution
 // adds its own entry to `providerModels` keyed on the contributing upstream id
@@ -65,14 +85,17 @@ const mergeIntoCatalog = (
     throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
   }
   const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
+  const providerModels = {
+    ...existing.providerModels,
+    [instance.upstreamId]: surfacedModel,
+  };
+  const chat = mergedChatMetadata(existing.chat, providerModels);
   byId.set(publicId, {
     ...existing,
+    ...(chat === undefined ? {} : { chat }),
     endpoints,
     kind: kindForEndpoints(endpoints),
-    providerModels: {
-      ...existing.providerModels,
-      [instance.upstreamId]: surfacedModel,
-    },
+    providerModels,
   });
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch

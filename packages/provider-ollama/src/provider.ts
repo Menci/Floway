@@ -108,10 +108,11 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
     const internal: ProviderModel = {
       id: publicModelId(model),
       limits: { ...(model.limits ?? {}) },
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
@@ -119,7 +120,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
     if (pricing) internal.pricing = pricing;
-    if (model.chat) internal.chat = model.chat;
+    if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
   const call = (
