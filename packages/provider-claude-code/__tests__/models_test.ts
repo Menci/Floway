@@ -11,6 +11,8 @@ import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import type { FlagId } from '@floway-dev/provider';
 
 const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [
+  { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', max_input_tokens: 1_000_000 },
+  { id: 'claude-fable-5-1', display_name: 'Claude Fable 5.1', max_input_tokens: 1_000_000 },
   { id: 'claude-fable-5', display_name: 'Claude Fable 5', max_input_tokens: 1_000_000 },
   { id: 'claude-opus-4-7', display_name: 'Claude Opus 4.7', max_input_tokens: 1_000_000 },
   { id: 'claude-sonnet-4-6', display_name: 'Claude Sonnet 4.6', max_input_tokens: 1_000_000 },
@@ -27,6 +29,8 @@ describe('aliasFromApiId', () => {
   });
 
   test('passes alias-shape ids through unchanged', () => {
+    expect(aliasFromApiId('claude-opus-5-5')).toBe('claude-opus-5-5');
+    expect(aliasFromApiId('claude-fable-5-1')).toBe('claude-fable-5-1');
     expect(aliasFromApiId('claude-opus-4-7')).toBe('claude-opus-4-7');
     expect(aliasFromApiId('claude-fable-5')).toBe('claude-fable-5');
     expect(aliasFromApiId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
@@ -160,6 +164,8 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('publishes each model under its public alias (date-stripped where applicable)', () => {
     expect(models.map(m => m.id)).toEqual([
+      'claude-opus-5-5',
+      'claude-fable-5-1',
       'claude-fable-5',
       'claude-opus-4-7',
       'claude-sonnet-4-6',
@@ -171,6 +177,10 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('preserves the original upstream id under providerData.upstreamModelId', () => {
     const byAlias = new Map(models.map(m => [m.id, m]));
+    expect((byAlias.get('claude-opus-5-5')!.providerData as ClaudeCodeProviderData).upstreamModelId)
+      .toBe('claude-opus-5-5');
+    expect((byAlias.get('claude-fable-5-1')!.providerData as ClaudeCodeProviderData).upstreamModelId)
+      .toBe('claude-fable-5-1');
     expect((byAlias.get('claude-sonnet-4-5')!.providerData as ClaudeCodeProviderData).upstreamModelId)
       .toBe('claude-sonnet-4-5-20250929');
     expect((byAlias.get('claude-opus-4-7')!.providerData as ClaudeCodeProviderData).upstreamModelId)
@@ -189,6 +199,9 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('carries display_name and context window from the api response', () => {
     const byAlias = new Map(models.map(m => [m.id, m]));
+    expect(byAlias.get('claude-opus-5-5')!.display_name).toBe('Claude Opus 5.5');
+    expect(byAlias.get('claude-opus-5-5')!.limits.max_context_window_tokens).toBe(1_000_000);
+    expect(byAlias.get('claude-fable-5-1')!.display_name).toBe('Claude Fable 5.1');
     expect(byAlias.get('claude-fable-5')!.display_name).toBe('Claude Fable 5');
     expect(byAlias.get('claude-fable-5')!.limits.max_context_window_tokens).toBe(1_000_000);
     expect(byAlias.get('claude-haiku-4-5')!.limits.max_context_window_tokens).toBe(200_000);
@@ -196,6 +209,8 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('wires pricing through pricingForClaudeCodeModelKey keyed by the upstream id', () => {
     const byAlias = new Map(models.map(m => [m.id, m]));
+    expect(byAlias.get('claude-opus-5-5')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-opus-5-5'));
+    expect(byAlias.get('claude-fable-5-1')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-fable-5-1'));
     expect(byAlias.get('claude-opus-4-7')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-opus-4-7'));
     expect(byAlias.get('claude-sonnet-4-5')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
     expect(byAlias.get('claude-fable-5')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-fable-5'));

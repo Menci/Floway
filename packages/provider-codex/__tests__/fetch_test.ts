@@ -268,8 +268,8 @@ describe('Codex private Responses wire selection', () => {
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
         const wireHeaders = new Headers(init?.headers);
         expect(wireHeaders.get(CODEX_RESPONSES_LITE_HEADER)).toBe(useResponsesLite ? 'true' : null);
-        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.154.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-        expect(wireHeaders.get('version')).toBe('0.154.0');
+        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.156.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+        expect(wireHeaders.get('version')).toBe('0.156.0');
         expect(headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(body).toEqual(original);
         expect(wire.text).toEqual(body.text);

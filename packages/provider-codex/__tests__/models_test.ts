@@ -35,27 +35,27 @@ describe('fetchCodexCatalog', () => {
   });
 
   test('keeps the stable CLI catalog operational context and private Lite capability', async () => {
-    // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/models-manager/models.json#L1-L70
+    // https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{
-        slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', context_window: 272000, max_context_window: 872000,
-        supports_experimental_context: true, minimal_client_version: '0.153.0', use_responses_lite: true,
-        default_reasoning_level: 'low', input_modalities: ['text', 'image'],
+        slug: 'gpt-6-sol', display_name: 'GPT-6-Sol', context_window: 272000, max_context_window: 872000,
+        supports_experimental_context: true, minimal_client_version: '0.155.0', use_responses_lite: true,
+        default_reasoning_level: 'medium', input_modalities: ['text', 'image'], supports_image_detail_original: true,
         supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort })),
       }],
     }));
     const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
     const model = codexRawToProviderModel(raw, new Set());
-    expect(spy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.154.0');
+    expect(spy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.156.0');
     const headers = new Headers(spy.mock.calls[0][1]?.headers);
-    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.154.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-    expect(headers.get('version')).toBe('0.154.0');
+    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.156.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+    expect(headers.get('version')).toBe('0.156.0');
     expect(model.limits.max_context_window_tokens).toBe(272000);
     expect(codexModelUsesResponsesLite(model)).toBe(true);
     expect(model.chat).toEqual({
       modalities: { input: ['text', 'image'], output: ['text'] },
-      reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'low' } },
-      image_detail_original: false,
+      reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'medium' } },
+      image_detail_original: true,
     });
   });
 
@@ -330,7 +330,7 @@ describe('codexRawToProviderModel', () => {
   });
 
   // The upstream states the two facts independently: the bundled catalog at
-  // packages/gateway/src/data-plane/codex/catalog/bundled.json records `gpt-5.2`
+  // packages/gateway/src/data-plane/codex/catalog/bundled.generated.json records `gpt-5.2`
   // taking images while rejecting detail 'original', so the mapper must carry
   // each fact on its own.
   test('keeps image_detail_original independent of the modality list', () => {

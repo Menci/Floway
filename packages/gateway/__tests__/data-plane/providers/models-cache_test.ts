@@ -322,7 +322,7 @@ describe('fetchUpstreamModelsCached', () => {
 
     expect(result).toEqual([current]);
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect((await storedCache(repo))?.revision).toBe(11);
+    expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 
   test('an old-shape stale SQL cache hydrates cold and is replaced by a current fetch', async () => {

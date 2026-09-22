@@ -52,6 +52,30 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
     tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }, { serviceTier: 'flex' }),
     tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '37.5' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
+  // The remote Codex catalog gates GPT-6 Sol and Luna at client version
+  // 0.155.0. OpenAI's public card supplies the complete Standard, Flex, and
+  // Fast mode grid in both context bands; Codex reports Fast mode under the
+  // legacy `priority` selector used by the billing path.
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
+  // https://github.com/anomalyco/models.dev/blob/67cb71f2b5ea59a6d076a70a509cdbe663e152c7/providers/openai/models/gpt-6-sol.toml
+  // https://github.com/anomalyco/models.dev/blob/67cb71f2b5ea59a6d076a70a509cdbe663e152c7/providers/openai/models/gpt-6-luna.toml
+  ['gpt-6-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-6-luna', modelPricing(
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.5' }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '0.75' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.5' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.05', input_cache_read_tokens: '0.005', input_cache_write_tokens: '0.0625', output_tokens: '0.25' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.375' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // The GPT-5.6 family, refreshed from OpenAI's current card — the values
   // these replace were the launch rates, since cut across the board and by a
   // factor of five on Luna. OpenAI now publishes all four columns (standard,
