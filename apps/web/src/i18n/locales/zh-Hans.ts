@@ -275,7 +275,6 @@ const zhHansCN = {
         description: '关闭时，所有可选择的上游均可用',
         tableLabel: '可用上游',
         enabled: '启用',
-        order: '顺序',
         upstream: '上游',
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',

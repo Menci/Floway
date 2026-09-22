@@ -86,14 +86,13 @@ export function UpstreamAccessControl({
     >
       <div className="grid gap-3 min-w-0">
         <ScrollArea axes="horizontal" className="min-w-0">
-          {/* The minimum only decides when the region starts scrolling: the
-              three sized columns plus enough room for a provider chip to stay
+          {/* The minimum only decides when the region starts scrolling: the two
+              sized columns plus enough room for a provider chip to stay
               readable. */}
-          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[416px]">
-            <TableColumns widths={['80px', '72px', null, '120px']} />
+          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[344px]">
+            <TableColumns widths={['80px', null, '120px']} />
             <TableHeader><TableRow>
               <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
-              <TableHeaderCell>{t('dashboard.upstreamAccess.order')}</TableHeaderCell>
               <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
               <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
             </TableRow></TableHeader>
@@ -111,7 +110,7 @@ export function UpstreamAccessControl({
 }
 
 // An index outside the cap is a row the cap does not order: it renders the same
-// grip, dead, so the column reads as one column rather than as two.
+// grip, dead, beside its checkbox so the enabled column keeps one shape.
 function AccessRow({ disabled, index, onToggle, reorder, row }: {
   disabled: boolean;
   index: number;
@@ -121,13 +120,13 @@ function AccessRow({ disabled, index, onToggle, reorder, row }: {
 }) {
   const { t } = useTranslation();
   return <TableRow {...(index < 0 ? {} : reorder.itemProps(index))}>
-    <TableCell><Checkbox
-      aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`}
-      checked={row.selected}
-      disabled={disabled}
-      onChange={(_, data) => onToggle(row.id, !!data.checked)}
-    /></TableCell>
     <TableCell><div className="inline-flex items-center gap-1">
+      <Checkbox
+        aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`}
+        checked={row.selected}
+        disabled={disabled}
+        onChange={(_, data) => onToggle(row.id, !!data.checked)}
+      />
       <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreams.actions.reorder', { name: row.name })} />
     </div></TableCell>
     <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>

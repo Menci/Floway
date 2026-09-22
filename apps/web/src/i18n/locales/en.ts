@@ -288,7 +288,6 @@ const en = {
         description: 'When off, all selectable upstreams are available',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
-        order: 'Order',
         upstream: 'Upstream',
         models: 'Models',
         modelCount_one: '{{count, number}} model',

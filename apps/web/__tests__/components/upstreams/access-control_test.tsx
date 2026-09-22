@@ -46,6 +46,17 @@ describe('upstream access selection', () => {
     expect(checkbox.isConnected).toBe(true);
   });
 
+  it('places the reorder grip after the checkbox in the enabled cell', async () => {
+    renderInApp(<Control initialIds={['up_a']} />);
+    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
+    const checkbox = screen.getByRole('checkbox', { name: 'Enabled: Alpha' });
+    const grip = screen.getByRole('button', { name: 'Reorder upstream Alpha' });
+
+    expect(checkbox.closest('td')).toBe(grip.closest('td'));
+    expect(checkbox.compareDocumentPosition(grip) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(screen.queryByRole('columnheader', { name: 'Order' })).toBeNull();
+  });
+
   it('allows deselecting the last upstream and preserves selections across the limit switch', async () => {
     renderInApp(<Control initialIds={['up_a']} />);
     await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
