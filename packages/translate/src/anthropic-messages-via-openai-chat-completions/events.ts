@@ -93,8 +93,6 @@ const ensureMessageStart = (
     },
   });
   state.messageStartSent = true;
-  // `message_start` already states the opening counter; only surface later
-  // `message_delta` updates that actually advance it.
   state.lastReportedUsageOutputTokens = state.pendingUsage?.completion_tokens ?? 0;
 };
 
