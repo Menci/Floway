@@ -28,7 +28,7 @@ const bundledBase: CatalogModel = {
   default_reasoning_level: 'medium',
   context_window: 272_000,
   max_context_window: 272_000,
-  service_tiers: [{ id: 'priority', name: 'priority', description: '' }],
+  service_tiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' }],
   base_instructions: 'BUNDLED PROMPT',
   truncation_policy: { mode: 'tokens', limit: 20000 },
 };
@@ -372,6 +372,28 @@ describe('synthesizeCatalogEntry', () => {
         pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
+    });
+
+    test('service_tiers prefers matched-model metadata for a registry-priced tier', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+      }, bundledBase, {}, [{ id: 'priority', name: 'Accelerated', description: 'Catalog-wide fallback' }]);
+      expect(entry.service_tiers).toEqual([
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
+    });
+
+    test('service_tiers uses another catalog model metadata when the matched model lacks the tier', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+      }, { ...bundledBase, service_tiers: [] }, {}, [
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
+      expect(entry.service_tiers).toEqual([
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
     });
   });
 });

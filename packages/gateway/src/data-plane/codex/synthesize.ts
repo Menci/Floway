@@ -15,10 +15,10 @@
 //      pure UI — inheriting the vendored "GPT-5.5" string when the operator
 //      has not customized it is meaningful, unlike service_tiers below
 //      where a stale bundled value could mis-bill a real request.
-//   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
-//      No fallback to the catalog: official entries may advertise OpenAI 1p tiers
-//      Floway cannot bill, so publishing them without registry-side unit
-//      prices would surface a toggle we could not honor.
+//   3. `service_tiers` — expose only registry-priced tier ids. Metadata resolves
+//      first from the matched model, then from other models in the client
+//      catalog, then falls back to the wire id. Official entries may advertise
+//      tiers Floway cannot bill, so unpriced catalog tiers never survive.
 //   4. `context_window` / `max_context_window` — `registry ?? source ?? 128k`.
 //      Registry-supplied limits win; else preserve the base's value (official
 //      entries carry a real OpenAI-vendored window); else the conservative
@@ -44,7 +44,7 @@
 // pass supplies resolved catalog defaults for a hit and hardcoded baselines
 // for the miss path.
 
-import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel } from './catalog.ts';
+import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
@@ -106,18 +106,31 @@ const BASELINE = {
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
 } satisfies CatalogModel;
 
-// Registry-derived: every distinct serviceTier selector is a billable wire-id.
-// Names mirror ids and descriptions are blank — Floway does not carry separate
-// tier metadata, and Codex only needs the id to round-trip the selection.
-const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] => {
+// Every distinct registry serviceTier selector is a billable wire id. Codex
+// derives slash-command names from tier display names (`priority` with name
+// `Fast` becomes `/fast`), so prefer metadata from the matched model and then
+// the rest of the client catalog. Custom ids remain usable through the final
+// id-as-name fallback.
+// https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/tui/src/chatwidget/service_tiers.rs#L76-L104
+const deriveServiceTiers = (
+  model: InternalModel,
+  modelTiers: readonly CodexServiceTier[],
+  catalogTiers: readonly CodexServiceTier[],
+): CodexServiceTier[] => {
   const ids = new Set(model.pricing?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
-  return [...ids].map(id => ({ id, name: id, description: '' }));
+  const modelTierById = new Map(modelTiers.map(tier => [tier.id, tier]));
+  const catalogTierById = new Map<string, CodexServiceTier>();
+  for (const tier of catalogTiers) {
+    if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+  }
+  return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
 };
 
 export const synthesizeCatalogEntry = (
   model: InternalModel,
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
+  catalogServiceTiers: readonly CodexServiceTier[] = [],
 ): CatalogModel => {
   const source: CatalogModel = base ?? BASELINE;
 
@@ -176,7 +189,7 @@ export const synthesizeCatalogEntry = (
     supports_image_detail_original: imageDetailOriginal,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
     supported_reasoning_levels: advertisedReasoning,
-    service_tiers: deriveServiceTiers(model),
+    service_tiers: deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
   };
