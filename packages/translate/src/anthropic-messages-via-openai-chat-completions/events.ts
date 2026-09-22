@@ -430,7 +430,6 @@ const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessages
   );
 
   state.finalMessageSent = true;
-  state.lastReportedUsageOutputTokens = usage.output_tokens;
   state.pendingFinishReason = undefined;
 };
 
