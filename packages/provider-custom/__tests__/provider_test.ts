@@ -172,6 +172,27 @@ test('getProvidedModels carries pricing on auto models', async () => {
   assertEquals(models[0]?.pricing, upstreamPricing);
 });
 
+test('getProvidedModels carries chat metadata on auto models', async () => {
+  const record = buildCustomUpstream();
+  const instance = createCustomProvider(record);
+
+  const upstreamChat = {
+    modalities: { input: ['text', 'image'], output: ['text'] } as const,
+    reasoning: { effort: { supported: ['none', 'high', 'max'], default: 'high' } },
+  };
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'vision-chat', kind: 'chat', chat: upstreamChat }],
+    }),
+    async () => {
+      return await instance.instance.getProvidedModels(directFetcher);
+    },
+  );
+
+  assertEquals(models[0]?.chat, upstreamChat);
+});
+
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
   const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] };
   const record = buildCustomUpstream({

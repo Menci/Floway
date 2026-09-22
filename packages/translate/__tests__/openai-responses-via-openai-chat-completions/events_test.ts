@@ -171,6 +171,69 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents replaces buffer
   ]);
 });
 
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reasoning_content deltas', () => {
+  // Scalar reasoning arrives as `reasoning_content`; the translated Responses
+  // stream must surface it as a reasoning item regardless of the field name.
+  const events = translate([
+    chunk({ role: 'assistant', reasoning_content: null }),
+    chunk({ reasoning_content: 'We need ' }),
+    chunk({ reasoning_content: 'answer poem' }),
+    chunk({ content: 'The sky is grey.' }),
+    chunk({}, 'stop'),
+  ]);
+
+  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+
+  assertEquals(reasoningDone.length, 1);
+  assertEquals(reasoningDone[0].item, {
+    type: 'reasoning',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
+    summary: [{ type: 'summary_text', text: 'We need answer poem' }],
+  });
+  assertEquals(completed?.response.output.map(item => item.type), ['reasoning', 'message']);
+});
+
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reasoning deltas', () => {
+  // Scalar reasoning arrives as `reasoning`; the translated Responses stream
+  // must surface it as a reasoning item regardless of the field name.
+  const events = translate([
+    chunk({ role: 'assistant', reasoning: null }),
+    chunk({ reasoning: 'Let me ' }),
+    chunk({ reasoning: 'think.' }),
+    chunk({ content: 'Done.' }),
+    chunk({}, 'stop'),
+  ]);
+
+  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+
+  assertEquals(reasoningDone.length, 1);
+  assertEquals(reasoningDone[0].item, {
+    type: 'reasoning',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
+    summary: [{ type: 'summary_text', text: 'Let me think.' }],
+  });
+  assertEquals(completed?.response.output.map(item => item.type), ['reasoning', 'message']);
+});
+
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoning_text over dialect when both are present', () => {
+  const events = translate([
+    chunk({ role: 'assistant', reasoning_text: 'canonical', reasoning_content: 'dialect' }),
+    chunk({ content: 'answer' }),
+    chunk({}, 'stop'),
+  ]);
+
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+
+  assertEquals(reasoningDone.length, 1);
+  assertEquals(reasoningDone[0].item, {
+    type: 'reasoning',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
+    summary: [{ type: 'summary_text', text: 'canonical' }],
+  });
+});
+
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents maps usage on incomplete length terminal', () => {
   const events = translate([
     chunk({ role: 'assistant' }),
