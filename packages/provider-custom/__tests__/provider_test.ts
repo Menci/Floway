@@ -172,6 +172,40 @@ test('getProvidedModels carries pricing on auto models', async () => {
   assertEquals(models[0]?.pricing, upstreamPricing);
 });
 
+test('getProvidedModels carries chat metadata on auto models', async () => {
+  const instance = createCustomProvider(buildCustomUpstream());
+  const chat = { image_detail_original: true };
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'vision-model', chat }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+
+  assertEquals(models[0]?.chat, chat);
+});
+
+test('getProvidedModels drops chat metadata from non-chat auto models', async () => {
+  const instance = createCustomProvider(buildCustomUpstream());
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'embedding-model', kind: 'embedding', chat: { image_detail_original: true } },
+        { id: 'text-embedding-3-small', chat: { image_detail_original: true } },
+        { id: 'gpt-image-2', chat: { image_detail_original: true } },
+        { id: 'whisper-1', chat: { image_detail_original: true } },
+      ],
+    }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+
+  assertEquals(models.map(model => ({ id: model.id, kind: model.kind, chat: model.chat })), [
+    { id: 'embedding-model', kind: 'embedding', chat: undefined },
+    { id: 'text-embedding-3-small', kind: 'embedding', chat: undefined },
+    { id: 'gpt-image-2', kind: 'image', chat: undefined },
+    { id: 'whisper-1', kind: 'transcription', chat: undefined },
+  ]);
+});
+
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
   const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] };
   const record = buildCustomUpstream({

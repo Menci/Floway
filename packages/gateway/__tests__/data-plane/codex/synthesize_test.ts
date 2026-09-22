@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import type { CatalogModel, CodexCatalogCapabilities } from '../../../src/data-plane/codex/catalog.ts';
 import { synthesizeCatalogEntry } from '../../../src/data-plane/codex/synthesize.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 
 const base: InternalModel = {
   id: 'deepseek-v4-pro',
@@ -131,6 +131,45 @@ describe('synthesizeCatalogEntry', () => {
       chat: { image_detail_original: false },
     }, { ...bundledBase, supports_image_detail_original: true, input_modalities: ['text', 'image'] });
     expect(entry.supports_image_detail_original).toBe(false);
+  });
+
+  test.each([
+    ['false', false],
+    ['an unstated value', undefined],
+  ] as const)('rejects original detail when one of several providers reports %s', (_, imageDetailOriginal) => {
+    const providerModel = (value: boolean | undefined): ProviderModel => ({
+      id: 'gpt-5.5',
+      kind: 'chat' as const,
+      limits: {},
+      endpoints: { openaiResponses: {} },
+      enabledFlags: new Set(),
+      ...(value === undefined ? {} : { chat: { image_detail_original: value } }),
+    });
+    const accepting = providerModel(true);
+    const rejecting = providerModel(imageDetailOriginal);
+
+    for (const providerModels of [{ accepting, rejecting }, { rejecting, accepting }]) {
+      const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat, providerModels }, bundledBase);
+      expect(entry.supports_image_detail_original).toBe(false);
+    }
+  });
+
+  test('accepts original detail when every provider explicitly supports it', () => {
+    const accepting = {
+      id: 'gpt-5.5',
+      kind: 'chat' as const,
+      limits: {},
+      endpoints: { openaiResponses: {} },
+      enabledFlags: new Set(),
+      chat: { image_detail_original: true },
+    } satisfies ProviderModel;
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: accepting.chat,
+      providerModels: { first: accepting, second: accepting },
+    }, bundledBase);
+
+    expect(entry.supports_image_detail_original).toBe(true);
   });
 
   test('propagates reasoning levels as {effort, description} preset', () => {

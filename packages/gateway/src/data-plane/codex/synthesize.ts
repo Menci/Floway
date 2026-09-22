@@ -28,12 +28,13 @@
 //      declared `chat.modalities`, honour it (even if the upstream base
 //      advertised more); else keep the base's list. `web_search_tool_type`
 //      follows the final modality list so it cannot drift from it.
-//   6. `supports_image_detail_original` — `chat.image_detail_original ?? false`,
-//      NOT derived from either the modality list or the client catalog. A model
-//      can take images while rejecting detail 'original' (gpt-5.2 in the bundled
-//      catalog is exactly that), and a same-named non-Codex upstream does not
-//      inherit OpenAI's capability. The registry carries whatever the model's
-//      own provider or the operator stated; an unstated value is unsupported.
+//   6. `supports_image_detail_original` — true only when every chat provider
+//      behind the public id states `chat.image_detail_original: true`; a
+//      synthesized row without provider candidates uses its own chat metadata.
+//      The value is NOT derived from either modalities or the client catalog: a
+//      model can take images while rejecting detail 'original' (gpt-5.2 in the
+//      bundled catalog is exactly that), and a same-named non-Codex upstream
+//      must not inherit OpenAI's capability. An unstated value is unsupported.
 //   7. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
@@ -128,7 +129,12 @@ export const synthesizeCatalogEntry = (
     ?? source.input_modalities
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
-  const imageDetailOriginal = model.chat?.image_detail_original ?? false;
+  const chatProviderModels = model.providerModels === undefined
+    ? undefined
+    : Object.values(model.providerModels).filter(providerModel => providerModel.kind === 'chat');
+  const imageDetailOriginal = chatProviderModels?.length
+    ? chatProviderModels.every(providerModel => providerModel.chat?.image_detail_original === true)
+    : model.chat?.image_detail_original === true;
 
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
   // reasoning (`supported_reasoning_levels: [{effort, description}]` +

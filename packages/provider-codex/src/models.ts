@@ -119,10 +119,10 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
-  // Resolve the flag to a stated boolean for every entry. The Codex catalog is
-  // the provider-owned source for this capability; the gateway deliberately
-  // does not borrow the client's same-named catalog entry when a provider leaves
-  // it unstated. `ModelInfo` declares the field under `#[serde(default)]`
+  // Resolve the capability to a stated boolean for every entry. The Codex
+  // provider catalog owns this fact, so we treat an omitted field as unsupported
+  // rather than inherit from a same-named client-catalog entry. `ModelInfo`
+  // declares the field under `#[serde(default)]`
   // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L383-L385),
   // so a catalog that predates the field carries none and is treated as false.
   chat.image_detail_original = raw.image_detail_original ?? false;

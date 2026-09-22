@@ -130,6 +130,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
             {
               id: 'shared-model',
               supported_endpoints: ['/chat/completions'],
+              chat: { image_detail_original: true },
             },
           ],
         });
@@ -145,6 +146,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       // The merged endpoint surface is the OR of both upstreams' endpoint maps.
       assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: {} });
       assertEquals(model?.kind, 'chat');
+      assertEquals(model?.chat?.image_detail_original, false);
       // `providerData` (the per-provider wire id carrier) belongs to the
       // provider-emitted ProviderModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
@@ -158,6 +160,8 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
       assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { anthropicMessages: {} });
       assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
+      assertEquals(realProviderModels(model)['up_copilot']?.chat?.image_detail_original, undefined);
+      assertEquals(realProviderModels(model)['up_custom']?.chat?.image_detail_original, true);
       // `enabledFlags` is required on every ProviderModel — proves the
       // stored value is the provider-emitted shape (not a projected
       // subset).

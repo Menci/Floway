@@ -60,12 +60,14 @@ const finalizeCustomModels = (
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    const kind = kindForEndpoints(endpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: rawModel.id,
       enabledFlags,
+      ...(kind === 'chat' && rawModel.chat ? { chat: rawModel.chat } : {}),
     });
   }
   return models;
