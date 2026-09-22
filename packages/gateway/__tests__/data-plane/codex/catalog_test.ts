@@ -13,6 +13,10 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('bundles the GPT-6 models gated behind Codex 0.155.0', () => {
+    expect(bundled.models.map(model => model.slug)).toEqual(expect.arrayContaining(['gpt-6-sol', 'gpt-6-luna']));
+  });
+
   it.each([
     'codex-tui/0.145.0 (Mac OS 26.5.0; arm64)',
     'codex_cli_rs/0.144.1 (Linux 6.8; x86_64)',

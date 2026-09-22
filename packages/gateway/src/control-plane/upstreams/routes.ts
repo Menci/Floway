@@ -23,7 +23,7 @@ import {
 } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { type CodexQuotaSnapshotMap, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
+import { type CodexQuotaSnapshotMap, type CodexUpstreamConfig, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota, patchCodexIdentityMetadata } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
@@ -295,14 +295,28 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     return c.json({ error: 'kind cannot be changed' }, 400);
   }
 
-  // OAuth-managed config slices (Copilot githubToken/user, Codex/Claude
-  // Code accounts[]) are owned by the per-provider action endpoints, not
-  // by generic PATCH. Metadata (name, enabled, sort_order, flag overrides,
-  // disabled model ids) still flows through here.
-  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'codex' || existing.kind === 'claude-code')) {
+  // OAuth-managed config slices (Copilot githubToken/user, Claude Code
+  // accounts[]) are owned by the per-provider action endpoints, not by generic
+  // PATCH. Metadata (name, enabled, sort_order, flag overrides, disabled model
+  // ids) still flows through here.
+  //
+  // Codex is narrower rather than closed: an import may leave display metadata
+  // unknown, and correcting an email or a plan should not require re-importing
+  // a working credential. The account id stays bound to re-import because it
+  // is the join key the stored credential hangs off.
+  let patchedCodexConfig: CodexUpstreamConfig | undefined;
+  if (body.config !== undefined && existing.kind === 'codex') {
+    try {
+      assertCodexUpstreamRecord(existing);
+      patchedCodexConfig = patchCodexIdentityMetadata(existing.config, body.config);
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 400);
+    }
+  }
+  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'claude-code')) {
     const endpoint = existing.kind === 'copilot'
       ? '/api/upstreams/copilot/oauth/device-login/poll'
-      : `/api/upstreams/${existing.kind}/oauth/exchange`;
+      : '/api/upstreams/claude-code/oauth/exchange';
     return c.json({ error: `Use POST ${endpoint} to update ${existing.kind} credentials` }, 400);
   }
 
@@ -326,9 +340,13 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
   if (body.hue !== undefined) next = { ...next, hue: body.hue };
   if (body.config !== undefined) {
-    const config = mergeConfigPatch(existing.kind, existing.config, body.config);
-    if (!config.ok) return c.json({ error: config.error }, 400);
-    next = { ...next, config: config.value };
+    if (patchedCodexConfig !== undefined) {
+      next = { ...next, config: patchedCodexConfig };
+    } else {
+      const config = mergeConfigPatch(existing.kind, existing.config, body.config);
+      if (!config.ok) return c.json({ error: config.error }, 400);
+      next = { ...next, config: config.value };
+    }
   }
 
   const config = normalizeConfig(next);

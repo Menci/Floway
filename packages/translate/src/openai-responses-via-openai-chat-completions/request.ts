@@ -4,6 +4,7 @@ import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type Open
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
+import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
@@ -159,6 +160,7 @@ const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['
 
 export interface TargetRequestResult {
   target: OpenAIChatCompletionsPayload;
+  namespaceToolNames: NamespaceToolNames;
   /**
    * Names of OpenAI Responses `custom` tools the request translator wrapped as
    * single-string function tools. Returned alongside the translated payload so
@@ -169,7 +171,7 @@ export interface TargetRequestResult {
 }
 
 export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): TargetRequestResult => {
-  const payload = canonicalizeOpenAIResponsesPayload(source);
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
@@ -301,5 +303,5 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };
 
-  return { target, customToolNames };
+  return { target, customToolNames, namespaceToolNames };
 };

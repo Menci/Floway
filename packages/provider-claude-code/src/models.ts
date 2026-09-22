@@ -7,7 +7,7 @@
 // Two id shapes coexist on the wire today. Pre-4.6 models (4.5 / 4.1)
 // return with a `-YYYYMMDD` date suffix; their public alias is the
 // de-dated form (`claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`).
-// 4.6+ and `claude-fable-5` return with the alias already (no date),
+// 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
 // always the alias; the original /v1/models id rides on
 // `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
@@ -142,7 +142,7 @@ const parseCapabilities = (raw: unknown): ClaudeCodeApiModel['capabilities'] => 
 
 // Pre-4.6 models return as `claude-<family>-<digits>-<digits>-YYYYMMDD`;
 // the public alias is the de-dated form. Newer ids (`claude-opus-4-7`,
-// `claude-fable-5`) have no date suffix and pass through unchanged. The
+// `claude-fable-5-1`) have no date suffix and pass through unchanged. The
 // pattern is intentionally generic over the family slug — anchoring to
 // `claude-(haiku|opus|sonnet)` would silently drop a future family the
 // upstream exposes before we hard-code its name.

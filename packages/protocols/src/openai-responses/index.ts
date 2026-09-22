@@ -227,6 +227,9 @@ export interface OpenAIResponsesFunctionToolCallItem {
   call_id: string;
   name: string;
   namespace?: string;
+  // An empty list selects Codex plaintext collaboration dispatch.
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+  encrypted_function_args?: string[] | null;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: OpenAIResponsesToolCaller | null;
@@ -843,8 +846,8 @@ export type OpenAIResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
-  | { type: 'function'; name: string }
-  | { type: 'custom'; name: string }
+  | { type: 'function'; name: string; namespace?: string }
+  | { type: 'custom'; name: string; namespace?: string }
   | { type: 'mcp'; server_label: string; name?: string | null }
   | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
   | { type: 'shell' }
@@ -1080,6 +1083,9 @@ export interface OpenAIResponsesOutputFunctionCall {
   call_id: string;
   name: string;
   namespace?: string;
+  // An empty list selects Codex plaintext collaboration dispatch.
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+  encrypted_function_args?: string[] | null;
   arguments: string;
   status: string;
   caller?: OpenAIResponsesToolCaller | null;

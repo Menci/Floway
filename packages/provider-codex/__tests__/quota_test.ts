@@ -8,9 +8,8 @@ import {
   hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
-  type CodexQuotaSnapshot,
 } from '../src/quota.ts';
-import type { CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
+import type { CodexQuotaSnapshot, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
@@ -193,6 +192,18 @@ describe('getCodexQuota', () => {
     expect(await getCodexQuota(upstreamId, accountId)).toEqual({ premium: snap });
   });
 
+  test('reads quota from the null account slot', async () => {
+    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium' };
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        chatgptAccountId: null,
+        quotaSnapshot: { premium: { fetchedAt: Date.now(), data: snap } },
+      }],
+    });
+    expect(await getCodexQuota(upstreamId, null)).toEqual({ premium: snap });
+  });
+
   // An old reading rendered with the instant it was taken tells an operator
   // more than an empty card, so age withholds nothing -- the dashboard is the
   // only reader, and traffic on the upstream replaces what it shows.
@@ -231,6 +242,15 @@ describe('putCodexQuota', () => {
     expect(written?.premium?.data).toEqual(snap);
     expect(typeof written?.premium?.fetchedAt).toBe('number');
     expect({ ...(current!.state as CodexUpstreamState).accounts[0], quotaSnapshot: null }).toEqual({ ...baseAccount });
+  });
+
+  test('persists quota into the null account slot', async () => {
+    current = makeRecord({ accounts: [{ ...baseAccount, chatgptAccountId: null }] });
+    const snap: CodexQuotaSnapshot = { observed_at: 'now', active_limit: 'premium' };
+    await putCodexQuota(upstreamId, null, snap);
+    const written = (current!.state as CodexUpstreamState).accounts[0];
+    expect(written.chatgptAccountId).toBeNull();
+    expect(written.quotaSnapshot?.premium.data).toEqual(snap);
   });
 
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {

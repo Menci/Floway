@@ -616,6 +616,10 @@ const zhHansCN = {
               description:
                   'OpenAI Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
+            'openai-responses-collaboration-shim': {
+              label: 'OpenAI Responses 协作兼容',
+              description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
               description:
@@ -630,6 +634,11 @@ const zhHansCN = {
               label: '强制工具调用时禁用思考',
               description:
                   '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
+            },
+            'empty-tools-tool-choice-none': {
+              label: '工具列表为空时禁用工具选择',
+              description:
+                  '部分上游不接受空的 `tools` 数组与 `auto` 等启用状态的 `tool_choice` 同时出现。\n开启此开关后，当 `tools` 是空数组时，Floway 会在转发请求前将 `tool_choice` 改写为当前协议表示**不使用工具**的值。',
             },
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
@@ -801,16 +810,50 @@ const zhHansCN = {
           waiting: '正在等待授权…',
         },
         codex: {
+          accessOnly: '仅访问令牌',
           activeLimit: '当前限额',
           credits: '额度：{{balance, number}}',
+          expires: '过期于 {{time}}',
+          expiryUnknown: '过期时间未知',
+          expiryUnknownAccessOnly: '过期时间未知，可用至上游拒绝为止',
           noCredits: '无额度',
           noSnapshot: '尚无配额快照，Codex 调用会写入。',
           observed: '观测于 {{time}}',
           rateLimitedUntil: '限流至 {{time}}',
+          renewable: '可续期',
           resetsAt: '重置于 {{time}}',
           stateUpdated: '状态更新于 {{time}}',
+          unknownAccountId: '账号 ID 未知',
+          unknownEmail: '邮箱未知',
+          unknownPlan: '套餐未知',
           window: { primary: '主窗口', secondary: '次窗口' },
           windowMinutes: '{{minutes, number}} 分钟窗口',
+          import: {
+            tabJson: '粘贴 JSON',
+            tabOAuth: '粘贴登录 URL',
+            tabManual: '手动填写',
+            jsonHint: '粘贴 ~/.codex/auth.json 或 OpenAI OAuth 账号导出文件。Floway 会自动识别结构，并在导入前逐个预览账号。',
+            jsonWarning: '请妥善保管粘贴的内容，其中可能包含访问令牌或刷新令牌。预览中不会显示任何令牌值。',
+            preview: '预览账号',
+            candidates: '要导入的账号',
+            accountFallback: '账号 {{index, number}}',
+            pasteFirst: '请先粘贴凭据 JSON。',
+            previewFirst: '请先预览当前 JSON 再导入。',
+            noValidAccounts: '未找到可导入的 OpenAI OAuth 账号。',
+            selectAccount: '请选择一个可导入的账号。',
+            oauthHint: '在已登录 ChatGPT 的浏览器中打开授权页，完成授权后粘贴 localhost 回调 URL。',
+            manualHint: '仅访问令牌为必填。填写的值优先于对应的令牌声明；留空的字段先取 ID 令牌中的声明，访问令牌为 JWT 时再取其声明。',
+            accessToken: '访问令牌',
+            refreshToken: '刷新令牌',
+            refreshTokenHint: '留空表示仅访问令牌的凭据，无法续期。',
+            idToken: 'ID 令牌',
+            accountId: 'ChatGPT 账号 ID',
+            email: '邮箱',
+            planType: '套餐类型',
+            expiresAt: '过期时间',
+            expiresAtHint: 'Unix 秒数或 ISO 8601 时间戳。',
+            accessTokenRequired: '访问令牌为必填项。',
+          },
           status: {
             'active': '正常',
             'heavy': '用量偏高（{{percent, number}}%）',
