@@ -83,7 +83,7 @@ const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', 
 const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
-  const detailLabel = models('imageDetailOriginalAccessible');
+  const detailLabel = models('imageDetailOriginal');
 
   it('opens a newly added model in the detail editor', async () => {
     renderInApp(<Harness />);

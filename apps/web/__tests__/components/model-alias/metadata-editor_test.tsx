@@ -7,7 +7,7 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AnnouncedMetadata } from '@floway-dev/protocols/common';
 
-const imageDetailOriginalLabel = 'Image detail "original"';
+const imageDetailOriginalLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
 
 const initialValue: AnnouncedMetadata = {
   chat: {
@@ -59,12 +59,9 @@ describe('model alias metadata editor', () => {
     // A switch's root carries `fui-Switch` and nests its input, so the row is
     // the second ancestor up.
     expect(group.querySelector('h4')).toBeNull();
-    // The explicit accessible name avoids whitespace introduced by the inline
-    // code element.
     const detailSwitch = screen.getByRole('switch', { name: imageDetailOriginalLabel });
     expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
       .toBe(detailSwitch.parentElement?.parentElement);
-    expect(detailSwitch.parentElement?.querySelector('code')?.textContent).toBe('original');
   });
 
   it('hides the detail switch until image input is on', () => {

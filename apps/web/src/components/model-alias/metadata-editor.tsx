@@ -3,7 +3,6 @@ import { useId, useState } from 'react';
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { ImageDetailOriginalLabel } from '../image-detail-original-label';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
@@ -78,11 +77,10 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
               })}
             />
             {imageInput && <Switch
-              aria-label={t('dashboard.modelAliases.metadata.imageDetailOriginalAccessible')}
               checked={value.chat?.image_detail_original === true}
               disabled={disabled}
               readOnly={readOnly}
-              label={<ImageDetailOriginalLabel i18nKey="dashboard.modelAliases.metadata.imageDetailOriginal" />}
+              label={t('dashboard.modelAliases.metadata.imageDetailOriginal')}
               onChange={(_, data) => patchChat({ image_detail_original: data.checked })}
             />}
           </div>

@@ -13,7 +13,6 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
-import { ImageDetailOriginalLabel } from '../image-detail-original-label';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
@@ -194,10 +193,9 @@ export function ModelDetail({
                   onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original ?? false : undefined }) })}
                 />
                 {imageInput && <Switch
-                  aria-label={t('dashboard.upstreamEditor.models.imageDetailOriginalAccessible')}
                   checked={row.config.chat?.image_detail_original === true}
                   readOnly={fieldsReadOnly}
-                  label={<ImageDetailOriginalLabel i18nKey="dashboard.upstreamEditor.models.imageDetailOriginal" />}
+                  label={t('dashboard.upstreamEditor.models.imageDetailOriginal')}
                   onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), image_detail_original: data.checked }) })}
                 />}
               </div>
