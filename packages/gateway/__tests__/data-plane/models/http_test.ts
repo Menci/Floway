@@ -298,6 +298,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
             kind: 'chat',
+            chat: { image_detail_original: false },
             endpoints: { anthropicMessages: {} },
             pricing: {
               entries: [
