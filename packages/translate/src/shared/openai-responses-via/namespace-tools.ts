@@ -36,6 +36,8 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
       }
       return existing;
     }
+    // OpenAI Chat Completions limits function names to 64 ASCII characters.
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts
     const base = `${namespace}_${name}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
     for (let suffix = 1; suffix <= 1000; suffix++) {
       const ending = suffix === 1 ? '' : `_${suffix}`;
@@ -83,7 +85,11 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
     if (namespace !== undefined && !byNamespace.get(namespace)?.some(child => child.type === choice.type && names.targetToSource.get(child.name)?.name === choice.name)) {
       throw new TranslatorInputError(`Cannot translate tool_choice / allowed_tools selector for undeclared namespace tool '${key}'.`);
     }
-    const name = names.sourceToTarget.get(key);
+    const qualified = namespace === undefined
+      ? [...names.targetToSource].filter(([, identity]) => `${identity.namespace}.${identity.name}` === key || `${identity.namespace}__${identity.name}` === key)
+      : [];
+    if (qualified.length > 1) throw new TranslatorInputError(`Cannot select ambiguous qualified tool '${key}'.`);
+    const name = namespace === undefined ? qualified[0]?.[0] : names.sourceToTarget.get(key);
     if (name === undefined) return choice;
     const { namespace: _namespace, ...rest } = choice;
     return { ...rest, name };

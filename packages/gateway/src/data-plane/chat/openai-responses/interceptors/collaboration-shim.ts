@@ -3,7 +3,6 @@ import { eventFrame } from '@floway-dev/protocols/common';
 import {
   type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesInputItem,
-  type OpenAIResponsesNamespaceTool,
   type OpenAIResponsesOutputItem,
   type OpenAIResponsesResult,
   type OpenAIResponsesStreamEvent,
@@ -23,11 +22,6 @@ const MESSAGE_ACTIONS = new Set(['spawn_agent', 'send_message', 'followup_task']
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const namespaceTool = (tool: OpenAIResponsesTool): OpenAIResponsesNamespaceTool | undefined =>
-  tool.type === 'namespace' && typeof tool.name === 'string' && Array.isArray(tool.tools)
-    ? tool
-    : undefined;
-
 const toolInventories = (payload: CanonicalOpenAIResponsesPayload): Array<readonly OpenAIResponsesTool[] | null | undefined> => [
   payload.tools,
   ...payload.input.flatMap(item =>
@@ -36,8 +30,8 @@ const toolInventories = (payload: CanonicalOpenAIResponsesPayload): Array<readon
 
 export const hasCollaborationNamespace = (payload: CanonicalOpenAIResponsesPayload): boolean =>
   toolInventories(payload).some(tools =>
-    (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE))
-  || payload.input.some(item => item.type === 'function_call' && item.namespace === CLIENT_NAMESPACE);
+    (tools ?? []).some(tool => tool.type === 'namespace' && tool.name === CLIENT_NAMESPACE))
+  || payload.input.some(item => (item.type === 'function_call' || item.type === 'custom_tool_call') && item.namespace === CLIENT_NAMESPACE);
 
 const namespaceNames = (payload: CanonicalOpenAIResponsesPayload): Set<string> => {
   const names = new Set<string>();
@@ -91,20 +85,18 @@ const rewriteMessageSchema = <T extends OpenAIResponsesTool>(tool: T, encrypted:
 };
 
 const rewriteTools = (
-  tools: readonly OpenAIResponsesTool[] | null | undefined,
+  tools: readonly OpenAIResponsesTool[],
   fromNamespace: string,
   toNamespace: string,
   encrypted: boolean,
   markers?: ReadonlyMap<string, unknown>,
-): OpenAIResponsesTool[] | null | undefined => {
-  if (tools == null) return tools;
+): OpenAIResponsesTool[] => {
   return tools.map(tool => {
-    const namespace = namespaceTool(tool);
-    if (namespace?.name !== fromNamespace) return tool;
+    if (tool.type !== 'namespace' || tool.name !== fromNamespace) return tool;
     return {
-      ...namespace,
+      ...tool,
       name: toNamespace,
-      tools: namespace.tools.map(child => rewriteMessageSchema(child, encrypted, markers)),
+      tools: tool.tools.map(child => rewriteMessageSchema(child, encrypted, markers)),
     };
   });
 };
@@ -112,9 +104,9 @@ const rewriteTools = (
 const rewriteIdentity = <T extends { namespace?: unknown; name?: unknown }>(
   value: T, from: string, to: string, names: ReadonlySet<string>, flatNames: ReadonlySet<string>,
 ): T => {
-  if (value.namespace !== undefined && value.namespace !== from) return value;
+  if (value.namespace != null && value.namespace !== from) return value;
   if (value.namespace === from && typeof value.name === 'string' && names.has(value.name)) return { ...value, namespace: to };
-  if (typeof value.name !== 'string' || (value.namespace === undefined && flatNames.has(value.name))) return value;
+  if (typeof value.name !== 'string' || (value.namespace == null && flatNames.has(value.name))) return value;
   for (const separator of ['.', '__']) {
     const prefix = `${from}${separator}`;
     if (value.name.startsWith(prefix) && names.has(value.name.slice(prefix.length))) {
@@ -154,7 +146,7 @@ const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, 
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
-      tools: rewriteTools(item.tools, CLIENT_NAMESPACE, upstreamNamespace, false) ?? [],
+      tools: rewriteTools(item.tools, CLIENT_NAMESPACE, upstreamNamespace, false),
     };
   }
   if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
@@ -168,8 +160,7 @@ const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, 
   // replay form; explicit null/non-empty values still prove encrypted mode.
   // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/client.rs#L848-L860
   if (
-    MESSAGE_ACTIONS.has(item.name)
-    && item.encrypted_function_args !== undefined
+    item.encrypted_function_args !== undefined
     && (!Array.isArray(item.encrypted_function_args) || item.encrypted_function_args.length > 0)
   ) {
     throw new TypeError(`Cannot project encrypted collaboration history '${item.name}' onto a plaintext upstream`);
@@ -182,7 +173,7 @@ const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, 
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
-      tools: rewriteTools(item.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers) ?? [],
+      tools: rewriteTools(item.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers),
     };
   }
   if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
@@ -210,7 +201,7 @@ const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: stri
     ...response,
     output: response.output.map(item => clientItem(item, upstreamNamespace, names, markers)),
     ...(Object.hasOwn(record, 'tools')
-      ? { tools: record.tools === null ? null : rewriteTools(record.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers) }
+      ? { tools: record.tools == null ? record.tools : rewriteTools(record.tools, upstreamNamespace, CLIENT_NAMESPACE, true, markers) }
       : {}),
     ...(response.tool_choice !== undefined
       ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE, names, new Set()) }
@@ -311,7 +302,7 @@ export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = 
   if (!providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-collaboration-shim')) return await run();
   const toolLists = toolInventories(ctx.payload);
   const collaborationCounts = toolLists.map(tools =>
-    (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
+    (tools ?? []).filter(tool => tool.type === 'namespace' && tool.name === CLIENT_NAMESPACE).length);
   if (!hasCollaborationNamespace(ctx.payload)) return await run();
   if (collaborationCounts.some(count => count > 1)) {
     throw new TypeError('OpenAIResponses request carries multiple collaboration namespaces in one tool inventory');
@@ -338,7 +329,7 @@ export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = 
   const targetNamespace = upstreamNamespace(namespaceNames(ctx.payload));
   ctx.payload = {
     ...ctx.payload,
-    tools: rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace, false),
+    tools: ctx.payload.tools == null ? ctx.payload.tools : rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace, false),
     tool_choice: rewriteToolChoice(ctx.payload.tool_choice, CLIENT_NAMESPACE, targetNamespace, names, flatNames),
     input: ctx.payload.input.map(item => requestItem(item, targetNamespace, names, flatNames)),
   };

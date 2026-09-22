@@ -202,7 +202,6 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
 const translateOpenAIResponsesInput = async (
   input: OpenAIResponsesInputItem[],
   loadRemoteImage: RemoteImageLoader,
-  namespaceSourceToTarget: ReadonlyMap<string, string>,
 ): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlock[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
@@ -249,11 +248,10 @@ const translateOpenAIResponsesInput = async (
       }, loadRemoteImage));
       break;
     case 'function_call': {
-      const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
-        name: namespaceSourceToTarget.get(sourceName) ?? item.name,
+        name: item.name,
         input: parseToolArgumentsObject(item.arguments),
       });
       break;
@@ -341,7 +339,6 @@ const translateTools = (
 
 const translateToolChoice = (
   toolChoice: OpenAIResponsesToolChoice | null | undefined,
-  namespaceSourceToTarget: ReadonlyMap<string, string>,
 ): AnthropicMessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
@@ -361,7 +358,7 @@ const translateToolChoice = (
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
+    return toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
   }
   return undefined;
 };
@@ -375,7 +372,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
     payload.input,
     options.loadRemoteImage ?? unavailableRemoteImageLoader,
-    namespaceToolNames.sourceToTarget,
   );
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
@@ -425,7 +421,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
     tools,
-    tool_choice: translateToolChoice(allowed.choice, namespaceToolNames.sourceToTarget),
+    tool_choice: translateToolChoice(allowed.choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,
