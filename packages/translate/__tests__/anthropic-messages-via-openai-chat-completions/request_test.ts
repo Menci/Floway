@@ -591,3 +591,14 @@ test('buildTargetRequest forwards service_tier:standard_only to OpenAI Chat Comp
 
   assertEquals(result.service_tier, 'standard_only');
 });
+
+test('buildTargetRequest asks upstream for continuous streaming usage stats', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.stream, true);
+  assertEquals(result.stream_options, { include_usage: true, continuous_usage_stats: true });
+});

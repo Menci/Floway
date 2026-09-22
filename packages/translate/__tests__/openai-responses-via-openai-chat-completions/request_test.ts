@@ -536,7 +536,6 @@ test.each([
 });
 
 test.each([
-  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as OpenAIResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },

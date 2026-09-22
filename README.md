@@ -95,7 +95,7 @@ responses retain their upstream wire shape.
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client | Live inference catalog plus the account's built-in GPT Image capability |
+| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend, plus the account's built-in GPT Image capability |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
 | Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
@@ -148,10 +148,13 @@ pnpm install
 ADMIN_KEY='replace-with-a-secret' pnpm run dev:node
 ```
 
-It serves the data-plane and control-plane APIs but not the dashboard. Use
-Docker Compose for the complete self-hosted UI, or serve the web app separately.
-Production Node.js deployments must set both `NODE_ENV=production` and a
-non-empty `ADMIN_KEY`.
+It serves the dashboard, data-plane, and control-plane APIs from the same
+origin. `dev:node` binds `127.0.0.1` by default; set `HOST=0.0.0.0` when the
+service must accept network connections. `dev:node` builds the web bundle
+before starting; deployments that build separately may set
+`FLOWAY_WEB_DIST_DIR` to the bundle directory (default:
+`apps/web/dist/client`). Production Node.js deployments must set both
+`NODE_ENV=production` and a non-empty `ADMIN_KEY`.
 
 Podman users can instead follow the
 [systemd deployment guide](./docker/systemd/README.md).

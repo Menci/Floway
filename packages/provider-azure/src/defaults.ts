@@ -9,7 +9,10 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-image-generation-shim': true,
   // Azure exposes native /responses/compact.
   'openai-responses-compact-shim': false,
+  'openai-responses-compact-decrypt': true,
+  'openai-responses-collaboration-shim': true,
   'disable-reasoning-on-forced-tool-choice': false,
+  'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
   'rewrite-system-to-developer': false,

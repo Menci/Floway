@@ -23,7 +23,7 @@ const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
-test('removes synthetic blocks and strips incompatible signatures without hiding thinking', async () => {
+test('removes thinking and redacted blocks whose affinity belongs to another candidate', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const signature = await codec.wrap('signature', targetFor(candidateA), 'anthropic-messages.thinking.signature');
@@ -51,7 +51,6 @@ test('removes synthetic blocks and strips incompatible signatures without hiding
   expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'visible reasoning' },
       { type: 'text', text: 'answer' },
     ],
   });

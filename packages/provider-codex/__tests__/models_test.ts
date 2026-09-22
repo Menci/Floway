@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
+import { codexImageProviderModel, codexModelUsesResponsesLite, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog, type CodexRawModel } from '../src/models.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
@@ -39,6 +39,39 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('user-agent')).toBe(CODEX_USER_AGENT);
     expect(headers.get('user-agent')).toBe(`codex_cli_rs/${CODEX_CLI_VERSION} (Mac OS 26.5.0; arm64) iTerm.app/3.6.10`);
     expect(headers.get('openai-beta')).toBeNull();
+  });
+
+  test('keeps the stable CLI catalog operational context and private Lite capability', async () => {
+    // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/models-manager/models.json#L1-L70
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{
+        slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', context_window: 272000, max_context_window: 872000,
+        supports_experimental_context: true, minimal_client_version: '0.153.0', use_responses_lite: true,
+        default_reasoning_level: 'low', input_modalities: ['text', 'image'],
+        supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort })),
+      }],
+    }));
+    const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    const model = codexRawToProviderModel(raw, new Set());
+    expect(spy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.154.0');
+    const headers = new Headers(spy.mock.calls[0][1]?.headers);
+    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.154.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+    expect(headers.get('version')).toBe('0.154.0');
+    expect(model.limits.max_context_window_tokens).toBe(272000);
+    expect(codexModelUsesResponsesLite(model)).toBe(true);
+    expect(model.chat).toEqual({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'low' } },
+      image_detail_original: false,
+    });
+  });
+
+  test('omits the account header when the account ID is unknown', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [] }));
+    await fetchCodexCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
+    const headers = new Headers((spy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at');
+    expect(headers.get('chatgpt-account-id')).toBeNull();
   });
 
   test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
@@ -124,6 +157,25 @@ describe('fetchCodexCatalog', () => {
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/supports_image_detail_original not a boolean/);
   });
 
+  test('parses the Responses Lite catalog flag without inferring from model names', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [
+        { slug: 'future-lite-model', display_name: 'Future Lite', context_window: 1, use_responses_lite: true },
+        { slug: 'gpt-6-astra', display_name: 'GPT-6 Astra', context_window: 2, use_responses_lite: false },
+        { slug: 'legacy-model', display_name: 'Legacy', context_window: 3 },
+      ],
+    }));
+    const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(catalog.map(model => model.use_responses_lite)).toEqual([true, false, undefined]);
+  });
+
+  test.each(['true', 'false', null, 0, 1, {}, []])('rejects the non-boolean catalog flag %j', async use_responses_lite => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, use_responses_lite }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/use_responses_lite not a boolean/);
+  });
+
   test('throws on malformed input_modalities entry (unknown modality)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities: ['video'] }],
@@ -153,6 +205,34 @@ describe('codexRawToProviderModel', () => {
     expect(m.kind).toBe('chat');
     expect(m.limits.max_context_window_tokens).toBe(272000);
     expect(m.owned_by).toBe('openai');
+  });
+
+  test.each([true, false, undefined])('keeps catalog flag %s in opaque provider data only', use_responses_lite => {
+    const model = codexRawToProviderModel({
+      id: 'future-model', display_name: 'Future Model', context_window: 1, use_responses_lite,
+    }, noFlags);
+    expect(model.providerData).toEqual({ useResponsesLite: use_responses_lite ?? false });
+    expect(codexModelUsesResponsesLite(model)).toBe(use_responses_lite ?? false);
+    expect(model.endpoints).toEqual({ openaiResponses: {} });
+    expect(model).not.toHaveProperty('useResponsesLite');
+    expect(model).not.toHaveProperty('use_responses_lite');
+  });
+
+  test.each(['true', null, 1, {}, []])('rejects malformed raw and persisted flag %j', value => {
+    const raw = { id: 'gpt-x', display_name: 'GPT-X', context_window: 1 };
+    expect(() => codexRawToProviderModel({ ...raw, use_responses_lite: value } as CodexRawModel, noFlags)).toThrow(/use_responses_lite not a boolean/);
+    const model = codexRawToProviderModel(raw, noFlags);
+    expect(() => codexModelUsesResponsesLite({ ...model, providerData: { useResponsesLite: value } })).toThrow(/useResponsesLite is not a boolean/);
+  });
+
+  test.each([null, 'true', 1, []])('rejects malformed persisted providerData %j', providerData => {
+    const model = codexRawToProviderModel({ id: 'gpt-x', display_name: 'GPT-X', context_window: 1 }, noFlags);
+    expect(() => codexModelUsesResponsesLite({ ...model, providerData })).toThrow(/providerData is not an object/);
+  });
+
+  test.each([undefined, {}, { unrelated: true }])('defaults missing persisted metadata to Standard: %j', providerData => {
+    const model = codexRawToProviderModel({ id: 'gpt-6-astra', display_name: 'GPT-6 Astra', context_window: 1 }, noFlags);
+    expect(codexModelUsesResponsesLite({ ...model, providerData })).toBe(false);
   });
 
   test('attaches OpenAI-API-rate pricing for known slugs and treats codex-auto-review as gpt-5.4', () => {
