@@ -119,7 +119,7 @@ test('the complete Chat Completions trip restores the namespace after target too
 });
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
-  const trip = await translateOpenAIResponsesViaAnthropicMessages(payload(), { model: 'm' });
+  const trip = await translateOpenAIResponsesViaAnthropicMessages(payload(), { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
     yield eventFrame({ type: 'message_start', message: { id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
     yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });

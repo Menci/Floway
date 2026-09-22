@@ -547,3 +547,29 @@ test.each([false, undefined])('restores the original schema encryption spelling 
     expect(frame.event.response.tools?.[0]).toMatchObject({ tools: [{ name: 'spawn_agent', parameters: tool.tools[0].parameters }, {}, {}, {}] });
   }
 });
+
+test.each(['.', '__'])('restores a standalone qualified argument event with %s', async separator => {
+  const ctx = invocation();
+  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_direct', output_index: 0, name: `collaboration-optimize${separator}spawn_agent`, arguments: '{}' } as OpenAIResponsesStreamEvent);
+    })(), testTelemetryModelIdentity));
+  if (result.type !== 'events') throw new Error('Expected events');
+  for await (const frame of result.events) {
+    expect(frame).toMatchObject({ event: { namespace: 'collaboration', name: 'spawn_agent', encrypted_function_args: [] } });
+    expect(JSON.stringify(frame)).not.toContain('collaboration-optimize');
+  }
+});
+
+test.each([false, undefined])('rejects irreversible schema marker conflicts %j across inventories atomically', async encrypted => {
+  const ctx = invocation();
+  const deferred = collaborationTool();
+  if (deferred.type !== 'namespace' || deferred.tools[0].type !== 'function') throw new Error('Expected namespace function');
+  deferred.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', ...(encrypted === undefined ? {} : { encrypted }) } } };
+  ctx.payload.input.push({ type: 'additional_tools', role: 'developer', tools: [deferred] });
+  const before = ctx.payload;
+  await expect(withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    throw new Error('Must not invoke upstream');
+  })).rejects.toThrow('Conflicting collaboration message schemas');
+  expect(ctx.payload).toBe(before);
+});

@@ -271,7 +271,7 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
       if (identity?.namespace !== upstreamNamespace) return event;
       return {
         ...bound,
-        ...(record.namespace !== undefined ? { namespace: CLIENT_NAMESPACE } : {}),
+        ...(bound.namespace !== undefined ? { namespace: CLIENT_NAMESPACE } : {}),
         ...(event.type === 'response.function_call_arguments.done' && identity.name !== undefined && MESSAGE_ACTIONS.has(identity.name)
           ? { encrypted_function_args: [] } : {}),
       } as unknown as OpenAIResponsesStreamEvent;
@@ -311,14 +311,22 @@ export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = 
   const names = new Set<string>();
   const flatNames = new Set<string>();
   const markers = new Map<string, unknown>();
+  const observedSchemas = new Set<string>();
   for (const tools of toolLists) for (const tool of tools ?? []) {
     if (tool.type === 'namespace' && tool.name === CLIENT_NAMESPACE) {
       for (const child of tool.tools) {
         names.add(child.name);
         if (child.type !== 'function' || !MESSAGE_ACTIONS.has(child.name)) continue;
         const properties = child.parameters?.properties;
-        if (isRecord(properties) && isRecord(properties.message) && Object.hasOwn(properties.message, 'encrypted')) {
-          markers.set(child.name, properties.message.encrypted);
+        if (isRecord(properties) && isRecord(properties.message)) {
+          const marker = properties.message.encrypted;
+          // Removing different markers would make identical upstream schemas
+          // impossible to restore to their original client contracts.
+          if (observedSchemas.has(child.name) && !Object.is(markers.get(child.name), marker)) {
+            throw new TypeError(`Conflicting collaboration message schemas for '${child.name}'`);
+          }
+          observedSchemas.add(child.name);
+          if (Object.hasOwn(properties.message, 'encrypted')) markers.set(child.name, marker);
         }
       }
     } else if (tool.type === 'function' || tool.type === 'custom') flatNames.add(tool.name);
