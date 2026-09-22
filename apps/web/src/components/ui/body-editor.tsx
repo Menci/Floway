@@ -67,7 +67,7 @@ export default function BodyEditor({ text, json, label, toolbarStart, emptyText 
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0`}>
       <div className="min-w-0">{toolbarStart}</div>
-      <div className="ml-auto flex items-center gap-1 shrink-0">
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         <TooltipIconButton icon={<SearchRegular />} label={t('common.bodyViewer.find')} onClick={() => void editorRef.current?.getAction('actions.find')?.run()} />
         <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />
         <Menu checkedValues={{ wrap: wrap ? ['on'] : [] }} onCheckedValueChange={(_, data) => {

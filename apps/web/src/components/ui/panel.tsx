@@ -11,8 +11,8 @@ const { Card, mergeClasses } = fluentComponents;
 // sees a name assembled at runtime.
 export const PANEL_INSET_CLASS = 'p-[var(--floway-panel-inset)]';
 
-// Fixed bands share the panel edge inset and Fluent's small vertical spacing.
-export const PANEL_BAND_CLASS = 'px-[var(--floway-panel-inset)] py-[var(--spacingVerticalS)]';
+// Fixed bands keep the panel edge inset and Fluent's compact six-pixel spacing.
+export const PANEL_BAND_CLASS = 'px-[var(--floway-panel-inset)] py-[var(--spacingVerticalSNudge)]';
 
 const PADDING_CLASS = {
   content: '!p-[var(--floway-panel-inset)]',
