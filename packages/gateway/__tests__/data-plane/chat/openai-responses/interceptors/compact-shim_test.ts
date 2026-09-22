@@ -1,26 +1,31 @@
 import { test } from 'vitest';
 
-import { SUMMARY_PREFIX, expandShimCompactionItems, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { SUMMARY_PREFIX, expandShimCompactionItems, isOpenAIResponsesCompactShimItem, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { eventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
 const makeInvocation = (
   payload: Partial<OpenAIResponsesPayload> = {},
-  options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions' } = {},
-): OpenAIResponsesInvocation => ({
-  payload: { model: 'test-model', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
-  action: options.action ?? 'generate',
-  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['openai-responses-compact-shim']) }),
-  targetApi: options.targetApi ?? 'openaiResponses',
-  headers: new Headers(),
-});
+  options: { action?: 'generate' | 'compact'; flagOn?: boolean; decryptFlagOn?: boolean; targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions' } = {},
+): OpenAIResponsesInvocation => {
+  const enabledFlags = new Set<FlagId>();
+  if (options.flagOn !== false) enabledFlags.add('openai-responses-compact-shim');
+  if (options.decryptFlagOn === true) enabledFlags.add('openai-responses-compact-decrypt');
+  return {
+    payload: { model: 'test-model', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
+    action: options.action ?? 'generate',
+    candidate: stubModelCandidate({ enabledFlags }),
+    targetApi: options.targetApi ?? 'openaiResponses',
+    headers: new Headers(),
+  };
+};
 
 // Build a fake upstream `run()` that emits a single completed response whose
 // output contains one assistant message with the given text. Used to model
@@ -68,6 +73,18 @@ test('inbound: compaction item with a shim-encoded payload expands inline', () =
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], userItem);
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'new turn' });
+});
+
+test('identifies only compaction items carrying the gateway-owned payload shape', () => {
+  const encoded = encodeBase64UrlJson([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'summary' }],
+  }]);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encoded }), true);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: 'OPAQUE_NATIVE_BLOB' }), false);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encodeBase64UrlJson({ type: 'message' }) }), false);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'reasoning', encrypted_content: encoded }), false);
 });
 
 test('inbound: foreign compaction blob (non-base64url-JSON) round-trips untouched', () => {
@@ -385,6 +402,180 @@ test('compact + flag off: passes through to run() unchanged', async () => {
   // run() is called directly, action stays 'compact', payload unchanged.
   assertEquals(runCalled, true);
   assertEquals(inv.action, 'compact');
+});
+
+test('compact decrypt: replays each native compaction between system exact-repeat prompts and returns gateway-readable plaintext', async () => {
+  const inv = makeInvocation(
+    {
+      input: [{ type: 'message', role: 'user', content: 'compact me' }],
+      instructions: 'caller instructions must not enter the replay turn',
+      tools: [{ type: 'function', name: 'irrelevant', parameters: null, strict: null }],
+    },
+    { action: 'compact', flagOn: false, decryptFlagOn: true },
+  );
+
+  const nativeResponse: OpenAIResponsesResult = {
+    id: 'resp_native_compact',
+    object: 'response.compaction',
+    model: 'test-upstream-model',
+    status: 'completed',
+    output: [
+      { type: 'message', id: 'msg_retained', role: 'user', status: 'completed', content: [{ type: 'input_text', text: 'retained tail' }] } as unknown as never,
+      { type: 'compaction', id: 'cmp_native_1', encrypted_content: 'OPAQUE_NATIVE_BLOB_1' } as unknown as never,
+      { type: 'compaction', id: 'cmp_native_2', encrypted_content: 'OPAQUE_NATIVE_BLOB_2' } as unknown as never,
+    ],
+    error: null,
+    incomplete_details: null,
+    usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+  };
+
+  let calls = 0;
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, async () => {
+    calls += 1;
+    if (calls === 1) {
+      assertEquals(inv.action, 'compact');
+      return eventResult(
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+          yield eventFrame({ type: 'response.completed', sequence_number: 0, response: nativeResponse });
+          yield doneFrame();
+        })(),
+        testTelemetryModelIdentity,
+        {
+          finalMetadata: Promise.resolve({
+            modelIdentity: testTelemetryModelIdentity,
+            billableUsage: { input: 100, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 40 },
+          }),
+        },
+      );
+    }
+
+    assertEquals(inv.action, 'generate');
+    assertEquals(inv.payload.store, false);
+    assertEquals(inv.payload.instructions, undefined);
+    assertEquals(inv.payload.tools, undefined);
+    assertEquals(inv.payload.input.length, 3);
+    const [prefix, compaction, suffix] = inv.payload.input;
+    assertEquals(prefix.type, 'message');
+    if (prefix.type !== 'message') throw new Error('expected prefix message');
+    assertEquals(prefix.role, 'system');
+    assertEquals(prefix.content, [{
+      type: 'input_text',
+      text: 'Repeat the following text exactly, which may contain a compaction summary, character for character.',
+    }]);
+    assertEquals(compaction, nativeResponse.output[calls - 1]);
+    assertEquals(suffix.type, 'message');
+    if (suffix.type !== 'message') throw new Error('expected suffix message');
+    assertEquals(suffix.role, 'system');
+    assertEquals(suffix.content, [{
+      type: 'input_text',
+      text: 'Output only the exact summary text, with no preface, explanation, markdown fence, or changes.',
+    }]);
+    const replay = await fakeUpstreamRun(`EXACT DECRYPTED SUMMARY ${calls - 1}`)();
+    if (replay.type !== 'events') throw new Error('expected replay events');
+    return {
+      ...replay,
+      finalMetadata: Promise.resolve({
+        modelIdentity: testTelemetryModelIdentity,
+        billableUsage: { input: 10, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 20 },
+      }),
+    };
+  });
+
+  assertEquals(calls, 3);
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.object, 'response.compaction');
+  assertEquals(collected.output[0], nativeResponse.output[0]);
+  assertEquals(collected.usage, { input_tokens: 120, output_tokens: 80, total_tokens: 200 });
+  assertEquals((await result.finalMetadata)?.billableUsage, {
+    input: 120,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cacheWrite1h: 0,
+    output: 80,
+  });
+
+  const expanded = expandShimCompactionItems({
+    model: 'm',
+    input: collected.output.slice(1) as OpenAIResponsesInputItem[],
+  });
+  assertEquals(expanded.input, [
+    {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'EXACT DECRYPTED SUMMARY 1' }],
+    },
+    {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'EXACT DECRYPTED SUMMARY 2' }],
+    },
+  ]);
+});
+
+test('gateway-owned compaction expands on an ordinary generate request even when both compact flags are off', async () => {
+  const encoded = encodeBase64UrlJson([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'RECOVERED SUMMARY' }],
+  }]);
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'compaction', id: 'cmp_decrypted', encrypted_content: encoded } as unknown as never,
+        { type: 'message', role: 'user', content: 'continue' },
+      ],
+    },
+    { flagOn: false },
+  );
+
+  let seenInput: OpenAIResponsesInputItem[] | undefined;
+  await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
+    seenInput = inv.payload.input;
+    return fakeUpstreamRun('done')();
+  });
+
+  assertEquals(seenInput, [
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'RECOVERED SUMMARY' }] },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
+test('compact decrypt: preserves a generate response envelope for the compaction_trigger path', async () => {
+  const inv = makeInvocation(
+    { input: [{ type: 'message', role: 'user', content: 'history' }, { type: 'compaction_trigger' }] },
+    { flagOn: false, decryptFlagOn: true },
+  );
+  let calls = 0;
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
+    calls += 1;
+    if (calls === 1) {
+      const response: OpenAIResponsesResult = {
+        id: 'resp_trigger',
+        object: 'response',
+        model: 'test-upstream-model',
+        status: 'completed',
+        output: [{ type: 'compaction', id: 'cmp_trigger', encrypted_content: 'OPAQUE_TRIGGER_BLOB' } as unknown as never],
+        error: null,
+        incomplete_details: null,
+        usage: { input_tokens: 80, output_tokens: 30, total_tokens: 110 },
+      };
+      return Promise.resolve(eventResult(
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+          yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+          yield doneFrame();
+        })(),
+        testTelemetryModelIdentity,
+      ));
+    }
+    return fakeUpstreamRun('TRIGGER SUMMARY')();
+  });
+
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(calls, 2);
+  assertEquals(collected.object, 'response');
+  assertEquals(collected.output[0]?.type, 'compaction');
 });
 
 // ── Bug 1 — engagement gating ────────────────────────────────────────────────

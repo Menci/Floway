@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { wrapOpenAIResponsesObservedOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItem, OpenAIResponsesOutputReasoning, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
@@ -214,6 +215,34 @@ describe('OpenAI Responses affinity egress', () => {
     expect(output).toHaveLength(1);
     expect(output[0]).toMatchObject({
       event: { response: { output: [{ type: 'compaction_summary', encrypted_content: 'wrapped:opaque' }] } },
+    });
+  });
+
+  test('leaves gateway-owned compaction payloads unwrapped and carries affinity in an optional prefix', async () => {
+    const encryptedContent = encodeBase64UrlJson([{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'portable summary' }],
+    }]);
+    const item = { type: 'compaction', id: 'cmp_shim', encrypted_content: encryptedContent } as OpenAIResponsesOutputItem;
+    const output: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.completed', response: response([item]) }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toHaveLength(3);
+    expect(output[1]).toMatchObject({
+      event: { type: 'response.output_item.done', item: { type: 'reasoning', encrypted_content: 'wrapped:synthetic-item' } },
+    });
+    expect(output[2]).toMatchObject({
+      event: {
+        response: {
+          output: [
+            { type: 'reasoning', encrypted_content: 'wrapped:synthetic-item' },
+            { type: 'compaction', encrypted_content: encryptedContent },
+          ],
+        },
+      },
     });
   });
 

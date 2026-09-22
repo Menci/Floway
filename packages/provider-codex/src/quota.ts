@@ -1,35 +1,12 @@
-import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount } from './state.ts';
+import { isUnsafeObjectKey } from './auth/guards.ts';
+import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexQuotaSnapshot, type CodexQuotaSnapshotMap } from './state.ts';
 import { getProviderRepo } from '@floway-dev/provider';
-
-export interface CodexQuotaSnapshot {
-  observed_at: string;
-  active_limit?: string;
-  plan_type?: string;
-
-  primary_used_percent?: number;
-  primary_window_minutes?: number;
-  primary_reset_after_at?: string;
-
-  secondary_used_percent?: number;
-  secondary_window_minutes?: number;
-  secondary_reset_after_at?: string;
-
-  credits_has_credits?: boolean;
-  credits_balance?: number;
-
-  // Present only when this snapshot was written as a result of a 429.
-  ratelimited_until?: string;
-}
-
-export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
 export const CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT = 'unknown';
 
-const isUnsafeActiveLimitKey = (key: string): boolean => key === '__proto__' || key === 'constructor' || key === 'prototype';
-
 export const codexQuotaActiveLimitKey = (snapshot: CodexQuotaSnapshot): string => {
   const key = snapshot.active_limit?.trim();
-  return key && !isUnsafeActiveLimitKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
+  return key && !isUnsafeObjectKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
 };
 
 interface ParseCodexQuotaOptions {
@@ -137,7 +114,7 @@ export const hasCodexQuotaReading = (snapshot: CodexQuotaSnapshot): boolean => {
 // withholding a reading buys nothing and costs the page the only answer it has.
 export const getCodexQuota = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
 ): Promise<CodexQuotaSnapshotMap | null> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) return null;
@@ -150,7 +127,7 @@ export const getCodexQuota = async (
 
 export const putCodexQuota = async (
   upstreamId: string,
-  accountId: string,
+  accountId: string | null,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
   // Stamped before the write so a replay against a winning sibling produces

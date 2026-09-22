@@ -12,7 +12,9 @@ const chunk = (delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], f
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 });
 
-const usageChunk = (): OpenAIChatCompletionsStreamEvent => ({
+type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['usage']>;
+
+const usageChunk = (overrides: Partial<OpenAIChatCompletionsUsage> = {}): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -22,6 +24,21 @@ const usageChunk = (): OpenAIChatCompletionsStreamEvent => ({
     prompt_tokens: 12,
     completion_tokens: 4,
     total_tokens: 16,
+    ...overrides,
+  },
+});
+
+const chunkWithUsage = (
+  delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'],
+  usage: Partial<OpenAIChatCompletionsUsage>,
+  finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
+): OpenAIChatCompletionsStreamEvent => ({
+  ...chunk(delta, finishReason),
+  usage: {
+    prompt_tokens: 12,
+    completion_tokens: 4,
+    total_tokens: 16,
+    ...usage,
   },
 });
 
@@ -473,29 +490,20 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents defers conten
 
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents ignores empty tool_calls arrays', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
-  // First chunk with role: "assistant" and empty tool_calls.
-  // Before the fix (choice.delta.tool_calls), empty [] was truthy and
-  // entered the tool-calls branch, which could close an open text block
-  // prematurely. After the fix (choice.delta.tool_calls?.length), empty
-  // arrays are treated as absent.
+  // A role-only chunk with an empty tool_calls array must not open the message
+  // or any content block. Deferring message_start lets a following
+  // continuous_usage_stats chunk supply the real input token count.
   const events1 = translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
-  // First event should be message_start (from role), not any tool-call handling.
-  // No content yet, so no content_block_start.
-  assertEquals(events1.length, 1);
-  assertEquals(events1[0].type, 'message_start');
+  assertEquals(events1, []);
 
-  // Second chunk with content — should start a text block normally.
+  // The first chunk with content opens message_start and the text block.
   const events2 = translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'hello' }), state);
-  assertEquals(events2.length, 2);
-  assertEquals(events2[0].type, 'content_block_start');
-  assertEquals(events2[1].type, 'content_block_delta');
+  assertEquals(events2.map(event => event.type), ['message_start', 'content_block_start', 'content_block_delta']);
 
-  // Finish with stop.
   const events3 = translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state);
   const textBlocks = events3.filter(e => e.type === 'content_block_stop');
   assertEquals(textBlocks.length, 1, 'only one text block should have been closed');
 });
-
 test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage maps OpenAI cached_tokens to cache_read_input_tokens', () => {
   const usage = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage({
     prompt_tokens: 100,
@@ -647,4 +655,111 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits usage.s
   const usage = messageDelta?.usage;
   assertExists(usage);
   assertFalse('speed' in usage);
+});
+
+test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents reports real input_tokens when continuous usage arrives before content', () => {
+  const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
+
+  // vLLM shape: a role-only first chunk, then a usage-only chunk before content.
+  assertEquals(translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant' }), state), []);
+
+  const start = translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+    usageChunk({ prompt_tokens: 47, completion_tokens: 0, total_tokens: 47 }),
+    state,
+  );
+
+  assertEquals(start, [
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_chatcmpl_test',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'gpt-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 47, output_tokens: 0 },
+      },
+    },
+  ]);
+});
+
+test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits cumulative usage updates as continuous usage advances', () => {
+  const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
+
+  translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant' }), state);
+  translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+    usageChunk({ prompt_tokens: 47, completion_tokens: 0, total_tokens: 47 }),
+    state,
+  );
+
+  assertEquals(
+    translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+      usageChunk({ prompt_tokens: 47, completion_tokens: 1, total_tokens: 48 }),
+      state,
+    ),
+    [
+      {
+        type: 'message_delta',
+        delta: { stop_reason: null, stop_sequence: null },
+        usage: { input_tokens: 47, output_tokens: 1 },
+      },
+    ],
+  );
+
+  assertEquals(
+    translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+      usageChunk({ prompt_tokens: 47, completion_tokens: 4, total_tokens: 51 }),
+      state,
+    ),
+    [
+      {
+        type: 'message_delta',
+        delta: { stop_reason: null, stop_sequence: null },
+        usage: { input_tokens: 47, output_tokens: 4 },
+      },
+    ],
+  );
+
+  // A repeated cumulative counter is not re-emitted.
+  assertEquals(
+    translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+      usageChunk({ prompt_tokens: 47, completion_tokens: 4, total_tokens: 51 }),
+      state,
+    ),
+    [],
+  );
+
+  assertEquals(translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state), []);
+  assertEquals(flushOpenAIChatCompletionsToAnthropicMessagesEvents(state), [
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      usage: { input_tokens: 47, output_tokens: 4 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
+test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents carries content-chunk usage into message_start before the delta', () => {
+  const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
+
+  // SGLang shape: usage rides on the first content chunk instead of a separate
+  // usage-only chunk. message_start must still precede the content delta.
+  const events = translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(
+    chunkWithUsage(
+      { role: 'assistant', content: 'hi' },
+      { prompt_tokens: 23, completion_tokens: 1, total_tokens: 24 },
+    ),
+    state,
+  );
+
+  assertEquals(events.map(event => event.type), ['message_start', 'content_block_start', 'content_block_delta']);
+
+  const start = events[0];
+  assertEquals(start.type, 'message_start');
+  if (start.type === 'message_start') {
+    assertEquals(start.message.usage, { input_tokens: 23, output_tokens: 1 });
+  }
 });
