@@ -71,6 +71,14 @@ type Mutation =
   | { kind: 'reorder'; id: string }
   | { kind: 'delete'; id: string };
 
+interface ReorderPlan {
+  from: number;
+  to: number;
+  movedId: string;
+  next: UpstreamRecord[];
+  writes: UpstreamRecord[];
+}
+
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
   'azure',
@@ -143,6 +151,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // failed, and it has to read that outcome after awaiting rather than out of a
   // state it just wrote.
   const lastLoadError = useRef<string | null>(null);
+  // A pointer drop starts its write before the settle animation ends. The rows
+  // keep rendering their pre-drop order under transforms until this plan is
+  // accepted, then commit `next` in the same render that removes the preview.
+  const pendingReorder = useRef<ReorderPlan | null>(null);
 
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
@@ -178,7 +190,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     // empty a table nobody is watching -- the two other polling pages hold their
     // data the same way.
     setData(current => ({
-      upstreams: next.upstreams ?? current.upstreams,
+      // A poll cannot replace the index space an in-flight gesture was measured
+      // against. Success commits its plan; failure clears it before resyncing.
+      upstreams: pendingReorder.current === null ? next.upstreams ?? current.upstreams : current.upstreams,
       models: next.models ?? current.models,
       loadError: next.loadError,
       modelsError: next.modelsError,
@@ -190,9 +204,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // the data plane refreshes without anyone here asking.
   usePollWhileVisible(poll);
 
-  // Row controls stay locked through the resync a mutation ends with, and
-  // through a refresh the operator asked for on its own.
-  const busy = mutation !== null || refreshing;
+  // Reordering owns its gesture until the write and settle both finish, so the
+  // hook can lock another move without flashing every unrelated control into a
+  // disabled visual state. Other mutations and explicit refreshes still disable
+  // the whole surface as before.
+  const reorderBusy = mutation !== null || refreshing;
+  const surfaceBusy = (mutation !== null && mutation.kind !== 'reorder') || refreshing;
 
   const handleRefresh = async () => {
     setPageError(null);
@@ -229,18 +246,14 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // records whose number actually changed are written.
   const move = async (from: number, to: number) => {
     const snapshot = data.upstreams;
-    if (snapshot === null || from === to) return;
-    if (from < 0 || from >= snapshot.length || to < 0 || to >= snapshot.length) return;
+    const plan = snapshot === null ? null : planReorder(snapshot, from, to);
+    if (plan === null) return;
 
-    const moved = snapshot[from];
-    const stored = new Map(snapshot.map(record => [record.id, record.sort_order]));
-    const next = moveItem(snapshot, from, to).map((record, index) => ({ ...record, sort_order: index }));
-    const writes = next.filter(record => stored.get(record.id) !== record.sort_order);
-    setMutation({ kind: 'reorder', id: moved.id });
+    setMutation({ kind: 'reorder', id: plan.movedId });
     setPageError(null);
-    setData(current => ({ ...current, upstreams: next }));
+    setData(current => ({ ...current, upstreams: plan.next }));
 
-    const results = await Promise.all(writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
+    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
     const error = results.find(result => result.error)?.error;
     if (error) {
       setData(current => ({ ...current, upstreams: snapshot }));
@@ -254,6 +267,47 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     }
 
     await reload();
+    setMutation(null);
+  };
+
+  const persistDroppedMove = async (from: number, to: number) => {
+    const snapshot = data.upstreams;
+    const plan = snapshot === null ? null : planReorder(snapshot, from, to);
+    if (plan === null) return;
+    if (pendingReorder.current !== null) throw new Error('An upstream reorder is already in flight.');
+
+    pendingReorder.current = plan;
+    setMutation({ kind: 'reorder', id: plan.movedId });
+    setPageError(null);
+    const results = await Promise.all(plan.writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
+    const error = results.find(result => result.error)?.error;
+    if (error) throw new Error(error.message, { cause: error });
+  };
+
+  const commitDroppedMove = (from: number, to: number) => {
+    const plan = pendingReorder.current;
+    // Keyboard reordering has no pointer-settle phase and therefore no pending
+    // plan; it keeps the immediate optimistic path it had before drag support.
+    if (plan === null) {
+      void move(from, to);
+      return;
+    }
+    if (plan.from !== from || plan.to !== to) {
+      throw new Error(`The settled upstream reorder ${from}->${to} does not match its pending plan ${plan.from}->${plan.to}.`);
+    }
+    setData(current => ({ ...current, upstreams: plan.next }));
+    pendingReorder.current = null;
+    setMutation(null);
+  };
+
+  const rejectDroppedMove = async (error: unknown) => {
+    const failure = error instanceof Error ? error : new Error('The upstream reorder failed.', { cause: error });
+    pendingReorder.current = null;
+    await reload();
+    setPageError(t('dashboard.upstreams.errors.reorder', {
+      message: failure.message,
+      sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
+    }));
     setMutation(null);
   };
 
@@ -303,7 +357,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
               </MenuPopover>
             </Menu>
           )}
-          disabled={busy}
+          disabled={surfaceBusy}
           onRefresh={() => void handleRefresh()}
           refreshLabel={t('dashboard.upstreams.actions.refresh')}
           refreshing={refreshing}
@@ -331,10 +385,13 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       <ResourceListPanel rowHeight="56px">
         <UpstreamsTable
           data={data}
-          busy={busy}
+          busy={surfaceBusy}
           mutation={mutation}
           onDelete={openDeleteDialog}
-          onMove={(from, to) => void move(from, to)}
+          onDrop={persistDroppedMove}
+          onDropError={rejectDroppedMove}
+          onMove={commitDroppedMove}
+          reorderBusy={reorderBusy}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
           pendingEnabled={pendingEnabled}
         />
@@ -388,22 +445,28 @@ function UpstreamsTable({
   data,
   mutation,
   onDelete,
+  onDrop,
+  onDropError,
   onMove,
   onToggle,
   pendingEnabled,
+  reorderBusy,
 }: {
   busy: boolean;
   data: LoaderData;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
+  onDrop: (from: number, to: number) => Promise<void>;
+  onDropError: (error: unknown, from: number, to: number) => void | Promise<void>;
   onMove: (from: number, to: number) => void;
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
   pendingEnabled: { id: string; enabled: boolean } | null;
+  reorderBusy: boolean;
 }) {
   const { t } = useTranslation();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
-  const reorder = useReorderList({ busy, length: upstreams?.length ?? 0, onReorder: onMove });
+  const reorder = useReorderList({ busy: reorderBusy, length: upstreams?.length ?? 0, onDrop, onDropError, onReorder: onMove });
 
   // A failed fetch is not an empty list: the message bar carries the reason.
   if (upstreams === null) return null;
@@ -539,6 +602,19 @@ const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: numbe
 
 const compareUpstreams = (a: UpstreamRecord, b: UpstreamRecord) =>
   a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+
+const planReorder = (snapshot: readonly UpstreamRecord[], from: number, to: number): ReorderPlan | null => {
+  if (from === to || from < 0 || from >= snapshot.length || to < 0 || to >= snapshot.length) return null;
+  const stored = new Map(snapshot.map(record => [record.id, record.sort_order]));
+  const next = moveItem(snapshot, from, to).map((record, index) => ({ ...record, sort_order: index }));
+  return {
+    from,
+    to,
+    movedId: snapshot[from].id,
+    next,
+    writes: next.filter(record => stored.get(record.id) !== record.sort_order),
+  };
+};
 
 const buildModelCounts = (
   upstreams: UpstreamRecord[],

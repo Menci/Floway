@@ -106,6 +106,8 @@ interface Preview {
   settling: boolean;
 }
 
+type DropOutcome = { ok: true } | { ok: false; error: unknown };
+
 /** The move every caller commits and the preview reads, stated once. */
 export const moveItem = <Item, >(items: readonly Item[], from: number, to: number): Item[] => {
   const next = [...items];
@@ -223,12 +225,13 @@ const siblingHandles = (handle: HTMLElement): HTMLElement[] => {
  *
  * The caller spreads `listProps` on the element that holds the items,
  * `itemProps` on each item and `handleProps` on the grip, and keeps rendering
- * in its own order throughout: a gesture moves the rows with transforms and
- * reports the move through `onReorder` once, when the item has settled on the
- * slot it was dropped on. `position` gives an item's previewed rank, for a list
- * that shows one.
+ * in its own order throughout. A gesture moves the rows with transforms,
+ * starts `onDrop` at release when the caller has a write to perform, and keeps
+ * the preview in place until both that write and the settle animation finish.
+ * `onReorder` then commits the rendered order without another visible move.
+ * `position` gives an item's previewed rank, for a list that shows one.
  */
-export function useReorderList({ busy = false, disabled = false, length, onReorder }: {
+export function useReorderList({ busy = false, disabled = false, length, onDrop, onDropError, onReorder }: {
   /**
    * The list's own write is in flight. The grip reads as unavailable but keeps
    * focus, so a keyboard move does not throw the operator back to the document
@@ -237,11 +240,16 @@ export function useReorderList({ busy = false, disabled = false, length, onReord
   busy?: boolean;
   disabled?: boolean;
   length: number;
+  /** Starts an asynchronous write as soon as the pointer is released. */
+  onDrop?: (from: number, to: number) => Promise<void>;
+  /** Runs after the visual preview has rolled back from a rejected write. */
+  onDropError?: (error: unknown, from: number, to: number) => void | Promise<void>;
   onReorder: (from: number, to: number) => void;
 }) {
   const styles = useStyles();
   const gestureRef = useRef<Gesture | null>(null);
   const settleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mountedRef = useRef(true);
   const [preview, setPreview] = useState<Preview | null>(null);
   // A handle is dead while the list is locked, and a list of one has nowhere to
   // move its item to.
@@ -250,7 +258,13 @@ export function useReorderList({ busy = false, disabled = false, length, onReord
   // the new list does not have would move the wrong row.
   const live = preview !== null && preview.from < length && preview.to < length ? preview : null;
 
-  useEffect(() => () => clearTimeout(settleRef.current), []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(settleRef.current);
+    };
+  }, []);
 
   const offsets = useMemo(() => live && slotOffsets(live.items, live.from, live.to), [live]);
   const ranks = useMemo(
@@ -297,9 +311,35 @@ export function useReorderList({ busy = false, disabled = false, length, onReord
       gesture.list.style.setProperty(DRAG_Y, `${slotOffsets(gesture.items, gesture.from, to).get(gesture.from) ?? 0}px`);
       setPreview({ from: gesture.from, items: gesture.items, settling: true, to });
       clearTimeout(settleRef.current);
+      if (to === gesture.from || onDrop === undefined) {
+        settleRef.current = setTimeout(() => {
+          if (to !== gesture.from) onReorder(gesture.from, to);
+          end();
+        }, REPOSITION_ANIMATION_MS);
+        return;
+      }
+
+      let write: Promise<void>;
+      try {
+        write = onDrop(gesture.from, to);
+      } catch (error) {
+        write = Promise.reject(error);
+      }
+      const outcome = write.then<DropOutcome, DropOutcome>(
+        () => ({ ok: true }),
+        error => ({ ok: false, error }),
+      );
       settleRef.current = setTimeout(() => {
-        end();
-        if (to !== gesture.from) onReorder(gesture.from, to);
+        void outcome.then(async result => {
+          if (!mountedRef.current) return;
+          if (!result.ok) {
+            end();
+            await onDropError?.(result.error, gesture.from, to);
+            return;
+          }
+          if (to !== gesture.from) onReorder(gesture.from, to);
+          end();
+        });
       }, REPOSITION_ANIMATION_MS);
     };
 
@@ -327,18 +367,22 @@ export function useReorderList({ busy = false, disabled = false, length, onReord
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', end);
     };
-  }, [dragging, onReorder]);
+  }, [dragging, onDrop, onDropError, onReorder]);
 
   // An index outside the list is a caller stating that this row has no place in
   // the order -- the rows an access list leaves out of its cap -- so its grip
   // reads as the others do and does nothing.
   const handleProps = (index: number): ReorderHandleProps => {
     const inert = locked || index < 0 || index >= length;
+    // A settling preview already blocks every gesture and key path. Keeping the
+    // native button visually enabled avoids a one-frame disabled-colour pulse
+    // when a fast write begins and ends under that preview.
+    const visiblyInert = inert && live === null;
     return {
       // Everything but the list's own write in flight is the grip being made
       // unavailable from outside, which leaves the tab order.
-      disabled: inert && !busy,
-      disabledFocusable: inert && busy,
+      disabled: visiblyInert && !busy,
+      disabledFocusable: visiblyInert && busy,
       [HANDLE_ATTRIBUTE]: '',
       onPointerDown: event => {
         if (inert || live || !event.isPrimary || event.button !== 0) return;

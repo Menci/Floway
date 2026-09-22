@@ -30,10 +30,19 @@ afterEach(() => { vi.useRealTimers(); });
 const names = ['alpha', 'bravo', 'charlie', 'delta'];
 
 /** `orderable` is how many leading items the list lets the operator order. */
-const List = ({ onReorder, orderable = names.length }: { onReorder: (from: number, to: number) => void; orderable?: number }) => {
+const List = ({ busy = false, onDrop, onDropError, onReorder, orderable = names.length }: {
+  busy?: boolean;
+  onDrop?: (from: number, to: number) => Promise<void>;
+  onDropError?: (error: unknown, from: number, to: number) => void | Promise<void>;
+  onReorder: (from: number, to: number) => void;
+  orderable?: number;
+}) => {
   const [items, setItems] = useState(names);
   const reorder = useReorderList({
+    busy,
     length: orderable,
+    onDrop,
+    onDropError,
     onReorder: (from, to) => { setItems(current => moveItem(current, from, to)); onReorder(from, to); },
   });
   return <ul {...reorder.listProps()}>
@@ -135,6 +144,54 @@ describe('drag-to-position reordering', () => {
     act(() => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
     expect(onReorder).toHaveBeenCalledExactlyOnceWith(0, 3);
     expect(rendered()).toEqual(['bravo', 'charlie', 'delta', 'alpha']);
+    expect(offsets()).toEqual(['', '', '', '']);
+  });
+
+  it('starts an asynchronous write at release and holds the settled preview until it succeeds', async () => {
+    vi.useFakeTimers();
+    let resolveWrite!: () => void;
+    const write = new Promise<void>(resolve => { resolveWrite = resolve; });
+    const onDrop = vi.fn(() => write);
+    const onReorder = vi.fn();
+    const view = renderInApp(<List onDrop={onDrop} onReorder={onReorder} />);
+
+    press(grip('alpha'), 20);
+    drag(150);
+    release(150);
+    expect(onDrop).toHaveBeenCalledExactlyOnceWith(0, 3);
+
+    view.rerender(<List busy onDrop={onDrop} onReorder={onReorder} />);
+    expect(grip('alpha').hasAttribute('aria-disabled')).toBe(false);
+
+    await act(async () => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(rendered()).toEqual(names);
+    expect(travel()).toBe('120px');
+
+    await act(async () => { resolveWrite(); });
+    expect(onReorder).toHaveBeenCalledExactlyOnceWith(0, 3);
+    expect(rendered()).toEqual(['bravo', 'charlie', 'delta', 'alpha']);
+    expect(offsets()).toEqual(['', '', '', '']);
+  });
+
+  it('rolls the preview back only when the asynchronous write fails', async () => {
+    vi.useFakeTimers();
+    let rejectWrite!: (error: Error) => void;
+    const write = new Promise<void>((_, reject) => { rejectWrite = reject; });
+    const onDropError = vi.fn();
+    const onReorder = vi.fn();
+    renderInApp(<List onDrop={() => write} onDropError={onDropError} onReorder={onReorder} />);
+
+    press(grip('alpha'), 20);
+    drag(150);
+    release(150);
+    const failure = new Error('write failed');
+    rejectWrite(failure);
+    await act(async () => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
+
+    expect(onDropError).toHaveBeenCalledExactlyOnceWith(failure, 0, 3);
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(rendered()).toEqual(names);
     expect(offsets()).toEqual(['', '', '', '']);
   });
 
