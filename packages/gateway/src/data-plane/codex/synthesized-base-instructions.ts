@@ -35,7 +35,7 @@
 //      associations to "Codex" (Anthropic Claude, in particular)
 //      confabulate the historical Codex→GPT lineage.
 //
-// Refresh: extract the gpt-5.5 entry from the latest bundled.generated.json, drop the
+// Refresh: extract the gpt-5.5 entry from the latest bundled.json, drop the
 //          entire opening identity sentence ("You are Codex, a coding agent
 //          based on GPT-5. You and the user share one workspace, and your
 //          job is to collaborate with them until their goal is genuinely

@@ -15,10 +15,10 @@
 // restrictions. Refresh it whenever a newer Codex commit ships material
 // changes that clients need before the next release tag contains them:
 //   curl -sf https://raw.githubusercontent.com/openai/codex/<COMMIT>/codex-rs/models-manager/models.json \
-//     > packages/gateway/src/data-plane/codex/catalog/bundled.generated.json
+//     > packages/gateway/src/data-plane/codex/catalog/bundled.json
 // then bump the commit permalink in this comment to match.
 
-import bundledCatalog from './catalog/bundled.generated.json' with { type: 'json' };
+import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
 
 export interface CatalogModel {
   slug: string;

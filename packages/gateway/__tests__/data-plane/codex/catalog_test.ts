@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import bundledCatalog from '../../../src/data-plane/codex/catalog/bundled.generated.json' with { type: 'json' };
+import bundledCatalog from '../../../src/data-plane/codex/catalog/bundled.json' with { type: 'json' };
 
 const bundled = bundledCatalog as { models: { slug: string }[] };
 

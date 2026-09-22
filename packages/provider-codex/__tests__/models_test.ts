@@ -330,7 +330,7 @@ describe('codexRawToProviderModel', () => {
   });
 
   // The upstream states the two facts independently: the bundled catalog at
-  // packages/gateway/src/data-plane/codex/catalog/bundled.generated.json records `gpt-5.2`
+  // packages/gateway/src/data-plane/codex/catalog/bundled.json records `gpt-5.2`
   // taking images while rejecting detail 'original', so the mapper must carry
   // each fact on its own.
   test('keeps image_detail_original independent of the modality list', () => {
