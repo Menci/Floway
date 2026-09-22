@@ -1,5 +1,6 @@
 import { describe, test } from 'vitest';
 
+import { toPublicModel } from '../../../src/data-plane/models/load.ts';
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
@@ -130,6 +131,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
             {
               id: 'shared-model',
               supported_endpoints: ['/chat/completions'],
+              chat: { image_detail_original: true },
             },
           ],
         });
@@ -145,6 +147,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       // The merged endpoint surface is the OR of both upstreams' endpoint maps.
       assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: {} });
       assertEquals(model?.kind, 'chat');
+      assertEquals(model?.chat?.image_detail_original, false);
       // `providerData` (the per-provider wire id carrier) belongs to the
       // provider-emitted ProviderModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
@@ -158,6 +161,8 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
       assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { anthropicMessages: {} });
       assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
+      assertEquals(realProviderModels(model)['up_copilot']?.chat?.image_detail_original, undefined);
+      assertEquals(realProviderModels(model)['up_custom']?.chat?.image_detail_original, true);
       // `enabledFlags` is required on every ProviderModel — proves the
       // stored value is the provider-emitted shape (not a projected
       // subset).
@@ -175,6 +180,32 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
       assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { anthropicMessages: {} });
       assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
+    },
+  );
+});
+
+test('catalog merge preserves unanimous image-detail support on the public row', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_first',
+    sortOrder: 1,
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_second',
+    sortOrder: 2,
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+  }));
+
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'shared-model', chat: { image_detail_original: true } }] }),
+    async () => {
+      const { models } = await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      const model = models.find(candidate => candidate.id === 'shared-model');
+
+      assertEquals(model?.chat?.image_detail_original, true);
+      assertEquals(model && toPublicModel(model).chat?.image_detail_original, true);
     },
   );
 });

@@ -26,8 +26,13 @@ export interface OpenAIChatCompletionsPayload {
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   tools?: OpenAIChatCompletionsTool[] | null;
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
-  /** Request usage stats in streaming responses */
-  stream_options?: { include_usage: boolean } | null;
+  /**
+   * `include_usage` requests the standard final usage chunk.
+   * `continuous_usage_stats` is the vLLM extension that repeats cumulative
+   * usage on streaming output chunks.
+   * https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
+   */
+  stream_options?: { include_usage: boolean; continuous_usage_stats?: boolean } | null;
 }
 
 export interface OpenAIChatCompletionsTool {
@@ -48,6 +53,10 @@ export interface OpenAIChatCompletionsMessage {
   tool_call_id?: string;
   /** Human-readable reasoning text (thinking content) */
   reasoning_text?: string | null;
+  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
+  reasoning_content?: string | null;
+  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
+  reasoning?: string | null;
   /** Opaque reasoning token/signature for round-tripping */
   reasoning_opaque?: string | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
@@ -158,6 +167,10 @@ export interface OpenAIChatCompletionsDelta {
     | null;
   /** Human-readable reasoning text delta */
   reasoning_text?: string | null;
+  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
+  reasoning_content?: string | null;
+  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
+  reasoning?: string | null;
   /** Opaque reasoning token/signature delta */
   reasoning_opaque?: string | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;

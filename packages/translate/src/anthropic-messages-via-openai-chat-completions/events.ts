@@ -1,3 +1,4 @@
+import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -62,6 +63,73 @@ export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: Op
   };
 };
 
+const anthropicMessagesUsageWithTier = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  usage: OpenAIChatCompletionsStreamEvent['usage'],
+): AnthropicMessagesResult['usage'] => {
+  const mapped = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(usage);
+  if (state.upstreamServiceTier === 'fast') mapped.speed = 'fast';
+  else if (state.upstreamServiceTier !== undefined) mapped.service_tier = state.upstreamServiceTier;
+  return mapped;
+};
+
+const ensureMessageStart = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  events: AnthropicMessagesStreamEvent[],
+): void => {
+  if (state.messageStartSent) return;
+  if (state.upstreamId === undefined || state.upstreamModel === undefined) {
+    throw new Error('OpenAI Chat Completions stream identity is unavailable before message_start');
+  }
+
+  events.push({
+    type: 'message_start',
+    message: {
+      id: toAnthropicMessagesId(state.upstreamId),
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: state.upstreamModel,
+      stop_reason: null,
+      stop_sequence: null,
+      usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+    },
+  });
+  state.messageStartSent = true;
+  state.lastReportedUsageOutputTokens = state.pendingUsage?.completion_tokens ?? 0;
+};
+
+// `continuous_usage_stats` upstreams repeat cumulative counters on every chunk.
+// Anthropic permits multiple `message_delta` events that repeat cumulative
+// whole-message counters.
+const emitUsageProgress = (
+  state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
+  events: AnthropicMessagesStreamEvent[],
+): void => {
+  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage === undefined) return;
+
+  const outputTokens = state.pendingUsage.completion_tokens;
+  const advanced = state.lastReportedUsageOutputTokens === undefined || outputTokens > state.lastReportedUsageOutputTokens;
+  if (advanced === false) return;
+
+  state.lastReportedUsageOutputTokens = outputTokens;
+  events.push({
+    type: 'message_delta',
+    delta: { stop_reason: null, stop_sequence: null },
+    usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+  });
+};
+
+const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => {
+  const choice = chunk.choices[0]!;
+  if (choice.finish_reason !== null && choice.finish_reason !== undefined) return true;
+  const delta = choice.delta;
+  return Boolean(delta.content)
+    || openAIChatCompletionsScalarReasoningText(delta) !== undefined
+    || delta.reasoning_opaque != null
+    || (delta.tool_calls?.length ?? 0) > 0;
+};
+
 const UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.';
 
 const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<OpenAIChatCompletionsStreamEvent> {
@@ -112,6 +180,11 @@ interface OpenAIChatCompletionsToAnthropicMessagesStreamState {
   refusalText: string;
   sawRefusal: boolean;
   pendingUsage?: OpenAIChatCompletionsStreamEvent['usage'];
+  upstreamId?: string;
+  upstreamModel?: string;
+  // Latest cumulative completion_tokens already stated to the client, used to
+  // suppress duplicate `message_delta` usage updates.
+  lastReportedUsageOutputTokens?: number;
   // Captured from any chunk's service_tier for speed pass-through.
   upstreamServiceTier?: string;
   finalMessageSent?: boolean;
@@ -213,7 +286,8 @@ const flushDeferredContent = (state: OpenAIChatCompletionsToAnthropicMessagesStr
 };
 
 const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
-  if (delta.reasoning_text) {
+  const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
+  if (reasoningText) {
     if (state.openBlock !== 'thinking') {
       closeCurrentBlock(state, events);
       startContentBlock(state, events, 'thinking', {
@@ -225,7 +299,7 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
 
     emitContentBlockDelta(state, events, {
       type: 'thinking_delta',
-      thinking: delta.reasoning_text,
+      thinking: reasoningText,
     });
   }
 
@@ -322,17 +396,13 @@ const handleFinishReason = (
   flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
-  if (chunk.usage) state.pendingUsage = chunk.usage;
   if (chunk.usage) emitFinalMessageIfReady(state, events);
 };
 
 const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
-  if (!state.pendingFinishReason || state.finalMessageSent) return;
+  if (state.pendingFinishReason === undefined || state.finalMessageSent === true) return;
 
-  const usage = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(state.pendingUsage);
-
-  if (state.upstreamServiceTier === 'fast') usage.speed = 'fast';
-  else if (state.upstreamServiceTier !== undefined) usage.service_tier = state.upstreamServiceTier;
+  const usage = anthropicMessagesUsageWithTier(state, state.pendingUsage);
 
   const refused = state.sawRefusal || state.pendingFinishReason === 'content_filter';
 
@@ -373,12 +443,19 @@ export const createOpenAIChatCompletionsToAnthropicMessagesStreamState = (): Ope
 export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chunk: OpenAIChatCompletionsStreamEvent, state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
   const events: AnthropicMessagesStreamEvent[] = [];
 
+  state.upstreamId ??= chunk.id;
+  state.upstreamModel ??= chunk.model;
   if (chunk.service_tier != null) state.upstreamServiceTier = chunk.service_tier;
+  if (chunk.usage) state.pendingUsage = chunk.usage;
+
+  if (state.pendingUsage !== undefined && state.messageStartSent === false) {
+    ensureMessageStart(state, events);
+  }
 
   if (chunk.choices.length === 0) {
     if (chunk.usage) {
-      state.pendingUsage = chunk.usage;
       emitFinalMessageIfReady(state, events);
+      emitUsageProgress(state, events);
     }
 
     return events;
@@ -389,21 +466,12 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
   // can be represented; choices[1+] are dropped.
   const choice = chunk.choices[0];
 
-  if (!state.messageStartSent) {
-    events.push({
-      type: 'message_start',
-      message: {
-        id: toAnthropicMessagesId(chunk.id),
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: chunk.model,
-        stop_reason: null,
-        stop_sequence: null,
-        usage: mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(chunk.usage),
-      },
-    });
-    state.messageStartSent = true;
+  // Fallback for upstreams that ignored `continuous_usage_stats`: they stream
+  // content before any usage is available, so waiting for usage would buffer
+  // the whole answer. Open the message with the zero-valued placeholder and
+  // keep streaming immediately.
+  if (state.messageStartSent === false && chunkOpensMessage(chunk)) {
+    ensureMessageStart(state, events);
   }
 
   handleReasoningDelta(choice.delta, state, events);
@@ -434,6 +502,8 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
 
   if (choice.finish_reason) {
     handleFinishReason(choice.finish_reason, chunk, state, events);
+  } else if (chunk.usage) {
+    emitUsageProgress(state, events);
   }
 
   return events;

@@ -42,6 +42,32 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   assertEquals(/^[0-9a-f]{64}$/.test(stored[0].serverSecret), true);
 });
 
+test('POST /api/users preserves an empty upstream restriction with an inheriting Default key', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22', upstreamIds: [] });
+
+  assertEquals(response.status, 201);
+  const body = (await response.json()) as { user: { id: number; upstreamIds: string[] | null } };
+  assertEquals(body.user.upstreamIds, []);
+  assertEquals((await repo.users.getById(body.user.id))?.upstreamIds, []);
+  const [defaultKey] = await repo.apiKeys.listByUserId(body.user.id);
+  assertEquals(defaultKey.upstreamIds, null);
+});
+
+test('PATCH /api/users/:id saves an empty upstream restriction and can disable it', async () => {
+  const { adminSession, repo, apiKey } = await setupAppTest();
+  const response = await adminPatch(adminSession, apiKey.userId, { upstreamIds: [] });
+
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).upstreamIds, []);
+  assertEquals((await repo.users.getById(apiKey.userId))?.upstreamIds, []);
+
+  const unrestricted = await adminPatch(adminSession, apiKey.userId, { upstreamIds: null });
+  assertEquals(unrestricted.status, 200);
+  assertEquals((await unrestricted.json()).upstreamIds, null);
+  assertEquals((await repo.users.getById(apiKey.userId))?.upstreamIds, null);
+});
+
 test('POST /api/users rejects duplicate username + unknown upstream id', async () => {
   const { adminSession } = await setupAppTest();
   await adminPost(adminSession, { username: 'alice', password: 'pw' });

@@ -126,6 +126,10 @@ const reasoningSchema = z.object({
 
 const chatSchema = z.object({
   modalities: modalitiesSchema.optional(),
+  // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
+  // the upstream stating it rejects detail 'original', not the absence of a
+  // statement.
+  image_detail_original: z.boolean().optional(),
   reasoning: reasoningSchema.optional(),
 });
 
@@ -237,10 +241,8 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because zero upstreams cannot serve any model.
+// null leaves this level unrestricted; an empty list grants no upstreams.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
 
@@ -414,6 +416,10 @@ export const upstreamRecordEnvelope = z.object({
 // beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
+// Shared authorize-url contract for the codex and claude-code authorize-url
+// endpoints: the draft record plus the SPA-held PKCE challenge/state pair.
+const oauthAuthorizeUrlBody = z.object({ record: upstreamRecordEnvelope, challenge: z.string().min(1), state: z.string().min(1) });
+
 export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
 
 export const copilotOAuthDeviceLoginPollBody = z.object({
@@ -431,22 +437,39 @@ export const copilotQuotaBody = recordOnlyBody;
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
+export const codexOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
+
+// Preview takes no record: it reads a pasted document and reports what is in
+// it, without touching any upstream.
+export const codexImportPreviewBody = z.object({
+  raw_json: z.string().min(1),
 });
 
-export const codexOAuthExchangeBody = z.object({
+export const codexImportExchangeBody = z.object({
   record: upstreamRecordEnvelope,
-  auth_json: z.string().min(1).optional(),
+  json: z.object({
+    raw_json: z.string().min(1),
+    source_index: z.number().int().nonnegative(),
+  }).optional(),
   callback: z.object({
     code: z.string().min(1),
     verifier: z.string().min(1),
   }).optional(),
+  // Only the bearer is required. Every other field is the operator stating
+  // something the tokens cannot say, so `null` and an omitted key mean the
+  // same thing and the provider decides what a value is worth.
+  manual: z.object({
+    access_token: z.string().min(1),
+    refresh_token: z.string().nullable().optional(),
+    id_token: z.string().nullable().optional(),
+    account_id: z.string().nullable().optional(),
+    email: z.string().nullable().optional(),
+    plan_type: z.string().nullable().optional(),
+    expires_at: z.union([z.number(), z.string()]).nullable().optional(),
+  }).optional(),
 }).refine(
-  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of auth_json or callback' },
+  b => [b.json, b.callback, b.manual].filter(value => value !== undefined).length === 1,
+  { message: 'Provide exactly one of json, callback, or manual' },
 );
 
 export const codexOAuthRefreshBody = recordOnlyBody;
@@ -460,11 +483,7 @@ const oauthCallbackSchema = z.object({
   state: z.string().min(1),
 });
 
-export const claudeCodeOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
@@ -477,11 +496,7 @@ export const claudeCodeOAuthExchangeBody = z.object({
 
 export const claudeCodeOAuthRefreshBody = recordOnlyBody;
 
-export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeSetupTokenAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeSetupTokenExchangeBody = z.object({
   record: upstreamRecordEnvelope,

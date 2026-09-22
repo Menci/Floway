@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertCodexUpstreamRecord } from '../src/config.ts';
+import { assertCodexUpstreamRecord, patchCodexIdentityMetadata, type CodexUpstreamConfig } from '../src/config.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 const goodAccount = { email: 'a@b.com', chatgptAccountId: 'a', chatgptUserId: 'u', planType: 'plus' };
-const good = { accounts: [goodAccount] };
+const good: CodexUpstreamConfig = { accounts: [goodAccount] };
 
 const wrap = (config: unknown): UpstreamRecord => ({
   id: 'up', kind: 'codex', name: 'n', enabled: true, sortOrder: 0,
@@ -13,8 +13,11 @@ const wrap = (config: unknown): UpstreamRecord => ({
 });
 
 describe('assertCodexUpstreamRecord (config validation)', () => {
-  test('accepts a complete config', () => {
+  test('accepts complete identity or explicitly null identity fields', () => {
     expect(() => assertCodexUpstreamRecord(wrap(good))).not.toThrow();
+    expect(() => assertCodexUpstreamRecord(wrap({
+      accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }],
+    }))).not.toThrow();
   });
   test.each([
     ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
@@ -45,5 +48,39 @@ describe('assertCodexUpstreamRecord (record-level checks)', () => {
       flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210,
     };
     expect(() => assertCodexUpstreamRecord(record)).toThrow();
+  });
+});
+
+describe('patchCodexIdentityMetadata', () => {
+  test('updates nullable display metadata while retaining the account ID', () => {
+    expect(patchCodexIdentityMetadata(good, {
+      accounts: [{ email: null, chatgptAccountId: 'a', planType: 'pro' }],
+    })).toEqual({
+      accounts: [{ email: null, chatgptAccountId: 'a', chatgptUserId: 'u', planType: 'pro' }],
+    });
+  });
+
+  test('preserves a null account ID and rejects account ID changes', () => {
+    const withoutAccountId: CodexUpstreamConfig = {
+      accounts: [{ ...goodAccount, chatgptAccountId: null }],
+    };
+    expect(patchCodexIdentityMetadata(withoutAccountId, {
+      accounts: [{ chatgptAccountId: null, email: null }],
+    }).accounts[0].chatgptAccountId).toBeNull();
+    expect(() => patchCodexIdentityMetadata(withoutAccountId, {
+      accounts: [{ chatgptAccountId: 'other' }],
+    })).toThrow(/only be changed by re-importing/);
+    expect(() => patchCodexIdentityMetadata(good, {
+      accounts: [{ chatgptAccountId: null }],
+    })).toThrow(/only be changed by re-importing/);
+  });
+
+  test.each([
+    ['unknown top-level field', { accessToken: 'secret' }],
+    ['unknown account field', { accounts: [{ refresh_token: 'secret' }] }],
+    ['multiple accounts', { accounts: [goodAccount, goodAccount] }],
+    ['invalid metadata', { accounts: [{ email: '' }] }],
+  ])('rejects %s', (_label, patch) => {
+    expect(() => patchCodexIdentityMetadata(good, patch)).toThrow();
   });
 });

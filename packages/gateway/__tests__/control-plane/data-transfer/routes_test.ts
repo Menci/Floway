@@ -348,6 +348,28 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+test('export and import preserve empty upstream restrictions separately from unrestricted access', async () => {
+  const { app, repo } = setup();
+  const restrictedUser = { ...USER_BOB, upstreamIds: [] };
+  const restrictedKey = { ...KEY_B, userId: USER_BOB.id, upstreamIds: [] };
+  await repo.users.save(SEED_ADMIN);
+  await repo.users.save(restrictedUser);
+  await repo.apiKeys.save(KEY_A);
+  await repo.apiKeys.save(restrictedKey);
+
+  const exported = await doExport(app);
+  await repo.users.save(USER_BOB);
+  await repo.apiKeys.save({ ...restrictedKey, upstreamIds: null });
+
+  const imported = await doImport(app, 'replace', exported.data, exported.version);
+  assertEquals(imported.status, 200);
+  assertEquals((await repo.users.getById(SEED_ADMIN.id))?.upstreamIds, null);
+  assertEquals((await repo.users.getById(USER_BOB.id))?.upstreamIds, []);
+  assertEquals((await repo.apiKeys.getById(KEY_A.id))?.upstreamIds, null);
+  assertEquals((await repo.apiKeys.getById(KEY_B.id))?.upstreamIds, []);
+  assertEquals((await doExport(app)).data, exported.data);
+});
+
 test('import round-trips a usage record carrying a positive input-length coordinate', async () => {
   const { app, repo } = setup();
   const longRow: UsageRecord = { ...USAGE_2, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } };

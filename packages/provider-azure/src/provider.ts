@@ -51,13 +51,14 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       return Promise.resolve(azure.config.models.map(model => {
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
         const endpoints = model.endpoints;
+        const kind = kindForEndpoints(endpoints);
         return {
           id: publicModelId(model),
           limits: { ...(model.limits ?? {}) },
           ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
           ...(model.pricing ? { pricing: model.pricing } : {}),
-          ...(model.chat ? { chat: model.chat } : {}),
-          kind: kindForEndpoints(endpoints),
+          ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
+          kind,
           endpoints,
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,

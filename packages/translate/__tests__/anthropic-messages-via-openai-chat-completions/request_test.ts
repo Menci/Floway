@@ -546,7 +546,7 @@ test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound Op
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('buildTargetRequest omits service_tier when speed is absent', () => {
@@ -590,4 +590,15 @@ test('buildTargetRequest forwards service_tier:standard_only to OpenAI Chat Comp
   });
 
   assertEquals(result.service_tier, 'standard_only');
+});
+
+test('buildTargetRequest asks upstream for continuous streaming usage stats', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.stream, true);
+  assertEquals(result.stream_options, { include_usage: true, continuous_usage_stats: true });
 });

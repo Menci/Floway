@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import { createUpstreamStateRepoStub } from '../../upstream-state-repo.ts';
@@ -6,17 +6,15 @@ import type { Interceptor } from '@floway-dev/interceptor';
 import { initProviderRepo, type ProviderOpenAIResponsesResult, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, readJsonRequest } from '@floway-dev/test-utils';
 
-// Codex's terminal handler in provider.ts switches on `ctx.action` (the
-// post-chain value), so an interceptor that flips it mid-chain reroutes
-// dispatch. Drive the contract by swapping CODEX_OPENAI_RESPONSES_BOUNDARY for one
-// that ends in a pivot interceptor (generate → compact), then call with
-// action='generate' and a generate-shaped body. The wire request seen at
-// the upstream MUST hit /codex/responses/compact AND the body MUST NOT
-// carry generate-only fields (tools/reasoning/temperature/...) — the
-// per-action narrowing through `toCompactPayloadShape` is what closes that
-// gap.
+// Terminal dispatch must use the post-chain action and preserve late Standard
+// tool/instruction changes until the private wire encoder and compact projector.
 const pivotGenerateToCompact: Interceptor<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult> = async (ctx, _env, run) => {
   ctx.action = 'compact';
+  ctx.payload = {
+    ...ctx.payload,
+    instructions: 'Late instructions',
+    tools: [...ctx.payload.tools ?? [], { type: 'custom', name: 'late_tool' }],
+  };
   return await run();
 };
 
@@ -73,7 +71,7 @@ const compactJsonResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'application/json' } },
 );
 
-test('Codex terminal dispatches on post-chain ctx.action (interceptor flip generate→compact routes to the unary /responses/compact path with a narrowed body)', async () => {
+test.each([true, false])('Codex projects a post-chain compact pivot after catalog-selected encoding (Lite=%s)', async useResponsesLite => {
   let compactUrl: string | undefined;
   let compactBody: Record<string, unknown> | undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -88,11 +86,8 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
   });
 
   const instance = createCodexProvider(baseRecord);
-  // Generate-shaped body — carries tools, reasoning, temperature, etc. None
-  // of these are allowed on /responses/compact. The pivot above flips action
-  // to 'compact'; the terminal must narrow the body before sending upstream.
   const result = await instance.instance.callOpenAIResponses(
-    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],
@@ -113,11 +108,28 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
   if (compactUrl === undefined) throw new Error('expected /codex/responses/compact to be hit');
   if (compactBody === undefined) throw new Error('expected compact body capture');
 
-  // Wire body MUST carry the compact-allowed fields (input, model) and MUST
-  // NOT carry any of the generate-only fields the caller passed in.
   assertEquals('input' in compactBody, true);
   assertEquals(compactBody.model, 'gpt-5.4');
-  for (const banned of ['tools', 'reasoning', 'temperature', 'max_output_tokens', 'stream', 'parallel_tool_calls']) {
-    assertEquals(banned in compactBody, false, `compact wire body must not carry generate-only field "${banned}"`);
+  const tools = [
+    { type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false },
+    { type: 'custom', name: 'late_tool' },
+  ];
+  if (useResponsesLite) {
+    expect(compactBody).not.toHaveProperty('tools');
+    expect(compactBody).not.toHaveProperty('instructions');
+    expect(compactBody.input).toEqual([
+      { type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/), tools: [{ type: 'namespace', name: 'functions', description: '', tools }] },
+      { type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/), content: [{ type: 'input_text', text: 'Late instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+      { type: 'message', role: 'user', content: 'hi' },
+    ]);
+    expect(compactBody.reasoning).toEqual({ effort: 'medium', context: 'all_turns' });
+  } else {
+    expect(compactBody.tools).toEqual(tools);
+    expect(compactBody.instructions).toBe('Late instructions');
+    expect(compactBody.reasoning).toEqual({ effort: 'medium' });
+  }
+  expect(compactBody.parallel_tool_calls).toBe(false);
+  for (const banned of ['temperature', 'max_output_tokens', 'stream']) {
+    assertEquals(banned in compactBody, false, `compact wire body must not carry unsupported field "${banned}"`);
   }
 });

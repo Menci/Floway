@@ -19,7 +19,6 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import { RouteLink } from '../ui/route-link';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
-import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
@@ -80,7 +79,6 @@ export function KeyDialog(props: KeyDialogProps) {
           openaiResponsesRetention: z.union([z.number(), z.literal('invalid')]),
         })
         .superRefine((value, ctx) => {
-          refineUpstreamAccess(value, ctx);
           // Rotation always re-reads the source; creation is the only other
           // moment a key's own text is set.
           if (isCreate) refineKeySource(value, ctx);
@@ -199,13 +197,12 @@ export function KeyDialog(props: KeyDialogProps) {
       <UpstreamAccessControl
         available={visibleUpstreams}
         disabled={saving}
-        error={errors.upstreamIds?.message ? t(errors.upstreamIds.message) : null}
         ids={values.upstreamIds}
         models={models}
         override={values.upstreamOverride}
         onChange={next => {
-          setValue('upstreamOverride', next.override, { shouldValidate: true });
-          setValue('upstreamIds', next.ids, { shouldValidate: true });
+          setValue('upstreamOverride', next.override);
+          setValue('upstreamIds', next.ids);
         }}
       />
 

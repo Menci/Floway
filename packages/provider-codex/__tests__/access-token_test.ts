@@ -246,6 +246,55 @@ describe('ensureCodexAccessToken', () => {
     expect(mint).not.toHaveBeenCalled();
   });
 
+  test('uses an access-only token with unknown expiry without minting', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_only', expiresAt: null, refreshedAt: 'now' };
+    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
+    const mint = vi.fn();
+    expect(await ensureCodexAccessToken(upstreamId, accountId, mint)).toEqual(entry);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  test('spends an access-only token to its actual expiry, ignoring the renewable skew', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() + 60_000, refreshedAt: 'now' };
+    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
+    const mint = vi.fn();
+    expect(await ensureCodexAccessToken(upstreamId, accountId, mint)).toEqual(entry);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  test('treats an unknown expiry on a renewable credential as unusable', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_unknown', expiresAt: null, refreshedAt: 'now' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const mint = vi.fn().mockResolvedValue(minted);
+    expect(await ensureCodexAccessToken(upstreamId, accountId, mint)).toEqual(minted);
+    expect(mint).toHaveBeenCalledWith('rt_v1');
+  });
+
+  test('reports an expired access-only token as needing a re-import, without minting', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' };
+    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
+    const mint = vi.fn();
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).rejects.toThrow(/expired.*re-import/);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  test('refuses a forced refresh of an access-only credential', async () => {
+    const entry: CodexAccessTokenEntry = { token: 'at_only', expiresAt: null, refreshedAt: 'now' };
+    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
+    const mint = vi.fn();
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint, true)).rejects.toThrow(/cannot be refreshed/);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  test('keeps a null account id in a different in-flight slot from the string "null"', async () => {
+    current = makeRecord({ accounts: [{ ...baseAccount, chatgptAccountId: null }] });
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const nullAccountEnsure = ensureCodexAccessToken(upstreamId, null, vi.fn().mockResolvedValue(minted));
+    await expect(ensureCodexAccessToken(upstreamId, 'null', vi.fn())).rejects.toThrow(/not found/);
+    await expect(nullAccountEnsure).resolves.toEqual(minted);
+  });
+
   test('mints when nothing is cached, then persists', async () => {
     const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
     const mint = vi.fn().mockResolvedValue(minted);

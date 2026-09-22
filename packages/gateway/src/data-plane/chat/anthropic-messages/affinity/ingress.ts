@@ -39,10 +39,16 @@ export const analyzeAnthropicMessagesAffinity = async (
           for (const { location, projection } of messageProjections) {
             const block = message.content[location.blockIndex];
             if (location.kind === 'thinking') {
-              const replacement = { ...block } as Extract<AnthropicMessagesAssistantContentBlock, { type: 'thinking' }>;
-              if (projection.kind === 'preserve') replacement.signature = projection.value;
-              else if (projection.kind === 'remove') delete replacement.signature;
-              replacements.set(location.blockIndex, replacement);
+              if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity thinking location no longer points at a thinking block');
+              // Anthropic requires an assistant thinking block to retain the
+              // signature issued by the upstream that produced it. If affinity
+              // selects another candidate, remove the complete block rather
+              // than forwarding the visible thinking without its signature.
+              // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
+              replacements.set(
+                location.blockIndex,
+                projection.kind === 'preserve' ? { ...block, signature: projection.value } : null,
+              );
             } else {
               replacements.set(
                 location.blockIndex,

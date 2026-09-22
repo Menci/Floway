@@ -7,11 +7,10 @@ import type { InternalModel } from '@floway-dev/provider';
 
 const bundled = {
   models: [
-    // Bundled entries seeded with a non-empty `service_tiers` so the
-    // "hard override" assertion below (registry pricing.entries replaces
-    // bundled) is an end-to-end proof rather than a `[] === []` no-op.
-    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
-    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
+    // Catalog entries carry user-facing service-tier metadata. Floway exposes
+    // only registry-priced ids while preserving these names and descriptions.
+    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }] },
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [{ id: 'priority', name: 'Accelerated', description: 'Model-specific speed tier' }] },
   ],
 };
 
@@ -149,13 +148,42 @@ describe('assembleCodexCatalog', () => {
     expect(out.models.map(m => m.slug)).toEqual(['gpt-5.4']);
   });
 
-  test('bundled reuse: registry pricing.entries replaces bundled service_tiers', () => {
+  test('bundled reuse: registry pricing.entries selects and preserves bundled service-tier metadata', () => {
     const im: InternalModel = {
       ...chat('openrouter/gpt-5.5:nitro'),
-      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '1' } }] },
     };
     const out = assembleCodexCatalog(bundled, entries(im));
-    expect(out.models[0].service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
+    expect(out.models[0].service_tiers).toEqual([{ id: 'priority', name: 'Fast', description: '1.5x speed' }]);
+  });
+
+  test('matched model service-tier metadata wins over earlier catalog models', () => {
+    const im: InternalModel = {
+      ...chat('gpt-5.4'),
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+    };
+    const out = assembleCodexCatalog(bundled, entries(im));
+    expect(out.models[0].service_tiers).toEqual([
+      { id: 'priority', name: 'Accelerated', description: 'Model-specific speed tier' },
+    ]);
+  });
+
+  test('unmatched model reuses service-tier metadata from another catalog model', () => {
+    const im: InternalModel = {
+      ...chat('custom-model'),
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+    };
+    const out = assembleCodexCatalog(bundled, entries(im));
+    expect(out.models[0].service_tiers).toEqual([{ id: 'priority', name: 'Fast', description: '1.5x speed' }]);
+  });
+
+  test('unknown service-tier id falls back to its wire id', () => {
+    const im: InternalModel = {
+      ...chat('custom-model'),
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'turbo' }, rates: { input_tokens: '2' } }] },
+    };
+    const out = assembleCodexCatalog(bundled, entries(im));
+    expect(out.models[0].service_tiers).toEqual([{ id: 'turbo', name: 'turbo', description: '' }]);
   });
 
   test('bundled reuse: no registry pricing.entries yields service_tiers: []', () => {

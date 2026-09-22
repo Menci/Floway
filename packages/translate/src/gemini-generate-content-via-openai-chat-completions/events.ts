@@ -1,4 +1,5 @@
 import { flushGeminiGenerateContentThoughtSignature, type GeminiGenerateContentThoughtSignatureState, parseStrictJsonObject, setGeminiGenerateContentThoughtSignature, signGeminiGenerateContentPart } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentFinishReason, GeminiGenerateContentResult, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 import { openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -130,8 +131,9 @@ const buildCandidate = (choice: OpenAIChatCompletionsStreamChoice, state: OpenAI
   const parts: GeminiGenerateContentPart[] = [];
   const { delta } = choice;
 
-  if (typeof delta.reasoning_text === 'string') {
-    parts.push({ text: delta.reasoning_text, thought: true });
+  const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
+  if (reasoningText !== undefined) {
+    parts.push({ text: reasoningText, thought: true });
   }
 
   if (typeof delta.reasoning_opaque === 'string') {

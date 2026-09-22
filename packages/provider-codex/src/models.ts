@@ -9,6 +9,10 @@ import {
 import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
+interface CodexProviderData {
+  useResponsesLite: boolean;
+}
+
 export interface CodexRawModel {
   id: string;
   display_name: string;
@@ -20,18 +24,25 @@ export interface CodexRawModel {
   input_modalities?: readonly ('text' | 'image')[];
   reasoning_efforts?: readonly string[];
   default_reasoning_effort?: string;
+  // Codex selects the wire representation from catalog metadata, not the slug.
+  // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/protocol/src/openai_models.rs#L458-L463
+  use_responses_lite?: boolean;
+  image_detail_original?: boolean;
 }
 
 // `fetcher` is required so the catalog refresh traverses the same proxy/
-// dial chain configured for request-time traffic.
-export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
+// dial chain configured for request-time traffic. A null account id omits the
+// header entirely — the upstream reads an absent header as "whichever account
+// this bearer belongs to", where an empty one is a malformed value.
+export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string | null; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
   const response = await opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
     method: 'GET',
     headers: {
       authorization: `Bearer ${opts.accessToken}`,
-      'chatgpt-account-id': opts.accountId,
+      ...(opts.accountId === null ? {} : { 'chatgpt-account-id': opts.accountId }),
       originator: CODEX_ORIGINATOR,
       'user-agent': CODEX_USER_AGENT,
+      version: CODEX_CLI_VERSION,
       accept: 'application/json',
     },
     signal: opts.signal,
@@ -45,13 +56,15 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
   return parsed.models.map(assertRawModel);
 };
 
-const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isPlainRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 // Fail loud on malformed upstream catalog responses: a missing field
 // signals an upstream contract change we need to notice. New optional
 // fields (`input_modalities`, `supported_reasoning_levels`,
-// `default_reasoning_level`) are tolerated when absent for backwards
-// compatibility with older catalog snapshots, but throw on type drift.
+// `default_reasoning_level`, `supports_image_detail_original`) are tolerated
+// when absent for backwards compatibility with older catalog snapshots, but
+// throw on type drift.
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
@@ -85,6 +98,13 @@ const assertRawModel = (value: unknown): CodexRawModel => {
     raw.reasoning_efforts = efforts;
   }
 
+  if (value.supports_image_detail_original !== undefined) {
+    if (typeof value.supports_image_detail_original !== 'boolean') {
+      throw new TypeError(`Codex model entry ${slug} supports_image_detail_original not a boolean`);
+    }
+    raw.image_detail_original = value.supports_image_detail_original;
+  }
+
   if (value.default_reasoning_level !== undefined) {
     if (typeof value.default_reasoning_level !== 'string' || value.default_reasoning_level.length === 0) {
       throw new TypeError(`Codex model entry ${slug} default_reasoning_level malformed`);
@@ -92,7 +112,28 @@ const assertRawModel = (value: unknown): CodexRawModel => {
     raw.default_reasoning_effort = value.default_reasoning_level;
   }
 
+  if (value.use_responses_lite !== undefined) {
+    if (typeof value.use_responses_lite !== 'boolean') {
+      throw new TypeError(`Codex model entry ${slug} use_responses_lite not a boolean`);
+    }
+    raw.use_responses_lite = value.use_responses_lite;
+  }
+
   return raw;
+};
+
+export const codexModelUsesResponsesLite = (model: ProviderModel): boolean => {
+  const providerData = model.providerData;
+  if (providerData === undefined) return false;
+  if (!isPlainRecord(providerData)) {
+    throw new TypeError(`Codex model ${model.id} providerData is not an object`);
+  }
+  const value = providerData.useResponsesLite;
+  if (value === undefined) return false;
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`Codex model ${model.id} providerData.useResponsesLite is not a boolean`);
+  }
+  return value;
 };
 
 // Every entry returned by the remote Codex catalog is an OpenAI Responses chat model.
@@ -105,11 +146,21 @@ const assertRawModel = (value: unknown): CodexRawModel => {
 // merged with the row's `flagOverrides`); it propagates per-model so
 // downstream interceptors can read the effective set without re-resolving.
 export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
+  if (raw.use_responses_lite !== undefined && typeof raw.use_responses_lite !== 'boolean') {
+    throw new TypeError(`Codex model entry ${raw.id} use_responses_lite not a boolean`);
+  }
   const pricing = pricingForCodexModelKey(raw.id);
   const chat: UpstreamChatModelConfig = {};
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
+  // Resolve the capability to a stated boolean for every entry. The Codex
+  // provider catalog owns this fact, so we treat an omitted field as unsupported
+  // rather than inherit from a same-named client-catalog entry. `ModelInfo`
+  // declares the field under `#[serde(default)]`
+  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L383-L385),
+  // so a catalog that predates the field carries none and is treated as false.
+  chat.image_detail_original = raw.image_detail_original ?? false;
   if (raw.reasoning_efforts && raw.reasoning_efforts.length > 0) {
     let effortDefault: string;
     if (raw.default_reasoning_effort !== undefined) {
@@ -131,6 +182,9 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
       max_context_window_tokens: raw.context_window,
     },
     endpoints: { openaiResponses: {} },
+    providerData: {
+      useResponsesLite: raw.use_responses_lite ?? false,
+    } satisfies CodexProviderData,
     enabledFlags,
     ...(pricing ? { pricing } : {}),
     ...(Object.keys(chat).length > 0 ? { chat } : {}),

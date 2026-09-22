@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
@@ -28,6 +29,9 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     the rest of the chain.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
+//   - withEmptyToolsToolChoiceNormalized: gated by
+//     `empty-tools-tool-choice-none`. Runs inside the server-tool shim so a
+//     tool injected by that shim prevents the empty-list rewrite.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
 //     `system → developer → system → user`; later rewrites are authoritative
 //     when flags overlap, and the final step affects only mid-conversation system.
@@ -52,6 +56,7 @@ export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] 
     imageGenerationServerTool,
   ]),
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,
