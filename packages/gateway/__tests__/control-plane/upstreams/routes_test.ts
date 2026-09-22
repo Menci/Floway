@@ -851,14 +851,17 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
   }));
   if (exchange.status !== 200) throw new Error(`codex exchange failed: ${exchange.status} ${await exchange.text()}`);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
-  const create = await requestApp('/api/upstreams', authed(adminSession, {
-    kind: 'codex',
-    name: 'ChatGPT Codex',
-    hue: 210,
-    config: patch.config,
-    state: patch.state,
-    proxy_fallback_list: MOCKED_FETCH_EGRESS,
-  }));
+  const create = await withMockedFetch(
+    () => { throw new Error('Codex model warm-up is outside this fixture'); },
+    () => requestApp('/api/upstreams', authed(adminSession, {
+      kind: 'codex',
+      name: 'ChatGPT Codex',
+      hue: 210,
+      config: patch.config,
+      state: patch.state,
+      proxy_fallback_list: MOCKED_FETCH_EGRESS,
+    })),
+  );
   if (create.status !== 201) throw new Error(`codex create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
 };
