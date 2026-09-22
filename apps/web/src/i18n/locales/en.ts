@@ -649,6 +649,10 @@ const en = {
               description:
                   'The OpenAI Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
+            'openai-responses-collaboration-shim': {
+              label: 'OpenAI Responses Collaboration Shim',
+              description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every provider; disable it for an upstream or model that should use its native collaboration contract.',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:

@@ -64,7 +64,6 @@ type OutputBlockInfo =
     itemId: string;
     toolCallId: string;
     toolName: string;
-    toolNamespace?: string;
     toolArguments: string;
   }
   | {
@@ -88,7 +87,6 @@ interface AnthropicMessagesToOpenAIResponsesStreamState {
   stopReason?: AnthropicMessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: AnthropicMessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }>;
 }
 
 const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => {
@@ -204,19 +202,17 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
     }
 
     const itemId = createRandomOpenAIResponsesItemId('function_call');
-    const sourceTool = state.namespaceTargetToSource.get(event.content_block.name);
     const info: OutputBlockInfo = {
       type: 'tool_use',
       outputIndex,
       itemId,
       toolCallId: event.content_block.id,
-      toolName: sourceTool?.name ?? event.content_block.name,
-      ...(sourceTool !== undefined ? { toolNamespace: sourceTool.namespace } : {}),
+      toolName: event.content_block.name,
       toolArguments: '',
     };
     state.blockMap.set(event.index, info);
 
-    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
+    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
   }
   case 'fallback':
     state.model = event.content_block.to.model;
@@ -358,7 +354,7 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
     return openaiResponses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
+  const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
 
@@ -369,7 +365,6 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): AnthropicMessagesToOpenAIResponsesStreamState => ({
   responseId,
   model,
@@ -380,7 +375,6 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   completedItems: [],
   usage: anthropicMessagesUsageSnapshot(),
   customToolNames,
-  namespaceTargetToSource,
 });
 
 export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
@@ -441,9 +435,8 @@ export const translateToSourceEvents = async function* (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames, namespaceTargetToSource);
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames);
 
   for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {
     for (const translated of translateAnthropicMessagesEventToOpenAIResponsesEvents(event, state)) {

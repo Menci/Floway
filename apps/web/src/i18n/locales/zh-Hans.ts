@@ -619,6 +619,10 @@ const zhHansCN = {
               description:
                   'OpenAI Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
+            'openai-responses-collaboration-shim': {
+              label: 'OpenAI Responses 协作兼容',
+              description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
               description:
