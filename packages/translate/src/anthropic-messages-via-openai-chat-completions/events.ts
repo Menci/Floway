@@ -77,7 +77,10 @@ const ensureMessageStart = (
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
   events: AnthropicMessagesStreamEvent[],
 ): void => {
-  if (state.messageStartSent || state.upstreamId === undefined || state.upstreamModel === undefined) return;
+  if (state.messageStartSent) return;
+  if (state.upstreamId === undefined || state.upstreamModel === undefined) {
+    throw new Error('OpenAI Chat Completions stream identity is unavailable before message_start');
+  }
 
   events.push({
     type: 'message_start',
@@ -97,9 +100,8 @@ const ensureMessageStart = (
 };
 
 // `continuous_usage_stats` upstreams repeat cumulative counters on every chunk.
-// Anthropic permits multiple `message_delta` events, each repeating the
-// cumulative whole-message counters, so a rising completion count is surfaced
-// immediately instead of only on the final stop event.
+// Anthropic permits multiple `message_delta` events that repeat cumulative
+// whole-message counters.
 const emitUsageProgress = (
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
   events: AnthropicMessagesStreamEvent[],
@@ -408,10 +410,6 @@ const handleFinishReason = (
 
 const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
   if (state.pendingFinishReason === undefined || state.finalMessageSent === true) return;
-
-  // Defensive: a stream that never produced a startable chunk still needs the
-  // message envelope before the terminal events.
-  if (state.messageStartSent === false) ensureMessageStart(state, events);
 
   const usage = anthropicMessagesUsageWithTier(state, state.pendingUsage);
 
