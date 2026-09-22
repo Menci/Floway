@@ -96,6 +96,7 @@ export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamE
   return events.map(({ frame, ts }) => {
     const sse = frameToSse(kind, frame);
     if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
+    if (frame.type === 'done') return { event: sse.event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts };
     try {
       return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
     } catch (error) {
