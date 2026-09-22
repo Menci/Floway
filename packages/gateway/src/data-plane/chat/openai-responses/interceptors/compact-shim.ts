@@ -22,13 +22,14 @@
 //     (Codex CLI's RemoteCompactionV2 path: a `generate` call whose input
 //     ends in a control item that semantically requests compaction).
 //
-// Flow when engaged and compact-shaped:
-//   1. Inbound: walk `payload.input` for `compaction` items whose
-//      `encrypted_content` decodes as our base64url-JSON marker. Each match
-//      is replaced inline with the items it originally encoded — so a
-//      subsequent turn that echoes back the synthesized compaction sees the
-//      summarized history.
-//   2. Outbound: pivot the action to 'generate', prepend a role=system
+// Every request first walks `payload.input` for `compaction` items whose
+// `encrypted_content` decodes as our base64url-JSON marker. Each match is
+// replaced inline with the items it originally encoded. This normalization is
+// independent of both flags because gateway-owned payloads are portable and
+// must never be forwarded as if they were an upstream's opaque state.
+//
+// When simulation is engaged for a compact-shaped request:
+//   1. Pivot the action to 'generate', prepend a role=system
 //      message carrying the SUMMARIZATION_PROMPT (vendored from
 //      openai/codex), strip any `compaction_trigger` items, append a
 //      terminal user message if the history ends on a non-user item
@@ -164,6 +165,20 @@ const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputI
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
 
+export const isOpenAIResponsesCompactShimItem = (
+  item: { readonly type: string; readonly encrypted_content?: unknown },
+): boolean =>
+  item.type === 'compaction'
+  && typeof item.encrypted_content === 'string'
+  && isShimCompactionPayload(decodeBase64UrlJson(item.encrypted_content));
+
+const encodeShimCompactionPayload = (text: string): string =>
+  encodeBase64UrlJson([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text }],
+  } satisfies OpenAIResponsesInputItem]);
+
 export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
   const rewritten: OpenAIResponsesInputItem[] = [];
   let changed = false;
@@ -275,12 +290,7 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
   // one message and reads it as "another LLM's handoff", not as the human
   // speaking. Encoding the prefix here rather than at expand-time keeps the
   // envelope's semantics complete regardless of who decodes it.
-  const summaryItem: OpenAIResponsesInputItem = {
-    type: 'message',
-    role: 'user',
-    content: [{ type: 'input_text', text: `${SUMMARY_PREFIX}\n${summaryText}` }],
-  };
-  const encryptedContent = encodeBase64UrlJson([summaryItem]);
+  const encryptedContent = encodeShimCompactionPayload(`${SUMMARY_PREFIX}\n${summaryText}`);
 
   // Drop the SDK-only `output_text` alias that some upstreams emit — its
   // value is the upstream's summary plaintext, which has no place on a
@@ -462,11 +472,7 @@ const decryptNativeCompaction = async (
     };
     output.push({
       ...item,
-      encrypted_content: encodeBase64UrlJson([{
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text }],
-      } satisfies OpenAIResponsesInputItem]),
+      encrypted_content: encodeShimCompactionPayload(text),
     });
   }
 
@@ -492,6 +498,11 @@ export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputIt
   input.some(item => item.type === 'compaction_trigger');
 
 export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {
+  // Gateway-owned compaction payloads are portable plaintext containers. They
+  // must be expanded before flag gating so a request may move to any eligible
+  // candidate without sending our private envelope to an upstream.
+  ctx.payload = expandShimCompactionItems(ctx.payload);
+
   // The shim is engaged when the operator turned it on for this upstream,
   // OR when the upstream's targetApi is not OpenAI Responses (Anthropic Messages /
   // OpenAI Chat Completions have no compaction wire and would crash on the
@@ -500,14 +511,9 @@ export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async 
   const decryptFlagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-decrypt');
   const structurallyRequired = ctx.targetApi !== 'openaiResponses';
   if (!flagOn && !structurallyRequired) {
-    if (decryptFlagOn) ctx.payload = expandShimCompactionItems(ctx.payload);
     const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
     return decryptFlagOn && isCompactShaped ? await decryptNativeCompaction(ctx, run) : await run();
   }
-
-  // Inbound: expand any prior shim-encoded compactions back into their
-  // original items so the upstream sees the summarized history.
-  ctx.payload = expandShimCompactionItems(ctx.payload);
 
   // Compact-shaped requests are either the native `/responses/compact`
   // action or a `generate` call whose input ends in a `compaction_trigger`.

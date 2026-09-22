@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
@@ -11,7 +12,7 @@ const carrierDomain = (itemType: string, slot: string): string =>
 const opaqueSlots = (item: OpenAIResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
   const record = item as unknown as Record<string, unknown>;
-  if (typeof record.encrypted_content === 'string') {
+  if (typeof record.encrypted_content === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
     slots.push({ key: 'encrypted_content', value: record.encrypted_content });
   }
   if (item.type === 'program' && typeof item.fingerprint === 'string') {
@@ -98,7 +99,8 @@ const wrapNaturalOpenAIResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: OpenAIResponsesOutputItem): boolean =>
-  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
+  !isOpenAIResponsesCompactShimItem(item)
+  && ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
 
 const addSequenceOffset = <T extends OpenAIResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };

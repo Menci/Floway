@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { SUMMARY_PREFIX, expandShimCompactionItems, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { SUMMARY_PREFIX, expandShimCompactionItems, isOpenAIResponsesCompactShimItem, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -73,6 +73,18 @@ test('inbound: compaction item with a shim-encoded payload expands inline', () =
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], userItem);
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'new turn' });
+});
+
+test('identifies only compaction items carrying the gateway-owned payload shape', () => {
+  const encoded = encodeBase64UrlJson([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'summary' }],
+  }]);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encoded }), true);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: 'OPAQUE_NATIVE_BLOB' }), false);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encodeBase64UrlJson({ type: 'message' }) }), false);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'reasoning', encrypted_content: encoded }), false);
 });
 
 test('inbound: foreign compaction blob (non-base64url-JSON) round-trips untouched', () => {
@@ -490,7 +502,7 @@ test('compact decrypt: replays each native compaction after a system exact-repea
   ]);
 });
 
-test('compact decrypt: expands a previously decrypted compaction on an ordinary generate request', async () => {
+test('gateway-owned compaction expands on an ordinary generate request even when both compact flags are off', async () => {
   const encoded = encodeBase64UrlJson([{
     type: 'message',
     role: 'user',
@@ -503,7 +515,7 @@ test('compact decrypt: expands a previously decrypted compaction on an ordinary 
         { type: 'message', role: 'user', content: 'continue' },
       ],
     },
-    { flagOn: false, decryptFlagOn: true },
+    { flagOn: false },
   );
 
   let seenInput: OpenAIResponsesInputItem[] | undefined;
