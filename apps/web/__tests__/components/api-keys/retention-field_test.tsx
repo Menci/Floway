@@ -13,7 +13,7 @@ const DUMP_PRESETS = [
   { seconds: 7 * 86400 },
 ] as const;
 
-const RESPONSES_MAX_SECONDS = 10 * 365 * 86400;
+const OPENAI_RESPONSES_MAX_SECONDS = 10 * 365 * 86400;
 const SECONDS_PER_DAY = 86400;
 
 type FieldProps = Parameters<typeof RetentionField>[0];
@@ -229,7 +229,7 @@ describe('retention field', () => {
   it('formats explicit units through the same mask when the default unit is days', () => {
     const { input, onChange } = renderField({
       defaultUnit: 'd',
-      maximumSeconds: RESPONSES_MAX_SECONDS,
+      maximumSeconds: OPENAI_RESPONSES_MAX_SECONDS,
       minimumSeconds: SECONDS_PER_DAY,
       multipleOfSeconds: SECONDS_PER_DAY,
       offValue: 0,
@@ -255,7 +255,7 @@ describe('retention field', () => {
   it('preserves a paste-style replacement in the formatted editable value', () => {
     const { input } = renderField({
       defaultUnit: 'd',
-      maximumSeconds: RESPONSES_MAX_SECONDS,
+      maximumSeconds: OPENAI_RESPONSES_MAX_SECONDS,
       minimumSeconds: SECONDS_PER_DAY,
       multipleOfSeconds: SECONDS_PER_DAY,
       offValue: 0,
@@ -310,7 +310,7 @@ describe('retention field', () => {
   it('uses days as the configured default unit for a bare number', () => {
     const { input, onChange } = renderField({
       defaultUnit: 'd',
-      maximumSeconds: RESPONSES_MAX_SECONDS,
+      maximumSeconds: OPENAI_RESPONSES_MAX_SECONDS,
       minimumSeconds: SECONDS_PER_DAY,
       multipleOfSeconds: SECONDS_PER_DAY,
       offValue: 0,
@@ -328,7 +328,7 @@ describe('retention field', () => {
   it('enforces the configured range and whole-day granularity', () => {
     const { input, onChange } = renderField({
       defaultUnit: 'd',
-      maximumSeconds: RESPONSES_MAX_SECONDS,
+      maximumSeconds: OPENAI_RESPONSES_MAX_SECONDS,
       minimumSeconds: SECONDS_PER_DAY,
       multipleOfSeconds: SECONDS_PER_DAY,
       offValue: 0,

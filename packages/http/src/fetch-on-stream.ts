@@ -110,8 +110,8 @@ export const fetchOnStream = async (
   // Validation runs before getWriter() so a forbidden byte rejects without
   // ever taking the writer lock — otherwise a pre-write throw would leave
   // the lock pinned and the caller's writable.abort() would TypeError.
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(request.headers)) {
+  const headers: [string, string][] = [];
+  for (const [k, v] of request.headers) {
     if (!TCHAR.test(k)) {
       throw new HttpProtocolError(
         `caller-supplied header name is not a valid token: ${JSON.stringify(k)}`,
@@ -126,19 +126,19 @@ export const fetchOnStream = async (
     ));
     const lk = k.toLowerCase();
     if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
-    headers[k] = v;
+    headers.push([k, v]);
   }
-  headers.Connection = 'close';
+  headers.push(['Connection', 'close']);
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — a serialized POST emitted
   // with no framing at all silently loses its body on strict upstreams.
   const bodyLen = bodyLength(request.body);
   if (!Number.isSafeInteger(bodyLen) || bodyLen < 0) throw new RangeError('HTTP request body content length must be a non-negative safe integer');
-  if (request.body !== undefined) headers['Content-Length'] = String(bodyLen);
+  if (request.body !== undefined) headers.push(['Content-Length', String(bodyLen)]);
 
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
-  for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
+  for (const [k, v] of headers) head += `${k}: ${v}\r\n`;
   head += '\r\n';
   const headBytes = utf8Bytes(head);
 

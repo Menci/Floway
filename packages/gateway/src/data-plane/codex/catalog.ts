@@ -24,7 +24,14 @@ export interface CatalogModel {
   slug: string;
   multi_agent_version?: string | null;
   supported_reasoning_levels?: CodexReasoningLevel[];
+  service_tiers?: CodexServiceTier[];
   [key: string]: unknown;
+}
+
+export interface CodexServiceTier {
+  id: string;
+  name: string;
+  description: string;
 }
 
 export interface CodexReasoningLevel {

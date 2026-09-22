@@ -48,7 +48,7 @@ const model = (id: string) => ({
   publicModelId: id,
   display_name: id,
   kind: 'chat' as const,
-  endpoints: { responses: {} },
+  endpoints: { openaiResponses: {} },
 });
 
 const record = upstreamRecord('up_test', {
@@ -58,7 +58,7 @@ const record = upstreamRecord('up_test', {
     baseUrl: 'https://example.com',
     authStyle: 'bearer',
     apiKey: '',
-    endpoints: { responses: {} },
+    endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false },
     models: [model('model-a')],
@@ -66,7 +66,7 @@ const record = upstreamRecord('up_test', {
   state: null,
 });
 
-const replacementYaml = '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    responses: {}\n';
+const replacementYaml = '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n';
 
 const renderPage = () => {
   const router = createMemoryRouter([{

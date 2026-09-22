@@ -148,7 +148,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -244,7 +244,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -289,7 +289,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -337,7 +337,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -382,7 +382,7 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 
@@ -434,7 +434,7 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
   await repo.modelAliases.insert({

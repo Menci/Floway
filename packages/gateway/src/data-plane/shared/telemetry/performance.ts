@@ -7,10 +7,10 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 export type { PerformanceTelemetryContext };
 
 // Structural view of the fields recordPerformance actually reads. Every chat /
-// passthrough call site passes its full `GatewayCtx`; the Responses image-
+// passthrough call site passes its full `GatewayCtx`; the OpenAI Responses image-
 // generation server tool synthesizes a per-dispatch object because each image
 // call carries its own TTFT window and can't share `ctx.attempt` with the
-// enclosing Responses turn.
+// enclosing OpenAI Responses turn.
 type PerformanceRecordScope = Pick<GatewayCtx, 'attempt' | 'backgroundScheduler'>;
 
 const record = async (op: Promise<void>, label: string): Promise<void> => {
