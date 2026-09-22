@@ -249,10 +249,10 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 20000 });
     });
 
-    test('bundled input_modalities preserved when registry omits chat.modalities', () => {
+    test('bundled input_modalities are preserved without inheriting image-detail support', () => {
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.input_modalities).toEqual(['text', 'image']);
-      expect(entry.supports_image_detail_original).toBe(true);
+      expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text_and_image');
     });
 
@@ -265,13 +265,10 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.web_search_tool_type).toBe('text');
     });
 
-    test('narrowing modalities leaves the bundled original-detail claim alone', () => {
-      // The operator narrowed the modality list; they did not make a statement
-      // about detail 'original'. The bundled entry's own answer stands, exactly
-      // as the other fields this type does not touch.
+    test('registry image-detail support stays independent when modalities narrow', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
-        chat: { modalities: { input: ['text'], output: ['text'] } },
+        chat: { modalities: { input: ['text'], output: ['text'] }, image_detail_original: true },
       }, bundledBase);
       expect(entry.supports_image_detail_original).toBe(true);
     });

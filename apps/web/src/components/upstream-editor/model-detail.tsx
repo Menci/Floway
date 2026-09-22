@@ -191,7 +191,7 @@ export function ModelDetail({
                   // switch is only reachable while image input is on, so a claim
                   // left behind would be announced while the operator can no
                   // longer see or clear it.
-                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original : undefined }) })}
+                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original ?? false : undefined }) })}
                 />
                 {imageInput && <Switch
                   aria-label={t('dashboard.upstreamEditor.models.imageDetailOriginalAccessible')}

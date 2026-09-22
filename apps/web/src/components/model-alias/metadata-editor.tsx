@@ -74,7 +74,7 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
               // clear it.
               onChange={(_, data) => patchChat({
                 modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
-                image_detail_original: data.checked ? value.chat?.image_detail_original : undefined,
+                image_detail_original: data.checked ? value.chat?.image_detail_original ?? false : undefined,
               })}
             />
             {imageInput && <Switch

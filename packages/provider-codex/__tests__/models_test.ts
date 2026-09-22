@@ -221,7 +221,7 @@ describe('codexRawToProviderModel', () => {
 
   // `ModelInfo` declares `supports_image_detail_original` under `#[serde(default)]`,
   // so a catalog predating the field carries none — and the mapper must resolve
-  // one anyway, because every entry feeds the synthesizer's chain.
+  // that unknown capability to false before the model reaches the synthesizer.
   test('reports image_detail_original: false when the upstream entry omits the field', () => {
     const m = codexRawToProviderModel({
       id: 'gpt-5.4',

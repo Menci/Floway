@@ -73,6 +73,7 @@ describe('model alias metadata editor', () => {
 
     fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
     expect(screen.getByRole('switch', { name: imageDetailOriginalLabel })).toBeDefined();
+    expect(screen.getByTestId('detail').textContent).toBe('false');
   });
 
   it('drops the detail claim when image input is switched off', () => {

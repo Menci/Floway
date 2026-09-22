@@ -28,12 +28,12 @@
 //      declared `chat.modalities`, honour it (even if the upstream base
 //      advertised more); else keep the base's list. `web_search_tool_type`
 //      follows the final modality list so it cannot drift from it.
-//   6. `supports_image_detail_original` — the ordinary
-//      `registry ?? source ?? BASELINE` chain, NOT derived from the modality
-//      list: a model can take images while rejecting detail 'original' (gpt-5.2
-//      in the bundled catalog is exactly that), so the modality list has no say
-//      in it. The registry arm carries whatever the model's own provider or the
-//      operator stated; `source` supplies the catalog's own answer otherwise.
+//   6. `supports_image_detail_original` — `chat.image_detail_original ?? false`,
+//      NOT derived from either the modality list or the client catalog. A model
+//      can take images while rejecting detail 'original' (gpt-5.2 in the bundled
+//      catalog is exactly that), and a same-named non-Codex upstream does not
+//      inherit OpenAI's capability. The registry carries whatever the model's
+//      own provider or the operator stated; an unstated value is unsupported.
 //   7. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
@@ -128,9 +128,7 @@ export const synthesizeCatalogEntry = (
     ?? source.input_modalities
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
-  const imageDetailOriginal = (model.chat?.image_detail_original
-    ?? source.supports_image_detail_original
-    ?? BASELINE.supports_image_detail_original) as boolean;
+  const imageDetailOriginal = model.chat?.image_detail_original ?? false;
 
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
   // reasoning (`supported_reasoning_levels: [{effort, description}]` +
