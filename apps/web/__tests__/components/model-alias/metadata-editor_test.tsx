@@ -7,6 +7,8 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AnnouncedMetadata } from '@floway-dev/protocols/common';
 
+const imageDetailOriginalLabel = 'Image detail "original"';
+
 const initialValue: AnnouncedMetadata = {
   chat: {
     reasoning: {
@@ -59,17 +61,18 @@ describe('model alias metadata editor', () => {
     expect(group.querySelector('h4')).toBeNull();
     // The label prop is what names each switch, so both resolve by their own
     // accessible name.
+    const detailSwitch = screen.getByRole('switch', { name: imageDetailOriginalLabel });
     expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
-      .toBe(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal') }).parentElement?.parentElement);
+      .toBe(detailSwitch.parentElement?.parentElement);
+    expect(detailSwitch.parentElement?.querySelector('code')?.textContent).toBe('original');
   });
 
   it('hides the detail switch until image input is on', () => {
     renderInApp(<DetailHarness initial={{}} />);
-    const detailLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
-    expect(screen.queryByRole('switch', { name: detailLabel })).toBeNull();
+    expect(screen.queryByRole('switch', { name: imageDetailOriginalLabel })).toBeNull();
 
     fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
-    expect(screen.getByRole('switch', { name: detailLabel })).toBeDefined();
+    expect(screen.getByRole('switch', { name: imageDetailOriginalLabel })).toBeDefined();
   });
 
   it('drops the detail claim when image input is switched off', () => {
@@ -86,7 +89,7 @@ describe('model alias metadata editor', () => {
     // absence of a statement, so switching the claim off stores `false` rather
     // than deleting the field the way `reasoning.adaptive` does.
     renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal') }));
+    fireEvent.click(screen.getByRole('switch', { name: imageDetailOriginalLabel }));
 
     expect(screen.getByTestId('detail').textContent).toBe('false');
   });
