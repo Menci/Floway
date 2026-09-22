@@ -17,3 +17,7 @@ Pull=newer
 
 [Service]
 Restart=always
+
+[Install]
+# Auto-start
+WantedBy=default.target

@@ -1,11 +1,12 @@
 import {
   CODEX_BACKEND_BASE,
   CODEX_CLI_VERSION,
+  CODEX_IMAGE_MODEL_ID,
   CODEX_MODELS_PATH,
   CODEX_ORIGINATOR,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { pricingForCodexModelKey } from './pricing.ts';
+import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
@@ -19,6 +20,7 @@ export interface CodexRawModel {
   input_modalities?: readonly ('text' | 'image')[];
   reasoning_efforts?: readonly string[];
   default_reasoning_effort?: string;
+  image_detail_original?: boolean;
 }
 
 // `fetcher` is required so the catalog refresh traverses the same proxy/
@@ -49,8 +51,9 @@ const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v ===
 // Fail loud on malformed upstream catalog responses: a missing field
 // signals an upstream contract change we need to notice. New optional
 // fields (`input_modalities`, `supported_reasoning_levels`,
-// `default_reasoning_level`) are tolerated when absent for backwards
-// compatibility with older catalog snapshots, but throw on type drift.
+// `default_reasoning_level`, `supports_image_detail_original`) are tolerated
+// when absent for backwards compatibility with older catalog snapshots, but
+// throw on type drift.
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
@@ -84,6 +87,13 @@ const assertRawModel = (value: unknown): CodexRawModel => {
     raw.reasoning_efforts = efforts;
   }
 
+  if (value.supports_image_detail_original !== undefined) {
+    if (typeof value.supports_image_detail_original !== 'boolean') {
+      throw new TypeError(`Codex model entry ${slug} supports_image_detail_original not a boolean`);
+    }
+    raw.image_detail_original = value.supports_image_detail_original;
+  }
+
   if (value.default_reasoning_level !== undefined) {
     if (typeof value.default_reasoning_level !== 'string' || value.default_reasoning_level.length === 0) {
       throw new TypeError(`Codex model entry ${slug} default_reasoning_level malformed`);
@@ -94,9 +104,11 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   return raw;
 };
 
-// Codex exposes only the Responses endpoint. Pricing is looked up from the
-// per-slug table in pricing.ts so the dashboard can report a notional
-// API-rate pricing even though Codex itself bills as a flat-fee subscription.
+// Every entry returned by the remote Codex catalog is an OpenAI Responses chat model.
+// Pricing is looked up from the per-slug table in pricing.ts so the dashboard
+// can report a notional API-rate price even though Codex itself bills as a
+// flat-fee subscription. Provider-owned models such as gpt-image-2 are added
+// separately and never pass through this mapper.
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
@@ -107,6 +119,13 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
+  // Resolve the capability to a stated boolean for every entry. The Codex
+  // provider catalog owns this fact, so we treat an omitted field as unsupported
+  // rather than inherit from a same-named client-catalog entry. `ModelInfo`
+  // declares the field under `#[serde(default)]`
+  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L383-L385),
+  // so a catalog that predates the field carries none and is treated as false.
+  chat.image_detail_original = raw.image_detail_original ?? false;
   if (raw.reasoning_efforts && raw.reasoning_efforts.length > 0) {
     let effortDefault: string;
     if (raw.default_reasoning_effort !== undefined) {
@@ -127,9 +146,29 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
     limits: {
       max_context_window_tokens: raw.context_window,
     },
-    endpoints: { responses: {} },
+    endpoints: { openaiResponses: {} },
     enabledFlags,
     ...(pricing ? { pricing } : {}),
     ...(Object.keys(chat).length > 0 ? { chat } : {}),
   };
 };
+
+// CLIProxyAPI exposes Codex's built-in image models for every plan, then
+// rejects image dispatch only when the JWT plan is explicitly `free`; missing
+// and future plan values fail open. Mirror that account-eligibility rule here
+// while keeping the image model outside the remote chat-model catalog.
+// https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/internal/runtime/executor/codex_executor_request.go#L381-L449
+// https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/sdk/cliproxy/auth/conductor_execution.go#L1036-L1066
+export const codexPlanSupportsImages = (planType: string | undefined): boolean =>
+  planType?.trim().toLowerCase() !== 'free';
+
+export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): ProviderModel => ({
+  id: CODEX_IMAGE_MODEL_ID,
+  display_name: 'GPT-Image-2',
+  owned_by: 'openai',
+  kind: 'image',
+  limits: {},
+  endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
+  enabledFlags,
+  pricing: GPT_IMAGE_2_PRICING,
+});

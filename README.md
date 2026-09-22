@@ -38,7 +38,7 @@ the password. Then:
 
 The data-plane and control-plane APIs are also exposed directly at
 <http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
-Stateful Responses item payloads persist in the `floway-data` volume.
+Stateful OpenAI Responses item payloads persist in the `floway-data` volume.
 
 The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,
@@ -77,12 +77,33 @@ Audio transcription is a buffered multipart passthrough for Custom, Azure, and
 Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
 responses retain their upstream wire shape.
 
+### Codex Collaboration
+
+The OpenAI Responses collaboration shim is enabled by default for every
+provider. It sends the reserved `collaboration` namespace upstream as
+`collaboration-optimize`, using `collaboration-optimize-2`, `-3`, and so on
+only when a name is occupied. Action names remain unchanged. The three message
+actions (`spawn_agent`, `send_message`, and `followup_task`) use plaintext
+schemas; returned calls regain the client namespace and an explicit empty
+`encrypted_function_args` marker. Encrypted or malformed markers on these
+calls fail the request rather than being labeled plaintext.
+
+The shim covers explicitly supplied history, deferred tool inventories, tool
+choices, response snapshots, and streaming calls. It wraps the complete
+server-tool loop and also works through OpenAI Chat Completions and Anthropic
+Messages translation. Operators can disable **OpenAI Responses Collaboration
+Shim** for an upstream or model that should retain its native contract.
+
+Stateful Responses integration remains a TODO: continuation hydration,
+persisted snapshots, and alias allocation must use one consistent full-history
+mapping. Connection-level WebSocket state is outside this shim's scope.
+
 ### Upstreams
 
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client | Fetched live from the Codex backend |
+| Codex | ChatGPT subscription through the Codex CLI OAuth client | Live inference catalog plus the account's built-in GPT Image capability |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
 | Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
@@ -111,13 +132,14 @@ update and rollback flow by default. A deployment named as new first runs an
 isolated binding-probe bootstrap and requires its `Hello World` response before
 publishing Floway.
 
-For a manual production update, configure the admin secret, apply the remote
-migrations, and deploy:
+For a manual production update, configure the admin secret, then apply the
+remote migrations and deploy as one step — publishing the code that reads a
+migration's result is part of applying it, and stopping in between leaves the
+previous build serving rewritten configuration:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
-pnpm run db:migrate:remote
-pnpm run deploy
+pnpm run db:migrate:remote && pnpm run deploy
 ```
 
 ### Node.js
@@ -143,13 +165,26 @@ Podman users can instead follow the
 ```bash
 pnpm install
 pnpm run dev
-pnpm run test
-pnpm run lint
-pnpm run typecheck
+pnpm run verify
 ```
 
-More detail lives in [AGENTS.md](./AGENTS.md) — architecture, workspace layout,
-verification, and contributor rules.
+`verify` chains every check in `.github/workflows/verify.yaml`: `typegen`,
+`lint`, `typecheck`, `test`, `test:installers`, `check:agents-md`,
+`check:generated-assets`, `check:verify-parity`, and `build:web`. Each check is
+also available as a root script. Route type generation runs first because the
+web app's generated types are not checked in and its lint configuration is
+type-aware. The web build includes assertions on the emitted bundle.
+
+The protocol tests cover opaque-value wire compatibility, lossless UTF-16
+code-unit recovery, and retained-memory growth during history replay. The
+memory regression runs a bounded fixture in a separate Node.js process with
+explicit garbage collection, samples the retained heap before content checks
+can flatten strings, and then verifies every decoded value. It runs through
+`pnpm run test` and `pnpm run verify` without additional setup; this local
+regression is not a measurement of a production Worker's peak memory.
+
+[AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
+indexes its CI workflows, skills, workspace packages, and their responsibilities.
 
 ## License
 

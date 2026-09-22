@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -32,23 +32,23 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
   },
 });
 
-test('Custom applies empty and override rules after admitted headers reach the provider', async () => {
+test('Custom writes every configured header value and passes admitted client values through', async () => {
   const provider = createCustomProvider(buildCustomUpstream({
     ingressHeadersRules: [
       { key: 'x-passthrough', value: null },
       { key: 'x-empty', value: '' },
       { key: 'x-override', value: 'configured' },
-      { key: 'x-absent', value: 'not-synthesized' },
+      { key: 'x-client-never-sends', value: 'configured-anyway' },
     ],
     modelsFetchEnabled: false,
-    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   }));
   let observed: Headers | undefined;
 
@@ -67,7 +67,7 @@ test('Custom applies empty and override rules after admitted headers reach the p
           'x-override': 'client-override',
         }),
       });
-      await provider.instance.callChatCompletions(model, { messages: [] }, undefined, opts);
+      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts);
     },
   );
 
@@ -76,7 +76,19 @@ test('Custom applies empty and override rules after admitted headers reach the p
   assertEquals(observed.get('x-passthrough'), 'client-pass');
   assertEquals(observed.get('x-empty'), '');
   assertEquals(observed.get('x-override'), 'configured');
-  assertEquals(observed.has('x-absent'), false);
+  assertEquals(observed.get('x-client-never-sends'), 'configured-anyway');
+});
+
+test('Custom admits only the header names whose value comes from the client', () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    ingressHeadersRules: [
+      { key: 'x-passthrough', value: null },
+      { key: 'x-empty', value: '' },
+      { key: 'x-override', value: 'configured' },
+    ],
+  }));
+
+  assertEquals([...provider.inboundHeaderAllowlist], ['x-passthrough']);
 });
 
 test('getProvidedModels returns only manual models and never fetches when modelsFetch is disabled', async () => {
@@ -86,8 +98,9 @@ test('getProvidedModels returns only manual models and never fetches when models
       {
         upstreamModelId: 'manual-only',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Only',
+        chat: { image_detail_original: true },
       },
     ],
   });
@@ -103,6 +116,7 @@ test('getProvidedModels returns only manual models and never fetches when models
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'manual-only');
+      assertEquals(models[0].chat, { image_detail_original: true });
     },
   );
   assertEquals(fetchCalls, 0);
@@ -114,7 +128,7 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
       {
         upstreamModelId: 'manual-extra',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Extra',
       },
     ],
@@ -160,6 +174,55 @@ test('getProvidedModels carries pricing on auto models', async () => {
   assertEquals(models[0]?.pricing, upstreamPricing);
 });
 
+test('getProvidedModels carries chat metadata on auto models', async () => {
+  const record = buildCustomUpstream();
+  const instance = createCustomProvider(record);
+
+  const upstreamChat = {
+    modalities: { input: ['text', 'image'], output: ['text'] } as const,
+    image_detail_original: true,
+    reasoning: { effort: { supported: ['none', 'high', 'max'], default: 'high' } },
+  };
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'vision-chat', kind: 'chat', chat: upstreamChat }],
+    }),
+    async () => {
+      return await instance.instance.getProvidedModels(directFetcher);
+    },
+  );
+
+  assertEquals(models[0]?.chat, upstreamChat);
+});
+
+test('getProvidedModels drops chat metadata from non-chat auto models', async () => {
+  const instance = createCustomProvider(buildCustomUpstream());
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'embedding-model', kind: 'embedding', chat: { image_detail_original: true } },
+        { id: 'image-model', kind: 'image', chat: { image_detail_original: true } },
+        { id: 'transcription-model', kind: 'transcription', chat: { image_detail_original: true } },
+        { id: 'text-embedding-3-small', chat: { image_detail_original: true } },
+        { id: 'gpt-image-2', chat: { image_detail_original: true } },
+        { id: 'whisper-1', chat: { image_detail_original: true } },
+      ],
+    }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+
+  assertEquals(models.map(model => ({ id: model.id, kind: model.kind, chat: model.chat })), [
+    { id: 'embedding-model', kind: 'embedding', chat: undefined },
+    { id: 'image-model', kind: 'image', chat: undefined },
+    { id: 'transcription-model', kind: 'transcription', chat: undefined },
+    { id: 'text-embedding-3-small', kind: 'embedding', chat: undefined },
+    { id: 'gpt-image-2', kind: 'image', chat: undefined },
+    { id: 'whisper-1', kind: 'transcription', chat: undefined },
+  ]);
+});
+
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
   const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] };
   const record = buildCustomUpstream({
@@ -167,7 +230,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
       {
         upstreamModelId: 'shared-id',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Override',
         pricing: manualPricing,
       },
@@ -195,7 +258,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
 test('a manual model without explicit pricing inherits pricing from its shadowed auto row', async () => {
   const inheritedPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
   const instance = createCustomProvider(buildCustomUpstream({
-    models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   }));
 
   await withMockedFetch(
@@ -229,10 +292,12 @@ test('manual runtime kind follows rerank endpoints when stored kind is stale', a
       kind: 'chat',
       endpoints: { rerank: {} },
       rerankTarget: { protocol: 'cohere-v2' },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'rerank');
+  assertEquals(model?.chat, undefined);
   assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
 });
 
@@ -242,11 +307,13 @@ test('manual runtime kind follows transcription endpoints when stored kind is st
     models: [{
       upstreamModelId: 'raw-transcriber',
       kind: 'chat',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'transcription');
+  assertEquals(model?.chat, undefined);
 });
 
 test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {
@@ -340,12 +407,12 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       const [model] = await provider.getProvidedModels(directFetcher);
       assertExists(model);
       const opts = noopUpstreamCallOptions();
-      const messagesOpts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
-      await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
+      const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
+      await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );
 
@@ -367,7 +434,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
     async () => {
       const provider = createCustomProvider(buildCustomUpstream()).instance;
       const [model] = await provider.getProvidedModels(directFetcher);
-      assertEquals(model.endpoints, { chatCompletions: {} });
+      assertEquals(model.endpoints, { openaiChatCompletions: {} });
       assertEquals(model.kind, 'chat');
     },
   );
@@ -409,7 +476,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   );
 });
 
-test('Custom provider callImagesGenerations posts JSON with model re-injected', async () => {
+test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injected', async () => {
   let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
   await withMockedFetch(
     async request => {
@@ -424,7 +491,7 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
+      const result = await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -476,7 +543,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       upstreamModelId: 'pinned-chat',
       publicModelId: 'pinned',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       display_name: 'Pinned Chat',
       limits: { max_output_tokens: 4096 },
       pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
@@ -490,7 +557,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'pinned');
       assertEquals(models[0].kind, 'chat');
-      assertEquals(models[0].endpoints, { chatCompletions: {} });
+      assertEquals(models[0].endpoints, { openaiChatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
       assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
@@ -503,7 +570,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
     models: [{
       upstreamModelId: 'shared',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       display_name: 'Manual Shared',
       pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
     }],

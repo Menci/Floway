@@ -244,6 +244,33 @@ describe('parseHttpResponse — header name grammar (RFC 9110 §5.1 token)', () 
     expect(r.headers.get(name.toLowerCase())).toBe('v');
   });
 
+  it('keeps every field line of a repeated name, in wire order and casing', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nX-Route: one\r\nX-Other: between\r\nx-route: two\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nContent-Length: 0\r\n\r\n',
+    ));
+
+    expect(r.headerLines.filter(([name]) => name.toLowerCase() === 'x-route')).toEqual([
+      ['X-Route', 'one'],
+      ['x-route', 'two'],
+    ]);
+    expect(r.headerLines.filter(([name]) => name.toLowerCase() === 'set-cookie')).toEqual([
+      ['Set-Cookie', 'a=1'],
+      ['Set-Cookie', 'b=2'],
+    ]);
+    // The Headers view merges the repeated name; headerLines is the view that
+    // does not.
+    expect(r.headers.get('x-route')).toBe('one, two');
+  });
+
+  it('drops the decoded Transfer-Encoding from both header views', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Route: one\r\n\r\n0\r\n\r\n',
+    ));
+
+    expect(r.headerLines.map(([name]) => name.toLowerCase())).toEqual(['x-route']);
+    expect(r.headers.has('transfer-encoding')).toBe(false);
+  });
+
   it('accepts mixed-case header names and exposes them lowercased via Headers', async () => {
     const r = await parseHttpResponse(respondAndEnd(
       'HTTP/1.1 200 OK\r\nX-MiXeD-CaSe: v\r\nContent-Length: 0\r\n\r\n',
@@ -847,7 +874,7 @@ describe('toWebResponse', () => {
     // but the bridge function still validates. A handcrafted struct mirrors
     // what an out-of-spec caller could pass.
     const fake = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
-    expect(() => toWebResponse({ status: 99, statusText: 'X', headers: new Headers(), body: fake })).toThrow(
+    expect(() => toWebResponse({ status: 99, statusText: 'X', headers: new Headers(), headerLines: [], body: fake })).toThrow(
       expect.objectContaining({ name: 'HttpProtocolError', code: 'BAD_STATUS_LINE' }),
     );
   });

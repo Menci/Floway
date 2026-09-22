@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../src/github-device-flow.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import type { Fetcher, FetchInit } from '@floway-dev/provider';
 import { assertEquals, assertRejects, jsonResponse } from '@floway-dev/test-utils';
 
-const requestParameters = (init: RequestInit): URLSearchParams => {
+const requestParameters = (init: FetchInit): URLSearchParams => {
   assertEquals(init.method, 'POST');
   assertEquals(init.redirect, 'manual');
   const headers = new Headers(init.headers);

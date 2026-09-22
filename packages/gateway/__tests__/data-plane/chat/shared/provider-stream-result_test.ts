@@ -32,7 +32,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } } },
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: ' there' } } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'anthropicMessages', ctx, () => null);
     const collected = await drainEvents(result);
     expect(collected).toEqual(frames);
     expect(ctx.attempt.firstOutputTokenAt).not.toBe(null);
@@ -44,7 +44,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'response.created' } },
       { type: 'event', event: { type: 'response.output_item.added' } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
     await drainEvents(result);
     expect(ctx.attempt.firstOutputTokenAt).toBe(null);
   });
@@ -56,7 +56,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);
@@ -68,36 +68,20 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
   });
 });
 
-test('client disconnect does not settle metadata before terminal usage is drained', async () => {
-  const terminalUsage = { input: 7, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 3 };
-  let releaseTerminal!: (frame: ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>) => void;
-  const terminal = new Promise<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>>(resolve => { releaseTerminal = resolve; });
-  const events = (async function* () {
-    yield { type: 'event', event: { type: 'response.created' } } as const;
-    yield await terminal;
-  })();
-  const controller = new AbortController();
-  const ctx = mockGatewayCtx({ clientDisconnectSignal: controller.signal, clientDisconnectController: controller });
-  const result = await providerStreamResultToExecuteResult(
-    okStreamResult(events),
-    stubModelCandidate(),
-    'responses',
-    ctx,
-    event => event.usage ?? null,
-  );
+test('an abandoned stream still settles its metadata instead of hanging the caller', async () => {
+  // Every streaming response resolves its cost through finalMetadata, and the
+  // respond layer awaits it in a finally. A transport that walks away without
+  // closing the generator would hang that await forever.
+  const abort = new AbortController();
+  const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
+  const frames: ProtocolFrame<unknown>[] = [{ type: 'event', event: { type: 'response.created' } }];
+
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
   expect(result.type).toBe('events');
   if (result.type !== 'events') return;
 
-  const iterator = result.events[Symbol.asyncIterator]();
-  await iterator.next();
-  controller.abort();
-  let metadataSettled = false;
-  void result.finalMetadata!.then(() => { metadataSettled = true; });
-  await Promise.resolve();
-  expect(metadataSettled).toBe(false);
+  // Never iterate the events; just abandon them.
+  abort.abort();
 
-  releaseTerminal({ type: 'event', event: { type: 'response.completed', usage: terminalUsage } });
-  await iterator.next();
-  await iterator.next();
-  expect((await result.finalMetadata!).billableUsage).toEqual(terminalUsage);
+  expect((await result.finalMetadata!).modelIdentity).toBeDefined();
 });

@@ -57,6 +57,20 @@ interface PerformanceBreakdownSql {
   where?: (source: string) => string;
 }
 
+// workerd caps every compound SELECT at five terms. Build a tree of bounded
+// compounds so adding future Performance dimensions cannot cross that limit.
+// https://github.com/cloudflare/workerd/blob/c16efad94a926dff547d3e3d853feae4fc8988a6/src/workerd/util/sqlite.c%2B%2B#L1382-L1384
+const D1_COMPOUND_SELECT_LIMIT = 5;
+const boundedUnionAll = (terms: readonly string[]): string => {
+  if (terms.length === 0) throw new Error('A compound SELECT requires at least one term');
+  if (terms.length <= D1_COMPOUND_SELECT_LIMIT) return terms.join('\n  UNION ALL\n');
+  const groups: string[] = [];
+  for (let index = 0; index < terms.length; index += D1_COMPOUND_SELECT_LIMIT) {
+    groups.push(`SELECT * FROM (\n${boundedUnionAll(terms.slice(index, index + D1_COMPOUND_SELECT_LIMIT))}\n  )`);
+  }
+  return boundedUnionAll(groups);
+};
+
 const seriesGroupSql = (source: string) => `CASE settings.series_group_by
   WHEN 'keyId' THEN ${source}.key_id
   WHEN 'userId' THEN CAST(${source}.user_id AS TEXT)
@@ -115,10 +129,9 @@ const summaryBreakdownSql = performanceBreakdownSql.map(({ axis, group, where })
   CROSS JOIN settings
   ${where === undefined ? '' : `WHERE ${where(source)}`}
   GROUP BY ${groupSql}`;
-}).join('\n  UNION ALL');
+});
 
-const summaryAggregateSql = `${summarySeriesSql}
-  UNION ALL${summaryBreakdownSql}`;
+const summaryAggregateSql = boundedUnionAll([summarySeriesSql, ...summaryBreakdownSql]);
 
 const histogramSeriesSql = `
   SELECT
@@ -151,10 +164,26 @@ const histogramBreakdownSql = performanceBreakdownSql.map(({ axis, group, where 
   CROSS JOIN settings
   ${where === undefined ? '' : `WHERE ${where(source)}`}
   GROUP BY ${groupSql}, ${source}.metric, ${source}.lower`;
-}).join('\n  UNION ALL');
+});
 
-const histogramAggregateSql = `${histogramSeriesSql}
-  UNION ALL${histogramBreakdownSql}`;
+const histogramAggregateSql = boundedUnionAll([histogramSeriesSql, ...histogramBreakdownSql]);
+
+const facetRowsSql = boundedUnionAll(performanceBreakdownSql
+  .filter(({ axis }) => axis !== 'none')
+  .map(({ axis, group, where }) => {
+    const source = 'scoped_summary';
+    const groupSql = group(source);
+    return `SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
+    '${axis}' AS dimension, ${groupSql} AS facet_value,
+    NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
+    NULL AS tpot_samples_text, NULL AS neutral_text,
+    NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
+    NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
+  FROM ${source}
+  CROSS JOIN settings
+  ${where === undefined ? '' : `WHERE ${where(source)}`}
+  GROUP BY ${groupSql}`;
+  }));
 
 const performanceCubeDimensions = [
   'key_id', 'user_id', 'owned', 'model', 'upstream', 'operation', 'runtime_location',
@@ -343,37 +372,7 @@ aggregate_rows AS (
   LEFT JOIN percentile_values USING (axis, bucket, group_value)
 ),
 facet_rows AS (
-  SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
-    'keyId' AS dimension, key_id AS facet_value,
-    NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
-    NULL AS tpot_samples_text, NULL AS neutral_text,
-    NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
-    NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
-  FROM scoped_summary
-  WHERE owned = 1
-  GROUP BY key_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'userId', CAST(user_id AS TEXT),
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary CROSS JOIN settings
-  WHERE settings.is_admin = 1 AND user_id IS NOT NULL
-  GROUP BY user_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'model', model,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY model
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'upstream', upstream,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY upstream
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'operation', operation,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY operation
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'runtimeLocation', runtime_location,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY runtime_location
+  ${facetRowsSql}
 ),
 orphan_rows AS (
   SELECT 'orphan' AS row_kind,

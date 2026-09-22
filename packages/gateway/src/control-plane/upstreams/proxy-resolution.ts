@@ -3,8 +3,8 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { loadProxyCatalog } from '../../dial/proxy-catalog.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import { getSocketDial } from '@floway-dev/platform';
-import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
+import { getFetch, getSocketDial } from '@floway-dev/platform';
+import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 // Fetcher resolution for control-plane operations that fire from the
@@ -57,7 +57,7 @@ const buildOverrideFetcher = async (
     runtimeLocation,
     proxyById,
     runProxied: runProxiedRequest,
-    runDirectFetch: directFetcher,
+    runDirectFetch: getFetch(),
     runDirectConnect: runDirectConnectRequest,
     socketDial: getSocketDial,
   });

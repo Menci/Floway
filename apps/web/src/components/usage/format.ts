@@ -24,8 +24,7 @@ export const formatSummaryMetric = (
   case 'cost':
     return formatUsd(summary.cost);
   case 'cachedRate':
-  case 'cacheHitRate':
-    return formatRatePercent(summary[metric]);
+    return formatRatePercent(summary.cachedRate);
   default:
     return formatDecimalQuantity(summary[summaryFieldForMetric[metric]]);
   }

@@ -1,5 +1,19 @@
+import { isReplayableBody, type Fetcher } from '@floway-dev/provider';
+
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];
+
+export const testFetcher: Fetcher = (url, init) => {
+  const body = init.body;
+  if (!isReplayableBody(body)) return fetch(url, { ...init, body });
+  const headers = new Headers(init.headers);
+  headers.set('content-length', String(body.contentLength));
+  const request: RequestInit & { duplex: 'half' } = { ...init, body: body.open(), headers, duplex: 'half' };
+  return fetch(url, request);
+};
+
+export const readJsonRequest = async (init: RequestInit): Promise<unknown> =>
+  await new Response(init.body).json();
 
 // Tests share a single globalThis.fetch slot; the lock serializes overlapping
 // withMockedFetch calls in the same process so each handler sees only its own

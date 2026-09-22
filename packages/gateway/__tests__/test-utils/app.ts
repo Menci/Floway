@@ -83,13 +83,62 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
   };
 };
 
+export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+  const config = {
+    accounts: [{ email: 'codex@example.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }],
+  };
+  const { config: overrideConfig, ...rest } = overrides;
+
+  return {
+    id: 'up_codex',
+    kind: 'codex',
+    name: 'Codex',
+    enabled: true,
+    sortOrder: 200,
+    createdAt: TEST_UPSTREAM_TIMESTAMP,
+    updatedAt: TEST_UPSTREAM_TIMESTAMP,
+    // A seeded access token keeps the OAuth refresh off the fetch mock's path.
+    state: {
+      accounts: [{
+        chatgptAccountId: 'acc',
+        refresh_token: 'rt_v1',
+        state: 'active',
+        state_updated_at: TEST_UPSTREAM_TIMESTAMP,
+        openaiDeviceId: '11111111-2222-4333-8444-555555555555',
+        accessToken: { token: 'codex-access-token', expiresAt: Date.parse('2100-01-01T00:00:00.000Z'), refreshedAt: TEST_UPSTREAM_TIMESTAMP },
+        quotaSnapshot: null,
+      }],
+    },
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+    ...rest,
+    config: overrideConfig ?? config,
+  };
+};
+
+export function codexModels(models: Array<{ slug: string; display_name?: string }>) {
+  return {
+    models: models.map(model => ({
+      slug: model.slug,
+      display_name: model.display_name ?? model.slug,
+      visibility: 'list',
+      context_window: 272000,
+      max_context_window: 1000000,
+    })),
+  };
+}
+
 export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     ingressHeadersRules: [],
     apiKey: 'sk-custom',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
   };
   const { config: overrideConfig, ...rest } = overrides;
 
@@ -161,7 +210,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    openaiResponsesRetentionSeconds: 30 * 24 * 60 * 60,
   };
   await repo.apiKeys.save(apiKey);
 
@@ -211,7 +260,7 @@ export function sseResponse(chunks: SSEChunk[], status = 200): Response {
 // helpers project a single non-stream JSON shape into the canonical SSE chunks
 // that mirror what a real streaming upstream would emit.
 
-export function sseMessagesResponse(response: Record<string, unknown>): Response {
+export function sseAnthropicMessagesResponse(response: Record<string, unknown>): Response {
   const chunks: SSEChunk[] = [
     {
       event: 'message_start',
@@ -255,7 +304,7 @@ export function sseMessagesResponse(response: Record<string, unknown>): Response
   return sseResponse(chunks);
 }
 
-export function sseChatCompletionsResponse(response: Record<string, unknown>): Response {
+export function sseOpenAIChatCompletionsResponse(response: Record<string, unknown>): Response {
   const choice = (response.choices as Array<Record<string, unknown>>)[0];
   const message = choice.message as Record<string, unknown>;
   const id = response.id as string;
@@ -284,8 +333,8 @@ export function sseChatCompletionsResponse(response: Record<string, unknown>): R
   return sseResponse(chunks);
 }
 
-export function sseResponsesResponse(response: Record<string, unknown>): Response {
-  // The Responses stream wrapper expands a created+in_progress+completed
+export function sseOpenAIResponsesResponse(response: Record<string, unknown>): Response {
+  // The OpenAI Responses stream wrapper expands a created+in_progress+completed
   // triplet into the full event sequence, so emitting just those three
   // wrapper events here exercises that expansion path.
   return sseResponse([

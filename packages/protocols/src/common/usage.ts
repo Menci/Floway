@@ -43,7 +43,7 @@ export const billableServiceTier = (tier: string | null | undefined): string | n
 // upstream's own usage in its own protocol. Pricing reads this and nothing
 // else — in particular it never reads the usage Floway sends the client, which
 // is a wire projection whose protocol may have no field for a bucket we are
-// billed for: an Anthropic 1-hour cache write reaching a Responses client, or
+// billed for: an Anthropic 1-hour cache write reaching an OpenAI Responses client, or
 // a cache-write count or service tier reaching Gemini, which has neither.
 //
 // Counts are exclusive — `input` excludes `cacheRead` and both cache-write

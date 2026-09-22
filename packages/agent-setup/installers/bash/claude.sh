@@ -24,6 +24,8 @@ CLAUDE_MERGE_PROGRAM='
   | (if $discovery == "1" then .env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1" else del(.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY) end)
   | (if $effort == "" then del(.effortLevel) else .effortLevel = $effort end)
   | (if $cleanup == "" then del(.cleanupPeriodDays) else .cleanupPeriodDays = ($cleanup | tonumber) end)
+  | (if $disableAutoMemory == "1" then .autoMemoryEnabled = false else del(.autoMemoryEnabled) end)
+  | (if $disableAgentView == "1" then .disableAgentView = true else del(.disableAgentView) end)
   | (if $optOutAttribution == "1" then
       .attribution = ((.attribution // {}) + { "commit": "", "pr": "", "sessionUrl": false })
     else
@@ -149,6 +151,8 @@ claude_write_settings() {
       --arg effort "$SETUP_CLAUDE_EFFORT_LEVEL" \
       --arg cleanup "$SETUP_CLAUDE_CLEANUP_PERIOD_DAYS" \
       --arg optOutAttribution "$SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION" \
+      --arg disableAutoMemory "$SETUP_CLAUDE_DISABLE_AUTO_MEMORY" \
+      --arg disableAgentView "$SETUP_CLAUDE_DISABLE_AGENT_VIEW" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
     out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"

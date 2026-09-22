@@ -19,7 +19,7 @@ describe('the critical loading screen styles', () => {
       document.head.append(style);
       document.body.append(provider);
 
-      expect(getComputedStyle(spinner).backgroundColor).toBe('#ffffff00');
+      expect(getComputedStyle(spinner).backgroundColor).toBe('rgba(255, 255, 255, 0)');
     } finally {
       style.remove();
       provider.remove();

@@ -5,6 +5,7 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      language: '语言',
       loading: '加载中…',
       on: '开',
       off: '关',
@@ -114,7 +115,7 @@ const zhHansCN = {
         emptyResponse: '（空响应）',
         noKey: '请先创建 API 密钥，再使用 Playground',
         noKeyOption: '没有 API 密钥',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'OpenAI Responses', openaiChatCompletions: 'OpenAI Chat Completions', anthropicMessages: 'Anthropic Messages' },
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         edit: { title: '编辑消息', message: '消息', imageUrl: '图片 URL' },
@@ -190,9 +191,9 @@ const zhHansCN = {
         endpointNames: {
           openAiModels: 'OpenAI 模型列表', geminiModels: 'Gemini 模型列表', geminiModel: 'Gemini 模型详情',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
-          openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses 压缩', openAiResponsesWs: 'Responses WebSocket',
+          openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses 压缩', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Token 计数',
-          geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent（SSE）', geminiCount: 'Gemini countTokens',
+          geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent（SSE）', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI 图像生成', openAiImageEdit: 'OpenAI 图像编辑', openAiTranscription: 'OpenAI 音频转录',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex Alpha 搜索',
@@ -271,7 +272,7 @@ const zhHansCN = {
       },
       upstreamAccess: {
         title: '限制可用上游',
-        description: '关闭时，访问权限会继承上一级范围内的全部上游',
+        description: '关闭时，所有可选择的上游均可用',
         tableLabel: '可用上游',
         enabled: '启用',
         order: '顺序',
@@ -280,7 +281,7 @@ const zhHansCN = {
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
         upstreamDisabled: '上游已停用',
-        validation: '至少选择一个上游，或关闭限制。',
+        emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
       },
       apiKeys: {
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',
@@ -345,8 +346,8 @@ const zhHansCN = {
           customKeyPlaceholder: '粘贴自定义 API 密钥',
           retention: '记录请求转储',
           viewCapturedRequests: '查看已捕获的请求',
-          responsesRetention: 'Stateful Responses 保留',
-          responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
+          openaiResponsesRetention: 'Stateful OpenAI Responses 保留',
+          openaiResponsesRetentionHint: '该 API 密钥的 OpenAI Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
         },
@@ -361,16 +362,20 @@ const zhHansCN = {
           inheritsTitle: '继承全局上游顺序',
         },
         retention: {
-          presets: { oneHour: '1 小时', sixHours: '6 小时', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天' },
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',
-          durationPlaceholder: '例如 30m、2h、3d',
-          daysPlaceholder: '例如 14',
+          durationPlaceholder: '例如 2、30m、3d',
+          units: {
+            second_one: '秒', second_other: '秒',
+            minute_one: '分钟', minute_other: '分钟',
+            hour_one: '小时', hour_other: '小时',
+            day_one: '天', day_other: '天',
+          },
           invalid: '请输入有效的保留时长。',
           warningDisable: '保存后会删除该 API 密钥的已捕获请求。',
           warningShrink: '保存后会删除超过新窗口的已捕获请求。',
-          responsesWarningDisable: '保存后会删除该 API 密钥已存储的 Responses 条目。后续请求按 id 引用时将无法找到。',
-          responsesWarningShrink: '保存后会删除超过新窗口的 Responses 条目。后续请求按 id 引用时将无法找到。',
+          openaiResponsesWarningDisable: '保存后会删除该 API 密钥已存储的 OpenAI Responses 条目。后续请求按 id 引用时将无法找到。',
+          openaiResponsesWarningShrink: '保存后会删除超过新窗口的 OpenAI Responses 条目。后续请求按 id 引用时将无法找到。',
         },
         configuration: {
           title: '配置你的 Agent',
@@ -382,7 +387,7 @@ const zhHansCN = {
           codexConfigHintWindows: '合并到 <path>%USERPROFILE%\\.codex\\config.toml</path>。',
           codexAuthHint: '将 Floway provider token 保存在该配置旁，不影响官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -399,6 +404,7 @@ const zhHansCN = {
           refresh: '刷新上游',
           delete: '删除上游',
           editNamed: '编辑上游 {{name}}',
+          copyNamed: '复制上游 {{name}}',
           deleteNamed: '删除上游 {{name}}',
           toggle: '切换上游 {{name}} 的启用状态',
           moveUp: '上移上游 {{name}}',
@@ -408,10 +414,26 @@ const zhHansCN = {
           title: '路由优先级',
           priority: '优先级',
           upstream: '上游',
-          provider: '提供商',
+          details: '详情',
           models: '模型',
           enabled: '启用',
           actions: '操作',
+        },
+        signals: {
+          plan: '{{plan}}：',
+          percent: '{{percent, number}}%',
+          detailSeparator: '，',
+          until: '至 {{date}}',
+          used: '{{label}}：已用 {{percent, number}}%',
+          resets: '{{time}} 重置',
+          observed: '观测于 {{time}}',
+          window: { primary: '主窗口', secondary: '次窗口' },
+          rateLimited: '限流',
+          rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
+          credits: '{{balance, number}} 点额度',
+          creditsDetail: 'ChatGPT 账号的额度余额',
+          cost: '该账号已产生的费用',
+          costLast4Weeks: '该账号最近 4 周产生的费用',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -440,6 +462,9 @@ const zhHansCN = {
           copilot: 'GitHub Copilot 账号',
           noAccount: '尚未连接账号',
         },
+        copy: {
+          nameSuffix: '{{name}} 副本',
+        },
         errors: {
           missing: '该上游已不存在。',
           models: '模型数量不可用：{{message}}',
@@ -466,6 +491,7 @@ const zhHansCN = {
         },
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',
+        documentTitleCopy: '复制上游',
         optional: '可选',
         unsaved: '有未保存更改',
         secretKeep: '留空以保持不变。',
@@ -513,8 +539,8 @@ const zhHansCN = {
         },
         auth: { none: '无认证' },
         headers: {
-          title: '客户端请求标头',
-          description: '仅向此上游发送匹配规则的客户端标头。可以保留客户端值、覆盖为空值，或输入自定义覆盖值。',
+          title: '上游请求标头',
+          description: '每条规则决定一个标头发往此上游时的取值。透传会转发客户端的值，也只有透传需要客户端发送该标头；空值或自定义值会写入每一个请求。',
           key: '标头名称',
           value: '处理方式或覆盖值',
           row: '标头规则 {{number, number}}',
@@ -525,8 +551,8 @@ const zhHansCN = {
           empty: '（空值）',
           validation: {
             invalidName: '请输入有效的 HTTP 标头名称。',
-            duplicateName: '同一个标头名称只能出现一次。',
-            messagesOwned: '此标头由 Messages 协议管理。',
+            duplicatePassthrough: '同一个标头名称只能透传一次。',
+            anthropicMessagesOwned: '此标头由 Anthropic Messages 协议管理。',
             transportOwned: '此标头由 Floway 的 HTTP 传输层管理。',
             invalidValue: '请输入不含控制字符的有效 HTTP 标头值。',
           },
@@ -578,25 +604,29 @@ const zhHansCN = {
               description:
                   'Kimi 的 API 在缓存 Token 用量统计方面采用了非标准格式。\n开启此开关，以将 Kimi 响应中的扁平缓存 Token 字段 (`cached_tokens`) 归一化为 OpenAI 规范格式 (`prompt_tokens_details.cached_tokens`)。\n当上游为 **Kimi（月之暗面）chat completions API** 时应开启。',
             },
-            'messages-web-search-shim': {
-              label: 'Messages 网页搜索兼容层',
+            'anthropic-messages-web-search-shim': {
+              label: 'Anthropic Messages 网页搜索兼容层',
               description:
                   'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
             },
-            'responses-web-search-shim': {
-              label: 'Responses 网页搜索兼容层',
+            'openai-responses-web-search-shim': {
+              label: 'OpenAI Responses 网页搜索兼容层',
               description:
-                  'Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-image-generation-shim': {
-              label: 'Responses 图像生成兼容层',
+            'openai-responses-image-generation-shim': {
+              label: 'OpenAI Responses 图像生成兼容层',
               description:
-                  'Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-compact-shim': {
-              label: 'Responses 上下文压缩兼容层',
+            'openai-responses-collaboration-shim': {
+              label: 'OpenAI Responses 协作兼容',
+              description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
+            },
+            'openai-responses-compact-shim': {
+              label: 'OpenAI Responses 上下文压缩兼容层',
               description:
-                  'Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',
@@ -606,7 +636,7 @@ const zhHansCN = {
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:
-                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
+                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Anthropic Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
             },
             'rewrite-developer-to-system': {
               label: '改写 developer 角色为 system',
@@ -687,6 +717,7 @@ const zhHansCN = {
           promptTokens: 'Prompt Token',
           outputTokens: '输出 Token',
           imageInput: '图像输入',
+          imageDetailOriginal: '图像细节“original”',
           reasoning: '思考',
           effortLevels: '思考强度',
           supportedEfforts: '支持的思考强度',
@@ -740,7 +771,12 @@ const zhHansCN = {
           invalidEffort:
               '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大思考 Token 预算不能小于最小值。',
-          invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
+          upstreamIdRequired: '请输入上游模型 ID。',
+          endpointsRequired: '请至少选择一个支持的 API。',
+          rerankTargetRequired: '请为此 API 选择 Rerank 目标。',
+          rerankTargetUnexpected: '未使用 Rerank API 的模型不能配置 Rerank 目标。',
+          rerankPathInvalid: 'Rerank 路径覆盖必须以 / 开头，且不能包含 //、/./ 或 /../。',
+          invalidConfiguration: '此模型包含无法保存的配置。',
           delete: '删除手动模型',
           deleteNamed: '删除手动模型 {{name}}',
           deleteTitle: '删除模型',
@@ -817,6 +853,24 @@ const zhHansCN = {
             'session-terminated': '会话已终止，请重新导入以恢复',
             'refresh-failed': '刷新失败，请重新导入以恢复',
             'uuid-mismatch': '所配置的账号不在状态中，请重新导入以恢复',
+          },
+        },
+        ollama: {
+          cloudUsage: '获取账号用量',
+          cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
+          usage: {
+            title: '用量',
+            load: '加载',
+            refresh: '刷新',
+            usedPercent: '已用 {{percent, number}}%',
+            window: {
+              session: '5 小时窗口',
+              weekly: '每周窗口',
+            },
+            observed: '观测于 {{time}}',
+            empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
+            unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',
+            backgroundFailed: '最近一次后台刷新失败：{{message}}',
           },
         },
         oauth: {
@@ -896,7 +950,7 @@ const zhHansCN = {
       telemetry: { currentUserOnly: '仅自己' },
       usage: {
         empty: '此时间范围内没有使用记录',
-        callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
+        callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
         apiKeyScopeInfo: 'API 密钥分组和筛选仅包含当前账号拥有的密钥。选择“按 API 密钥”会将用户设为“仅自己”；选择其他用户会清空 API 密钥筛选并回到“按模型”。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', userId: '按用户', keyId: '按 API 密钥' },
@@ -931,7 +985,6 @@ const zhHansCN = {
           cached: '缓存输入',
           cachedRate: '缓存比例',
           cacheCreation: '缓存写入',
-          cacheHitRate: '缓存命中率',
         },
       },
       performance: {
@@ -1035,7 +1088,7 @@ const zhHansCN = {
       searchConfig: {
         heading: '搜索提供商',
         description:
-            '配置 Anthropic Messages / Responses API 网络搜索工具调用的提供商',
+            '配置 Anthropic Messages / OpenAI Responses API 网络搜索工具调用的提供商',
         providerLabel: '提供商',
         providerHint: '响应网络搜索工具调用的服务',
         provider: {
@@ -1044,7 +1097,7 @@ const zhHansCN = {
           microsoftWebIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
-        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
+        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 OpenAI Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
         unavailable: '{{id}}（不可用）',
         getKeyLink: '获取 API 密钥',
         apiKeyLabel: 'API 密钥',
@@ -1063,13 +1116,14 @@ const zhHansCN = {
       modelAliases: {
         description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
-        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
-        dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
+        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
+        dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}', copyTitle: '复制别名：{{name}}' },
+        copy: { nameSuffix: '{{name}} 副本' },
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
         target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number, number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_other: '{{count, number}} 个目标' },
         rules: { effort: '思考强度', budget: '思考预算 token', adaptive: '自适应思考', adaptiveAuto: '自动（遵循模型）', adaptiveOn: '开启（强制自适应）', adaptiveOff: '关闭（强制非自适应）', summary: '思考摘要', verbosity: '详细程度', serviceTier: '服务等级' },
-        metadata: { heading: '手动声明元数据', description: '/v1/models 为此别名报告的能力', manual: '手动声明元数据', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', modalities: '模态', imageInput: '图像输入', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
+        metadata: { heading: '手动声明元数据', description: '/v1/models 为此别名报告的能力', manual: '手动声明元数据', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', imageInput: '图像输入', imageDetailOriginal: '图像细节“original”', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
         warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明思考强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应思考不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明思考预算能力。', budgetBelow: '低于目标最小值（{{value, number}}）。', budgetAbove: '高于目标最大值（{{value, number}}）。', notAdvertisedAdaptive: '目标未声明自适应思考能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },
         validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '请输入目标模型 ID。', budget: '思考预算必须是非负整数。', adaptiveBudget: '自适应思考不能与固定预算同时使用。', metadataNumber: '请输入 0 或更大的整数 token 数。', metadataRange: '最大预算必须大于或等于最小预算。' },
         delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' },

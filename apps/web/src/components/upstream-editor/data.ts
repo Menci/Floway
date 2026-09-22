@@ -10,9 +10,9 @@ import type {
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import { kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
@@ -34,6 +34,11 @@ interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[];
   modelsError: ModelListingFailure | null;
+  // For providers whose credential is an API key, the editor can keep that
+  // stored key when the form's blank secret field is left alone; OAuth
+  // providers do not copy their tokens and start from the blueprint
+  // credential shape instead.
+  preserveCredentials?: boolean;
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
@@ -286,7 +291,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
 
 // `sort_order` is left out: the server appends a new upstream after the last
 // one when the field is absent, and the list page owns reordering afterwards.
-export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody => {
+export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues, options?: { preserveStoredSecret?: boolean }): CreateUpstreamBody => {
   return {
     kind: record.kind,
     name: values.name.trim(),
@@ -296,7 +301,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    config: configFromValues(record, values),
+    config: configFromValues(record, values, options),
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
@@ -323,14 +328,16 @@ export const discoveredModelsFromResponse = (
   if (response.kind !== 'custom') return response.data;
   return response.data.map(model => {
     const kind = model.kind ?? 'chat';
+    const shape = kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints });
     return {
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind,
-      ...(kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints })),
+      ...shape,
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),
+      ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
     };
   });
 };

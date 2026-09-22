@@ -18,6 +18,8 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     effortLevel: 'high',
     cleanupPeriodDays: null,
     optOutAiAttribution: true,
+    disableAutoMemory: true,
+    disableAgentView: true,
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
@@ -69,6 +71,8 @@ const shownSettings = () => ({
   effort: screen.getByRole('combobox', { name: 'Reasoning effort' }).textContent,
   modelDiscovery: screen.getByRole<HTMLInputElement>('switch', { name: 'Gateway model discovery' }).checked,
   attributionOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Opt out of Claude Code AI attribution' }).checked,
+  autoMemoryOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Disable auto memory' }).checked,
+  agentViewOptOut: screen.getByRole<HTMLInputElement>('switch', { name: 'Disable agent view' }).checked,
 });
 
 // One store answers for the whole session, so the fields show the lease's
@@ -77,7 +81,7 @@ const shownSettings = () => ({
 describe('Agent Setup card fields', () => {
   it('draws every setting from the lease the session holds', () => {
     renderInApp(<Host />);
-    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true });
+    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
   });
 
   it('keeps the configuration on screen while another key is being leased', () => {
@@ -86,7 +90,7 @@ describe('Agent Setup card fields', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     renderInApp(<Host />);
     act(() => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
-    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true });
+    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
     vi.unstubAllGlobals();
   });
 });

@@ -1,5 +1,7 @@
 import UnoCSS from '@unocss/postcss';
 
+import { toLegacyCssColor } from './src/lib/legacy-css-color';
+
 // UnoCSS generates through PostCSS rather than `unocss/vite`, whose global mode
 // emits nothing under React Router: it keys its `vite:css-post` handle by the
 // top-level `build.outDir`, while React Router sets `outDir` only per
@@ -22,4 +24,14 @@ import UnoCSS from '@unocss/postcss';
 // keeps a build launched from the workspace root scanning the same files as one
 // launched from this package.
 // https://github.com/unocss/unocss/blob/e28a47c557fe179935a37a4fbeb650292d0d1d5a/packages-integrations/postcss/src/esm.ts#L21-L110
-export default { plugins: [UnoCSS({ cwd: import.meta.dirname })] };
+const legacyCssColors = {
+  postcssPlugin: 'floway-legacy-css-colors',
+  Declaration: (declaration: { value: string }) => {
+    declaration.value = toLegacyCssColor(declaration.value);
+  },
+  AtRule: (rule: { params: string }) => {
+    rule.params = toLegacyCssColor(rule.params);
+  },
+};
+
+export default { plugins: [UnoCSS({ cwd: import.meta.dirname }), legacyCssColors] };

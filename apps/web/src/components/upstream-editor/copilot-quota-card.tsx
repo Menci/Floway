@@ -1,65 +1,21 @@
 import { useCallback, useState } from 'react';
 
-import { quotaBarColor } from './subscription-account-quota';
 import { api, callApi } from '../../api/client';
-import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
+import type { CopilotQuotaSnapshot } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
-import { clampPercent } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { useRefresh } from '../ui/use-refresh';
+import { copilotQuota, type CopilotRecord, readBuckets, shownBuckets } from '../upstreams/copilot-quota';
+import { quotaBarColor } from '../upstreams/subscription-quota';
 
 const { ProgressBar, Text } = fluentComponents;
 
-type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
-
-type BucketKind = 'metered' | 'unlimited' | 'unavailable';
-
-interface QuotaBucket {
-  id: string;
-  label: string;
-  kind: BucketKind;
-  entitlement: number;
-  used: number;
-  usedPercent: number;
-  barPercent: number | null;
-}
-
-// A free seat reports `entitlement: 0` with `percent_remaining: 0`, which as
-// metered would render a full bar on a seat with no premium allotment.
-// `usedPercent` stays as upstream computed it, past 100 for an overage-
-// permitted bucket; only the bar is clamped.
-const readBuckets = (quota: CopilotQuotaSnapshot | null): QuotaBucket[] =>
-  Object.entries(quota?.quotas ?? {}).map(([id, detail]) => {
-    const usedPercent = Math.round(100 - detail.percent_remaining);
-    return {
-      id,
-      label: id.replace(/_/g, ' '),
-      kind: detail.unlimited ? 'unlimited' : detail.entitlement > 0 ? 'metered' : 'unavailable',
-      entitlement: detail.entitlement,
-      used: Math.round(detail.entitlement - detail.quota_remaining),
-      usedPercent,
-      barPercent: clampPercent(usedPercent),
-    };
-  });
-
-// A seat with nothing metered still gets one row, so the card does not read as
-// "no quota observed" when the truth is "nothing is capped". The unnamed
-// fallback survives GitHub renaming the premium bucket.
-const shownBuckets = (buckets: QuotaBucket[]): QuotaBucket[] => {
-  const metered = buckets.filter(bucket => bucket.kind === 'metered');
-  if (metered.length > 0) return metered;
-  const standIn = buckets.find(bucket => bucket.id.startsWith('premium')) ?? buckets[0];
-  return standIn === undefined ? [] : [standIn];
-};
-
-// Premium-interaction usage as Copilot's own client derives it:
-// https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/chat/common/chatQuotaServiceImpl.ts#L83-L120
 export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
@@ -70,7 +26,7 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const [refreshed, setRefreshed] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const quota = refreshed ?? record.state?.quotaSnapshot?.data ?? null;
+  const quota = refreshed ?? copilotQuota(record);
   const buckets = shownBuckets(readBuckets(quota));
 
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {

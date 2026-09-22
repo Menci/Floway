@@ -82,7 +82,7 @@ describe('Codex model-provider routes', () => {
     expect(response.status).toBe(404);
   });
 
-  it('mounts the Responses WebSocket transport at the provider-relative path', async () => {
+  it('mounts the OpenAI Responses WebSocket transport at the provider-relative path', async () => {
     const { apiKey } = await setupAppTest();
     const response = await buildCodexApp().request('/azure-api.codex/responses', {
       headers: { authorization: `Bearer ${apiKey.key}` },

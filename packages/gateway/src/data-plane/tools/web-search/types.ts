@@ -1,6 +1,5 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
-import type { RetainedDispatchLifecycle } from '../../shared/retained-response.ts';
-import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesWebSearchErrorCode } from '@floway-dev/protocols/anthropic-messages';
 
 export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 
@@ -12,9 +11,7 @@ export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 // for every provider so the shim's truncation handling is provider-agnostic.
 export const MAX_FETCH_PAGE_BYTES = 10_240;
 
-export type WebSearchProviderLifecycle = RetainedDispatchLifecycle;
-
-export type WebSearchProviderErrorCode = Exclude<MessagesWebSearchErrorCode, 'max_uses_exceeded'>;
+export type WebSearchProviderErrorCode = Exclude<AnthropicMessagesWebSearchErrorCode, 'max_uses_exceeded'>;
 
 export interface WebSearchProviderRequest {
   query: string;
@@ -26,14 +23,14 @@ export interface WebSearchProviderRequest {
     country?: string;
     timezone?: string;
   };
-  // When undefined, the provider applies its own default count. The Responses
+  // When undefined, the provider applies its own default count. The OpenAI Responses
   // shim populates this from the client tool's `search_context_size` field.
   maxResults?: number;
-  // Explicit caller-controlled cancellation. Providers pass it through to
-  // their underlying HTTP fetch; gateway client lifecycle is enforced before
-  // dispatch and is not supplied here.
+  // Aborted when the downstream client disconnects. Providers MUST
+  // pass this through to the underlying HTTP fetch so a cancelled
+  // request stops generating upstream load instead of running to
+  // completion.
   signal?: AbortSignal;
-  lifecycle?: WebSearchProviderLifecycle;
 }
 
 export type WebSearchProviderResult =
@@ -61,10 +58,10 @@ export interface WebSearchPreviewResult {
 
 export interface WebSearchFetchPageRequest {
   urls: string[];
-  // See WebSearchProviderRequest.signal — providers pass explicit caller
-  // cancellation through to their underlying fetch and sleep operations.
+  // See WebSearchProviderRequest.signal — same semantics: providers
+  // must thread this into their underlying fetch / sleep so a
+  // disconnected client cancels in-flight upstream work.
   signal?: AbortSignal;
-  lifecycle?: WebSearchProviderLifecycle;
 }
 
 export type WebSearchFetchPageResult =

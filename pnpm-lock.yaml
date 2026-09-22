@@ -169,6 +169,9 @@ importers:
       '@jridgewell/trace-mapping':
         specifier: ^0.3.31
         version: 0.3.31
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
       culori:
         specifier: ^4.0.2
         version: 4.0.2
@@ -181,6 +184,9 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
+      imask:
+        specifier: ^7.6.1
+        version: 7.6.1
       isbot:
         specifier: ^5
         version: 5.2.1
@@ -369,6 +375,9 @@ importers:
       jsonrepair:
         specifier: ^3.14.0
         version: 3.14.0
+      klona:
+        specifier: 2.0.6
+        version: 2.0.6
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -412,6 +421,9 @@ importers:
 
   packages/platform:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@scure/base':
         specifier: ^2.2.0
         version: 2.2.0
@@ -447,9 +459,21 @@ importers:
 
   packages/provider:
     dependencies:
+      '@discoveryjs/json-ext':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
+      klona:
+        specifier: 2.0.6
+        version: 2.0.6
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -457,6 +481,9 @@ importers:
 
   packages/provider-azure:
     dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -600,6 +627,49 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  tools:
+    dependencies:
+      '@floway-dev/gateway':
+        specifier: workspace:*
+        version: link:../packages/gateway
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../packages/protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../packages/provider
+      '@floway-dev/provider-claude-code':
+        specifier: workspace:*
+        version: link:../packages/provider-claude-code
+      '@floway-dev/provider-codex':
+        specifier: workspace:*
+        version: link:../packages/provider-codex
+      '@floway-dev/provider-copilot':
+        specifier: workspace:*
+        version: link:../packages/provider-copilot
+      '@floway-dev/provider-ollama':
+        specifier: workspace:*
+        version: link:../packages/provider-ollama
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
+      tsx:
+        specifier: ^4
+        version: 4.22.4
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../packages/test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.19.19
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@22.19.19)(happy-dom@20.11.1)(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
+      wrangler:
+        specifier: ^4.81.0
+        version: 4.81.0(@cloudflare/workers-types@4.20260606.1)
+
 packages:
 
   '@antfu/install-pkg@1.1.0':
@@ -722,6 +792,10 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
+  '@babel/runtime-corejs3@7.29.7':
+    resolution: {integrity: sha512-ppj9ouYku+RX0ljtgZd+KMO5mkM2bCqg8H2PYAFWnLsHEIKIdRojqbJ2i3eVHrisuxy7nOFCmngTDdWtUCdXUQ==}
+    engines: {node: '>=6.9.0'}
+
   '@babel/runtime@7.29.7':
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
@@ -791,6 +865,10 @@ packages:
   '@ctrl/tinycolor@3.6.1':
     resolution: {integrity: sha512-SITSV6aIXsuVNV3f3O0f2n/cgyEDWoSqtZMYiAmcsYHydcKrOz3gUxB/iXd/Qf08+IZX4KpgNbvUdMBmWz+kcA==}
     engines: {node: '>=10'}
+
+  '@discoveryjs/json-ext@1.1.0':
+    resolution: {integrity: sha512-Xc3VhU02wqZ1HvHRJUwL09HkZSTvidqY5Ya0NXBSYOxAp+Ln9dcJr9fySI+CkONzP3PekQo9WdzCv0PGER/mOA==}
+    engines: {node: '>=14.17.0'}
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -3144,6 +3222,9 @@ packages:
     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
     engines: {node: '>=18'}
 
+  core-js-pure@3.50.0:
+    resolution: {integrity: sha512-6GP3Pxz4IKyWjAfa747vIu/jilB5z29JWROLqH/b+pXVcpgh6tM06ZIBwSuglgVqzDYURhOK6oEzTrG0bCHitA==}
+
   cross-env@10.1.0:
     resolution: {integrity: sha512-GsYosgnACZTADcmEyJctkJIoqAhHjttw7RsFrVoJNXbsWWqaq6Ym+7kZjq6mS45O0jij6vtiReppKQEtqWy6Dw==}
     engines: {node: '>=20'}
@@ -3715,6 +3796,10 @@ packages:
     engines: {node: '>=16.x'}
     hasBin: true
 
+  imask@7.6.1:
+    resolution: {integrity: sha512-sJlIFM7eathUEMChTh9Mrfw/IgiWgJqBKq2VNbyXvBZ7ev/IlO6/KQTKlV/Fm+viQMLrFLG/zCuudrLIwgK2dg==}
+    engines: {npm: '>=4.0.0'}
+
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
     engines: {node: '>=6'}
@@ -3938,6 +4023,10 @@ packages:
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
+
+  klona@2.0.6:
+    resolution: {integrity: sha512-dhG34DXATL5hSxJbIexCft8FChFXtmskoZYnoPWjXQuebWYCNkVeV3KkGegCK9CP1oswI/vQibS2GY7Em/sJJA==}
+    engines: {node: '>= 8'}
 
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
@@ -5352,6 +5441,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@babel/runtime-corejs3@7.29.7':
+    dependencies:
+      core-js-pure: 3.50.0
+
   '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.29.7':
@@ -5408,6 +5501,8 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.9
 
   '@ctrl/tinycolor@3.6.1': {}
+
+  '@discoveryjs/json-ext@1.1.0': {}
 
   '@emnapi/core@1.10.0':
     dependencies:
@@ -8219,6 +8314,8 @@ snapshots:
 
   cookie@1.1.1: {}
 
+  core-js-pure@3.50.0: {}
+
   cross-env@10.1.0:
     dependencies:
       '@epic-web/invariant': 1.0.0
@@ -8937,6 +9034,10 @@ snapshots:
 
   image-size@2.0.2: {}
 
+  imask@7.6.1:
+    dependencies:
+      '@babel/runtime-corejs3': 7.29.7
+
   import-fresh@3.3.1:
     dependencies:
       parent-module: 1.0.1
@@ -9145,6 +9246,8 @@ snapshots:
       json-buffer: 3.0.1
 
   kleur@4.1.5: {}
+
+  klona@2.0.6: {}
 
   levn@0.4.1:
     dependencies:
@@ -10595,11 +10698,11 @@ snapshots:
       magic-string: 0.30.21
       obug: 2.1.1
       pathe: 2.0.3
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       std-env: 4.2.0
       tinybench: 2.9.0
       tinyexec: 1.1.2
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
       vite: 8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0)
       why-is-node-running: 2.3.0

@@ -1,0 +1,233 @@
+import { test } from 'vitest';
+
+import { withInlineImagesCompressed } from '../../../src/interceptors/anthropic-messages/compress-images.ts';
+import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
+import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ExecuteResult } from '@floway-dev/provider';
+import { eventResult } from '@floway-dev/provider';
+import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+
+const stubRequest = {};
+
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+
+// Records the bytes and resolved target dimensions handed to the processor and
+// returns a fixed [1,2,3] WebP payload, which base64-encodes to "AQID".
+const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; targets: (ImageDimensions | null)[] } => {
+  const inputs: Uint8Array[] = [];
+  const targets: (ImageDimensions | null)[] = [];
+  const processor: ImageProcessor = {
+    compressToWebp(input, target) {
+      inputs.push(input);
+      targets.push(target);
+      return Promise.resolve(new Uint8Array([1, 2, 3]));
+    },
+  };
+  return { processor, inputs, targets };
+};
+
+const invocation = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude-test'): AnthropicMessagesBoundaryCtx => ({
+  payload,
+  headers: new Headers(),
+  anthropicBeta: [],
+  model: stubProviderModel({ id: upstreamModelId, endpoints: { anthropicMessages: {} } }),
+});
+
+test('compresses a top-level image block to WebP', async () => {
+  const { processor, inputs } = spyProcessor();
+  initImageProcessor(processor);
+
+  const textBlock = { type: 'text' as const, text: 'look' };
+  const imageBlock: AnthropicMessagesImageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const untouchedMessage = { role: 'assistant' as const, content: 'untouched' };
+  const payload: AnthropicMessagesPayload = {
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          textBlock,
+          imageBlock,
+        ],
+      },
+      untouchedMessage,
+    ],
+  };
+  const ctx = invocation(payload);
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  const block = (ctx.payload.messages[0].content as Array<{ type: string; source?: { media_type: string; data: string } }>)[1];
+  assertEquals(block.source?.media_type, 'image/webp');
+  assertEquals(block.source?.data, 'AQID');
+  assertEquals(imageBlock.source.media_type, 'image/png');
+  assertEquals(imageBlock.source.data, 'AAAA');
+  assert(ctx.payload !== payload);
+  assert(ctx.payload.messages !== payload.messages);
+  assert(ctx.payload.messages[0] !== payload.messages[0]);
+  assert(ctx.payload.messages[1] === untouchedMessage);
+  const rewritten = ctx.payload.messages[0].content;
+  if (!Array.isArray(rewritten)) throw new Error('expected rewritten user content');
+  assert(rewritten !== payload.messages[0].content);
+  assert(rewritten[0] === textBlock);
+  assert(rewritten[1] !== imageBlock);
+  if (rewritten[1]?.type !== 'image') throw new Error('expected rewritten image block');
+  assert(rewritten[1].source !== imageBlock.source);
+  // "AAAA" decodes to three zero bytes.
+  assertEquals([...inputs[0]], [0, 0, 0]);
+});
+
+test('compresses an image nested inside tool_result content', async () => {
+  const { processor } = spyProcessor();
+  initImageProcessor(processor);
+
+  const outerText = { type: 'text' as const, text: 'before tool result' };
+  const innerText = { type: 'text' as const, text: 'screenshot' };
+  const nestedImage: AnthropicMessagesImageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const toolResult: AnthropicMessagesToolResultBlock = {
+    type: 'tool_result',
+    tool_use_id: 'toolu_image',
+    content: [innerText, nestedImage],
+  };
+  const untouchedMessage = { role: 'system' as const, content: 'unchanged' };
+  const payload: AnthropicMessagesPayload = {
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          outerText,
+          toolResult,
+        ],
+      },
+      untouchedMessage,
+    ],
+  };
+  const ctx = invocation(payload);
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  const rewrittenContent = ctx.payload.messages[0].content;
+  if (!Array.isArray(rewrittenContent)) throw new Error('expected rewritten user content');
+  const rewrittenToolResult = rewrittenContent[1];
+  if (rewrittenToolResult?.type !== 'tool_result' || !Array.isArray(rewrittenToolResult.content)) throw new Error('expected rewritten tool result');
+  const rewrittenImage = rewrittenToolResult.content[1];
+  if (rewrittenImage?.type !== 'image') throw new Error('expected rewritten nested image');
+  assertEquals(rewrittenImage.source.media_type, 'image/webp');
+  assertEquals(rewrittenImage.source.data, 'AQID');
+  assertEquals(nestedImage.source.media_type, 'image/png');
+  assertEquals(nestedImage.source.data, 'AAAA');
+  assert(ctx.payload !== payload);
+  assert(ctx.payload.messages[0] !== payload.messages[0]);
+  assert(ctx.payload.messages[1] === untouchedMessage);
+  assert(rewrittenContent[0] === outerText);
+  assert(rewrittenToolResult !== toolResult);
+  assert(rewrittenToolResult.content !== toolResult.content);
+  assert(rewrittenToolResult.content[0] === innerText);
+  assert(rewrittenImage !== nestedImage);
+  assert(rewrittenImage.source !== nestedImage.source);
+});
+
+test('leaves image-free payloads untouched and does not invoke the processor', async () => {
+  const { processor, inputs } = spyProcessor();
+  initImageProcessor(processor);
+
+  const payload: AnthropicMessagesPayload = {
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'plain' }] }],
+  };
+  const ctx = invocation(payload);
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  assertEquals(inputs.length, 0);
+  assert(ctx.payload === payload);
+});
+
+test('compresses each unique inline image only once when the same base64 data repeats', async () => {
+  const { processor, inputs } = spyProcessor();
+  initImageProcessor(processor);
+
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_image',
+            content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }],
+          },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'BBBB' } },
+        ],
+      },
+    ],
+  });
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  assertEquals(inputs.length, 2);
+});
+
+test('selects the high-res Claude cap for Opus >= 4.7 and the standard cap otherwise', async () => {
+  const source = { width: 3000, height: 3000 };
+  // Opus 4.7 / 4.8 (and future Opus): ~3.59 MP area cap -> sqrt(3_588_000/9e6) -> 1894.
+  for (const id of ['claude-opus-4.7', 'claude-opus-4.8', 'claude-opus-4.7-high', 'claude-opus-5']) {
+    assertEquals(await capTargetFor(id, source), { width: 1894, height: 1894 });
+  }
+  // Opus 4.5 / 4.6 + sonnet/haiku: standard ~1.18 MP cap -> sqrt(1_176_000/9e6) -> 1084.
+  for (const id of ['claude-opus-4.5', 'claude-opus-4.6', 'claude-sonnet-4.6', 'claude-haiku-4.5']) {
+    assertEquals(await capTargetFor(id, source), { width: 1084, height: 1084 });
+  }
+});
+
+test('high-res Opus clamps the long edge to 2576 on very wide images', async () => {
+  // 8000x1000: long-edge factor 2576/8000=0.322 is tighter than the area
+  // factor sqrt(3_588_000/8e6)=0.67, so the long edge binds -> 2576x322.
+  assertEquals(await capTargetFor('claude-opus-4.7', { width: 8000, height: 1000 }), { width: 2576, height: 322 });
+});
+
+// Drives the interceptor end-to-end with a header-only PNG of the requested
+// dimensions and reads back the target the per-model cap resolved to. The
+// PNG carries no pixel payload — image-size reads dimensions from IHDR and
+// does not validate the rest of the file.
+const capTargetFor = async (upstreamModelId: string, source: ImageDimensions): Promise<ImageDimensions | null> => {
+  const { processor, targets } = spyProcessor();
+  initImageProcessor(processor);
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngHeaderBase64(source) } }],
+      },
+    ],
+  }, upstreamModelId);
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  return targets[0];
+};
+
+const pngHeaderBase64 = ({ width, height }: ImageDimensions): string => {
+  const bytes = new Uint8Array(33);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.set([0x00, 0x00, 0x00, 0x0d], 8);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width, false);
+  view.setUint32(20, height, false);
+  bytes.set([0x08, 0x02, 0x00, 0x00, 0x00], 24);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+};

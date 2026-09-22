@@ -37,7 +37,7 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
           filters: { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] },
           hidden: [],
         },
-        upstreamNames: [],
+        upstreams: [],
         view: 'self-by-key',
       }}
       matches={[] as never}

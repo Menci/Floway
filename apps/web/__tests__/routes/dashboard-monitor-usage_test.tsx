@@ -32,7 +32,7 @@ const loaderData = {
     metric: 'total' as const,
     range: 'today' as const,
   },
-  upstreams: [{ id: 'up-1', name: 'Copilot seat' }],
+  upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }],
   usage: {
     series: [usageRecord],
     axes: {
@@ -194,7 +194,7 @@ describe('usage dimension controls', () => {
 
     expect(data.state.groupBy).toBe('userId');
     expect(data.usage?.series[0]).toMatchObject({ group: 'gpt-5', metrics: {} });
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
+    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
   });
 
   it('keeps token charts available when upstream names fail to load', async () => {
@@ -235,7 +235,7 @@ describe('usage dimension controls', () => {
         });
       }
       if (url.pathname === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-      if (url.pathname === '/api/upstream-options') return Response.json([{ id: 'up-1', name: 'Copilot seat' }]);
+      if (url.pathname === '/api/upstream-options') return Response.json([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
       throw new Error(`Unexpected request to ${url.pathname}`);
     }));
     renderPage(loaderData);

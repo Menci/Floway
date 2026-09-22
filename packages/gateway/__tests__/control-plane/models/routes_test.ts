@@ -25,7 +25,7 @@ const azureUpstream = (): UpstreamRecord => ({
       {
         upstreamModelId: 'azure-model',
         publicModelId: 'azure-public',
-        endpoints: { responses: {} },
+        endpoints: { openaiResponses: {} },
       },
     ],
   },
@@ -251,8 +251,8 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-small',
-      endpoints: { chatCompletions: {} },
-      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { chatCompletions: {} }, limits: { max_context_window_tokens: 100_000 } }],
+      endpoints: { openaiChatCompletions: {} },
+      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { openaiChatCompletions: {} }, limits: { max_context_window_tokens: 100_000 } }],
       modelsFetch: { enabled: false },
     },
   }));
@@ -265,8 +265,8 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-big',
-      endpoints: { chatCompletions: {} },
-      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { chatCompletions: {} }, limits: { max_context_window_tokens: 200_000 } }],
+      endpoints: { openaiChatCompletions: {} },
+      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { openaiChatCompletions: {} }, limits: { max_context_window_tokens: 200_000 } }],
       modelsFetch: { enabled: false },
     },
   }));

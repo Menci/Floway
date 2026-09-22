@@ -47,7 +47,7 @@ export const loadingCss = `
   .floway-loading .fui-Spinner__spinner {
     --fui-Spinner--strokeWidth: 25%;
     animation: floway-loading-spin 1.5s linear infinite;
-    background-color: #ffffff00;
+    background-color: rgba(255, 255, 255, 0);
     color: var(--colorBrandStroke1, #0067c0);
     flex-shrink: 0;
     height: 32px;
@@ -89,7 +89,7 @@ export const loadingCss = `
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L4
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml#L23-L25 */
   .floway-loading .fui-Spinner__label {
-    color: var(--colorNeutralForeground1, #000000e4);
+    color: var(--colorNeutralForeground1, rgba(0, 0, 0, 0.894118));
     font-family: var(--fontFamilyBase, sans-serif);
     font-size: var(--fontSizeBase300, 14px);
     font-weight: var(--fontWeightRegular, 400);

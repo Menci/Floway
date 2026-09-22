@@ -44,6 +44,27 @@ export interface PassthroughAttemptArgs {
   readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
 }
 
+// Statuses whose response is defined to carry no body; constructing a Response
+// with one throws.
+// https://fetch.spec.whatwg.org/#null-body-status
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+// The fallback loop keeps only the most recent failure and drops the rest, and
+// on the direct-connect egress a dropped response strands its socket — the
+// transport is released only when the body is read to its end or cancelled.
+// Reading a failed attempt's body now makes the result inert, so no later owner
+// has to remember to release it. The bytes, status and headers still forward
+// verbatim when this turns out to be the last candidate. This is what the chat
+// path already does through `readUpstreamApiError`.
+const materializeFailure = async (response: Response): Promise<Response> => {
+  const bytes = await response.arrayBuffer();
+  return new Response(NULL_BODY_STATUSES.has(response.status) ? null : bytes, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+};
+
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
   const { c, ctx, candidate, operation, call } = args;
   const { response, modelKey } = await call(
@@ -54,7 +75,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
   return {
     type: 'plain',
     status: response.status,
-    response,
+    response: response.ok ? response : await materializeFailure(response),
     performance: upstreamPerformanceContext(ctx, candidate, operation),
     identity: telemetryModelIdentity(candidate, modelKey),
   };

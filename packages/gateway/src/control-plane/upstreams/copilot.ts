@@ -13,6 +13,9 @@ import {
   emptyCopilotUpstreamState,
   exchangeCopilotToken,
   fetchCopilotUsage,
+  projectCopilotSeat,
+  putCopilotSeat,
+  type CopilotSeatEntry,
   fetchGitHubUser,
   normalizeGitHubHost,
   pollGitHubDeviceFlow,
@@ -84,7 +87,12 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // unhealthy. DB ops below run OUTSIDE this catch so that a repo `.save()`
   // or scheduler failure surfaces as a 500 with a stack, not as a
   // misleading "upstream error" 502.
-  type UpstreamCred = { user: CopilotUpstreamUser; tokenEntry: CopilotTokenEntry; accessToken: string };
+  type UpstreamCred = {
+    user: CopilotUpstreamUser;
+    tokenEntry: CopilotTokenEntry;
+    accessToken: string;
+    seat: CopilotSeatEntry | null;
+  };
   let cred: UpstreamCred;
   try {
     const data = await pollGitHubDeviceFlow(githubHost, deviceCode, fetcher);
@@ -99,9 +107,22 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     // a follow-up exchange round trip.
     const user = await fetchGitHubUser(githubHost, data.access_token, fetcher);
     const tokenEntry = await exchangeCopilotToken(githubHost, data.access_token, fetcher);
-    cred = { user, tokenEntry, accessToken: data.access_token };
+    cred = { user, tokenEntry, accessToken: data.access_token, seat: null };
   } catch (e: unknown) {
     return c.json({ status: 'error' as const, error: errorMessage(e) }, 502);
+  }
+
+  // Read outside the block above: the credential is already valid, so a seat
+  // this call could not read costs the row its plan name until the next
+  // refresh and must not cost the operator the import.
+  try {
+    const resp = await fetchCopilotUsage(githubHost, cred.accessToken, fetcher);
+    if (resp.ok) {
+      const seat = projectCopilotSeat((await resp.json()) as CopilotUsageResponse, new Date());
+      if (seat !== null) cred = { ...cred, seat: { fetchedAt: Date.now(), data: seat } };
+    }
+  } catch (err: unknown) {
+    console.warn('Failed to read the Copilot seat during import:', err);
   }
 
   const configPatch: CopilotUpstreamConfig = { githubHost, githubToken: cred.accessToken, user: cred.user };
@@ -121,7 +142,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const previous = assertCopilotUpstreamRecord(dbRecord);
     const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
     const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
-    nextState = { ...prevState, copilotToken: cred.tokenEntry };
+    nextState = { ...prevState, copilotToken: cred.tokenEntry, seat: cred.seat ?? prevState.seat };
     const previousUpdatedAt = Date.parse(dbRecord.updatedAt);
     if (!Number.isFinite(previousUpdatedAt)) throw new Error(`Copilot upstream ${record.id} has an invalid updatedAt timestamp`);
     const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
@@ -131,7 +152,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     clearInProcessCopilotTokenCache();
     await warmModelsCache(next, c);
   } else {
-    nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry };
+    nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry, seat: cred.seat };
   }
 
   return c.json({
@@ -183,7 +204,18 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
       return c.json({ error: `GitHub API error: ${resp.status} ${text}` }, status as 400 | 404 | 500 | 502);
     }
 
-    const snapshot = projectCopilotUsageResponse((await resp.json()) as CopilotUsageResponse, new Date());
+    const body = (await resp.json()) as CopilotUsageResponse;
+    const now = new Date();
+    const snapshot = projectCopilotUsageResponse(body, now);
+    const seat = projectCopilotSeat(body, now);
+    // The plan rides on the same body as the quota, so the operator's refresh
+    // stores both. It is the only path that reads this endpoint after import,
+    // and a storage failure here must not fail the reading it was asked for.
+    if (seat !== null && record.id !== '') {
+      await putCopilotSeat(record.id, seat).catch((err: unknown) => {
+        console.warn(`Failed to persist Copilot seat for ${record.id}:`, err);
+      });
+    }
     // A body that reports no buckets is "nothing observed", so it neither
     // persists nor replaces what the dashboard is already showing — the
     // caller falls back to the stored snapshot. The reading otherwise merges

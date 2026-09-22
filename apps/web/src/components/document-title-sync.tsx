@@ -10,6 +10,9 @@ const titleKeyForPathname = (pathname: string) => {
   if (/^\/dashboard\/providers\/upstreams\/new\/[^/]+$/.test(pathname)) {
     return 'dashboard.upstreamEditor.documentTitleNew';
   }
+  if (/^\/dashboard\/providers\/upstreams\/[^/]+\/copy$/.test(pathname)) {
+    return 'dashboard.upstreamEditor.documentTitleCopy';
+  }
   if (/^\/dashboard\/providers\/upstreams\/[^/]+$/.test(pathname)) {
     return 'dashboard.upstreamEditor.documentTitleEdit';
   }

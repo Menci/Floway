@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/data';
-import { modelsAreValid } from '../../../src/components/upstream-editor/model-detail';
+import { modelsAreValid } from '../../../src/components/upstream-editor/model-validation';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 describe('custom discovered model projection', () => {
   it('maps fixed kinds to their own endpoint families', () => {
@@ -11,9 +12,9 @@ describe('custom discovered model projection', () => {
         { id: 'speech', kind: 'transcription' },
         { id: 'ranker', kind: 'rerank' },
       ],
-    }, { chatCompletions: {} });
+    }, { openaiChatCompletions: {} });
 
-    expect(models[0]?.endpoints).toEqual({ audioTranscriptions: {} });
+    expect(models[0]?.endpoints).toEqual({ openaiAudioTranscriptions: {} });
     expect(models[1]?.endpoints).toEqual({ rerank: {} });
   });
 
@@ -21,10 +22,23 @@ describe('custom discovered model projection', () => {
     const models = discoveredModelsFromResponse({
       kind: 'custom',
       data: [{ id: 'bge-m3' }, { id: 'talker', kind: 'chat' }],
-    }, { embeddings: {} });
+    }, { openaiEmbeddings: {} });
 
-    expect(models[0]?.endpoints).toEqual({ embeddings: {} });
-    expect(models[1]?.endpoints).toEqual({ embeddings: {} });
+    expect(models[0]?.endpoints).toEqual({ openaiEmbeddings: {} });
+    expect(models[1]?.endpoints).toEqual({ openaiEmbeddings: {} });
+  });
+
+  it('preserves chat metadata exactly when the configured endpoints resolve to chat', () => {
+    const chat = {
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { effort: { supported: ['none', 'high'], default: 'high' } },
+    } satisfies NonNullable<UpstreamModelConfig['chat']>;
+
+    const chatModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { openaiResponses: {} });
+    const embeddingModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { openaiEmbeddings: {} });
+
+    expect(chatModel[0]?.chat).toEqual(chat);
+    expect(embeddingModel[0]?.chat).toBeUndefined();
   });
 
   it('projects every discovered row into a shape the gateway accepts', () => {
@@ -36,7 +50,7 @@ describe('custom discovered model projection', () => {
         { id: 'speech', kind: 'transcription' },
         { id: 'ranker', kind: 'rerank' },
       ],
-    }, { chatCompletions: {} });
+    }, { openaiChatCompletions: {} });
 
     expect(modelsAreValid(models)).toBe(true);
   });
@@ -44,7 +58,7 @@ describe('custom discovered model projection', () => {
 
 describe('manual model validation', () => {
   it('rejects the same incomplete identities and endpoint contracts as the gateway', () => {
-    expect(modelsAreValid([{ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } }])).toBe(false);
+    expect(modelsAreValid([{ upstreamModelId: '', kind: 'chat', endpoints: { openaiChatCompletions: {} } }])).toBe(false);
     expect(modelsAreValid([{ upstreamModelId: 'ranker', kind: 'rerank', endpoints: { rerank: {} } }])).toBe(false);
     expect(modelsAreValid([{
       upstreamModelId: 'ranker',

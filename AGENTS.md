@@ -1,10 +1,11 @@
-# Repository Agent Protocol
+# Repository Agent Guide
 
 ## Requirements
 
 | Scope | Requirement | Enforcement |
 |---|---|---|
-| Protocol shape | Keep this file as the two tables named `Requirements` and `Index`. | `pnpm run check:agent-protocol` |
+| Document shape | Keep this file as the two tables named `Requirements` and `Index`. | `pnpm run check:agents-md` |
+| Index inventory | Keep `Index` as the complete sorted inventory of CI workflows, skills, and workspace package directories with a short responsibility overview. | `pnpm run check:agents-md` |
 | Task scope | Derive every action from the user's request and preserve unrelated working-tree state. | Final diff review |
 | Questions | Answer requested questions from read-only evidence. | Final diff review |
 | Findings | Reproduce the reported scenario and validate third-party findings against primary sources before acting. | Investigation evidence |
@@ -24,7 +25,9 @@
 | Stacked Pull Requests | Keep dependent Pull Requests draft and targeted at their predecessor; retarget and publish each one when all dependencies reach `main`. | Pull Request state |
 | `CHANGELOG.md` | Apply only the exact content the human requests and otherwise leave the file untouched. | Human request and final diff review |
 | Completion | Run and read every verification selected by the owning configuration before claiming completion. | Verification output |
+| Verification inventory | Reach every verification through a root script, chain them all from `verify`, and keep `verify.yaml` running exactly that set. | `pnpm run check:verify-parity` |
 | Test placement | Place package tests and test-only support under `__tests__/` mirroring production directories; keep root verifier entrypoints and `@floway-dev/test-utils` in their owning production locations. | Vitest configs and repository review |
+| Script naming | Name a `scripts/` entrypoint for its kind — `check-` verifies an invariant, `require-` gates an action, `generate-` writes checked-in output, `test-` runs a harness — and leave importable modules unprefixed. | Repository review |
 | Generated files | Give every checked-in generator output a `.generated.` filename infix and keep generated and vendored attributes aligned. | `.gitattributes` and drift checks |
 | Current concepts | Keep code, comments, tests, and documentation expressed in the current architecture; preserve historical names only in migrations. | Repository search and final diff review |
 | Product name | Write **Floway** in prose, comments, test names, assertions, and logs; use lowercase `floway` only in established technical contracts. | Repository review |
@@ -43,28 +46,32 @@
 
 ## Index
 
-| Scope | Canonical source |
-|---|---|
-| Project use and operator setup | `README.md` |
-| Workspace commands | `package.json` |
-| Continuous verification | `.github/workflows/verify.yaml` |
-| TypeScript projects | `tsconfig.base.json`, `tsconfig.scripts.json`, and package `tsconfig.json` files |
-| Lint boundaries | `eslint.config.ts` |
-| Test discovery | `vitest.config.ts` and package `vitest.config.ts` files |
-| Workspace dependency graph | `pnpm-workspace.yaml` and package manifests |
-| Protocol contracts | `packages/protocols` |
-| Protocol translation | `packages/translate` |
-| Provider contracts | `packages/provider` |
-| Provider implementations | `packages/provider-*` |
-| Gateway composition | `packages/gateway` |
-| Portable runtime contracts | `packages/platform` |
-| Deployment runtimes | `apps/platform-*` |
-| Dashboard | `apps/web` |
-| Agent Setup generation | `packages/agent-setup/scripts/generate-assets.ts` |
-| Database migrations | `packages/gateway/migrations` |
-| Wrangler configuration shape | `wrangler.example.jsonc` and `scripts/check-wrangler.ts` |
-| Cloudflare deployment | `$deploy-to-cloudflare` |
-| Copilot upstream probing | `$probing-copilot` |
-| Copilot workaround audit | `$audit-copilot-workarounds` |
-| Model pricing research | `$fetching-models-pricing` |
-| Recorded usage repricing | `$backfill-model-pricing` |
+| Category | Entry | Overview |
+|---|---|---|
+| CI | `.github/workflows/build.yaml` | Builds and publishes deployment images. |
+| CI | `.github/workflows/verify.yaml` | Validates every repository change. |
+| Skill | `$audit-copilot-workarounds` | Audits Copilot compatibility workarounds. |
+| Skill | `$backfill-usage-pricing` | Reprices recorded model usage. |
+| Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
+| Skill | `$fetching-models-pricing` | Researches provider model pricing. |
+| Skill | `$probing-copilot` | Probes Copilot upstream behavior. |
+| Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
+| Package | `apps/platform-node` | Hosts Floway on Node. |
+| Package | `apps/web` | Provides the operator dashboard. |
+| Package | `packages/agent-setup` | Configures supported coding agents. |
+| Package | `packages/gateway` | Composes gateway services. |
+| Package | `packages/http` | Provides HTTP transport primitives. |
+| Package | `packages/interceptor` | Intercepts gateway traffic. |
+| Package | `packages/platform` | Defines portable runtime contracts. |
+| Package | `packages/protocols` | Defines protocol contracts. |
+| Package | `packages/provider` | Defines provider contracts. |
+| Package | `packages/provider-azure` | Integrates Azure OpenAI. |
+| Package | `packages/provider-claude-code` | Integrates Claude Code subscriptions. |
+| Package | `packages/provider-codex` | Integrates OpenAI Codex subscriptions. |
+| Package | `packages/provider-copilot` | Integrates GitHub Copilot subscriptions. |
+| Package | `packages/provider-custom` | Integrates OpenAI-compatible providers. |
+| Package | `packages/provider-ollama` | Integrates Ollama. |
+| Package | `packages/proxy` | Routes traffic through configured proxies. |
+| Package | `packages/test-utils` | Provides shared test infrastructure. |
+| Package | `packages/translate` | Translates between protocol contracts. |
+| Package | `tools` | Provides repository operation tooling. |

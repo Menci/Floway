@@ -127,7 +127,7 @@ export function SummaryMetrics({ metric, onMetricChange, summary }: { metric: Us
   const { t } = useTranslation();
   const locale = useLocale();
   return <div className="grid gap-2.5 grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
-    {summaryMetrics.map(group => <div className="grid gap-2 min-w-0" key={group.join('-')}>
+    {summaryMetrics.map(group => <div className="grid gap-2 content-start min-w-0" key={group.join('-')}>
       {group.map(item => <SummaryMetricButton active={metric === item} key={item} label={t(metricConfig[item].labelKey)} onClick={() => onMetricChange(item)} value={formatSummaryMetric(summary, item, locale)} />)}
     </div>)}
   </div>;

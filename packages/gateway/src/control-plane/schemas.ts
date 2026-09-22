@@ -48,14 +48,14 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 // One concept, all endpoints — the runtime validators enforce presence/emptiness
 // rules.
 const modelEndpointsSchema = z.object({
-  completions: z.object({}).optional(),
-  chatCompletions: z.object({}).optional(),
-  responses: z.object({}).optional(),
-  messages: z.object({}).optional(),
-  embeddings: z.object({}).optional(),
-  imagesGenerations: z.object({}).optional(),
-  imagesEdits: z.object({}).optional(),
-  audioTranscriptions: z.object({}).optional(),
+  openaiCompletions: z.object({}).optional(),
+  openaiChatCompletions: z.object({}).optional(),
+  openaiResponses: z.object({}).optional(),
+  anthropicMessages: z.object({}).optional(),
+  openaiEmbeddings: z.object({}).optional(),
+  openaiImagesGenerations: z.object({}).optional(),
+  openaiImagesEdits: z.object({}).optional(),
+  openaiAudioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
 });
 
@@ -126,6 +126,10 @@ const reasoningSchema = z.object({
 
 const chatSchema = z.object({
   modalities: modalitiesSchema.optional(),
+  // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
+  // the upstream stating it rejects detail 'original', not the absence of a
+  // statement.
+  image_detail_original: z.boolean().optional(),
   reasoning: reasoningSchema.optional(),
 });
 
@@ -206,6 +210,9 @@ const ollamaConfigSchema = z.object({
   // Optional: required against ollama.com, typically absent for a private
   // daemon. PATCH passes `null` to explicitly clear it.
   apiKey: z.string().nullable().optional(),
+  // Whether this upstream is an Ollama Cloud account whose usage windows the
+  // gateway reads; see the provider config for why a base URL cannot answer it.
+  cloudUsage: z.boolean().optional(),
   models: z.array(upstreamModelSchema).optional(),
 }).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
   message: 'rerank models require a custom upstream',
@@ -234,10 +241,8 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because zero upstreams cannot serve any model.
+// null leaves this level unrestricted; an empty list grants no upstreams.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
 
@@ -269,8 +274,8 @@ export const changeOwnPasswordBody = z.object({
 // rather than letting them through as de-facto "never expire".
 const dumpRetentionSecondsSchema = z.number().int().positive().max(RETENTION_MAX_SECONDS).nullable();
 // Keep the wire/storage unit aligned with dump retention while requiring the
-// dashboard's whole-day Responses contract at every control-plane boundary.
-const responsesRetentionSecondsSchema = z.union([
+// dashboard's whole-day OpenAI Responses contract at every control-plane boundary.
+const openaiResponsesRetentionSecondsSchema = z.union([
   z.literal(0),
   z.number().int().min(SECONDS_PER_DAY).max(RETENTION_MAX_SECONDS).multipleOf(SECONDS_PER_DAY),
 ]);
@@ -289,7 +294,7 @@ export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
 });
 
@@ -299,7 +304,7 @@ export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
 
 // --- upstreams ---
@@ -487,6 +492,10 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
+// --- ollama ---
+
+export const ollamaUsageBody = recordOnlyBody;
+
 // Unified live-model listing for both create-time preview and edit-time
 // refresh. Custom returns the raw upstream row (dashboard translates
 // through the draft's endpoints); every other kind returns the fully
@@ -588,7 +597,7 @@ const chatAliasReasoningSchema = z.object({
   summary: z.string().min(1).optional(),
 }).strict().refine(
   // `adaptive` and a pinned `budget_tokens` are mutually exclusive on the
-  // Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
+  // Anthropic Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
   // only the `enabled` branch carries a `budget_tokens`. Storing both on the
   // same rule would silently discard the budget at overlay time.
   r => !(r.adaptive === true && r.budget_tokens !== undefined),

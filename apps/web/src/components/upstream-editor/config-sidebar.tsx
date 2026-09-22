@@ -17,7 +17,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { HuePicker } from '../upstreams/hue-picker';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
 
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
