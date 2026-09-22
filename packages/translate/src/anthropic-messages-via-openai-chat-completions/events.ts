@@ -182,8 +182,6 @@ interface OpenAIChatCompletionsToAnthropicMessagesStreamState {
   refusalText: string;
   sawRefusal: boolean;
   pendingUsage?: OpenAIChatCompletionsStreamEvent['usage'];
-  // Captured from the first chunk so `message_start` can be deferred until a
-  // usage-bearing chunk supplies the real input-token count.
   upstreamId?: string;
   upstreamModel?: string;
   // Latest cumulative completion_tokens already stated to the client, used to
