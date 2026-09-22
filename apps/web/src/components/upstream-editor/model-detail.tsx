@@ -15,6 +15,7 @@ import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
@@ -23,6 +24,7 @@ import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/p
 const {
   Button,
   Field,
+  InfoButton,
   MessageBar,
   MessageBarBody,
   Option,
@@ -172,13 +174,21 @@ export function ModelDetail({
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
         >
           <div className="grid gap-4">
-            <Switch
-              checked={bindOpaqueBlobsToUpstream}
-              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
-              readOnly={fieldsReadOnly}
-              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
-            />
-            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}>
+            <span className="inline-flex items-center gap-1">
+              <Switch
+                checked={bindOpaqueBlobsToUpstream}
+                label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+                readOnly={fieldsReadOnly}
+                onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
+              />
+              <InfoButton info={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstreamHint')} />
+            </span>
+            <Field className="min-w-0" label={{
+              children: infoLabelSlot(
+                t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey'),
+                t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKeyHint'),
+              ),
+            }}>
               <Input
                 className="!w-full font-mono"
                 placeholder={row.config.upstreamModelId}
