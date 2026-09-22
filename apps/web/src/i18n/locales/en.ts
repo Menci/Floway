@@ -429,8 +429,7 @@ const en = {
           copyNamed: 'Copy upstream {{name}}',
           deleteNamed: 'Delete upstream {{name}}',
           toggle: 'Toggle upstream {{name}}',
-          moveUp: 'Move upstream {{name}} up',
-          moveDown: 'Move upstream {{name}} down',
+          reorder: 'Reorder upstream {{name}}',
         },
         table: {
           title: 'Routing priority',
@@ -537,8 +536,7 @@ const en = {
         actions: {
           back: 'Back to upstreams',
           save: 'Save changes',
-          moveUp: 'Move up',
-          moveDown: 'Move down',
+          reorder: 'Reorder',
           remove: 'Remove',
           showSecret: 'Show API key',
           hideSecret: 'Hide API key',
@@ -1193,7 +1191,7 @@ const en = {
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },
-        target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', moveUp: 'Move target up', moveDown: 'Move target down', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
+        target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', reorder: 'Reorder target', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
         rules: { effort: 'Reasoning effort', budget: 'Reasoning budget tokens', adaptive: 'Adaptive reasoning', adaptiveAuto: 'Auto (defer to model)', adaptiveOn: 'On (force adaptive)', adaptiveOff: 'Off (force non-adaptive)', summary: 'Reasoning summary', verbosity: 'Verbosity', serviceTier: 'Service tier' },
         metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', context: 'Context window', prompt: 'Prompt tokens', output: 'Output tokens', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },

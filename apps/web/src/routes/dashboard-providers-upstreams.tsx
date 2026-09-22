@@ -20,7 +20,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
-import { ReorderButtons } from '../components/ui/reorder-buttons';
+import { moveItem, ReorderHandle, useReorderList } from '../components/ui/reorder-list';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -220,26 +220,28 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setMutation(null);
   };
 
-  const move = async (record: UpstreamRecord, direction: -1 | 1) => {
+  // A drag lands on any position, so the two records a step used to swap are
+  // now a span, and a span cannot be reordered by trading the values it already
+  // holds: `compareUpstreams` breaks a tie on creation time, and two records
+  // sharing a sort_order would land wherever that says rather than where the
+  // operator dropped them. The whole list is renumbered to its positions
+  // instead, which leaves no tie for the next drag to inherit, and only the
+  // records whose number actually changed are written.
+  const move = async (from: number, to: number) => {
     const snapshot = data.upstreams;
-    if (snapshot === null) return;
-    const index = snapshot.findIndex(candidate => candidate.id === record.id);
-    const targetIndex = index + direction;
-    if (index < 0 || targetIndex < 0 || targetIndex >= snapshot.length) return;
+    if (snapshot === null || from === to) return;
+    if (from < 0 || from >= snapshot.length || to < 0 || to >= snapshot.length) return;
 
-    const target = snapshot[targetIndex];
-    const next = [...snapshot];
-    next[index] = target;
-    next[targetIndex] = record;
-    setMutation({ kind: 'reorder', id: record.id });
+    const moved = snapshot[from];
+    const stored = new Map(snapshot.map(record => [record.id, record.sort_order]));
+    const next = moveItem(snapshot, from, to).map((record, index) => ({ ...record, sort_order: index }));
+    const writes = next.filter(record => stored.get(record.id) !== record.sort_order);
+    setMutation({ kind: 'reorder', id: moved.id });
     setPageError(null);
     setData(current => ({ ...current, upstreams: next }));
 
-    const [first, second] = await Promise.all([
-      patchUpstream(record.id, { sort_order: target.sort_order }),
-      patchUpstream(target.id, { sort_order: record.sort_order }),
-    ]);
-    const error = first.error ?? second.error;
+    const results = await Promise.all(writes.map(record => patchUpstream(record.id, { sort_order: record.sort_order })));
+    const error = results.find(result => result.error)?.error;
     if (error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
@@ -332,7 +334,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           busy={busy}
           mutation={mutation}
           onDelete={openDeleteDialog}
-          onMove={(record, direction) => void move(record, direction)}
+          onMove={(from, to) => void move(from, to)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
           pendingEnabled={pendingEnabled}
         />
@@ -394,13 +396,14 @@ function UpstreamsTable({
   data: LoaderData;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
-  onMove: (record: UpstreamRecord, direction: -1 | 1) => void;
+  onMove: (from: number, to: number) => void;
   onToggle: (record: UpstreamRecord, enabled: boolean) => void;
   pendingEnabled: { id: string; enabled: boolean } | null;
 }) {
   const { t } = useTranslation();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
+  const reorder = useReorderList({ busy, length: upstreams?.length ?? 0, onReorder: onMove });
 
   // A failed fetch is not an empty list: the message bar carries the reason.
   if (upstreams === null) return null;
@@ -411,7 +414,7 @@ function UpstreamsTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
-        <TableColumns widths={['120px', '200px', null, '140px', '90px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['96px', '200px', null, '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
@@ -422,20 +425,18 @@ function UpstreamsTable({
             <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody {...reorder.listProps()}>
           {upstreams.map((record, index) => {
             const deleting = mutation?.kind === 'delete' && mutation.id === record.id;
-            return <TableRow key={record.id}>
+            return <TableRow key={record.id} {...reorder.itemProps(index)}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
-                  <Text className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
-                  <ReorderButtons
-                    disabled={busy}
-                    downLabel={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
-                    isFirst={index === 0}
-                    isLast={index === upstreams.length - 1}
-                    onMove={direction => onMove(record, direction)}
-                    upLabel={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
+                  {/* The rank travels with the row a gesture is moving, so the
+                      column reads as the order the drop will commit. */}
+                  <Text className="text-fui-fg3 min-w-[22px] text-center">{reorder.position(index) + 1}</Text>
+                  <ReorderHandle
+                    {...reorder.handleProps(index)}
+                    label={t('dashboard.upstreams.actions.reorder', { name: record.name })}
                   />
                 </div>
               </TableCell>

@@ -35,6 +35,17 @@ describe('upstream access selection', () => {
     expect((screen.getByRole('checkbox', { name: 'Enabled: Alpha' }) as HTMLInputElement).checked).toBe(false);
   });
 
+  it('keeps a row on its own element when the tick moves it out of the ordered head', async () => {
+    renderInApp(<Control initialIds={['up_a']} />);
+    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
+    const checkbox = screen.getByRole('checkbox', { name: 'Enabled: Alpha' });
+    await click(checkbox);
+    // Rebuilding the row instead of moving it takes the focus of whoever just
+    // ticked the box, and leaves them pressing a node the document dropped.
+    expect(screen.getByRole('checkbox', { name: 'Enabled: Alpha' })).toBe(checkbox);
+    expect(checkbox.isConnected).toBe(true);
+  });
+
   it('allows deselecting the last upstream and preserves selections across the limit switch', async () => {
     renderInApp(<Control initialIds={['up_a']} />);
     await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));

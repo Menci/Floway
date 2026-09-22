@@ -23,6 +23,7 @@ import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { useReorderList } from '../ui/reorder-list';
 import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
@@ -76,6 +77,7 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
   const targets = values.targets;
   const kind = values.kind;
   const { append, fields, move, remove, replace } = useFieldArray({ control, name: 'targets' });
+  const reorder = useReorderList({ busy: saving, length: fields.length, onReorder: move });
   const catalog = useMemo(() => indexCatalog(models), [models]);
   const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, catalog), [catalog, kind, targets]);
   const targetIds = useMemo(() => realModelIdsOfKind(models, kind), [kind, models]);
@@ -131,7 +133,7 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
       <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Dropdown disabled={saving} selectedOptions={[field.value]} value={t(`dashboard.modelAliases.kind.${field.value}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && changeKind(data.optionValue as ModelKind)}>{MODEL_KINDS.map(modelKind => <Option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</Option>)}</Dropdown></Field>} />
       <Field label={t('dashboard.modelAliases.form.selection')}><ChoiceGroup ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
     </div>
-    <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">
+    <section {...reorder.listProps('grid gap-2')} role="group" aria-labelledby="alias-targets-heading">
       <SectionHeader
         description={t('dashboard.modelAliases.target.description')}
         level={3}
@@ -139,7 +141,7 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
         titleId="alias-targets-heading"
         actions={<Button className="!whitespace-nowrap" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
       />
-      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message ? t(errors.targets[index].target_model_id.message) : undefined} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
+      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message ? t(errors.targets[index].target_model_id.message) : undefined} handleProps={reorder.handleProps(index)} index={index} isSole={fields.length === 1} itemProps={reorder.itemProps(index)} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.targets.message)}</Text>}
     </section>
     {kindAnnouncesMetadata(kind) && <SettingsExpander

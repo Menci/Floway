@@ -12,7 +12,7 @@ import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { PANEL_INSET_CLASS } from '../ui/panel';
-import { ReorderButtons } from '../ui/reorder-buttons';
+import { ReorderHandle, useReorderList } from '../ui/reorder-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -166,6 +166,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
   const { fields, append, move, remove } = useFieldArray({ control, name: 'proxyFallbackList' });
+  const reorder = useReorderList({ length: fields.length, onReorder: move });
   const available = [
     { id: 'direct_connect', name: t('dashboard.upstreamEditor.proxy.directConnect') },
     { id: 'direct_fetch', name: t('dashboard.upstreamEditor.proxy.directFetch') },
@@ -174,13 +175,13 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   const hint = runtime.kind === 'cloudflare' ? t('dashboard.upstreamEditor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
   return <div
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
-    className="grid gap-2"
+    {...reorder.listProps('grid gap-2')}
   >
-    {fields.map((field, index) => <div className="grid gap-2 border-0 border-t border-solid border-fui-divider py-2 first:border-t-0 first:pt-0" key={field.id}>
+    {fields.map((field, index) => <div {...reorder.itemProps(index, `grid gap-2 border-0 border-solid border-fui-divider py-2 ${reorder.position(index) === 0 ? 'pt-0' : 'border-t'}`)} key={field.id}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
-          <ReorderButtons downLabel={t('dashboard.upstreamEditor.actions.moveDown')} isFirst={index === 0} isLast={index === fields.length - 1} onMove={direction => move(index, index + direction)} upLabel={t('dashboard.upstreamEditor.actions.moveUp')} />
+          <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreamEditor.actions.reorder')} />
           <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
         </div>
       </div>
