@@ -63,7 +63,7 @@ describe('chatField', () => {
 
   // Unlike reasoning.adaptive / reasoning.mandatory, `false` here is the
   // upstream stating it rejects detail 'original', not the absence of a
-  // statement — so it must survive the round trip instead of being stripped.
+  // statement — so `chatField` keeps it rather than stripping it.
   test('preserves image_detail_original: false rather than stripping it', () => {
     const chat = chatField({ image_detail_original: false }, 'm.chat');
     expect(chat).toEqual({ image_detail_original: false });

@@ -213,8 +213,7 @@ describe('codexRawToProviderModel', () => {
   });
 
   // Every codex catalog entry resolves a chat block: the mapper always states
-  // `image_detail_original` (`ModelInfo` declares it under `#[serde(default)]`,
-  // so an omission is the upstream rejecting detail 'original', not an unknown).
+  // `image_detail_original`.
   test('always states image_detail_original even when the raw entry is otherwise bare', () => {
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     expect(m.chat).toEqual({ image_detail_original: false });
@@ -250,10 +249,10 @@ describe('codexRawToProviderModel', () => {
     });
   });
 
-  // The upstream states the two facts independently, and `gpt-5.2` in the
-  // vendored catalog is exactly this shape: images accepted, detail 'original'
-  // rejected. Deriving one from the other would announce a capability the
-  // upstream fails the request for.
+  // The upstream states the two facts independently: the bundled catalog at
+  // packages/gateway/src/data-plane/codex/catalog/bundled.json records `gpt-5.2`
+  // taking images while rejecting detail 'original', so the mapper must carry
+  // each fact on its own.
   test('keeps image_detail_original independent of the modality list', () => {
     const m = codexRawToProviderModel({
       id: 'gpt-5.2',

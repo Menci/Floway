@@ -48,18 +48,17 @@ describe('model alias metadata editor', () => {
   });
 
   it('holds both image switches in one row of the group that names them', () => {
-    // The detail claim only means anything under image input, and the group
-    // shows that: one heading over one row carrying both switches, the shape
-    // the upstream editor's capabilities pane already gives these fields. A
-    // second full-width row would read as a setting of its own.
+    // The detail switch is subordinate to image input, and the group shows it:
+    // one heading over one row carrying both switches, the shape the upstream
+    // editor gives these fields.
     renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
     const group = screen.getByRole('group', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') });
 
-    // A switch is `input.fui-Switch > div.fui-Switch`, so the row is the second
-    // ancestor up.
+    // A switch's root carries `fui-Switch` and nests its input, so the row is
+    // the second ancestor up.
     expect(group.querySelector('h4')).toBeNull();
-    // `Switch` alone supplies the switch's accessible name, so the group heading
-    // is free to name the group without the kind being announced twice.
+    // The label prop is what names each switch, so both resolve by their own
+    // accessible name.
     expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
       .toBe(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal') }).parentElement?.parentElement);
   });
@@ -74,8 +73,8 @@ describe('model alias metadata editor', () => {
   });
 
   it('drops the detail claim when image input is switched off', () => {
-    // A model with no image modality cannot be accepting detail 'original', so
-    // the flag must not outlive the modality that justifies it.
+    // The detail switch is only reachable while image input is on, so a stored
+    // claim must not outlive its parent toggle.
     renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
     fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
 

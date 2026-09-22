@@ -57,8 +57,8 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
         </div>
       </section>
       {kind === 'chat' && <>
-        {/* Image input leads the group that depends on it, which is the shape
-            the upstream editor's capabilities pane gives the same two fields. */}
+        {/* Image input leads the group that depends on it, matching the shape
+            the upstream editor's capabilities section gives the same two fields. */}
         <section aria-labelledby={imageInputLabelId} className={SECTION_STACK_CLASS} role="group">
           <Text id={imageInputLabelId} weight="semibold">{t('dashboard.modelAliases.metadata.imageInput')}</Text>
           <div className="flex flex-wrap gap-4">
@@ -67,10 +67,10 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
               disabled={disabled}
               readOnly={readOnly}
               label={t('dashboard.modelAliases.metadata.imageInput')}
-              // Dropping image input drops the detail claim with it: a model with
-              // no image modality cannot be accepting detail 'original', so leaving
-              // the flag behind would announce a capability the modality list
-              // already denies.
+              // Dropping image input drops the detail claim with it: the detail
+              // switch is only reachable while image input is on, so a claim left
+              // behind would be announced while the operator can no longer see or
+              // clear it.
               onChange={(_, data) => patchChat({
                 modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
                 image_detail_original: data.checked ? value.chat?.image_detail_original : undefined,

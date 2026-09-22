@@ -58,9 +58,9 @@ describe('announced metadata', () => {
     ]));
     expect(both.chat?.image_detail_original).toBe(true);
 
-    // A split verdict is a stated `false`, matching the runtime intersection:
-    // a target that rejects detail 'original' fails the request outright, so
-    // the alias must not advertise it.
+    // A split verdict is a stated `false`, matching the data plane's
+    // intersection: the alias must not promise detail 'original' above any
+    // single target's own answer.
     const split = computeAnnouncedMetadata([target('a'), target('b')], 'chat', indexCatalog([
       catalogModel('a', { chat: { image_detail_original: true } }),
       catalogModel('b', { chat: { image_detail_original: false } }),

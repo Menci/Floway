@@ -105,10 +105,9 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   // The two facts are independent: taking images says nothing about accepting
-  // detail 'original', and only the upstream that owns the model knows the
-  // latter. `gpt-5.2` in the vendored catalog is exactly this shape, so an
-  // entry that derives one from the other announces a capability the upstream
-  // will reject the request for.
+  // detail 'original'. `gpt-5.2` in the vendored catalog is exactly this shape
+  // — images accepted, detail 'original' rejected — so the modality list cannot
+  // stand in for the field.
   test('image input does not imply original detail support', () => {
     const entry = synthesizeCatalogEntry({
       ...base,

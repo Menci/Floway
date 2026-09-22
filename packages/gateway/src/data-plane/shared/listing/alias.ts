@@ -168,10 +168,12 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   });
   if (modalities !== undefined) result.modalities = modalities;
 
-  // Conjunction, not agreement: detail 'original' is servable only where EVERY
-  // target accepts it, and a target that rejects it fails the request outright.
-  // A split verdict is therefore `false`, not a dropped field — the client
-  // treats both as "do not send original", and `false` states why.
+  // Conjunction, not agreement: the announced metadata must not promise detail
+  // 'original' above any single target's own answer, so a split verdict between
+  // targets that declared the field is a stated `false` rather than a dropped
+  // one — `false` is an answer the field's own producer states and the codecs
+  // round-trip, while a drop would read as "unknown". A target that leaves the
+  // field undeclared still drops it, per the invariant in the header.
   const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
   if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
 

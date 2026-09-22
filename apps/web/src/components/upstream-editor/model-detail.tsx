@@ -186,10 +186,10 @@ export function ModelDetail({
                   checked={imageInput}
                   readOnly={fieldsReadOnly}
                   label={t('dashboard.upstreamEditor.models.imageInput')}
-                  // Dropping image input drops the detail claim with it: a model
-                  // with no image modality cannot be accepting detail 'original',
-                  // so leaving the flag behind would announce a capability the
-                  // modality list already denies.
+                  // Dropping image input drops the detail claim with it: the detail
+                  // switch is only reachable while image input is on, so a claim
+                  // left behind would be announced while the operator can no
+                  // longer see or clear it.
                   onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original : undefined }) })}
                 />
                 {imageInput && <Switch

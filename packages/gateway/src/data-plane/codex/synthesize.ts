@@ -28,15 +28,13 @@
 //      declared `chat.modalities`, honour it (even if the upstream base
 //      advertised more); else keep the base's list. `web_search_tool_type`
 //      follows the final modality list so it cannot drift from it.
-//
-//      `supports_image_detail_original` is NOT derived from the modality list:
-//      a model can take images while rejecting detail 'original' (gpt-5.2 in
-//      the vendored catalog is exactly that), and only the upstream that owns
-//      the model knows which. Its chain is the ordinary
-//      `registry ?? source ?? BASELINE` one, so an upstream that states the
-//      fact on its own catalog carries it and every other upstream falls back
-//      to the vendored entry.
-//   6. `supported_reasoning_levels` / `default_reasoning_level` — same
+//   6. `supports_image_detail_original` — the ordinary
+//      `registry ?? source ?? BASELINE` chain, NOT derived from the modality
+//      list: a model can take images while rejecting detail 'original' (gpt-5.2
+//      in the bundled catalog is exactly that), so the modality list has no say
+//      in it. The registry arm carries whatever the model's own provider or the
+//      operator stated; `source` supplies the catalog's own answer otherwise.
+//   7. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
 //      v2 Ultra semantics and the resulting model supports Max.

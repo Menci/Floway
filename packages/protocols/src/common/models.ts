@@ -38,10 +38,8 @@ export interface ChatModelInfo {
   };
   // Whether the upstream accepts image detail 'original' — Codex's
   // `supports_image_detail_original`. Only an OpenAI Responses upstream states
-  // this on its own catalog, so every other provider leaves it unset and the
-  // field's absence means "no" rather than "unknown": a client that reads
-  // `true` here will send `original` and a backend that never advertised it
-  // rejects the request outright.
+  // this on its own catalog, so every other provider leaves it unset: a client
+  // that reads `true` here will send `original`.
   image_detail_original?: boolean;
   reasoning?: {
     // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
