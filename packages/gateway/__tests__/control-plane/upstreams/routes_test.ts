@@ -852,7 +852,7 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
   if (exchange.status !== 200) throw new Error(`codex exchange failed: ${exchange.status} ${await exchange.text()}`);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
   const create = await withMockedFetch(
-    () => { throw new Error('Codex model warm-up is outside this fixture'); },
+    () => jsonResponse({ error: 'forbidden' }, 403),
     () => requestApp('/api/upstreams', authed(adminSession, {
       kind: 'codex',
       name: 'ChatGPT Codex',
