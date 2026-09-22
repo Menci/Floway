@@ -128,7 +128,6 @@ const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => 
   return Boolean(delta.content)
     || openAIChatCompletionsScalarReasoningText(delta) !== undefined
     || delta.reasoning_opaque != null
-    || delta.refusal != null
     || (delta.tool_calls?.length ?? 0) > 0;
 };
 
