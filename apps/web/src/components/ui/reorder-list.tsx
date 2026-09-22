@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { fluentComponents } from '../../fluent';
 import { REPOSITION_ANIMATION_MS, REPOSITION_EASING } from '../../winui/motion';
 
-const { Button, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Button, makeStyles, mergeClasses } = fluentComponents;
 
 // ListView reorders by drag when CanReorderItems is set. The item under the
 // pointer states that it is in flight by opacity alone, and the items it
@@ -462,17 +462,15 @@ export type ReorderList = ReturnType<typeof useReorderList>;
 
 export function ReorderHandle({ label, ...gesture }: ReorderHandleProps & { label: string }) {
   const styles = useStyles();
-  return <Tooltip content={label} relationship="label">
-    <Button
-      appearance="subtle"
-      // The grip is the only affordance left, so the chord that does the same
-      // job has to announce itself from it.
-      aria-keyshortcuts={`${REORDER_CHORD}+ArrowUp ${REORDER_CHORD}+ArrowDown`}
-      aria-label={label}
-      className={styles.handle}
-      icon={<ReOrderDotsVerticalRegular />}
-      size="small"
-      {...gesture}
-    />
-  </Tooltip>;
+  return <Button
+    appearance="subtle"
+    // The grip is the only affordance left, so the chord that does the same
+    // job has to announce itself from it.
+    aria-keyshortcuts={`${REORDER_CHORD}+ArrowUp ${REORDER_CHORD}+ArrowDown`}
+    aria-label={label}
+    className={styles.handle}
+    icon={<ReOrderDotsVerticalRegular />}
+    size="small"
+    {...gesture}
+  />;
 }
