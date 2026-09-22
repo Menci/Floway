@@ -61,6 +61,23 @@ describe('chatField', () => {
     expect(chat?.reasoning).toEqual({ budget_tokens: { min: 100, max: 5000 } });
   });
 
+  // Unlike reasoning.adaptive / reasoning.mandatory, `false` here is the
+  // upstream stating it rejects detail 'original', not the absence of a
+  // statement.
+  test('preserves image_detail_original: false rather than stripping it', () => {
+    const chat = chatField({ image_detail_original: false }, 'm.chat');
+    expect(chat).toEqual({ image_detail_original: false });
+  });
+
+  test('keeps a chat block that carries only image_detail_original', () => {
+    expect(chatField({ image_detail_original: true }, 'm.chat')).toEqual({ image_detail_original: true });
+  });
+
+  test('rejects non-boolean image_detail_original', () => {
+    expect(() => chatField({ image_detail_original: 'yes' }, 'm.chat'))
+      .toThrow(/image_detail_original.*boolean/);
+  });
+
   test('parses reasoning with empty budget_tokens (bounds unknown)', () => {
     const chat = chatField({ reasoning: { budget_tokens: {} } }, 'm.chat');
     expect(chat?.reasoning).toEqual({ budget_tokens: {} });

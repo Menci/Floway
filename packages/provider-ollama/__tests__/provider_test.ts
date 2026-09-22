@@ -99,6 +99,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
         kind: 'chat',
         endpoints: { openaiChatCompletions: {} },
         display_name: 'Pinned 120B',
+        chat: { image_detail_original: true },
         pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
       }],
     },
@@ -110,6 +111,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['openaiChatCompletions']);
+    assertEquals(models[0].chat, { image_detail_original: true });
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
@@ -139,7 +141,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }],
     },
   }));
   let transcription: Request | undefined;
@@ -156,6 +158,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
     async () => {
       const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
+      assertEquals(models[0]?.chat, undefined);
       await instance.instance.callOpenAIAudioTranscriptions(models[0], {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
