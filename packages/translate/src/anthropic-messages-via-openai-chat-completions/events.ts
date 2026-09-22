@@ -1,3 +1,4 @@
+import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -213,7 +214,8 @@ const flushDeferredContent = (state: OpenAIChatCompletionsToAnthropicMessagesStr
 };
 
 const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
-  if (delta.reasoning_text) {
+  const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
+  if (reasoningText) {
     if (state.openBlock !== 'thinking') {
       closeCurrentBlock(state, events);
       startContentBlock(state, events, 'thinking', {
@@ -225,7 +227,7 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
 
     emitContentBlockDelta(state, events, {
       type: 'thinking_delta',
-      thinking: delta.reasoning_text,
+      thinking: reasoningText,
     });
   }
 

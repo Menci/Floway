@@ -113,6 +113,25 @@ test('translateToSourceEvents maps reasoning text and attaches opaque signature 
   ]);
 });
 
+test('translateToSourceEvents maps reasoning_content to a thought part', async () => {
+  const frames = await collect([
+    eventFrame(chunk({ role: 'assistant', reasoning_content: null })),
+    eventFrame(chunk({ reasoning_content: 'trace' })),
+    eventFrame(chunk({ content: 'answer' })),
+    eventFrame(chunk({}, 'stop')),
+    doneFrame(),
+  ]);
+
+  assertEquals(frames[0], geminiGenerateContentFrame({
+    candidates: [
+      {
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'trace', thought: true }] },
+      },
+    ],
+  }));
+});
+
 test('translateToSourceEvents flushes unclaimed opaque signature in the finish chunk', async () => {
   const frames = await collect([eventFrame(chunk({ role: 'assistant', reasoning_opaque: 'sig_only' })), eventFrame(chunk({}, 'stop')), doneFrame()]);
 

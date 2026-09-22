@@ -175,14 +175,25 @@ test('getProvidedModels carries pricing on auto models', async () => {
 });
 
 test('getProvidedModels carries chat metadata on auto models', async () => {
-  const instance = createCustomProvider(buildCustomUpstream());
-  const chat = { image_detail_original: true };
+  const record = buildCustomUpstream();
+  const instance = createCustomProvider(record);
+
+  const upstreamChat = {
+    modalities: { input: ['text', 'image'], output: ['text'] } as const,
+    image_detail_original: true,
+    reasoning: { effort: { supported: ['none', 'high', 'max'], default: 'high' } },
+  };
   const models = await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'vision-model', chat }] }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'vision-chat', kind: 'chat', chat: upstreamChat }],
+    }),
+    async () => {
+      return await instance.instance.getProvidedModels(directFetcher);
+    },
   );
 
-  assertEquals(models[0]?.chat, chat);
+  assertEquals(models[0]?.chat, upstreamChat);
 });
 
 test('getProvidedModels drops chat metadata from non-chat auto models', async () => {

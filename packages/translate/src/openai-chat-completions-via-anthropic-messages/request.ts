@@ -1,4 +1,5 @@
 import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
+import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
@@ -22,7 +23,7 @@ interface BuildTargetRequestOptions {
 
 const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(message.reasoning_text, message.reasoning_opaque);
+  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(message), message.reasoning_opaque);
 
   if (thinkingBlock) blocks.push(thinkingBlock);
 

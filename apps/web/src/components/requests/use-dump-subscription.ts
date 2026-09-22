@@ -42,7 +42,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   initialRecordsRef.current = initialRecords;
 
   // react-i18next hands back a new `t` on every language change, and
-  // BrowserLanguageSync announces one at boot whether or not the language it
+  // LanguageSync announces one at boot whether or not the language it
   // lands on is the one i18next booted in, so the disconnect message reaches
   // the effect the same way the seed does.
   const disconnectedRef = useRef('');

@@ -156,6 +156,35 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text an
   ]);
 });
 
+test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoning_content in one thinking block', () => {
+  const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
+  const events = [
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_content: null }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_content: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
+  ];
+
+  assertEquals(events.slice(1, 5), [
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'thinking', thinking: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'thinking_delta', thinking: 'trace' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: 'sig' },
+    },
+    { type: 'content_block_stop', index: 0 },
+  ]);
+});
+
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early opaque after later thinking text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
