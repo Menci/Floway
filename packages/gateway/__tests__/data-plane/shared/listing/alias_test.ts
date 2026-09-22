@@ -150,8 +150,8 @@ describe('synthesizeListedAliases', () => {
   test('a split verdict on detail original announces false rather than dropping the field', () => {
     // Conjunction, not agreement: the announced metadata must not promise detail
     // 'original' above any single target's own answer. Both targets declare the
-    // field here, so the split yields a stated `false` — a real value the codecs
-    // round-trip, where a drop would read as "unknown".
+    // field here, so the split yields a stated `false` — the field's own answer,
+    // not a re-encoding of absence.
     const aliases = [aliasFixture({
       targets: [
         { target_model_id: 'a', rules: {} },

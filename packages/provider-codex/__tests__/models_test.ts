@@ -220,8 +220,8 @@ describe('codexRawToProviderModel', () => {
   });
 
   // `ModelInfo` declares `supports_image_detail_original` under `#[serde(default)]`,
-  // so an entry that omits it is stating the model rejects detail 'original'.
-  // Absence is a negative answer here, not an unknown — hence an explicit false.
+  // so a catalog predating the field carries none — and the mapper must resolve
+  // one anyway, because every entry feeds the synthesizer's chain.
   test('reports image_detail_original: false when the upstream entry omits the field', () => {
     const m = codexRawToProviderModel({
       id: 'gpt-5.4',

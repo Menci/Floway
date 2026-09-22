@@ -171,9 +171,9 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   // Conjunction, not agreement: the announced metadata must not promise detail
   // 'original' above any single target's own answer, so a split verdict between
   // targets that declared the field is a stated `false` rather than a dropped
-  // one — `false` is an answer the field's own producer states and the codecs
-  // round-trip, while a drop would read as "unknown". A target that leaves the
-  // field undeclared still drops it, per the invariant in the header.
+  // one — `false` is the field's own answer, not a re-encoding of absence. A
+  // target that leaves the field undeclared still drops it, as `intersectField`
+  // requires of every sub-field here.
   const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
   if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
 

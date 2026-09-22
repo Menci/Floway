@@ -119,10 +119,13 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
-  // Absence is a negative answer, not an unknown: `ModelInfo` declares the
-  // field under `#[serde(default)]`
+  // Resolve the flag to a stated boolean for every entry: the catalog
+  // synthesizer walks a `registry ?? source ?? BASELINE` chain and requires a
+  // value at the end of it, and the field's own semantics treat `false` as the
+  // upstream's answer rather than as absence. `ModelInfo` declares the field
+  // under `#[serde(default)]`
   // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L383-L385),
-  // so an entry without it states that the model rejects detail 'original'.
+  // so a catalog that predates the field carries none.
   chat.image_detail_original = raw.image_detail_original ?? false;
   if (raw.reasoning_efforts && raw.reasoning_efforts.length > 0) {
     let effortDefault: string;
