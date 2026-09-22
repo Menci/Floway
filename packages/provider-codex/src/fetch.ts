@@ -481,15 +481,7 @@ const classifyCodexHttpResponse = async (
     const bodyText = await response.text();
     const { code, message } = parseUpstreamError(bodyText);
     if (opts.account.refresh_token === null) {
-      // An access-only credential cannot recover from a rejected bearer, so
-      // the row is marked best-effort — but a storage failure must never
-      // replace the upstream status, headers, or body the caller needs to
-      // diagnose what happened.
-      try {
-        await opts.effects.persistTerminalState('session_terminated', message);
-      } catch {
-        // The upstream response remains authoritative.
-      }
+      await opts.effects.persistTerminalState('session_terminated', message);
       return new Response(bodyText, { status: 401, statusText: response.statusText, headers: response.headers });
     }
     if (code === 'token_invalidated') {
