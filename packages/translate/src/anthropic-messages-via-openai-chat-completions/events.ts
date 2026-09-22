@@ -120,17 +120,13 @@ const emitUsageProgress = (
   });
 };
 
-// A chunk that carries user-visible output (or the terminal stop) must not be
-// held back waiting for usage that a non-`continuous_usage_stats` upstream will
-// only send at the very end. In that case we open `message_start` immediately
-// with the historical 0-valued counters so streaming latency is unchanged.
 const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => {
   const choice = chunk.choices[0];
   if (choice === undefined) return false;
   if (choice.finish_reason !== null && choice.finish_reason !== undefined) return true;
   const delta = choice.delta;
   return Boolean(delta.content)
-    || delta.reasoning_text != null
+    || openAIChatCompletionsScalarReasoningText(delta) !== undefined
     || delta.reasoning_opaque != null
     || delta.refusal != null
     || (delta.tool_calls?.length ?? 0) > 0;
