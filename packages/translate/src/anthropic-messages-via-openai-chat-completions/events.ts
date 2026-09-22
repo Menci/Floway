@@ -450,9 +450,6 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
   if (chunk.service_tier != null) state.upstreamServiceTier = chunk.service_tier;
   if (chunk.usage) state.pendingUsage = chunk.usage;
 
-  // A usage-bearing chunk is the earliest point at which the real input-token
-  // count is known. Open `message_start` here, before any content, so the
-  // Anthropic client sees real `input_tokens` instead of the historical 0.
   if (state.pendingUsage !== undefined && state.messageStartSent === false) {
     ensureMessageStart(state, events);
   }
