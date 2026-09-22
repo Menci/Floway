@@ -193,15 +193,11 @@ describe('upstream model workspace field-array transitions', () => {
     expect(bindToUpstream.checked).toBe(true);
     expect(key.placeholder).toBe('model-a');
 
-    const bindInfo = screen.getByText(models('bindOpaqueBlobsToUpstream')).closest('span')?.parentElement?.querySelector('button');
-    const keyInfo = screen.getByText(models('opaqueBlobCompatibilityKey')).parentElement?.querySelector('button');
-    expect(bindInfo).toBeTruthy();
-    expect(keyInfo).toBeTruthy();
-    fireEvent.click(bindInfo!);
-    expect(screen.getByText(models('bindOpaqueBlobsToUpstreamHint'))).toBeTruthy();
-    fireEvent.click(bindInfo!);
-    fireEvent.click(keyInfo!);
-    expect(screen.getByText(models('opaqueBlobCompatibilityKeyHint'))).toBeTruthy();
+    const sectionHeading = screen.getByRole('heading', { name: models('opaqueBlobCompatibility') });
+    const compatibilityInfo = sectionHeading.parentElement?.querySelector('button');
+    expect(compatibilityInfo).toBeTruthy();
+    fireEvent.click(compatibilityInfo!);
+    expect(screen.getByText(models('opaqueBlobCompatibilityHint'))).toBeTruthy();
 
     fireEvent.click(bindToUpstream);
     fireEvent.change(key, { target: { value: 'openai' } });

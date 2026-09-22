@@ -15,7 +15,6 @@ import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
@@ -24,7 +23,6 @@ import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/p
 const {
   Button,
   Field,
-  InfoButton,
   MessageBar,
   MessageBarBody,
   Option,
@@ -169,34 +167,26 @@ export function ModelDetail({
         </EditorSection>
 
         <EditorSection
-          description={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}
+          info={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}
           level={3}
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
         >
-          <div className="grid gap-4">
-            <span className="inline-flex items-center gap-1">
-              <Switch
-                checked={bindOpaqueBlobsToUpstream}
-                label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
-                readOnly={fieldsReadOnly}
-                onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
-              />
-              <InfoButton info={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstreamHint')} />
-            </span>
-            <Field className="min-w-0" label={{
-              children: infoLabelSlot(
-                t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey'),
-                t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKeyHint'),
-              ),
-            }}>
-              <Input
-                className="!w-full font-mono"
-                placeholder={row.config.upstreamModelId}
-                readOnly={fieldsReadOnly}
-                value={opaqueBlobCompatibilityScope?.key ?? ''}
-                onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ key: data.value || undefined })}
-              />
-            </Field>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Input
+              aria-label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}
+              className="min-w-[220px] flex-1 font-mono"
+              placeholder={row.config.upstreamModelId}
+              readOnly={fieldsReadOnly}
+              value={opaqueBlobCompatibilityScope?.key ?? ''}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ key: data.value || undefined })}
+            />
+            <Switch
+              checked={bindOpaqueBlobsToUpstream}
+              className="flex-none"
+              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+              readOnly={fieldsReadOnly}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
+            />
           </div>
         </EditorSection>
 

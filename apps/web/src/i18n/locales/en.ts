@@ -740,13 +740,9 @@ const en = {
           publicIdPlaceholder: 'Public model ID',
           opaqueBlobCompatibility: 'Opaque blob compatibility',
           opaqueBlobCompatibilityHint:
-              'Models with the same compatibility identity can replay one another’s opaque blobs.',
+              'Opaque blobs are compatible only when their keys match. When binding is enabled, they must also remain on the same upstream. Incompatible optional blobs are discarded; required blobs are rejected.',
           bindOpaqueBlobsToUpstream: 'Bind compatibility to this upstream',
-          bindOpaqueBlobsToUpstreamHint:
-              'When enabled, opaque blobs produced by this model are incompatible after routing to another upstream, even when the compatibility key matches.',
           opaqueBlobCompatibilityKey: 'Compatibility key',
-          opaqueBlobCompatibilityKeyHint:
-              'Opaque blobs produced by this model are incompatible when routed to a model with a different key; optional blobs are discarded and required blobs are rejected.',
           endpoints: 'Supported endpoints',
           capabilities: 'Capabilities and limits',
           contextWindow: 'Context window',
