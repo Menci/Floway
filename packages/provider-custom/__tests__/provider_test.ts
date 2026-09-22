@@ -190,6 +190,8 @@ test('getProvidedModels drops chat metadata from non-chat auto models', async ()
       object: 'list',
       data: [
         { id: 'embedding-model', kind: 'embedding', chat: { image_detail_original: true } },
+        { id: 'image-model', kind: 'image', chat: { image_detail_original: true } },
+        { id: 'transcription-model', kind: 'transcription', chat: { image_detail_original: true } },
         { id: 'text-embedding-3-small', chat: { image_detail_original: true } },
         { id: 'gpt-image-2', chat: { image_detail_original: true } },
         { id: 'whisper-1', chat: { image_detail_original: true } },
@@ -200,6 +202,8 @@ test('getProvidedModels drops chat metadata from non-chat auto models', async ()
 
   assertEquals(models.map(model => ({ id: model.id, kind: model.kind, chat: model.chat })), [
     { id: 'embedding-model', kind: 'embedding', chat: undefined },
+    { id: 'image-model', kind: 'image', chat: undefined },
+    { id: 'transcription-model', kind: 'transcription', chat: undefined },
     { id: 'text-embedding-3-small', kind: 'embedding', chat: undefined },
     { id: 'gpt-image-2', kind: 'image', chat: undefined },
     { id: 'whisper-1', kind: 'transcription', chat: undefined },
