@@ -22,7 +22,7 @@ describe('API Docs catalog', () => {
         continue;
       }
       expect(documented.every(endpoint => endpoint.method === manifest.method)).toBe(true);
-      expect(documented).toHaveLength(route === 'geminiAction' ? 3 : 1);
+      expect(documented).toHaveLength(route === 'geminiGenerateContentAction' ? 3 : 1);
       if (manifest.paths.length > 1) expect(documented[0].path).toBe(manifest.paths.join(', '));
     }
   });

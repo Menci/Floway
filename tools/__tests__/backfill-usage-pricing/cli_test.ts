@@ -12,7 +12,10 @@ import { assertEquals } from '@floway-dev/test-utils';
 const CLI = fileURLToPath(new URL('../../src/backfill-usage-pricing/cli.ts', import.meta.url));
 const TSX_LOADER = fileURLToPath(import.meta.resolve('tsx'));
 
-test('non-interactive CLI writes a private plan and applies only that artifact', async () => {
+// Three `tsx` subprocesses, each paying its own loader startup. The default 5 s is marginal
+// for that on a loaded machine — the test passes alone and inside a quiet suite and times out
+// under a full `verify`, which is a stopwatch failing rather than the CLI.
+test('non-interactive CLI writes a private plan and applies only that artifact', { timeout: 60_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'floway-tools-cli-'));
   const databasePath = join(directory, 'floway.db');
   const planPath = join(directory, 'plan.json');
@@ -34,7 +37,7 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
   const config = {
     models: [{
       kind: 'chat',
-      endpoints: { responses: {} },
+      endpoints: { openaiResponses: {} },
       upstreamModelId: 'wire',
       pricing: { entries: [{ rates: { input_tokens: '0.01' } }] },
     }],

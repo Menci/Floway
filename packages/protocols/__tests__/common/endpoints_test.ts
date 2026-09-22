@@ -10,20 +10,20 @@ test('parseModelKind accepts endpoint families and rejects unknown storage value
 });
 
 test('kindForEndpoints returns image when either images endpoint is present', () => {
-  assertEquals(kindForEndpoints({ imagesGenerations: {} }), 'image');
-  assertEquals(kindForEndpoints({ imagesEdits: {} }), 'image');
-  assertEquals(kindForEndpoints({ imagesGenerations: {}, imagesEdits: {} }), 'image');
+  assertEquals(kindForEndpoints({ openaiImagesGenerations: {} }), 'image');
+  assertEquals(kindForEndpoints({ openaiImagesEdits: {} }), 'image');
+  assertEquals(kindForEndpoints({ openaiImagesGenerations: {}, openaiImagesEdits: {} }), 'image');
 });
 
 test('kindForEndpoints returns transcription for audio transcription', () => {
-  assertEquals(kindForEndpoints({ audioTranscriptions: {} }), 'transcription');
+  assertEquals(kindForEndpoints({ openaiAudioTranscriptions: {} }), 'transcription');
 });
 
-test('kindForEndpoints returns embedding for embeddings and chat for chat-protocol endpoints', () => {
-  assertEquals(kindForEndpoints({ embeddings: {} }), 'embedding');
-  assertEquals(kindForEndpoints({ chatCompletions: {} }), 'chat');
-  assertEquals(kindForEndpoints({ messages: {} }), 'chat');
-  assertEquals(kindForEndpoints({ completions: {} }), 'chat');
+test('kindForEndpoints returns embedding for OpenAI Embeddings and chat for chat-protocol endpoints', () => {
+  assertEquals(kindForEndpoints({ openaiEmbeddings: {} }), 'embedding');
+  assertEquals(kindForEndpoints({ openaiChatCompletions: {} }), 'chat');
+  assertEquals(kindForEndpoints({ anthropicMessages: {} }), 'chat');
+  assertEquals(kindForEndpoints({ openaiCompletions: {} }), 'chat');
 });
 
 test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {

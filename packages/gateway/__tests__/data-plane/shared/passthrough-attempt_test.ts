@@ -14,7 +14,7 @@ test('passthroughAttempt applies the selected provider ingress policy', async ()
       ...base.provider,
       kind: 'custom',
       instance: stubProvider({
-        callEmbeddings: async (_model, _body, _signal, opts) => {
+        callOpenAIEmbeddings: async (_model, _body, _signal, opts) => {
           observed = opts.headers;
           return { response: new Response('{}'), modelKey: 'test-model' };
         },
@@ -28,7 +28,7 @@ test('passthroughAttempt applies the selected provider ingress policy', async ()
       ctx: mockGatewayCtx(),
       candidate,
       operation: 'embeddings',
-      call: (provider, model, opts) => provider.instance.callEmbeddings(model, { input: 'hi' }, undefined, opts),
+      call: (provider, model, opts) => provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts),
     });
     return c.text('ok');
   });
@@ -54,7 +54,7 @@ const runPassthroughAttempt = async (upstream: Response): Promise<PassthroughAtt
       ...base.provider,
       kind: 'custom',
       instance: stubProvider({
-        callEmbeddings: async () => ({ response: upstream, modelKey: 'test-model' }),
+        callOpenAIEmbeddings: async () => ({ response: upstream, modelKey: 'test-model' }),
       }),
     },
   });
@@ -66,7 +66,7 @@ const runPassthroughAttempt = async (upstream: Response): Promise<PassthroughAtt
       ctx: mockGatewayCtx(),
       candidate,
       operation: 'embeddings',
-      call: (provider, model, opts) => provider.instance.callEmbeddings(model, { input: 'hi' }, undefined, opts),
+      call: (provider, model, opts) => provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts),
     });
     return c.text('ok');
   });

@@ -3,7 +3,7 @@
  * line breaks / tabs in function `arguments` until `max_tokens`, which keeps
  * the client hanging while never producing valid JSON.
  *
- * Two interceptors (Chat Completions and Responses) share this counter and
+ * Two interceptors (OpenAI Chat Completions and OpenAI Responses) share this counter and
  * threshold so the defense fires the same way on both upstream shapes.
  *
  * References:

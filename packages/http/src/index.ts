@@ -20,7 +20,7 @@
 // the rest of the workspace happens to call — a root export with no in-repo
 // consumer is deliberate public API, not dead surface.
 
-export type { DuplexStream, Fetcher, FetchInit, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
+export type { DuplexStream, Fetcher, FetchInit, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
 export { isReplayableBody } from './request-body.ts';
 
 export { fetchOnStream } from './fetch-on-stream.ts';

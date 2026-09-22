@@ -133,7 +133,7 @@ const dialShadowsocks2022Inner = async (
           // outside the spec's 30-second window). Skipping the window
           // would weaken our SIP022 connection to AEAD-2018-like strength.
           //
-          // The window is symmetric — the spec says "Messages with over
+          // The window is symmetric — the spec says "Anthropic Messages with over
           // 30 seconds of time difference MUST be treated as replay" —
           // and shadowsocks-rust enforces it via `now.abs_diff(ts) > 30`
           // (crates/shadowsocks/src/relay/tcprelay/aead_2022.rs and

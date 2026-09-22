@@ -9,7 +9,7 @@ files at the top level of either `shared/` tree.
 ## Categories
 
 1. **Single-pair helper** — keep it in the pair's directory
-   (`messages-via-responses/`, etc.). Do not extract it into `shared/`.
+   (`anthropic-messages-via-openai-responses/`, etc.). Do not extract it into `shared/`.
 2. **Source-locked, `<X>-via/`** — only `X-via-*` pairs may import the helper.
    A helper does not need to serve every pair within that ceiling.
 3. **Target-locked, `via-<Y>/`** — only `*-via-Y` pairs may import the helper.
@@ -18,30 +18,30 @@ files at the top level of either `shared/` tree.
    or target may import the helper. No helper currently occupies this ceiling.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
    `B-via-A` pairs may import the helper. For example,
-   `chat-completions-and-responses/reasoning.ts` runs both directions of the
-   Chat Completions ↔ Responses reasoning round trip.
+   `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
+   OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
 
 ## Current Production Subdirectories
 
-- `chat-completions-and-responses/` — available only to
-  `chat-completions-via-responses` and `responses-via-chat-completions`.
-- `chat-completions-and-messages/` — available only to
-  `chat-completions-via-messages` and `messages-via-chat-completions`.
-- `messages-and-responses/` — available only to `messages-via-responses` and
-  `responses-via-messages`.
-- `messages-via/` — available only to `messages-via-*` pairs.
-- `responses-via/` — available only to `responses-via-*` pairs.
-- `gemini-via/` — available only to `gemini-via-*` pairs.
-- `via-messages/` — available only to `*-via-messages` pairs.
-- `via-responses/` — available only to `*-via-responses` pairs.
+- `openai-chat-completions-and-openai-responses/` — available only to
+  `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
+- `openai-chat-completions-and-anthropic-messages/` — available only to
+  `openai-chat-completions-via-anthropic-messages` and `anthropic-messages-via-openai-chat-completions`.
+- `anthropic-messages-and-openai-responses/` — available only to `anthropic-messages-via-openai-responses` and
+  `openai-responses-via-anthropic-messages`.
+- `anthropic-messages-via/` — available only to `anthropic-messages-via-*` pairs.
+- `openai-responses-via/` — available only to `openai-responses-via-*` pairs.
+- `gemini-generate-content-via/` — available only to `gemini-generate-content-via-*` pairs.
+- `via-anthropic-messages/` — available only to `*-via-anthropic-messages` pairs.
+- `via-openai-responses/` — available only to `*-via-openai-responses` pairs.
 
 ## Rules
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
   site, not extracted. Delete the wrapper rather than retaining a shim. A
   one-liner that *defines* a format two or more pairs must agree on is not such
-  a wrapper: `via-responses/responses-stream.ts` owns the composite stream-part
-  key both Responses-target pairs build and compare, and inlining it would let
+  a wrapper: `via-openai-responses/openai-responses-stream.ts` owns the composite stream-part
+  key both OpenAI-Responses-target pairs build and compare, and inlining it would let
   the copies drift apart.
 - Flat `.ts` files at the top level of either `src/shared/` or
   `__tests__/shared/` are forbidden. Every shared helper and test suite lives

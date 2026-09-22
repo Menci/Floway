@@ -18,7 +18,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
       },
     ],
   },
@@ -143,7 +143,7 @@ test('assertAzureUpstreamRecord round-trips per-model flagOverrides', () => {
       models: [
         {
           upstreamModelId: 'gpt-5',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           flagOverrides: { 'vendor-kimi': true, 'vendor-deepseek': false },
         },
       ],
@@ -163,7 +163,7 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               flagOverrides: 'not-an-object',
             },
           ],
@@ -182,7 +182,7 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               flagOverrides: { 'vendor-deepseek': 'on' },
             },
           ],
@@ -222,7 +222,7 @@ test('assertAzureUpstreamRecord rejects per-model flagOverrides with unknown fla
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               flagOverrides: { 'made-up-flag': true },
             },
           ],
@@ -243,7 +243,7 @@ test('assertAzureUpstreamRecord reports all unknown per-model flag ids in one er
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               flagOverrides: { 'made-up-flag': true, 'another-typo': false },
             },
           ],
@@ -262,7 +262,7 @@ test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fiel
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           pricing: { entries: [{ rates: { input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75', input_image_tokens: '8', output_tokens: '15', output_image_tokens: '30' } }] },
         },
       ],
@@ -281,7 +281,7 @@ test('assertAzureUpstreamRecord accepts model without pricing field', () => {
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
         },
       ],
     },
@@ -296,7 +296,7 @@ test('assertAzureUpstreamRecord accepts model.pricing with only input set', () =
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           pricing: { entries: [{ rates: { input_tokens: '2.5' } }] },
         },
       ],
@@ -314,7 +314,7 @@ test('assertAzureUpstreamRecord rejects model.pricing with negative input', () =
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               pricing: { entries: [{ rates: { input_tokens: '-1', output_tokens: '1' } }] },
             },
           ],
@@ -335,7 +335,7 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              endpoints: { chatCompletions: {} },
+              endpoints: { openaiChatCompletions: {} },
               pricing: { entries: [{ rates: { input_tokens: '2', output_tokens: '8', input_cache_read_tokens: 'cheap' } }] },
             },
           ],

@@ -54,7 +54,7 @@ export const createReplayableRequest = (url: string, init: FetchInit): Replayabl
 
 const rebuildInitFromPrepared = (original: FetchInit, prepared: PreparedRequest): FetchInit => {
   const headers = new Headers(original.headers);
-  const targetCt = prepared.request.headers['content-type'];
+  const targetCt = prepared.request.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
   if (targetCt !== undefined && !headers.has('content-type')) {
     headers.set('content-type', targetCt);
   }
@@ -84,8 +84,8 @@ const buildPreparedRequest = async (url: string, init: FetchInit): Promise<Prepa
   // FormData/URLSearchParams synthesize a Content-Type with the multipart
   // boundary or the urlencoded marker. Adopt it only when the caller did not
   // pre-set Content-Type itself, so explicit overrides keep winning.
-  if (preparedBody?.contentType !== undefined && headers['content-type'] === undefined) {
-    headers['content-type'] = preparedBody.contentType;
+  if (preparedBody?.contentType !== undefined && !headers.some(([name]) => name === 'content-type')) {
+    headers.push(['content-type', preparedBody.contentType]);
   }
   // `URL#hostname` keeps the `[…]` envelope on IPv6 literals; the
   // `DialTarget.host` contract requires the bare address. Strip the
@@ -105,24 +105,26 @@ const buildPreparedRequest = async (url: string, init: FetchInit): Promise<Prepa
   return { target, request };
 };
 
-// Lower-case keys here so the request is canonical at the seam; the http
+// Lower-case names here so the request is canonical at the seam; the http
 // package also lowercases internally, but normalizing at the boundary
 // keeps the contract simple.
-const extractHeaders = (input: HeadersInit | undefined): Record<string, string> => {
-  if (!input) return {};
+//
+// A pair list is preserved pair by pair, which is how a caller sends a name
+// twice. A `Headers` cannot express that on every runtime — undici merges a
+// repeated name inside `append` — so what it yields is what its own runtime
+// kept, and a caller that needs separate field lines passes the list.
+// https://github.com/nodejs/undici/blob/v8.3.0/lib/web/fetch/headers.js#L236-L258
+const extractHeaders = (input: HeadersInit | undefined): [string, string][] => {
+  if (!input) return [];
   if (input instanceof Headers) {
-    const out: Record<string, string> = {};
-    input.forEach((value, key) => { out[key.toLowerCase()] = value; });
+    const out: [string, string][] = [];
+    // Set-Cookie is the one name a Headers keeps unmerged, and forEach still
+    // reports it once per value on the runtimes that implement it that way.
+    input.forEach((value, key) => { out.push([key.toLowerCase(), value]); });
     return out;
   }
-  if (Array.isArray(input)) {
-    const out: Record<string, string> = {};
-    for (const [key, value] of input) out[key.toLowerCase()] = value;
-    return out;
-  }
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input)) out[key.toLowerCase()] = value;
-  return out;
+  if (Array.isArray(input)) return input.map(([key, value]) => [key.toLowerCase(), value]);
+  return Object.entries(input).map(([key, value]) => [key.toLowerCase(), value]);
 };
 
 interface PreparedBody {
