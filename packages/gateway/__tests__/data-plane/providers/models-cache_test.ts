@@ -305,10 +305,10 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 
-  test('revision 10 catalog rows are refetched for image-detail metadata', async () => {
+  test('previous-revision catalog rows are refetched for current model metadata', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, {
-      revision: 10,
+      revision: MODEL_CATALOG_REVISION - 1,
       fetchedAt: Date.now() - 1000,
       models: [aModel('old-catalog')],
     });
@@ -322,7 +322,7 @@ describe('fetchUpstreamModelsCached', () => {
 
     expect(result).toEqual([current]);
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect((await storedCache(repo))?.revision).toBe(11);
+    expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 
   test('an old-shape stale SQL cache hydrates cold and is replaced by a current fetch', async () => {

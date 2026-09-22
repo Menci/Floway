@@ -68,8 +68,13 @@ const pricingSchema = z.object({
 }).passthrough();
 
 const flagOverridesSchema = z.partialRecord(z.enum(OPTIONAL_FLAG_IDS), z.boolean());
+const opaqueBlobCompatibilityScopeSchema = z.object({
+  bindToUpstream: z.boolean(),
+  key: z.string().min(1).optional(),
+}).strict();
 const providerModelSchema = z.object({
   id: z.string(),
+  upstreamModelId: z.string(),
   display_name: z.string().optional(),
   owned_by: z.string().optional(),
   created: z.number().optional(),
@@ -78,6 +83,7 @@ const providerModelSchema = z.object({
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
   endpoints: endpointsSchema,
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema,
   providerData: opaqueJsonSchema.optional(),
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),

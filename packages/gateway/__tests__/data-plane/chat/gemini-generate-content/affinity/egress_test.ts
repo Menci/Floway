@@ -1,13 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapGeminiGenerateContentAffinityEgress } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/egress.ts';
-import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
-const affinity: AffinityTarget = {
+const affinity: AffinityIdentity = {
   upstreamId: 'up-a',
   modelId: 'model-a',
+  opaqueBlobCompatibilityIdentity: { upstreamId: 'up-a', key: 'model-a' },
 };
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;

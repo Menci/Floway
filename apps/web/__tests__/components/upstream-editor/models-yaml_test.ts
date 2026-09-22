@@ -15,6 +15,15 @@ describe('models YAML round trip', () => {
     const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n', { allowRerank: false });
     expect(parsed.ok).toBe(true);
   });
+
+  it('preserves opaque blob compatibility scope metadata', () => {
+    const model = {
+      ...CHAT_MODEL,
+      opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'openai' },
+    } as const;
+    expect(parseModels(serializeModels([{ ...model }]), { allowRerank: false }))
+      .toEqual({ ok: true, models: [model] });
+  });
 });
 
 describe('models YAML rejection', () => {
@@ -42,6 +51,11 @@ describe('models YAML rejection', () => {
 
   it('rejects a rerank model with no target, which the gateway would refuse', () => {
     const parsed = parseModels('- upstreamModelId: r\n  kind: rerank\n  endpoints:\n    rerank: {}\n', { allowRerank: true });
+    expect(parsed.ok).toBe(false);
+  });
+
+  it('rejects an empty opaque blob compatibility key', () => {
+    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n  opaqueBlobCompatibilityScope:\n    bindToUpstream: true\n    key: ""\n', { allowRerank: false });
     expect(parsed.ok).toBe(false);
   });
 });

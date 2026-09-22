@@ -738,6 +738,11 @@ const en = {
           upstreamIdPlaceholder: 'Raw upstream model ID',
           publicId: 'Public model ID',
           publicIdPlaceholder: 'Public model ID',
+          opaqueBlobCompatibility: 'Opaque blob compatibility',
+          opaqueBlobCompatibilityHint:
+              'Models with the same compatibility identity can replay one another’s opaque blobs.',
+          bindOpaqueBlobsToUpstream: 'Bind compatibility to this upstream',
+          opaqueBlobCompatibilityKey: 'Compatibility key',
           endpoints: 'Supported endpoints',
           capabilities: 'Capabilities and limits',
           contextWindow: 'Context window',

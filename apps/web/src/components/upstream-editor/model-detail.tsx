@@ -101,6 +101,20 @@ export function ModelDetail({
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
   const imageInput = row.config.chat?.modalities?.input.includes('image') === true;
+  const opaqueBlobCompatibilityScope = row.config.opaqueBlobCompatibilityScope;
+  const bindOpaqueBlobsToUpstream = opaqueBlobCompatibilityScope?.bindToUpstream ?? true;
+
+  const updateOpaqueBlobCompatibilityScope = (
+    update: Partial<NonNullable<UpstreamModelConfig['opaqueBlobCompatibilityScope']>>,
+  ) => {
+    const next = {
+      bindToUpstream: bindOpaqueBlobsToUpstream,
+      ...opaqueBlobCompatibilityScope,
+      ...update,
+    };
+    if (next.key === undefined) delete next.key;
+    patch({ opaqueBlobCompatibilityScope: next });
+  };
 
   useEffect(() => {
     if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
@@ -148,6 +162,30 @@ export function ModelDetail({
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
               <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
+            </Field>
+          </div>
+        </EditorSection>
+
+        <EditorSection
+          description={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}
+          level={3}
+          title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
+        >
+          <div className="grid gap-4">
+            <Switch
+              checked={bindOpaqueBlobsToUpstream}
+              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+              readOnly={fieldsReadOnly}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
+            />
+            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}>
+              <Input
+                className="!w-full font-mono"
+                placeholder={row.config.upstreamModelId}
+                readOnly={fieldsReadOnly}
+                value={opaqueBlobCompatibilityScope?.key ?? ''}
+                onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ key: data.value || undefined })}
+              />
             </Field>
           </div>
         </EditorSection>

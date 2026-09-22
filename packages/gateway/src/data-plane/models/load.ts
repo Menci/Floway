@@ -23,6 +23,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
     limits: { ...model.limits },
     kind: model.kind,
     endpoints: { ...model.endpoints },
+    opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
   };
   if (model.owned_by !== undefined) info.owned_by = model.owned_by;
   if (model.created !== undefined) {

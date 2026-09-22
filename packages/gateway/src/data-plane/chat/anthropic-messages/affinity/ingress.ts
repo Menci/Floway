@@ -29,6 +29,7 @@ export const analyzeAnthropicMessagesAffinity = async (
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
+      preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
         const candidatePayload = structuredClone(payload);
         const byMessage = Map.groupBy(projections, item => item.location.messageIndex);

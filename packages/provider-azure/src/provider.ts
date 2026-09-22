@@ -54,6 +54,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         const kind = kindForEndpoints(endpoints);
         return {
           id: publicModelId(model),
+          upstreamModelId: model.upstreamModelId,
           limits: { ...(model.limits ?? {}) },
           ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
           ...(model.pricing ? { pricing: model.pricing } : {}),
@@ -62,6 +63,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           endpoints,
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
+          opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
         };
       }));
     },

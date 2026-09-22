@@ -58,7 +58,7 @@ test('fetchCustomModels accepts an Anthropic-shape response with no top-level `o
   );
 });
 
-test('fetchCustomModels reads superset fields (display_name, limits, pricing) from Floway-shaped upstreams', async () => {
+test('fetchCustomModels reads superset fields from Floway-shaped upstreams', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({
@@ -78,6 +78,7 @@ test('fetchCustomModels reads superset fields (display_name, limits, pricing) fr
           limits: { max_output_tokens: 4096, max_context_window_tokens: 200000 },
           kind: 'chat',
           pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25' } }] },
+          opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared-model' },
         },
       ],
     }),
@@ -95,6 +96,7 @@ test('fetchCustomModels reads superset fields (display_name, limits, pricing) fr
       assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '2');
       assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.1');
       assertEquals(model.pricing?.entries[0]?.rates.input_cache_write_tokens, '1.25');
+      assertEquals(model.opaqueBlobCompatibilityScope, { bindToUpstream: false, key: 'shared-model' });
     },
   );
 });

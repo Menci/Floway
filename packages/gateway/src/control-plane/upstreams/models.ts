@@ -12,18 +12,9 @@ import type { listModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
 
-// `upstreamModelId` is the wire-side identifier the provider will send when
-// a caller invokes the public `model.id` — Claude Code exposes
-// `claude-sonnet-4-5` publicly while sending `claude-sonnet-4-5-20250929`
-// on the wire. `providerData` is opaque provider-private invocation data,
-// not a universal upstream-id field: only the providers that shape it as
-// `{ upstreamModelId }` surface a distinct wire id here, and the rest
-// (Copilot carries its raw variant list there) report the public id.
 const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
-  const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
-  const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
   return {
-    upstreamModelId: wireId,
+    upstreamModelId: model.upstreamModelId,
     publicModelId: model.id,
     kind: model.kind,
     endpoints: model.endpoints,
@@ -31,6 +22,7 @@ const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => 
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
     ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
+    opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope,
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };
 };

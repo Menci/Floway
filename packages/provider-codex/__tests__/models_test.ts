@@ -9,6 +9,13 @@ const okJson = (body: unknown): Response => new Response(JSON.stringify(body), {
 
 afterEach(() => vi.restoreAllMocks());
 
+test('Codex models share the upstream-bound OpenAI opaque blob scope', () => {
+  const model = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, new Set<FlagId>());
+  expect(model.upstreamModelId).toBe('gpt-5.4');
+  expect(model.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true, key: 'openai' });
+  expect(codexImageProviderModel(new Set<FlagId>()).opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true, key: 'openai' });
+});
+
 describe('fetchCodexCatalog', () => {
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
@@ -332,12 +339,14 @@ describe('Codex image capability', () => {
     const flags: ReadonlySet<FlagId> = new Set();
     expect(codexImageProviderModel(flags)).toEqual({
       id: 'gpt-image-2',
+      upstreamModelId: 'gpt-image-2',
       display_name: 'GPT-Image-2',
       owned_by: 'openai',
       kind: 'image',
       limits: {},
       endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       enabledFlags: flags,
+      opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
       pricing: {
         entries: [{
           rates: {

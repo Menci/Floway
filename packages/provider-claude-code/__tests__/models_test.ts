@@ -179,6 +179,13 @@ describe('buildClaudeCodeCatalog', () => {
       .toBe('claude-fable-5');
   });
 
+  test('shares opaque blobs by public model alias across Claude Code upstreams', () => {
+    const byAlias = new Map(models.map(m => [m.id, m]));
+    const sonnet = byAlias.get('claude-sonnet-4-5')!;
+    expect(sonnet.upstreamModelId).toBe('claude-sonnet-4-5-20250929');
+    expect(sonnet.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: false, key: 'claude-sonnet-4-5' });
+  });
+
   test('every model advertises only the messages endpoint and chat kind', () => {
     for (const m of models) {
       expect(m.endpoints).toEqual({ anthropicMessages: {} });

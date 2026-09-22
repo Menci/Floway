@@ -1289,6 +1289,15 @@ test('Copilot chat field: vision-only → modalities with image input', async ()
   assertEquals(model.chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
 });
 
+test('Copilot OpenAI models share one upstream-bound opaque blob scope', async () => {
+  const [openai, anthropic] = await getModelsWithCapabilities([
+    { id: 'gpt-5' },
+    { id: 'claude-opus-5', supported_endpoints: ['/v1/messages'] },
+  ]);
+  assertEquals(openai.opaqueBlobCompatibilityScope, { bindToUpstream: true, key: 'openai' });
+  assertEquals(anthropic.opaqueBlobCompatibilityScope, { bindToUpstream: true });
+});
+
 test('Copilot chat field: reasoning_effort with medium → effort with default medium', async () => {
   const [model] = await getModelsWithCapabilities([
     { id: 'o3-mini', supports: { reasoning_effort: ['low', 'medium', 'high'] } },

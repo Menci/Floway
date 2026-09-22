@@ -12,6 +12,8 @@ then routes each model through the API shape the client already speaks.
   APIs with cross-protocol translation where needed.
 - Discover vendor model catalogs live while retaining manual model configuration
   for providers that require or permit it.
+- Preserve client-carried opaque blobs across models that advertise the same
+  compatibility identity.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
 - Generate one-command Claude Code and Codex configurations from an API key.
@@ -67,7 +69,18 @@ translation. Both planes are served by the same gateway process.
 
 `/v1/models` and `/models` return Floway's public model superset to ordinary
 callers and select the Codex or Claude Code discovery shape for those clients'
-User-Agent.
+User-Agent. Each public model includes `opaqueBlobCompatibilityScope`: its
+optional key defaults to the immediate upstream model ID, and
+`bindToUpstream` decides whether the immediate upstream instance participates
+in the compatibility identity. A downstream Floway reads the same metadata and
+materializes the identity at its own upstream boundary.
+
+Floway wraps natural reasoning signatures, encrypted content, fingerprints,
+and other supported opaque blobs with authenticated routing metadata. New
+carriers record both their exact source target and their compatibility identity.
+Compatible targets receive the original blob; incompatible optional blobs are
+removed, while incompatible required Responses state fails routing. Existing v1
+carriers resolve their current model metadata before applying the same rule.
 
 Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
@@ -87,6 +100,10 @@ responses retain their upstream wire shape.
 | Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
+
+Provider-owned auto models expose a read-only opaque blob compatibility scope.
+Manual Custom, Azure, and Ollama model rows expose the same upstream-binding and
+key fields in the dashboard and model YAML.
 
 ## Other Deployment Options
 
@@ -154,9 +171,9 @@ also available as a root script. Route type generation runs first because the
 web app's generated types are not checked in and its lint configuration is
 type-aware. The web build includes assertions on the emitted bundle.
 
-The protocol tests cover opaque-value wire compatibility, lossless UTF-16
-code-unit recovery, and retained-memory growth during history replay. The
-memory regression runs a bounded fixture in a separate Node.js process with
+The protocol tests cover v1 and v2 opaque-blob carrier compatibility, lossless
+UTF-16 code-unit recovery, and retained-memory growth during history replay.
+The memory regression runs a bounded fixture in a separate Node.js process with
 explicit garbage collection, samples the retained heap before content checks
 can flatten strings, and then verifies every decoded value. It runs through
 `pnpm run test` and `pnpm run verify` without additional setup; this local

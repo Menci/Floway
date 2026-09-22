@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
-import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-const affinity: AffinityTarget = {
+const affinity: AffinityIdentity = {
   upstreamId: 'up-a',
   modelId: 'model-a',
+  opaqueBlobCompatibilityIdentity: { upstreamId: 'up-a', key: 'model-a' },
 };
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;

@@ -141,6 +141,11 @@ const limitsSchema = z.object({
   max_output_tokens: z.number().optional(),
 });
 
+const opaqueBlobCompatibilityScopeSchema = z.object({
+  bindToUpstream: z.boolean(),
+  key: z.string().min(1).optional(),
+}).strict();
+
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure, custom, and ollama upstreams share this per-model entry; the
 // canonical per-model endpoint validation lives in the runtime validator.
@@ -163,6 +168,7 @@ const upstreamModelSchema = z.object({
   flagOverrides: flagOverridesSchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },

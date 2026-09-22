@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { wrapGeminiGenerateContentAffinityEgress } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
-import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents, type GeminiGenerateContentContent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
@@ -19,10 +19,11 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
-const targetFor = (value: ModelCandidate): AffinityTarget => ({
+const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
 const frames = async function* (values: ProtocolFrame<GeminiGenerateContentStreamEvent>[]) {

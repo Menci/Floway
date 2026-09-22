@@ -200,11 +200,13 @@ export const buildClaudeCodeCatalog = (
   const chat = chatFromCapabilities(api.capabilities);
   return {
     id: alias,
+    upstreamModelId: api.id,
     display_name: api.display_name,
     owned_by: 'anthropic',
     kind: 'chat',
     endpoints: { anthropicMessages: {} },
     enabledFlags,
+    opaqueBlobCompatibilityScope: { bindToUpstream: false, key: alias },
     limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,
     ...(pricing ? { pricing } : {}),

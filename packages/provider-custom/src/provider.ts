@@ -15,7 +15,9 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const partial: Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
+    upstreamModelId: model.id,
     limits: model.limits ? { ...model.limits } : {},
+    opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
   };
   if (model.owned_by !== undefined) partial.owned_by = model.owned_by;
   // OpenAI carries unix `created`; Anthropic carries ISO `created_at`; our
@@ -91,11 +93,13 @@ export const projectCustomModels = (
     const kind = kindForEndpoints(endpoints);
     const internal: ProviderModel = {
       id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
       limits: { ...(model.limits ?? {}) },
       kind,
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
       ...(model.rerankTarget ? { rerankTarget: model.rerankTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;

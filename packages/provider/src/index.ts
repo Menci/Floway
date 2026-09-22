@@ -93,6 +93,7 @@ export {
   modelsField,
   nonEmptyStringField,
   optionalStringField,
+  opaqueBlobCompatibilityScopeField,
   pricingField,
   publicModelId,
 } from './model-config.ts';

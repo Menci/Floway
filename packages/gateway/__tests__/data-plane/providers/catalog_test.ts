@@ -148,6 +148,8 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: {} });
       assertEquals(model?.kind, 'chat');
       assertEquals(model?.chat?.image_detail_original, false);
+      assertEquals(model?.opaqueBlobCompatibilityScope, { bindToUpstream: true });
+      assertEquals(model && toPublicModel(model).opaqueBlobCompatibilityScope, { bindToUpstream: true });
       // `providerData` (the per-provider wire id carrier) belongs to the
       // provider-emitted ProviderModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
@@ -180,6 +182,40 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
       assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { anthropicMessages: {} });
       assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
+    },
+  );
+});
+
+test('catalog merge exposes a shared scope only when every contributor agrees', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_first',
+    sortOrder: 1,
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_second',
+    sortOrder: 2,
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+  }));
+
+  await withMockedFetch(
+    request => jsonResponse({
+      object: 'list',
+      data: [{
+        id: 'shared-model',
+        opaqueBlobCompatibilityScope: {
+          bindToUpstream: true,
+          key: new URL(request.url).hostname === 'first.example.com' ? 'openai' : 'other',
+        },
+      }],
+    }),
+    async () => {
+      const { models } = await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler);
+      const model = models.find(candidate => candidate.id === 'shared-model');
+      assertEquals(model?.opaqueBlobCompatibilityScope, { bindToUpstream: true });
+      assertEquals(model && toPublicModel(model).opaqueBlobCompatibilityScope, { bindToUpstream: true });
     },
   );
 });

@@ -129,7 +129,11 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const codec = new AffinityCodec('00'.repeat(32));
       const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(first.events, {
         codec,
-        affinity: { upstreamId: provider.upstreamId, modelId: candidate.model.id },
+        affinity: {
+          upstreamId: provider.upstreamId,
+          modelId: candidate.model.id,
+          opaqueBlobCompatibilityIdentity: { upstreamId: provider.upstreamId, key: candidate.model.id },
+        },
       }));
       const done = publicEvents.find(event => event.type === 'response.output_item.done');
       if (done?.type !== 'response.output_item.done') throw new Error('expected public done item');

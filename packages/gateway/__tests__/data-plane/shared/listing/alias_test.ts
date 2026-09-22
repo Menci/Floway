@@ -41,6 +41,26 @@ const listed = (models: readonly InternalModel[]): AddressableIdEntry[] =>
 const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [] });
 
 describe('synthesizeListedAliases', () => {
+  test('publishes a common opaque-blob scope and falls back for mixed targets', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const common = { bindToUpstream: true, key: 'openai' } as const;
+    const matching = [
+      realModel({ id: 'a', opaqueBlobCompatibilityScope: common }),
+      realModel({ id: 'b', opaqueBlobCompatibilityScope: common }),
+    ];
+    const [shared] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(matching), callerAddressableModelIds: listed(matching), narrowTargets: false });
+    expect(shared.opaqueBlobCompatibilityScope).toEqual(common);
+
+    const mixed = [matching[0], realModel({ id: 'b', opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'openai' } })];
+    const [fallback] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(mixed), callerAddressableModelIds: listed(mixed), narrowTargets: false });
+    expect(fallback.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true });
+  });
+
   test('single-target alias with a pinned reasoning.effort drops the effort block', () => {
     const aliases = [aliasFixture({
       name: 'gpt-fast',

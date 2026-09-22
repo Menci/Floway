@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { CatalogModel, CodexCatalogCapabilities } from '../../../src/data-plane/codex/catalog.ts';
 import { synthesizeCatalogEntry } from '../../../src/data-plane/codex/synthesize.ts';
 import type { InternalModel, ProviderModel } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const base: InternalModel = {
   id: 'deepseek-v4-pro',
@@ -137,12 +138,10 @@ describe('synthesizeCatalogEntry', () => {
     ['false', false],
     ['an unstated value', undefined],
   ] as const)('rejects original detail when one of several providers reports %s', (_, imageDetailOriginal) => {
-    const providerModel = (value: boolean | undefined): ProviderModel => ({
+    const providerModel = (value: boolean | undefined): ProviderModel => stubProviderModel({
       id: 'gpt-5.5',
-      kind: 'chat' as const,
-      limits: {},
+      upstreamModelId: 'gpt-5.5',
       endpoints: { openaiResponses: {} },
-      enabledFlags: new Set(),
       ...(value === undefined ? {} : { chat: { image_detail_original: value } }),
     });
     const accepting = providerModel(true);
@@ -155,14 +154,12 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   test('accepts original detail when every provider explicitly supports it', () => {
-    const accepting = {
+    const accepting = stubProviderModel({
       id: 'gpt-5.5',
-      kind: 'chat' as const,
-      limits: {},
+      upstreamModelId: 'gpt-5.5',
       endpoints: { openaiResponses: {} },
-      enabledFlags: new Set(),
       chat: { image_detail_original: true },
-    } satisfies ProviderModel;
+    });
     const entry = synthesizeCatalogEntry({
       ...base,
       chat: accepting.chat,

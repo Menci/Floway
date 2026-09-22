@@ -298,6 +298,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
             kind: 'chat',
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
             chat: { image_detail_original: false },
             endpoints: { anthropicMessages: {} },
             pricing: {
@@ -314,6 +315,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
             endpoints: { openaiEmbeddings: {} },
           },
           {
@@ -323,6 +325,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'gpt-image-2',
             limits: {},
             kind: 'image',
+            opaqueBlobCompatibilityScope: { bindToUpstream: true },
             endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
           },
         ],

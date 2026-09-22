@@ -2,7 +2,7 @@ import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { kindForEndpoints } from '@floway-dev/protocols/common';
+import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamChatModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
@@ -19,6 +19,18 @@ interface ProviderModelsResult {
   // surface a stable, dashboard-aligned list.
   failedUpstreams: string[];
 }
+
+const mergedOpaqueBlobCompatibilityScope = (
+  models: readonly ProviderModel[],
+): OpaqueBlobCompatibilityScope => {
+  const [first, ...rest] = models;
+  if (first !== undefined && rest.every(model =>
+    model.opaqueBlobCompatibilityScope.bindToUpstream === first.opaqueBlobCompatibilityScope.bindToUpstream
+    && model.opaqueBlobCompatibilityScope.key === first.opaqueBlobCompatibilityScope.key)) {
+    return first.opaqueBlobCompatibilityScope;
+  }
+  return { bindToUpstream: true };
+};
 
 // A public id may route to any chat provider behind it, so this safety
 // capability is the conjunction of their explicit answers. Other chat metadata
@@ -40,7 +52,7 @@ const mergedChatMetadata = (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
   const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {
@@ -93,6 +105,7 @@ const mergeIntoCatalog = (
   byId.set(publicId, {
     ...existing,
     ...(chat === undefined ? {} : { chat }),
+    opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(Object.values(providerModels)),
     endpoints,
     kind: kindForEndpoints(endpoints),
     providerModels,

@@ -38,7 +38,7 @@ import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, OpaqueBlobCompatibilityScope, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
@@ -198,6 +198,19 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
   return result;
 };
 
+const commonOpaqueBlobCompatibilityScope = (
+  models: readonly InternalModel[],
+): OpaqueBlobCompatibilityScope => {
+  const [first, ...rest] = models;
+  const scope = first?.opaqueBlobCompatibilityScope;
+  if (scope !== undefined && rest.every(model =>
+    model.opaqueBlobCompatibilityScope?.bindToUpstream === scope.bindToUpstream
+    && model.opaqueBlobCompatibilityScope?.key === scope.key)) {
+    return scope;
+  }
+  return { bindToUpstream: true };
+};
+
 // `narrowTargets=true` filters `targets` to those the caller's addressable
 // surface can serve — protects non-admin / data-plane callers from seeing
 // operator state (target IDs from upstreams they have no access to, plus
@@ -313,6 +326,7 @@ const synthesizeOne = (
     limits,
     kind: alias.kind,
     endpoints,
+    opaqueBlobCompatibilityScope: commonOpaqueBlobCompatibilityScope(gatewayAvailable.map(({ real }) => real)),
     aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
     ...(chat !== undefined ? { chat } : {}),
     ...(singleTargetPricing !== undefined ? { pricing: singleTargetPricing } : {}),

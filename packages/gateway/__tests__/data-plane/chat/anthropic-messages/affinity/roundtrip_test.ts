@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
-import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -19,10 +19,11 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
-const targetFor = (value: ModelCandidate): AffinityTarget => ({
+const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
 const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEvent>[]) {

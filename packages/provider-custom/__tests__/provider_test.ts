@@ -116,6 +116,8 @@ test('getProvidedModels returns only manual models and never fetches when models
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'manual-only');
+      assertEquals(models[0].upstreamModelId, 'manual-only');
+      assertEquals(models[0].opaqueBlobCompatibilityScope, { bindToUpstream: true });
       assertEquals(models[0].chat, { image_detail_original: true });
     },
   );

@@ -2,11 +2,15 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { wrapOpenAIResponsesObservedOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
-import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItem, OpenAIResponsesOutputReasoning, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
-const affinity: AffinityTarget = { upstreamId: 'up-a', modelId: 'model-a' };
+const affinity: AffinityIdentity = {
+  upstreamId: 'up-a',
+  modelId: 'model-a',
+  opaqueBlobCompatibilityIdentity: { upstreamId: 'up-a', key: 'model-a' },
+};
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const frames = async function* (values: ProtocolFrame<OpenAIResponsesStreamEvent>[]) {

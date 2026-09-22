@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, OpaqueBlobCompatibilityScope, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -125,6 +125,7 @@ interface ModelMetadata {
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   endpoints: ModelEndpoints;
+  opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
 }
 
 // The neutral internal model shape consumed across the gateway. Metadata fields
@@ -177,6 +178,11 @@ export interface InternalAliasedFrom {
 // ever see their own emission — the surrounding `InternalModel` map is
 // assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
+  // The provider-neutral upstream catalog id shown on auto rows and used when
+  // an opaque-blob scope omits its key. A provider that selects a request-time
+  // wire variant still keeps that invocation detail in providerData.
+  upstreamModelId: string;
+  opaqueBlobCompatibilityScope: OpaqueBlobCompatibilityScope;
   providerData?: unknown;
   rerankTarget?: RerankTarget;
   enabledFlags: ReadonlySet<FlagId>;

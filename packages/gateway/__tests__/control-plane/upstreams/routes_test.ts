@@ -5,7 +5,7 @@ import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/share
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 type JsonObject = Record<string, any>;
 
@@ -285,7 +285,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
-    models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'stale-model', upstreamModelId: 'stale-model', endpoints: {} })],
   });
 
   await withMockedFetch(
@@ -443,12 +443,12 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.saveModelsCache('up_warm', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
-    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
   });
   await repo.upstreams.saveModelsCache('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
-    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
   });
   await repo.upstreams.saveModelsCacheError('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, { message: 'boom', at: 1_700_000_500_000 });
 
@@ -491,8 +491,8 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
-      { id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
-      { id: 'm2', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
+      stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} }),
+      stubProviderModel({ id: 'm2', upstreamModelId: 'm2', endpoints: {} }),
     ],
   });
 
@@ -747,7 +747,7 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
   await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
-    models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'warmed-on-create', upstreamModelId: 'warmed-on-create', endpoints: {} })],
   });
   // …and annotate it with an error the successful PATCH-time warm must clear,
   // so the response body cannot pass by echoing the pre-warm row.

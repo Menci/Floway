@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
@@ -24,6 +24,7 @@ export interface UpstreamModelConfig {
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   rerankTarget?: RerankTarget;
+  opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
   publicModelId?: string;
@@ -279,6 +280,21 @@ const rerankTargetField = (value: unknown, label: string): RerankTarget | undefi
   return { protocol: value.protocol as RerankProtocol, path: path.value };
 };
 
+export const opaqueBlobCompatibilityScopeField = (
+  value: unknown,
+  label: string,
+): OpaqueBlobCompatibilityScope | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  const unknownKeys = Object.keys(value).filter(key => key !== 'bindToUpstream' && key !== 'key');
+  if (unknownKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownKeys.join(', ')}`);
+  if (typeof value.bindToUpstream !== 'boolean') throw new Error(`Malformed ${label}.bindToUpstream: must be a boolean`);
+  return {
+    bindToUpstream: value.bindToUpstream,
+    ...(value.key !== undefined ? { key: nonEmptyStringField(value.key, `${label}.key`) } : {}),
+  };
+};
+
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const pricing = pricingField(value.pricing, `${label}.pricing`);
@@ -304,6 +320,9 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     ...(rerankTarget ? { rerankTarget } : {}),
+    ...(value.opaqueBlobCompatibilityScope !== undefined
+      ? { opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`) }
+      : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),

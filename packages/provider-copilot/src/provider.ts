@@ -40,7 +40,9 @@ const copilotRawToProviderModel = (model: CopilotRawModel): Omit<ProviderModel, 
 
   const partial: Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags' | 'flagOverrides'> = {
     id: model.id,
+    upstreamModelId: model.id,
     limits,
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
   };
   if (model.owned_by !== undefined) partial.owned_by = model.owned_by;
   if (model.created !== undefined) partial.created = model.created;
@@ -173,10 +175,14 @@ const finalizeCopilotModels = (
     const pricing = pricingForCopilotPublicModelId(mergedModel.id);
     const draft: Omit<ProviderModel, 'enabledFlags'> = {
       ...copilotRawToProviderModel(mergedModel),
+      upstreamModelId: mergedModel.id,
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
       ...(pricing ? { pricing } : {}),
+      ...((mergedModel.owned_by?.toLowerCase() === 'openai' || /^(?:gpt-|o[134](?:-|$)|codex-)/.test(mergedModel.id))
+        ? { opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' } }
+        : {}),
     };
     // Layer order: provider upstream default → operator upstream override
     // → per-model provider default. Placing the per-model layer last

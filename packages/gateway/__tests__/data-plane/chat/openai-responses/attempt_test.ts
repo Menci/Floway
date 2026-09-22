@@ -202,6 +202,7 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
     {
       upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
     },
     'openai-responses.reasoning.encrypted_content',
   );
@@ -578,6 +579,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     {
       upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
     },
     'openai-responses.reasoning.encrypted_content',
     { syntheticItem: true },
