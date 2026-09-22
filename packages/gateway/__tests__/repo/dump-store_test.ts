@@ -514,3 +514,39 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO', async ()
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('FileDumpStore round-trips raw exchanges and parsed events in one owned spill', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record = baseRecord('raw-exchange', Date.now());
+  record.capture = {
+    exchanges: [{ upstreamId: 'u', request: { url: 'https://u.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"model":"upstream"}' } }, response: { status: 200, headers: [['content-type', 'text/event-stream']], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: 'socket reset' }, error: null }],
+    response: { body: { encoding: 'utf8', data: 'downstream' }, complete: true, error: null },
+  };
+  record.response = { ...record.response, upstream: { status: 200, headers: [['x-trace', 'upstream']], body: { type: 'stream', events: [{ ts: 0, frame: { type: 'done' } }] } } };
+  await store.put('key_x', record);
+  const stored = await store.get('key_x', record.meta.id);
+  expect(stored?.capture).toEqual(record.capture);
+  expect(stored?.response.upstream).toEqual(record.response.upstream);
+  const spill = await db.prepare("SELECT file_key, state FROM spilled_files WHERE owner_kind = 'dump-response-upstream'").first<{ file_key: string; state: string }>();
+  expect(spill?.state).toBe('owned');
+  await db.prepare('DELETE FROM dump_records WHERE id = ?').bind(record.meta.id).run();
+  expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(spill!.file_key).first<{ state: string }>())?.state).toBe('retired');
+});
+
+test('FileDumpStore filters all retained history before applying the page limit', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const now = Date.now();
+  for (let i = 0; i < 5; i++) {
+    const record = baseRecord(`filter-${i}`, now - i);
+    record.meta.model = i === 4 ? 'needle-model' : 'other';
+    record.meta.error = i === 4 ? { kind: 'failed', reason: 'socket reset' } : null;
+    await store.put('key_x', record);
+  }
+  expect((await store.list('key_x', { q: 'needle', limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
+  expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
+  expect(await store.list('key_x', { q: "' OR 1=1 --", limit: 1 })).toEqual([]);
+  expect(await store.list('other-key', { q: 'needle', limit: 1 })).toEqual([]);
+});

@@ -6,6 +6,7 @@
 
 import type { Context } from 'hono';
 
+import { HttpCapture } from './http-capture.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
   DumpErrorMeta,
@@ -16,12 +17,13 @@ import type {
   PreparedDumpRequestBody,
   StoredDumpResponseBody,
 } from './types.ts';
+import { encodeBodyForWire } from './wire.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
@@ -37,7 +39,7 @@ interface RequestSnapshot {
 interface ResponseSnapshot {
   readonly status: number;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly isStream: boolean;
+  readonly rawCaptured: boolean;
   readonly bytes: Uint8Array;
   readonly payloadBytes: number;
   readonly streamError: string | null;
@@ -98,6 +100,7 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 };
 
 export class DumpAccumulator {
+  readonly http = new HttpCapture();
   private readonly events: DumpStreamEvent[] = [];
   private sentPayloadBytes = 0;
   private model: string | null = null;
@@ -209,7 +212,7 @@ export class DumpAccumulator {
       this.backgroundScheduler(this.write({
         status,
         headers: headers.map(([k, v]) => [k, v]),
-        isStream: this.events.length > 0,
+        rawCaptured: this.requestSnapshot.method !== 'WS',
         bytes: new Uint8Array(),
         payloadBytes: this.sentPayloadBytes,
         streamError: null,
@@ -226,7 +229,6 @@ export class DumpAccumulator {
       return response;
     }
 
-    const isStream = isEventStreamMediaType(response.headers.get('content-type'));
     const [forClient, forCapture] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forCapture.getReader();
@@ -249,7 +251,7 @@ export class DumpAccumulator {
       await this.write({
         status: responseStatus,
         headers: responseHeaders,
-        isStream,
+        rawCaptured: true,
         bytes,
         payloadBytes: bytes.byteLength,
         streamError,
@@ -277,9 +279,7 @@ export class DumpAccumulator {
     const responseBody: StoredDumpResponseBody = this.events.length > 0
       ? { type: 'stream', events: this.events }
       : response.bytes.byteLength > 0 || response.streamError !== null
-        ? response.isStream
-          ? { type: 'stream', events: [] }
-          : { type: 'bytes', body: response.bytes }
+        ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
     const meta: DumpMetadata = {
@@ -289,7 +289,7 @@ export class DumpAccumulator {
       method: this.requestSnapshot.method,
       path: this.requestSnapshot.path,
       status: response.status,
-      upstream: await resolveUpstreamRef(this.upstreamId),
+      upstream: await resolveUpstreamRef(this.upstreamId ?? this.http.exchanges.at(-1)?.upstreamId ?? null),
       model: this.model,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
@@ -322,6 +322,16 @@ export class DumpAccumulator {
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
       const record: DumpWriteRecord = {
+        capture: {
+          exchanges: this.http.exchanges,
+          ...(response.rawCaptured ? {
+            response: {
+              body: encodeBodyForWire(response.bytes, response.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? ''),
+              complete: response.streamError === null,
+              error: response.streamError,
+            },
+          } : {}),
+        },
         meta,
         request: {
           method: this.requestSnapshot.method,

@@ -64,3 +64,11 @@ test('a stream that completes records only its own frames', async () => {
   expect(body).toContain('data: [DONE]');
   assertEquals(frames.length, 2);
 });
+
+test('natural EOF forwards useful content without a missing-DONE error', async () => {
+  const { dump, frames } = recordingDump();
+  const body = await serve(dump, (async function* () { yield eventFrame(chunk('usable')); })());
+  expect(body).toContain('usable');
+  expect(body).not.toContain('event: error');
+  expect(frames).toHaveLength(1);
+});

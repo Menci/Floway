@@ -60,7 +60,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } })),
+    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q: url.searchParams.get('q') ?? '', failures: url.searchParams.get('failures') === 'true' ? 'true' : 'false' } })),
     recordId
       ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
       : Promise.resolve(null),
@@ -111,11 +111,31 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
-  const subscription = useDumpSubscription(selectedKeyId, loaderData.records);
+  const q = searchParams.get('q') ?? '';
+  const failures = searchParams.get('failures') === 'true';
+  const subscription = useDumpSubscription(selectedKeyId, loaderData.records, q, failures);
+  const changeFilter = (query: string, onlyFailures: boolean) => {
+    if (!selectedKeyId) return;
+    const next = selectionSearch(selectedKeyId);
+    if (query) next.set('q', query);
+    if (onlyFailures) next.set('failures', 'true');
+    setSearchParams(next, rewrite);
+  };
+  const recordSearch = (recordId?: string | null) => {
+    const next = selectionSearch(selectedKeyId!, recordId);
+    if (q) next.set('q', q);
+    if (failures) next.set('failures', 'true');
+    return next;
+  };
 
   const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
-    setSearchParams(selectionSearch(keyId, recordId), rewrite);
-  }, [rewrite, setSearchParams]);
+    const next = selectionSearch(keyId, recordId);
+    if (keyId === selectedKeyId) {
+      if (q) next.set('q', q);
+      if (failures) next.set('failures', 'true');
+    }
+    setSearchParams(next, rewrite);
+  }, [failures, q, rewrite, selectedKeyId, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
     currentKeys: keys,
@@ -164,7 +184,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : selectedKeyId ? narrow ? <>
         <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
           <RequestListPanel
-            addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
+            key={selectedKeyId}
+            q={q} failures={failures} onFilterChange={changeFilter}
+            addressOfRecord={recordId => `?${recordSearch(recordId)}`}
             apiKeys={keys}
             error={subscription.error ?? shown.recordsError ?? keysError}
             hasOlder={subscription.hasOlder}
@@ -202,7 +224,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
-              addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
+              key={selectedKeyId}
+              q={q} failures={failures} onFilterChange={changeFilter}
+              addressOfRecord={recordId => `?${recordSearch(recordId)}`}
               apiKeys={keys}
               error={subscription.error ?? shown.recordsError ?? keysError}
               hasOlder={subscription.hasOlder}

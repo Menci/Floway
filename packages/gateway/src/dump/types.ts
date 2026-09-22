@@ -12,6 +12,7 @@
 import type { z } from 'zod';
 
 import type {
+  dumpCaptureSchema,
   dumpErrorSchema,
   dumpMetadataSchema,
   dumpStreamEventSchema,
@@ -19,6 +20,7 @@ import type {
 } from './schemas.ts';
 
 export type DumpRecordId = string;
+export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 
 export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 
@@ -96,12 +98,14 @@ export interface StoredDumpResponse {
 }
 
 export type StoredDumpRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: StoredDumpRequest;
   response: StoredDumpResponse;
 };
 
 export type DumpWriteRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpWriteRequest;
   response: StoredDumpResponse;
@@ -143,6 +147,7 @@ interface DumpResponse {
 }
 
 export type DumpRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpRequest;
   response: DumpResponse;

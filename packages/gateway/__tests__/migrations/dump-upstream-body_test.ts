@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 
-const MIGRATION = '0089_dump_upstream_body.sql';
+const MIGRATION = '0084_dump_upstream_body.sql';
 
 // The upstream body column is additive: nullable, and the three spilled-files
 // triggers from 0066 are rebuilt to cover the new descriptor. The rebuilt

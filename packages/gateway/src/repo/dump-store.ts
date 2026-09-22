@@ -1,5 +1,6 @@
 import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
+import { dumpCaptureEnvelopeSchema } from '../dump/schemas.ts';
 import {
   decodeDumpBodyDescriptor,
   decodeDumpHeaders,
@@ -24,8 +25,10 @@ import type {
   StoredDumpResponseBody,
   StoredDumpUpstreamResponse,
 } from '../dump/types.ts';
+import { upstreamResponseToWire } from '../dump/wire.ts';
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
+import { decodeForgivingBase64 } from '@floway-dev/protocols/common';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
@@ -81,7 +84,7 @@ const putRawBody = async (
   files: FileStore,
   key: string,
   rawBytes: Uint8Array,
-  type: 'bytes' | 'events',
+  type: DumpBodyDescriptor['type'],
 ): Promise<DumpBodyDescriptor> => {
   const gz = await gzipBytes(rawBytes);
   await files.put(key, gz);
@@ -130,13 +133,15 @@ export class FileDumpStore implements DumpStore {
     // distinct `resp.up` side so the sweep can own it independently.
     const upstream = record.response.upstream;
     const upstreamBody = upstream?.body;
-    const upstreamFileKey = upstreamBody === undefined
-      ? null
-      : upstreamBody.type === 'bytes' && upstreamBody.body.byteLength === 0
+    const upstreamFileKey = record.capture !== undefined
+      ? bodyPath(keyId, bucket, record.meta.id, 'resp.up')
+      : upstreamBody === undefined
         ? null
-        : upstreamBody.type === 'none'
+        : upstreamBody.type === 'bytes' && upstreamBody.body.byteLength === 0
           ? null
-          : bodyPath(keyId, bucket, record.meta.id, 'resp.up');
+          : upstreamBody.type === 'none'
+            ? null
+            : bodyPath(keyId, bucket, record.meta.id, 'resp.up');
     const staged = [
       ...(requestFileKey === null ? [] : [{ fileKey: requestFileKey, ownerKind: 'dump-request' }]),
       ...(responseFileKey === null ? [] : [{ fileKey: responseFileKey, ownerKind: 'dump-response' }]),
@@ -176,7 +181,10 @@ export class FileDumpStore implements DumpStore {
     }
 
     let upstreamDescriptor: DumpBodyDescriptor | null = null;
-    if (upstreamBody !== undefined) {
+    if (record.capture !== undefined) {
+      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, upstream: upstreamResponseToWire(record.response.upstream) });
+      upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, new TextEncoder().encode(JSON.stringify(envelope)), 'capture');
+    } else if (upstreamBody !== undefined) {
       if (upstreamBody.type === 'bytes') {
         if (upstreamBody.body.byteLength > 0) {
           upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, upstreamBody.body, 'bytes');
@@ -236,14 +244,18 @@ export class FileDumpStore implements DumpStore {
       = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
-    const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000';
-    const sql = beforeTs === null
-      ? `${select} WHERE ${visible} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
-      : `${select} WHERE ${visible} AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
-    const now = Date.now();
-    const stmt = beforeTs === null
-      ? this.db.prepare(sql).bind(keyId, now, opts.limit)
-      : this.db.prepare(sql).bind(keyId, now, beforeTs, beforeTs, beforeId, opts.limit);
+    const conditions = ['d.key_id = ?', 'd.created_at >= ? - k.dump_retention_seconds * 1000'];
+    const parameters: (string | number)[] = [keyId, Date.now()];
+    if (beforeTs !== null) {
+      conditions.push('(d.created_at < ? OR (d.created_at = ? AND d.id < ?))');
+      parameters.push(beforeTs, beforeTs, beforeId!);
+    }
+    if (opts.failures) conditions.push("(json_type(d.meta_json, '$.error') != 'null' OR json_extract(d.meta_json, '$.status') >= 400)");
+    if (opts.q) {
+      conditions.push(`instr(lower(d.id || ' ' || coalesce(json_extract(d.meta_json, '$.path'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.model'), '') || ' ' || coalesce(u.name, '') || ' ' || coalesce(json_extract(d.meta_json, '$.status'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.error.reason'), json_extract(d.meta_json, '$.error.kind'), '')), lower(?)) > 0`);
+      parameters.push(opts.q);
+    }
+    const stmt = this.db.prepare(`${select} WHERE ${conditions.join(' AND ')} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`).bind(...parameters, opts.limit);
     const { results } = await stmt.all<Pick<DumpRow, 'id' | 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
     return results.map(row => ({
       ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),
@@ -308,7 +320,19 @@ export class FileDumpStore implements DumpStore {
     // Same rehydration rules as the downstream body; absent on native turns
     // and on records written before the upstream column existed (NULL).
     let upstream: StoredDumpUpstreamResponse | undefined;
-    if (upstreamDescriptor !== null) {
+    let capture: StoredDumpRecord['capture'];
+    if (upstreamDescriptor?.type === 'capture') {
+      const envelope = dumpCaptureEnvelopeSchema.parse(JSON.parse(new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor))));
+      capture = envelope.capture;
+      const stored = envelope.upstream;
+      if (stored !== undefined) {
+        upstream = {
+          ...stored, body: stored.body.type === 'bytes'
+            ? { type: 'bytes', body: stored.body.body.encoding === 'utf8' ? new TextEncoder().encode(stored.body.body.data) : decodeForgivingBase64(stored.body.body.data) }
+            : stored.body,
+        };
+      }
+    } else if (upstreamDescriptor !== null) {
       let upstreamBody: StoredDumpResponseBody;
       if (upstreamDescriptor.type === 'events') {
         const text = new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor));
@@ -332,7 +356,7 @@ export class FileDumpStore implements DumpStore {
       body: responseBody,
       ...(upstream !== undefined ? { upstream } : {}),
     };
-    return { meta, request, response };
+    return { meta, request, response, ...(capture === undefined ? {} : { capture }) };
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {

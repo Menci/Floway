@@ -1,337 +1,171 @@
-import {
-  EyeOffRegular,
-  EyeRegular,
-} from '@fluentui/react-icons';
-import { useMemo, useState } from 'react';
-import type { PropsWithChildren, ReactNode } from 'react';
+import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import { lazy, Suspense, useMemo, useState } from 'react';
 
-import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
+import { contentTypeOf, renderBody } from './body-render';
+import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
-import {
-  collectKindFromTargetApi,
-  detectCollectKind,
-  renderStreamEvents,
-  streamEventsCopyText,
-  type CollectedStream,
-} from './stream-render';
+import { collectKindFromTargetApi, detectCollectKind, renderStreamEvents, type CollectedStream, type CollectKind } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
+import { Dropdown } from '../ui/fluent-form-controls';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import { highlight, prismTokenStyles } from '../ui/prism';
+import { PANEL_BAND_CLASS } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpCapture, DumpRecord, DumpResponseBody } from '@floway-dev/gateway/dump-types';
 
-const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
-
-// Region dividers take WinUI's divider brush (`colorNeutralStroke3`), not the
-// control outline; the two only differ in the dark dictionary.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L53
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L257
-//
-// The band is the one surface here that fills: it holds still while the region
-// below it scrolls, so it has to occlude. WinUI's counterpart is ContentDialog's
-// fixed band over its scrolling content, `ContentDialogTopOverlay` =
-// LayerFillColorAlt, which is #FFFFFF in light and #0DFFFFFF (WinUI ARGB) over
-// the dialog's
-// #202020 in dark -- the flat #FFFFFF/#2C2C2C that `colorNeutralBackground1`
-// already carries. WinUI seams that band with CardStrokeColorDefault; the
-// divider stands in because the card stroke is black-alpha and disappears into a
-// dark surface, which is the reading every other separator in this dashboard
-// takes.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L8
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L61
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L265
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
-const useStyles = makeStyles({
-  sectionHeader: {
-    alignItems: 'center',
-    backgroundColor: 'var(--colorNeutralBackground1)',
-    borderBottom: '1px solid var(--colorNeutralStroke3)',
-    display: 'flex',
-    gap: '8px',
-    minHeight: '42px',
-    padding: '5px 16px',
-    position: 'sticky',
-    top: 0,
-    zIndex: 2,
-  },
-  // The seam between two sections is drawn by the body rather than by the
-  // section box, so it lands on the same pixel row as the band's own seam once a
-  // section scrolls past: `position: sticky` parks the band on its section's
-  // bottom edge, and a border on the section box would sit one row below the
-  // band's and read as a two-pixel rule for the length of that scroll.
-  section: {
-    '&:not(:last-child) > :last-child': { borderBottom: '1px solid var(--colorNeutralStroke3)' },
-  },
-  // No fill: a scrolling content region inside a surface takes the surface's
-  // own, and painting the band's fill here made band and body one slab with the
-  // seam lost inside it. WinUI fills a content region only where that region is
-  // its own framed box -- the Expander's, at CardBackgroundFillColorSecondary --
-  // and this one is the body of a section the band already heads.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26
-  code: {
-    color: 'var(--colorNeutralForeground1)',
-    margin: 0,
-    overflow: 'visible',
-    padding: '14px 16px 18px',
-    tabSize: 2,
-    whiteSpace: 'pre',
-  },
-  highlightedCode: prismTokenStyles,
-  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: 'var(--floway-font-size-mono)', lineHeight: 'var(--floway-line-height-mono)', width: '100%' },
-  headerRow: {
-    borderBottom: '1px solid var(--colorNeutralStroke3)',
-    ':last-child': { borderBottom: 'none' },
-  },
-  headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' },
-  headerValue: { color: 'var(--colorNeutralForeground1)', overflowWrap: 'anywhere', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'normal' },
-});
+const BodyEditor = lazy(() => import('../ui/body-editor'));
+const { Button, Option, Spinner, Tab, TabList, Text } = fluentComponents;
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
-  const label = copyLabel(outcomeFor(), t('common.copy.action'));
-  return (
-    <TooltipIconButton
-      icon={copyOutcomeIcon(outcomeFor())}
-      label={label}
-      onClick={() => copy(text)}
-    />
-  );
+  return <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />;
 }
 
-function CodeView({ body }: { body: RenderedBody }) {
-  const s = useStyles();
-  const highlighted = useMemo(
-    () => highlight(body.text, body.isJson ? 'json' : 'plain'),
-    [body],
-  );
-  return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
-}
-
-function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
+function HeadersView({ headers }: { headers: Array<[string, string]> }) {
   const { t } = useTranslation();
-  const s = useStyles();
+  const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  return (
-    <table className={s.headers}><tbody>
-      {headers.map(([name, value], index) => {
-        const sensitive = isSensitiveHeader(name);
-        const visible = revealed.has(index);
-        return (
-          <tr className={s.headerRow} key={`${name}-${index}`}>
-            <th className={s.headerName}>{name}</th>
-            <td className={s.headerValue}>
-              {sensitive && !visible ? redactHeaderValue(value) : value}
-              {sensitive && (
-                <TooltipIconButton
-                  className="!ml-1"
-                  icon={visible ? <EyeOffRegular /> : <EyeRegular />}
-                  label={visible ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
-                  onClick={() => setRevealed(current => {
-                    const next = new Set(current);
-                    if (next.has(index)) next.delete(index); else next.add(index);
-                    return next;
-                  })}
-                />
-              )}
-            </td>
-          </tr>
-        );
-      })}
-    </tbody></table>
-  );
+  return <>
+    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2`}>
+      <Button size="small" aria-expanded={open} onClick={() => setOpen(!open)}>{t('dashboard.requests.headers', { count: String(headers.length) })}</Button>
+      {open && <CopyButton text={headers.map(([name, value]) => `${name}: ${value}`).join('\n')} />}
+    </div>
+    {open && <ScrollArea axes="both" className="max-h-[25vh] shrink-0">
+      <table className="w-full font-mono text-left"><tbody>
+        {headers.map(([name, value], index) => <tr key={index}>
+          <th className="align-top py-2 pl-[var(--floway-panel-inset)] pr-2 font-normal text-fui-fg3">{name}</th>
+          <td className="py-2 pl-2 pr-[var(--floway-panel-inset)] break-all">
+            {isSensitiveHeader(name) && !revealed.has(index) ? redactHeaderValue(value) : value}
+            {isSensitiveHeader(name) && <TooltipIconButton
+              icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
+              label={revealed.has(index) ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
+              onClick={() => setRevealed(current => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}
+            />}
+          </td>
+        </tr>)}
+      </tbody></table>
+    </ScrollArea>}
+  </>;
 }
 
-// Deliberately not `SectionHeader`: this bar is sticky and holds a fixed
-// height, which that primitive's narrow-viewport rule would stack away, and it
-// carries a detail slot beside the title that the primitive has no prop for.
-function DetailSectionHeader({ title, detail, actions, copyText }: { title: string; detail?: ReactNode; actions?: ReactNode; copyText?: string }) {
-  const s = useStyles();
-  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className="m-0">{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+function BodyPane({ body, headers, collected, kind, raw }: {
+  body: DumpResponseBody;
+  headers: Array<[string, string]>;
+  collected?: CollectedStream | null;
+  kind?: CollectKind | null;
+  raw?: NonNullable<DumpCapture['response']>;
+}) {
+  const { t } = useTranslation();
+  const [selectedView, setView] = useState('collected');
+  const displayed = useMemo(() => {
+    if (selectedView === 'raw' && raw) return { text: raw.body.data, isJson: false, decodeError: null };
+    if (body.type === 'bytes') return renderBody(body.body, contentTypeOf(headers));
+    if (body.type === 'stream' && selectedView === 'events') {
+      const text = renderStreamEvents(kind ?? null, body.events).map((event, index) =>
+        `# ${index + 1} +${event.timestamp}ms ${event.event ?? ''}\n${event.text}`).join('\n\n');
+      return { text, isJson: false, decodeError: null };
+    }
+    return { text: collected?.result == null ? '' : JSON.stringify(collected.result, null, 2), isJson: true, decodeError: null };
+  }, [body, collected, headers, kind, raw, selectedView]);
+  return <div className="flex-1 min-h-0 flex flex-col">
+    <HeadersView headers={headers} />
+    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
+      {(body.type === 'stream' || raw) && <TabList aria-label={t('dashboard.requests.streamView')} selectedValue={selectedView} onTabSelect={(_, data) => setView(String(data.value))} size="small">
+        <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
+        {body.type === 'stream' && <Tab value="events">{t('dashboard.requests.events', { count: body.events.length })}</Tab>}
+        {raw && <Tab value="raw">{t('dashboard.requests.raw')}</Tab>}
+      </TabList>}
+      {selectedView === 'raw' && raw && <Text size={200}>{raw.body.encoding === 'base64' ? t('dashboard.requests.base64') : t('dashboard.requests.raw')}</Text>}
+      <span className="ml-auto"><CopyButton text={displayed.text} /></span>
+    </div>
+    <ScrollArea axes="vertical" className="max-h-[25vh] shrink-0">
+      {raw && !raw.complete && <OutcomeMessageBar intent="warning">{t('dashboard.requests.partialCapture')}</OutcomeMessageBar>}
+      {raw?.error && <OutcomeMessageBar>{raw.error}</OutcomeMessageBar>}
+      {selectedView === 'collected' && collected?.error && <OutcomeMessageBar>{collected.error}</OutcomeMessageBar>}
+      {selectedView === 'collected' && collected?.truncated && !collected.error && <OutcomeMessageBar intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
+      {displayed.decodeError && <OutcomeMessageBar intent="warning">{t('dashboard.requests.decodeError', { error: displayed.decodeError })}</OutcomeMessageBar>}
+    </ScrollArea>
+    <div className="flex-1 min-h-0">
+      {displayed.text ? <Suspense fallback={<Spinner />}><BodyEditor text={displayed.text} json={displayed.isJson} label={t('dashboard.requests.responseBody')} /></Suspense>
+        : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>}
+    </div>
+  </div>;
 }
 
-function SectionBody({ children }: PropsWithChildren) {
-  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max">{children}</ScrollArea>;
+function UpstreamPane({ record, collected }: { record: DumpRecord; collected: CollectedStream | null }) {
+  const { t } = useTranslation();
+  const exchanges = record.capture?.exchanges ?? [];
+  const [index, setIndex] = useState(Math.max(0, exchanges.length - 1));
+  const [side, setSide] = useState('response');
+  const exchange = exchanges[index];
+  const legacy = record.response.upstream;
+  if (!exchange) return legacy
+    ? <BodyPane body={legacy.body} headers={legacy.headers} collected={collected} kind={collectKindFromTargetApi(record.meta.targetApi)} />
+    : <EmptyStateLine className="p-4">{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>;
+  const response = exchange.response;
+  const body: DumpResponseBody = side === 'request' ? { type: 'bytes', body: exchange.request.body }
+    : index === exchanges.length - 1 && legacy ? legacy.body
+      : response ? { type: 'bytes', body: response.body } : { type: 'none' };
+  return <>
+    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
+      <Dropdown aria-label={t('dashboard.requests.upstreamCall')} selectedOptions={[String(index)]} value={t('dashboard.requests.callNumber', { number: String(index + 1), count: String(exchanges.length) })} onOptionSelect={(_, data) => setIndex(Number(data.optionValue))}>
+        {exchanges.map((item, i) => <Option key={i} value={String(i)} text={String(i + 1)}>{i + 1}. {item.request.method} {item.response?.status ?? '—'}</Option>)}
+      </Dropdown>
+      <TabList aria-label={t('dashboard.requests.upstreamCall')} selectedValue={side} onTabSelect={(_, data) => setSide(String(data.value))} size="small">
+        <Tab value="request">{t('dashboard.requests.request')}</Tab><Tab value="response">{t('dashboard.requests.response')}</Tab>
+      </TabList>
+      {response && <HttpStatusBadge severity={requestSeverity(response.status, null)}>{response.status}</HttpStatusBadge>}
+    </div>
+    <Text className={`${PANEL_BAND_CLASS} break-all font-mono`} size={200}>{exchange.request.method} {exchange.request.url}</Text>
+    {exchange.error && <OutcomeMessageBar>{exchange.error}</OutcomeMessageBar>}
+    <BodyPane key={`${index}-${side}`} body={body} headers={side === 'request' ? exchange.request.headers : response?.headers ?? []} raw={side === 'response' ? response ?? undefined : undefined} collected={collected} kind={collectKindFromTargetApi(record.meta.targetApi)} />
+  </>;
 }
 
-function HeaderSectionBody({ children }: PropsWithChildren) {
-  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full">{children}</ScrollArea>;
-}
-
-export function RequestDetailPanel({ collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
+export function RequestDetailPanel({ collected, upstreamCollected, error, record, recordId, retainLastRecord }: {
   collected: CollectedStream | null;
   upstreamCollected: CollectedStream | null;
   error: string | null;
   record: DumpRecord | null;
   recordId: string | null;
-  /** True when the surface outlives the selection: a drawer loses the record from the URL before its slide-out runs. */
   retainLastRecord: boolean;
 }) {
+  const [shown, setShown] = useState({ collected, upstreamCollected, error, record, recordId });
+  const incoming = retainLastRecord && recordId === null ? shown : { collected, upstreamCollected, error, record, recordId };
+  if (shown.record !== incoming.record || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
   const { t } = useTranslation();
-  const s = useStyles();
-  const dangerText = useDangerTextClass();
-  const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
-  const [upstreamView, setUpstreamView] = useState<'collected' | 'events'>('collected');
+  if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
+  if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
+  if (!shown.record) return null;
+  return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
+}
 
-  // Deriving the retained record during render rather than in an effect keeps
-  // the swap out of the first frame of the leave animation.
-  const [shown, setShown] = useState({ collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId });
-  const incoming = retainLastRecord && selectedRecordId === null
-    ? shown
-    : { collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId };
-  if (shown.recordId !== incoming.recordId) {
-    setShown(incoming);
-    setStreamView('collected');
-    setUpstreamView('collected');
-  } else if (shown.record !== incoming.record || shown.error !== incoming.error) {
-    // Recollecting the same events only rebuilds an equal value, so a reload of
-    // the same record keeps the collected stream and the tab showing it.
-    setShown({ ...incoming, collected: shown.collected, upstreamCollected: shown.upstreamCollected });
-  }
-  const { collected, upstreamCollected, error, record, recordId } = shown;
-
-  const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
-  const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
-  const streamEvents = useMemo<DumpStreamEvent[]>(
-    () => record?.response.body.type === 'stream' ? record.response.body.events : [],
-    [record],
-  );
-  const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
-  // Pre-translation upstream view. Dispatched by `meta.targetApi` (target
-  // protocol) rather than `meta.path` (source protocol). Only translated turns
-  // carry an upstream body; native turns have none.
-  const upstreamStreamEvents = useMemo<DumpStreamEvent[]>(
-    () => record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [],
-    [record],
-  );
-  const upstreamCollectKind = record ? collectKindFromTargetApi(record.meta.targetApi) : null;
-  const upstreamRenderedEvents = useMemo(() => renderStreamEvents(upstreamCollectKind, upstreamStreamEvents), [upstreamCollectKind, upstreamStreamEvents]);
-  const upstreamBytesBody = record?.response.upstream?.body.type === 'bytes' ? renderBody(record.response.upstream.body.body, contentTypeOf(record.response.upstream.headers)) : EMPTY_BODY;
-
-  if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
-  // This replaces every section rather than sitting in one, so it takes the
-  // panel inset. The bars further down are inside a section body and sit at 12;
-  // that is a different placement, not a drift from this one.
-  if (error) return <OutcomeMessageBar className="!m-4">{error}</OutcomeMessageBar>;
-  if (!record) return null;
-
-  const severity = requestSeverity(record.response.status, record.meta.error);
+function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
+  const { t } = useTranslation();
+  const [section, setSection] = useState('response');
   const responseError = errorLabel(record.meta.error);
-  const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
-  const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
-  const collectedCopyText = collected?.result === null || collected?.result === undefined
-    ? undefined
-    : JSON.stringify(collected.result, null, 2);
-  const upstreamCollectedCopyText = upstreamCollected?.result === null || upstreamCollected?.result === undefined
-    ? undefined
-    : JSON.stringify(upstreamCollected.result, null, 2);
-  const upstream = record.response.upstream;
-
-  return (
-    <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
-        <HeaderSectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></HeaderSectionBody>
-      </section>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
-        <SectionBody>
-          {requestBody.decodeError && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</OutcomeMessageBar>}
-          {requestBody.text ? <CodeView body={requestBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noRequestBody')}</EmptyStateLine>}
-        </SectionBody>
-      </section>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge severity={severity}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
-        <HeaderSectionBody>
-          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
-        </HeaderSectionBody>
-      </section>
-      <section>
-        <DetailSectionHeader
-          title={t('dashboard.requests.responseBody')}
-          actions={record.response.body.type === 'stream' ? (
-            <TabList aria-label={t('dashboard.requests.streamView')} selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
-              <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
-              <Tab value="events">{t('dashboard.requests.events', { count: streamEvents.length })}</Tab>
-            </TabList>
-          ) : undefined}
-          copyText={record.response.body.type === 'bytes' && responseBody.text
-            ? responseBody.copyText
-            : record.response.body.type === 'stream' && streamView === 'events'
-              ? streamEventsCopyText(collectKind, streamEvents)
-              : record.response.body.type === 'stream' && streamView === 'collected'
-                ? collectedCopyText
-                : undefined}
-        />
-        <SectionBody>
-          {record.response.body.type === 'none' ? <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseBody')}</EmptyStateLine> : null}
-          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
-          {record.response.body.type === 'stream' && streamView === 'collected' && (
-            collectKind === null ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
-              : collected === null ? null
-                : <>
-                    {collected.error && <OutcomeMessageBar className="!m-3">{collected.error}</OutcomeMessageBar>}
-                    {!collected.error && collected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
-                    {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
-                  </>
-          )}
-          {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
-            <div className={s.section} key={index}>
-              {/* Not `formatDuration`: its ladder rounds the sub-millisecond
-                  gaps within a burst to `0ms`. */}
-              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
-              <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
-            </div>
-          ))}
-        </SectionBody>
-      </section>
-      {upstream !== undefined && (
-        <section>
-          <DetailSectionHeader
-            title={t('dashboard.requests.upstreamResponseBody')}
-            actions={upstream.body.type === 'stream' ? (
-              <TabList aria-label={t('dashboard.requests.upstreamStreamView')} selectedValue={upstreamView} onTabSelect={(_, data) => setUpstreamView(data.value as 'collected' | 'events')} size="small">
-                <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
-                <Tab value="events">{t('dashboard.requests.events', { count: upstreamStreamEvents.length })}</Tab>
-              </TabList>
-            ) : undefined}
-            copyText={upstream.body.type === 'bytes' && upstreamBytesBody.text
-              ? upstreamBytesBody.copyText
-              : upstream.body.type === 'stream' && upstreamView === 'events'
-                ? streamEventsCopyText(upstreamCollectKind, upstreamStreamEvents)
-                : upstream.body.type === 'stream' && upstreamView === 'collected'
-                  ? upstreamCollectedCopyText
-                  : undefined}
-          />
-          <SectionBody>
-            {upstream.body.type === 'bytes' && (upstreamBytesBody.text ? <CodeView body={upstreamBytesBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
-            {upstream.body.type === 'stream' && upstreamView === 'collected' && (
-              upstreamCollectKind === null ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
-                : upstreamCollected === null ? null
-                  : <>
-                      {upstreamCollected.error && <OutcomeMessageBar className="!m-3">{upstreamCollected.error}</OutcomeMessageBar>}
-                      {!upstreamCollected.error && upstreamCollected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
-                      {upstreamCollected.result !== null && <CodeView body={{ text: JSON.stringify(upstreamCollected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
-                    </>
-            )}
-            {upstream.body.type === 'stream' && upstreamView === 'events' && upstreamRenderedEvents.map((event, index) => (
-              <div className={s.section} key={index}>
-                <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
-                <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
-              </div>
-            ))}
-          </SectionBody>
-        </section>
-      )}
-    </ScrollArea>
-  );
+  return <div className="h-full min-h-0 flex flex-col">
+    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2`}>
+      <HttpMethodBadge method={record.request.method} />
+      <HttpStatusBadge severity={requestSeverity(record.response.status, record.meta.error)}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <Text className="break-all font-mono" size={200}>{record.request.path}</Text>
+      <Button size="small" className="!ml-auto" onClick={() => downloadRecords([record])}>{t('dashboard.requests.exportRecord')}</Button>
+    </div>
+    {responseError && <OutcomeMessageBar>{responseError}</OutcomeMessageBar>}
+    <TabList className="px-[var(--floway-panel-inset)]" aria-label={t('dashboard.requests.detailTitle')} selectedValue={section} onTabSelect={(_, data) => setSection(String(data.value))}>
+      <Tab value="request">{t('dashboard.requests.clientRequest')}</Tab>
+      <Tab value="upstream">{t('dashboard.requests.upstreamCall')}</Tab>
+      <Tab value="response">{t('dashboard.requests.clientResponse')}</Tab>
+    </TabList>
+    {section === 'request' && <BodyPane key="request" body={{ type: 'bytes', body: record.request.body }} headers={record.request.headers} />}
+    {section === 'upstream' && <UpstreamPane record={record} collected={upstreamCollected} />}
+    {section === 'response' && <BodyPane key="response" body={record.response.body} headers={record.response.headers} collected={collected} kind={detectCollectKind(record.meta.path)} raw={record.capture?.response} />}
+  </div>;
 }

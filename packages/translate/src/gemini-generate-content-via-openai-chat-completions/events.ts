@@ -65,15 +65,11 @@ const mapUsage = (
   return metadata;
 };
 
-const UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.';
-
 const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<OpenAIChatCompletionsStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') return;
     yield frame.event;
   }
-
-  throw new Error(UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE);
 };
 
 type OpenAIChatCompletionsToolCallDelta = NonNullable<OpenAIChatCompletionsDelta['tool_calls']>[0];

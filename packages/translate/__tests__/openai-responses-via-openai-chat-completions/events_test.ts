@@ -4,7 +4,7 @@ import { createOpenAIChatCompletionsToOpenAIResponsesStreamState, flushOpenAICha
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 type OpenAIResponsesCompletedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
 
@@ -305,7 +305,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves respo
   assertEquals(completed?.response.service_tier, 'priority');
 });
 
-test('translateToSourceEvents rejects OpenAI Chat Completions streams without DONE', async () => {
+test('translateToSourceEvents accepts OpenAI Chat Completions streams without DONE', async () => {
   async function* stream() {
     yield eventFrame({
       id: 'chatcmpl_truncated',
@@ -322,7 +322,7 @@ test('translateToSourceEvents rejects OpenAI Chat Completions streams without DO
     } satisfies OpenAIChatCompletionsStreamEvent);
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.');
+  await drain(translateToSourceEvents(stream()));
 });
 
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped custom tool calls into custom_tool_call shape', () => {
