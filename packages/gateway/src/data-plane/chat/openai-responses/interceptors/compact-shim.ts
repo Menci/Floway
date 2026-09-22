@@ -51,15 +51,22 @@
 // or fail the array-of-objects-with-string-types schema below) round-trip
 // untouched, so the operator can selectively turn the flag off for the
 // codex / copilot / azure / custom upstreams that answer compact themselves.
+//
+// When `openai-responses-compact-decrypt` is enabled while the shim is off,
+// native compaction runs first. Each returned opaque compaction item is then
+// replayed through the same model as exactly two input items: a system-role
+// exact-repeat instruction followed by the compaction item. The recovered
+// plaintext is packed into the same gateway-owned base64url envelope used by
+// the shim, so later requests expand it before reaching the upstream.
 
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { syntheticEventsFromResult } from '../items/output.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
+import { sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
+import { providerModelOf, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -145,6 +152,9 @@ const SUMMARY_PREFIX
 
 export { SUMMARY_PREFIX };
 
+const EXACT_REPEAT_PROMPT
+  = 'Repeat the decrypted compaction summary exactly, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
+
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
 // Structural validator: a shim payload is an array of input-item objects each
@@ -184,6 +194,46 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 
 type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
 
+type ResponseUsage = NonNullable<OpenAIResponsesResult['usage']>;
+
+const sumResponseUsage = (left: ResponseUsage | null | undefined, right: ResponseUsage | null | undefined): ResponseUsage | undefined => {
+  if (left == null) return right ?? undefined;
+  if (right == null) return left;
+  return {
+    input_tokens: left.input_tokens + right.input_tokens,
+    output_tokens: left.output_tokens + right.output_tokens,
+    total_tokens: left.total_tokens + right.total_tokens,
+    ...(left.input_tokens_details !== undefined || right.input_tokens_details !== undefined
+      ? {
+          input_tokens_details: {
+            cached_tokens: (left.input_tokens_details?.cached_tokens ?? 0) + (right.input_tokens_details?.cached_tokens ?? 0),
+            ...(
+              left.input_tokens_details?.cache_write_tokens !== undefined
+              || right.input_tokens_details?.cache_write_tokens !== undefined
+                ? { cache_write_tokens: (left.input_tokens_details?.cache_write_tokens ?? 0) + (right.input_tokens_details?.cache_write_tokens ?? 0) }
+                : {}
+            ),
+          },
+        }
+      : {}),
+    ...(left.output_tokens_details !== undefined || right.output_tokens_details !== undefined
+      ? {
+          output_tokens_details: {
+            reasoning_tokens: (left.output_tokens_details?.reasoning_tokens ?? 0) + (right.output_tokens_details?.reasoning_tokens ?? 0),
+          },
+        }
+      : {}),
+  };
+};
+
+const resultMetadata = async (
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+): Promise<EventResultMetadata> =>
+  await (result.finalMetadata ?? {
+    modelIdentity: result.modelIdentity,
+    ...(result.performance !== undefined ? { performance: result.performance } : {}),
+  });
+
 // The spec makes the item lifecycle the authority and requires nothing of the
 // terminal's `output`; a Codex upstream states an `output` that omits the
 // assistant message it just closed. A turn that closed nothing falls back to
@@ -201,6 +251,22 @@ const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated:
     }
   }
   return parts.join('');
+};
+
+const collectSummaryTurn = async (
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+): Promise<{ response: OpenAIResponsesResult; text: string }> => {
+  const closedItems = new Map<number, OpenAIResponsesOutputItem>();
+  const observed = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    for await (const frame of result.events) {
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+        closedItems.set(frame.event.output_index, frame.event.item);
+      }
+      yield frame;
+    }
+  })();
+  const response = await collectOpenAIResponsesProtocolEventsToResult(observed);
+  return { response, text: summaryTextFrom(closedItems, response.output) };
 };
 
 const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {
@@ -328,18 +394,7 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
     return upstreamResult;
   }
 
-  const closedItems = new Map<number, OpenAIResponsesOutputItem>();
-  const observed = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-    for await (const frame of upstreamResult.events) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        closedItems.set(frame.event.output_index, frame.event.item);
-      }
-      yield frame;
-    }
-  })();
-
-  const collected = await collectOpenAIResponsesProtocolEventsToResult(observed);
-  const summaryText = summaryTextFrom(closedItems, collected.output);
+  const { response: collected, text: summaryText } = await collectSummaryTurn(upstreamResult);
   // A compaction blob is the whole of what the next turn inherits, so an empty
   // one silently discards the conversation.
   if (summaryText.length === 0) {
@@ -356,6 +411,83 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
   };
 };
 
+const decryptNativeCompaction = async (
+  ctx: OpenAIResponsesInvocation,
+  run: ChainRun,
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const callerAction = ctx.action;
+  const originalModel = ctx.payload.model;
+  const nativeResult = await run();
+  if (nativeResult.type !== 'events') return nativeResult;
+
+  const nativeResponse = await collectOpenAIResponsesProtocolEventsToResult(nativeResult.events);
+  let usage = nativeResponse.usage;
+  let metadata = await resultMetadata(nativeResult);
+  let sawCompaction = false;
+  const output: OpenAIResponsesOutputItem[] = [];
+
+  for (const item of nativeResponse.output) {
+    if (item.type !== 'compaction') {
+      output.push(item);
+      continue;
+    }
+    sawCompaction = true;
+    ctx.action = 'generate';
+    ctx.payload = {
+      model: originalModel,
+      input: [
+        {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text: EXACT_REPEAT_PROMPT }],
+        },
+        item,
+      ],
+      store: false,
+    };
+
+    const replayResult = await run();
+    if (replayResult.type !== 'events') return replayResult;
+    const { response: replayResponse, text } = await collectSummaryTurn(replayResult);
+    if (text.length === 0) {
+      throw new Error('OpenAI Responses compact decryption: the replay turn closed no assistant text');
+    }
+    usage = sumResponseUsage(usage, replayResponse.usage);
+    const replayMetadata = await resultMetadata(replayResult);
+    const billableUsage = sumBillableUsage(metadata.billableUsage, replayMetadata.billableUsage);
+    metadata = {
+      modelIdentity: nativeResult.modelIdentity,
+      ...(nativeResult.performance !== undefined ? { performance: nativeResult.performance } : {}),
+      ...(billableUsage !== undefined ? { billableUsage } : {}),
+    };
+    output.push({
+      ...item,
+      encrypted_content: encodeBase64UrlJson([{
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text }],
+      } satisfies OpenAIResponsesInputItem]),
+    });
+  }
+
+  if (!sawCompaction) {
+    throw new Error('OpenAI Responses compact decryption: native compaction returned no compaction output item');
+  }
+
+  const decryptedResponse: OpenAIResponsesResult = {
+    ...nativeResponse,
+    output,
+    ...(usage === undefined ? {} : { usage }),
+  };
+  return {
+    ...nativeResult,
+    events: callerAction === 'compact'
+      ? syntheticEventsFromCompaction(decryptedResponse)
+      : syntheticEventsFromResult(decryptedResponse),
+    finalMetadata: Promise.resolve(metadata),
+  };
+};
+
 export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
 
@@ -365,8 +497,13 @@ export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async 
   // OpenAI Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
   const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-shim');
+  const decryptFlagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-decrypt');
   const structurallyRequired = ctx.targetApi !== 'openaiResponses';
-  if (!flagOn && !structurallyRequired) return await run();
+  if (!flagOn && !structurallyRequired) {
+    if (decryptFlagOn) ctx.payload = expandShimCompactionItems(ctx.payload);
+    const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
+    return decryptFlagOn && isCompactShaped ? await decryptNativeCompaction(ctx, run) : await run();
+  }
 
   // Inbound: expand any prior shim-encoded compactions back into their
   // original items so the upstream sees the summarized history.
