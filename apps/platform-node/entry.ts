@@ -30,7 +30,7 @@ import {
   app,
   initBackgroundSchedulerResolver,
   initRepo,
-  initResponsesWebSocketUpgradeResolver,
+  initOpenAIResponsesWebSocketUpgradeResolver,
   SqlRepo,
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
@@ -43,7 +43,7 @@ initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
 
-initResponsesWebSocketUpgradeResolver((c, events) =>
+initOpenAIResponsesWebSocketUpgradeResolver((c, events) =>
   upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
 
 const { db } = bootstrapNodePlatform();

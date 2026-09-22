@@ -27,7 +27,7 @@ const openDb = async (): Promise<SqlDatabase> => {
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: 10 * 365 * 24 * 60 * 60,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
   return db;
 };

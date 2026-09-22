@@ -1,4 +1,4 @@
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 // Decide whether an inbound /v1/messages request is already shaped like a
 // real Claude Code session and can pass through unmodified, or whether it
@@ -127,10 +127,10 @@ const looksLikeBillingBlock = (text: string): boolean =>
 
 // Real Claude Code's periodic connectivity probe carries max_tokens=1 against
 // a Haiku id and no system block.
-const detectHaikuProbe = (body: MessagesPayload): boolean =>
+const detectHaikuProbe = (body: AnthropicMessagesPayload): boolean =>
   body.model.includes('haiku') && body.max_tokens === 1;
 
-const extractSystemTexts = (body: MessagesPayload): string[] => {
+const extractSystemTexts = (body: AnthropicMessagesPayload): string[] => {
   const { system } = body;
   if (!system) return [];
   if (typeof system === 'string') return [system];
@@ -144,7 +144,7 @@ const extractSystemTexts = (body: MessagesPayload): string[] => {
 
 export interface ClaudeCodeShapedRequestInput {
   headers: Headers;
-  body: MessagesPayload;
+  body: AnthropicMessagesPayload;
 }
 
 export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): boolean => {

@@ -1,27 +1,27 @@
 import { expect, test } from 'vitest';
 
 import { compactionResponse } from '../src/compaction.ts';
-import type { ResponsesCompactionResult, ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesInputText, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 
-const generatedResult = (output: unknown[]): ResponsesResult =>
+const generatedResult = (output: unknown[]): OpenAIResponsesResult =>
   ({
     id: 'resp_1',
     object: 'response',
     model: 'gpt-5.2-codex',
-    output: output as ResponsesResult['output'],
+    output: output as OpenAIResponsesResult['output'],
     status: 'completed',
     incomplete_details: null,
     error: null,
     usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
-  }) as ResponsesResult;
+  }) as OpenAIResponsesResult;
 
 const compaction = { type: 'compaction', id: 'cmp_1', encrypted_content: 'BLOB' };
 
-const shape = (result: ResponsesCompactionResult): string[] =>
+const shape = (result: OpenAIResponsesCompactionResult): string[] =>
   result.output.map(item => (item.type === 'compaction' ? 'compaction' : `${item.type}:${(item as { role?: string }).role}`));
 
 test('keeps retained user/assistant/developer/system messages and appends the compaction item, absorbing tool/function items into the blob', () => {
-  const input: ResponsesInputItem[] = [
+  const input: OpenAIResponsesInputItem[] = [
     { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] },
     { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
     { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed' },
@@ -37,7 +37,7 @@ test('keeps retained user/assistant/developer/system messages and appends the co
 });
 
 test('normalizes every retained text part to input_text — assistant output_text included', () => {
-  const input: ResponsesInputItem[] = [
+  const input: OpenAIResponsesInputItem[] = [
     {
       type: 'message',
       role: 'assistant',
@@ -48,7 +48,7 @@ test('normalizes every retained text part to input_text — assistant output_tex
   const result = compactionResponse(input, generatedResult([compaction]));
 
   // Both retained messages echo with `input_text` parts, regardless of original part type.
-  const assistantPart = (result.output[0] as { content: ResponsesInputText[] }).content[0];
+  const assistantPart = (result.output[0] as { content: OpenAIResponsesInputText[] }).content[0];
   const userPart = (result.output[1] as { content: Array<{ type: string }> }).content[0];
   expect(assistantPart.type).toBe('input_text');
   expect(assistantPart.prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
@@ -83,8 +83,8 @@ test('throws when the trigger turn returned no compaction item', () => {
 
 test('truncates retained messages newest-first to the 64k token budget', () => {
   // codex token heuristic is ceil(utf8_bytes / 4); 4 ASCII bytes ≈ 1 token.
-  const oldest: ResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'x'.repeat(64_001 * 4) }] };
-  const newest: ResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'recent' }] };
+  const oldest: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'x'.repeat(64_001 * 4) }] };
+  const newest: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'recent' }] };
   const result = compactionResponse([oldest, newest], generatedResult([compaction]));
 
   // The oldest message alone exceeds the budget once the newest is kept, so it
@@ -104,7 +104,7 @@ test('retains the newest message even when it alone exceeds the 64k budget', () 
   // A single oversized message must still be retained — losing it would
   // strip the user's most recent turn from the compaction round-trip,
   // which would defeat the point of the call.
-  const huge: ResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'x'.repeat(64_001 * 4) }] };
+  const huge: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'x'.repeat(64_001 * 4) }] };
   const result = compactionResponse([huge], generatedResult([compaction]));
 
   expect(result.output).toHaveLength(2);
@@ -116,7 +116,7 @@ test('the empty-message minimum-1-token charge prevents unbounded retention', ()
   // Empty-text messages would otherwise consume zero budget; the
   // `Math.max(tokens, 1)` floor stops them from accumulating without bound.
   // 64_001 empty messages cannot all survive the budget.
-  const empties: ResponsesInputItem[] = Array.from({ length: 64_001 }, () => ({ type: 'message', role: 'user', content: '' }));
+  const empties: OpenAIResponsesInputItem[] = Array.from({ length: 64_001 }, () => ({ type: 'message', role: 'user', content: '' }));
   const result = compactionResponse(empties, generatedResult([compaction]));
 
   // The retained-message count is strictly under the input count.
@@ -131,7 +131,7 @@ test('preserves input_image parts verbatim in retained content', () => {
   // match that — `input_image` parts pass through `normalizeContent`
   // unchanged so the client can resend the multimodal turn as the next
   // input.
-  const input: ResponsesInputItem[] = [{
+  const input: OpenAIResponsesInputItem[] = [{
     type: 'message',
     role: 'user',
     content: [
@@ -151,7 +151,7 @@ test('preserves input_image parts verbatim in retained content', () => {
 });
 
 test('preserves input_file parts', () => {
-  const input: ResponsesInputItem[] = [{
+  const input: OpenAIResponsesInputItem[] = [{
     type: 'message',
     role: 'user',
     content: [{
@@ -169,7 +169,7 @@ test('preserves input_file parts', () => {
 });
 
 test('preserves retained message phase', () => {
-  const input: ResponsesInputItem[] = [{
+  const input: OpenAIResponsesInputItem[] = [{
     type: 'message',
     role: 'assistant',
     phase: 'commentary',
@@ -185,8 +185,8 @@ test('input_image parts do not consume token budget', () => {
   // The token heuristic costs images at 0 — codex parity. A retained turn
   // dominated by an image must not push out earlier turns that would
   // otherwise have fit.
-  const earlier: ResponsesInputItem = { type: 'message', role: 'user', content: 'kept' };
-  const newest: ResponsesInputItem = {
+  const earlier: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: 'kept' };
+  const newest: OpenAIResponsesInputItem = {
     type: 'message',
     role: 'user',
     content: [

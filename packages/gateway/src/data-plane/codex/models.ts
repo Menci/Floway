@@ -14,7 +14,7 @@
 // overlays it announces, and capabilities proven by the exact client catalog
 // (see synthesize.ts for the exact field precedence rules).
 
-import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities } from './catalog.ts';
+import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities, type CodexServiceTier } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -31,6 +31,7 @@ export const assembleCodexCatalog = (
 ): CodexCatalog => {
   const catalogBySlug = new Map<string, CatalogModel>();
   for (const model of catalog.models) catalogBySlug.set(model.slug.toLowerCase(), model);
+  const catalogServiceTiers: CodexServiceTier[] = catalog.models.flatMap(model => model.service_tiers ?? []);
 
   // Match against the client catalog by walking segments from the trailing leaf back
   // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
@@ -54,7 +55,7 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities));
+    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers));
   }
   return { models };
 };

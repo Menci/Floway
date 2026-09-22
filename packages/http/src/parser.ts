@@ -39,7 +39,32 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
     raw.body.cancel().catch(() => {});
     return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
-  return new Response(raw.body, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+  const headers = new Headers(raw.headers);
+  const body = decodeContentEncoding(raw.body, headers);
+  return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+};
+
+// Native fetch transparently decodes gzip/deflate responses, but the socket
+// transport starts at HTTP/1.1 framing and otherwise hands callers compressed
+// bytes. Keep both paths on the same Response contract so protocol parsers see
+// the advertised body rather than a content coding.
+// TODO: Claude Code advertises gzip, deflate, br, zstd. Add platform-injected
+// streaming br/zstd decoders before accepting those codings here; #400 requires
+// explicit client Accept-Encoding values to continue reaching the upstream.
+const decodeContentEncoding = (body: ReadableStream<Uint8Array>, headers: Headers): ReadableStream<Uint8Array> => {
+  const encoding = headers.get('content-encoding')?.toLowerCase();
+  if (encoding === undefined || encoding === 'identity') return body;
+  if (encoding !== 'gzip' && encoding !== 'deflate') {
+    void body.cancel();
+    throw new HttpProtocolError(
+      `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(encoding)}; supported codings are gzip and deflate`,
+      'UNSUPPORTED_CONTENT_ENCODING',
+    );
+  }
+
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return body.pipeThrough(new DecompressionStream(encoding) as never);
 };
 
 /**
@@ -85,6 +110,7 @@ interface ResponseHead {
   status: number;
   statusText: string;
   headers: Headers;
+  headerLines: [string, string][];
   rawContentLengths: string[];
   rawTransferEncodings: string[];
   remainder: Uint8Array;
@@ -145,6 +171,9 @@ const readResponseHead = async (
   const statusText = m[2]!.replace(/[ \t]+$/, '');
 
   const respHeaders = new Headers();
+  // Every field line in wire order. `Headers` merges a repeated name into one
+  // value, so this is the only lossless view of what the upstream sent.
+  const headerLines: [string, string][] = [];
   // Track raw header lines so we can validate framing-related fields off
   // the unmerged values. `Headers.get('content-length')` collapses two
   // separate `Content-Length` headers into `5, 5` and `parseInt` then
@@ -201,16 +230,17 @@ const readResponseHead = async (
     if (lower === 'content-length') rawContentLengths.push(value);
     else if (lower === 'transfer-encoding') rawTransferEncodings.push(value);
     respHeaders.append(name, value);
+    headerLines.push([name, value]);
   }
 
-  return { status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
+  return { status, statusText, headers: respHeaders, headerLines, rawContentLengths, rawTransferEncodings, remainder };
 };
 
 const finalizeResponse = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: ResponseHead,
 ): RawHttpResponse => {
-  const { status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+  const { status, statusText, headers, headerLines, rawContentLengths, rawTransferEncodings, remainder } = head;
 
   // RFC 9112 §6.3: a message with both Transfer-Encoding and
   // Content-Length is an error (the sender is broken or actively
@@ -257,9 +287,13 @@ const finalizeResponse = (
   const contentLength = rawContentLengths[0] ?? null;
 
   let body: ReadableStream<Uint8Array>;
+  // The decoded body no longer carries the coding, so the field describing it
+  // leaves both views together.
+  let lines: [string, string][] = headerLines;
   if (teIsChunked) {
     body = decodeChunked(reader, remainder);
     headers.delete('transfer-encoding');
+    lines = headerLines.filter(([name]) => name.toLowerCase() !== 'transfer-encoding');
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
     if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
@@ -274,7 +308,7 @@ const finalizeResponse = (
     body = untilEofBody(reader, remainder);
   }
 
-  return { status, statusText, headers, body };
+  return { status, statusText, headers, headerLines: lines, body };
 };
 
 // Body framing — Content-Length. Frames the body to exactly `total` bytes:

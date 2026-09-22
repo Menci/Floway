@@ -1,6 +1,7 @@
 import {
   CheckmarkCircleRegular,
   ChevronDownRegular,
+  CopyRegular,
   DeleteRegular,
   EditRegular,
   ProhibitedRegular,
@@ -31,6 +32,7 @@ import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { shortAccountId } from '../components/upstreams/account-id';
+import { planLabel } from '../components/upstreams/codex-account';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { fluentComponents } from '../fluent';
@@ -89,6 +91,7 @@ const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b
 // Both affordances that open a record — the row's name and its edit button —
 // address it from here, so the two cannot come apart.
 const upstreamEditorPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`;
+const upstreamCopyPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}/copy`;
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
@@ -465,6 +468,12 @@ function UpstreamsTable({
                     to={upstreamEditorPath(record)}
                   />
                   <TooltipIconButton
+                    disabled={busy}
+                    icon={<CopyRegular />}
+                    label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })}
+                    to={upstreamCopyPath(record)}
+                  />
+                  <TooltipIconButton
                     danger
                     disabled={busy && !deleting}
                     disabledFocusable={deleting}
@@ -559,8 +568,8 @@ const buildModelCounts = (
 };
 
 // Who the upstream connects as. A subscription names an account; an endpoint
-// the operator configured names itself. The plan is not part of it -- the line
-// below states that for every provider that has one.
+// the operator configured names itself. A codex account appends its plan,
+// through the same label the signals line uses, so the two lines agree.
 const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
   case 'custom': return record.config.baseUrl;
@@ -573,7 +582,10 @@ const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   case 'codex': {
     const account = record.config.accounts[0];
     if (!account) return t('dashboard.upstreams.summary.noAccount');
-    return account.email || shortAccountId(account.chatgptAccountId);
+    const identity = account.email
+      ?? (account.chatgptAccountId === null ? null : shortAccountId(account.chatgptAccountId));
+    return [identity, planLabel(account)].filter(Boolean).join(' - ')
+      || t('dashboard.upstreams.summary.noAccount');
   }
   case 'claude-code': {
     const account = record.config.accounts[0];

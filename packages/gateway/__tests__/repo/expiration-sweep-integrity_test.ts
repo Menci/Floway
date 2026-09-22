@@ -61,7 +61,7 @@ test('migration repairs missing coverage without disturbing existing sweeps', as
       'item-missing',
       'snapshot-missing',
       'existing-dump',
-      'existing-responses',
+      'existing-openai-responses',
       'empty',
     ]) insertApiKey(raw, id);
     insertDump(raw, 'dump-missing', 'dump-a');
@@ -70,7 +70,7 @@ test('migration repairs missing coverage without disturbing existing sweeps', as
        (id, api_key_id, payload_json, item_hash, payload_hash, payload_file_key, refreshed_at)
        VALUES
          ('item-a', 'item-missing', '{}', 'item-hash', 'payload-hash', NULL, 0),
-         ('item-existing', 'existing-responses', '{}', 'existing-item-hash', 'existing-payload-hash', NULL, 0)`,
+         ('item-existing', 'existing-openai-responses', '{}', 'existing-item-hash', 'existing-payload-hash', NULL, 0)`,
     );
     raw.run(
       `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at)
@@ -85,7 +85,7 @@ test('migration repairs missing coverage without disturbing existing sweeps', as
     raw.run(
       `UPDATE expiration_sweeps
        SET due_at = 777, revision = 5, claim_token = 'responses-held', claimed_at = 456
-       WHERE domain = 'responses' AND key_id = 'existing-responses'`,
+       WHERE domain = 'responses' AND key_id = 'existing-openai-responses'`,
     );
     raw.run("DELETE FROM expiration_sweeps WHERE key_id IN ('dump-missing', 'item-missing', 'snapshot-missing')");
 
@@ -97,7 +97,7 @@ test('migration repairs missing coverage without disturbing existing sweeps', as
     )[0].values).toEqual([
       ['dumps', 'dump-missing', 0, 0, null, null],
       ['dumps', 'existing-dump', 999, 7, 'held', 123],
-      ['responses', 'existing-responses', 777, 5, 'responses-held', 456],
+      ['responses', 'existing-openai-responses', 777, 5, 'responses-held', 456],
       ['responses', 'item-missing', 0, 0, null, null],
       ['responses', 'snapshot-missing', 0, 0, null, null],
     ]);
@@ -168,7 +168,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: 3600,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
   await db.prepare(
     `INSERT INTO dump_records

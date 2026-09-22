@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { codexImportExchangeBody, codexImportPreviewBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -12,17 +12,57 @@ const baseAzure = {
     models: [{
       upstreamModelId: 'm',
       kind: 'chat' as const,
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     }],
   },
 };
+
+describe('Codex import schemas', () => {
+  const record = { id: '', kind: 'codex', config: { accounts: [] }, state: { accounts: [] } };
+
+  test.each([
+    { json: { raw_json: '{}', source_index: 0 } },
+    { callback: { code: 'code', verifier: 'verifier' } },
+    { manual: { access_token: 'opaque' } },
+  ])('accepts exactly one import source', source => {
+    expect(codexImportExchangeBody.safeParse({ record, ...source }).success).toBe(true);
+  });
+
+  test('rejects missing or multiple import sources', () => {
+    expect(codexImportExchangeBody.safeParse({ record }).success).toBe(false);
+    expect(codexImportExchangeBody.safeParse({
+      record,
+      json: { raw_json: '{}', source_index: 0 },
+      manual: { access_token: 'opaque' },
+    }).success).toBe(false);
+  });
+
+  test('requires only access_token for a manual import', () => {
+    expect(codexImportExchangeBody.safeParse({
+      record,
+      manual: {
+        access_token: 'opaque',
+        refresh_token: null,
+        id_token: null,
+        account_id: null,
+        expires_at: null,
+      },
+    }).success).toBe(true);
+    expect(codexImportExchangeBody.safeParse({ record, manual: {} }).success).toBe(false);
+  });
+
+  test('validates the JSON preview envelope', () => {
+    expect(codexImportPreviewBody.safeParse({ raw_json: '{"accounts":[]}' }).success).toBe(true);
+    expect(codexImportPreviewBody.safeParse({ raw_json: '' }).success).toBe(false);
+  });
+});
 
 describe('upstreamModelSchema chat', () => {
   test('accepts an audio transcription model', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'transcription';
-    model.endpoints = { audioTranscriptions: {} };
+    model.endpoints = { openaiAudioTranscriptions: {} };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
@@ -95,7 +135,7 @@ describe('upstreamModelSchema chat', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'embedding';
-    model.endpoints = { embeddings: {} };
+    model.endpoints = { openaiEmbeddings: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
@@ -184,7 +224,7 @@ describe('upstreamModelSchema rerank', () => {
     expect(createUpstreamBody.safeParse(chat).success).toBe(true);
 
     const mixed = customRerank();
-    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
+    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, openaiChatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
   });
 });

@@ -15,21 +15,27 @@
 //      pure UI — inheriting the vendored "GPT-5.5" string when the operator
 //      has not customized it is meaningful, unlike service_tiers below
 //      where a stale bundled value could mis-bill a real request.
-//   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
-//      No fallback to the catalog: official entries may advertise OpenAI 1p tiers
-//      Floway cannot bill, so publishing them without registry-side unit
-//      prices would surface a toggle we could not honor.
+//   3. `service_tiers` — expose only registry-priced tier ids. Metadata resolves
+//      first from the matched model, then from other models in the client
+//      catalog, then falls back to the wire id. Official entries may advertise
+//      tiers Floway cannot bill, so unpriced catalog tiers never survive.
 //   4. `context_window` / `max_context_window` — `registry ?? source ?? 128k`.
 //      Registry-supplied limits win; else preserve the base's value (official
 //      entries carry a real OpenAI-vendored window); else the conservative
 //      default so codex's `(cw * 9) / 10` auto-compact math never sees zero.
-//   5. `input_modalities` (and its derived siblings `supports_image_detail_original`
-//      and `web_search_tool_type`) — `chat.modalities.input ?? source.input_modalities`.
-//      When the operator declared `chat.modalities`, honour it (even if the
-//      upstream base advertised more); else keep the base's list. The two
-//      "does this model see images" derivations always follow the final
-//      modality list so they cannot drift from it.
-//   6. `supported_reasoning_levels` / `default_reasoning_level` — same
+//   5. `input_modalities` (and its derived sibling `web_search_tool_type`) —
+//      `chat.modalities.input ?? source.input_modalities`. When the operator
+//      declared `chat.modalities`, honour it (even if the upstream base
+//      advertised more); else keep the base's list. `web_search_tool_type`
+//      follows the final modality list so it cannot drift from it.
+//   6. `supports_image_detail_original` — true only when every chat provider
+//      behind the public id states `chat.image_detail_original: true`; a
+//      synthesized row without provider candidates uses its own chat metadata.
+//      The value is NOT derived from either modalities or the client catalog: a
+//      model can take images while rejecting detail 'original' (gpt-5.2 in the
+//      bundled catalog is exactly that), and a same-named non-Codex upstream
+//      must not inherit OpenAI's capability. An unstated value is unsupported.
+//   7. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
 //      v2 Ultra semantics and the resulting model supports Max.
@@ -38,7 +44,7 @@
 // pass supplies resolved catalog defaults for a hit and hardcoded baselines
 // for the miss path.
 
-import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel } from './catalog.ts';
+import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
@@ -100,18 +106,31 @@ const BASELINE = {
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
 } satisfies CatalogModel;
 
-// Registry-derived: every distinct serviceTier selector is a billable wire-id.
-// Names mirror ids and descriptions are blank — Floway does not carry separate
-// tier metadata, and Codex only needs the id to round-trip the selection.
-const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] => {
+// Every distinct registry serviceTier selector is a billable wire id. Codex
+// derives slash-command names from tier display names (`priority` with name
+// `Fast` becomes `/fast`), so prefer metadata from the matched model and then
+// the rest of the client catalog. Custom ids remain usable through the final
+// id-as-name fallback.
+// https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/tui/src/chatwidget/service_tiers.rs#L76-L104
+const deriveServiceTiers = (
+  model: InternalModel,
+  modelTiers: readonly CodexServiceTier[],
+  catalogTiers: readonly CodexServiceTier[],
+): CodexServiceTier[] => {
   const ids = new Set(model.pricing?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
-  return [...ids].map(id => ({ id, name: id, description: '' }));
+  const modelTierById = new Map(modelTiers.map(tier => [tier.id, tier]));
+  const catalogTierById = new Map<string, CodexServiceTier>();
+  for (const tier of catalogTiers) {
+    if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+  }
+  return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
 };
 
 export const synthesizeCatalogEntry = (
   model: InternalModel,
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
+  catalogServiceTiers: readonly CodexServiceTier[] = [],
 ): CatalogModel => {
   const source: CatalogModel = base ?? BASELINE;
 
@@ -123,6 +142,12 @@ export const synthesizeCatalogEntry = (
     ?? source.input_modalities
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
+  const chatProviderModels = model.providerModels === undefined
+    ? undefined
+    : Object.values(model.providerModels).filter(providerModel => providerModel.kind === 'chat');
+  const imageDetailOriginal = chatProviderModels?.length
+    ? chatProviderModels.every(providerModel => providerModel.chat?.image_detail_original === true)
+    : model.chat?.image_detail_original === true;
 
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
   // reasoning (`supported_reasoning_levels: [{effort, description}]` +
@@ -161,10 +186,10 @@ export const synthesizeCatalogEntry = (
     slug: model.id,
     display_name: model.display_name ?? source.display_name ?? model.id,
     input_modalities: [...inputModalities],
-    supports_image_detail_original: hasImage,
+    supports_image_detail_original: imageDetailOriginal,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
     supported_reasoning_levels: advertisedReasoning,
-    service_tiers: deriveServiceTiers(model),
+    service_tiers: deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
   };

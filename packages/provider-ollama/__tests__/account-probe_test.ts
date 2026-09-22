@@ -130,7 +130,7 @@ const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => vo
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callChatCompletions(
+      await provider.instance.callOpenAIChatCompletions(
         stubProviderModel({ providerData: 'gpt-oss:120b' }),
         { messages: [] },
         undefined,
