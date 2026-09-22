@@ -37,7 +37,7 @@
 import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
-import { composeAliasDisplayName } from '@floway-dev/protocols/common';
+import { composeAliasDisplayName, isAliasTargetEnabled } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
@@ -192,9 +192,11 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
 // `narrowTargets=true` filters `targets` to those the caller's addressable
 // surface can serve — protects non-admin / data-plane callers from seeing
 // operator state (target IDs from upstreams they have no access to, plus
-// typo'd / removed model IDs). `narrowTargets=false` is the admin-debug
-// view: every configured target survives so the dashboard's alias editor
-// can render the full configuration even when the admin self-restricted.
+// typo'd / removed model IDs). It also excludes disabled targets because a
+// disabled row is configured but not part of the active routing pool.
+// `narrowTargets=false` is the admin-debug view: every configured target
+// survives so the dashboard's alias editor can render the full
+// configuration even when the admin self-restricted.
 const buildAliasedFrom = (
   alias: ModelAliasRecord,
   addressableModelIds: readonly AddressableIdEntry[],
@@ -204,7 +206,9 @@ const buildAliasedFrom = (
     return { selection: alias.selection, targets: alias.targets };
   }
   const addressableSet = new Set(addressableModelIds.map(entry => entry.id));
-  const targets = alias.targets.filter(t => addressableSet.has(t.target_model_id));
+  const targets = alias.targets
+    .filter(isAliasTargetEnabled)
+    .filter(t => addressableSet.has(t.target_model_id));
   return { selection: alias.selection, targets };
 };
 
@@ -257,9 +261,11 @@ const synthesizeOne = (
 ): InternalModel | null => {
   // Gateway-wide kind-matched targets — the basis for stable metadata.
   // A target reachable only through a prefix-addressable alternate still
-  // counts.
+  // counts. Disabled targets are configured but not active, so they do not
+  // contribute metadata, endpoints, pricing, or caller visibility.
   const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
+    .filter(isAliasTargetEnabled)
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
   if (gatewayAvailable.length === 0) return null;

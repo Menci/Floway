@@ -1,6 +1,7 @@
 import type { ControlPlaneModel } from '../../api/types';
 import type { TFunction } from '../../i18n/translation';
 import type { CatalogIndex } from '../models/catalog-index';
+import { isAliasTargetEnabled } from '@floway-dev/protocols/common';
 import type { AliasTarget, ChatAliasRules, ModelKind } from '@floway-dev/protocols/common';
 
 export const realModelIdsOfKind = (models: readonly ControlPlaneModel[] | null | undefined, kind: ModelKind) => {
@@ -63,10 +64,11 @@ export const computeModelWarning = (
 
 export type AliasWarning =
   | { type: 'shadow'; key: 'shadow'; values: { id: string; display: string } }
-  | { type: 'no-target'; key: 'noTarget'; values?: undefined };
+  | { type: 'no-target'; key: 'noTarget'; values?: undefined }
+  | { type: 'all-targets-disabled'; key: 'allTargetsDisabled'; values?: undefined };
 
 export const computeAliasWarnings = (
-  alias: { name: string; targets: readonly Pick<AliasTarget, 'target_model_id'>[] },
+  alias: { name: string; targets: readonly AliasTarget[] },
   catalog: CatalogIndex | null,
 ): AliasWarning[] => {
   const warnings: AliasWarning[] = [];
@@ -77,9 +79,16 @@ export const computeAliasWarnings = (
   }
   // A new alias opens on one blank row, so warning before anything is typed
   // would report the starting state as a fault.
-  const entered = alias.targets.filter(target => target.target_model_id !== '');
-  if (catalog !== null && entered.length > 0 && !entered.some(target => catalog.has(target.target_model_id))) {
-    warnings.push({ type: 'no-target', key: 'noTarget' });
+  const entered = alias.targets.filter(target => isAliasTargetEnabled(target) && target.target_model_id !== '');
+  if (entered.length > 0) {
+    if (catalog !== null && !entered.some(target => catalog.has(target.target_model_id))) {
+      warnings.push({ type: 'no-target', key: 'noTarget' });
+    }
+  } else if (alias.targets.some(target => target.target_model_id !== '')) {
+    // The alias has at least one configured model but none are active.
+    // Saving is still allowed; the request-time resolver simply has no
+    // target to route to and returns a normal model-missing 404.
+    warnings.push({ type: 'all-targets-disabled', key: 'allTargetsDisabled' });
   }
   return warnings;
 };
@@ -91,6 +100,7 @@ export const modelAliasWarningText = (
   switch (warning.key) {
   case 'shadow': return t('dashboard.modelAliases.warnings.shadow', warning.values);
   case 'noTarget': return t('dashboard.modelAliases.warnings.noTarget');
+  case 'allTargetsDisabled': return t('dashboard.modelAliases.warnings.allTargetsDisabled');
   case 'unknownTarget': return t('dashboard.modelAliases.warnings.unknownTarget', warning.values);
   case 'wrongKind': return t('dashboard.modelAliases.warnings.wrongKind', warning.values);
   case 'notAdvertisedEffort': return t('dashboard.modelAliases.warnings.notAdvertisedEffort');

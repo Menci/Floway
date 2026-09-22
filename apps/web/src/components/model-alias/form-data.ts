@@ -22,7 +22,7 @@ export interface AliasFormValues {
   announcedMetadata: AnnouncedMetadata;
 }
 
-export const blankTarget = (): AliasTarget => ({ target_model_id: '', rules: {} });
+export const blankTarget = (): AliasTarget => ({ target_model_id: '', rules: {}, enabled: true });
 
 // An image alias announces nothing: its /v1/models entry carries no limits and
 // no chat block, so there is no operator override to hold.
@@ -44,7 +44,9 @@ export const aliasDefaults = (alias: ModelAlias | null): AliasFormValues => {
     kind: alias.kind,
     selection: alias.selection,
     visible: alias.visible_in_models_list,
-    targets: structuredClone(alias.targets),
+    // Normalize legacy rows whose `enabled` predates the field: missing
+    // means enabled, so the edit form always carries an explicit boolean.
+    targets: alias.targets.map(target => ({ ...target, enabled: target.enabled !== false })),
     manualMetadata: alias.announced_metadata !== null,
     announcedMetadata: structuredClone(alias.announced_metadata ?? {}),
   } : {
@@ -70,6 +72,7 @@ export const aliasBody = (values: AliasFormValues): AliasWriteBody => {
     visible_in_models_list: values.visible,
     targets: values.targets.map(target => ({
       target_model_id: target.target_model_id.trim(),
+      enabled: target.enabled !== false,
       rules: values.kind === 'chat' ? { ...trimRules(target.rules) } : {},
     })),
     announced_metadata: values.manualMetadata && kindAnnouncesMetadata(values.kind)

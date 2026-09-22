@@ -16,6 +16,7 @@ const rulesSchema = z.object({
 }).passthrough();
 const aliasTargetsSchema = z.array(z.object({
   target_model_id: z.string(),
+  enabled: z.boolean().optional(),
   rules: rulesSchema,
 }).passthrough());
 

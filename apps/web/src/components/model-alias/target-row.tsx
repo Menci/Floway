@@ -13,7 +13,7 @@ import { useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
-import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -68,7 +68,7 @@ export function AliasTargetRow({
 
   return (
     <div className="border-0 border-t border-solid border-fui-divider pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
-      <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_auto] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
         <Tooltip content={toggleLabel} relationship="label">
           <Button
             appearance="subtle"
@@ -94,7 +94,13 @@ export function AliasTargetRow({
         >
           {options.map(id => <Option className="font-mono" key={id} text={id}>{id}</Option>)}
         </Combobox>
-        <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
+        <div className="grid grid-cols-[auto_32px_32px_32px_32px] gap-0.5 items-center max-[620px]:col-span-2 max-[620px]:justify-self-end">
+          <Switch
+            aria-label={t('dashboard.modelAliases.target.enabled')}
+            checked={target.enabled !== false}
+            disabled={disabled}
+            onChange={(_, data) => onChange({ ...target, enabled: data.checked })}
+          />
           {modelWarning
             ? <Tooltip content={modelAliasWarningText(modelWarning, t)} relationship="description"><span className="winui-focus-rect grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
