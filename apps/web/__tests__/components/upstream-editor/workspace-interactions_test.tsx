@@ -197,7 +197,8 @@ describe('upstream model workspace field-array transitions', () => {
     const compatibilityInfo = sectionHeading.parentElement?.querySelector('button');
     expect(compatibilityInfo).toBeTruthy();
     fireEvent.click(compatibilityInfo!);
-    expect(screen.getByText(models('opaqueBlobCompatibilityHint'))).toBeTruthy();
+    expect(screen.getByText(/When routing history context across models/)).toBeTruthy();
+    expect(screen.getByText(/Incompatible optional blobs are discarded/)).toBeTruthy();
 
     fireEvent.click(bindToUpstream);
     fireEvent.change(key, { target: { value: 'openai' } });

@@ -167,7 +167,7 @@ export function ModelDetail({
         </EditorSection>
 
         <EditorSection
-          info={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}
+          info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
           level={3}
           title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
         >

@@ -740,7 +740,7 @@ const en = {
           publicIdPlaceholder: 'Public model ID',
           opaqueBlobCompatibility: 'Opaque blob compatibility',
           opaqueBlobCompatibilityHint:
-              'Opaque blobs are compatible only when their keys match. When binding is enabled, they must also remain on the same upstream. Incompatible optional blobs are discarded; required blobs are rejected.',
+              'When routing history context across models, opaque blobs (e.g. encrypted_content, signature) are kept only when their keys (and upstreams, if checked below) match.\nIncompatible optional blobs are discarded; required blobs are rejected.',
           bindOpaqueBlobsToUpstream: 'Bind compatibility to this upstream',
           opaqueBlobCompatibilityKey: 'Compatibility key',
           endpoints: 'Supported endpoints',

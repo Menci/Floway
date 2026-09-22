@@ -708,7 +708,7 @@ const zhHansCN = {
           publicId: '公开模型 ID',
           publicIdPlaceholder: '公开模型 ID',
           opaqueBlobCompatibility: '密文兼容性',
-          opaqueBlobCompatibilityHint: '只有兼容性 Key 相同的密文才兼容；启用上游绑定后，还必须位于同一个上游。不兼容的可选密文会被丢弃，必需密文会被拒绝。',
+          opaqueBlobCompatibilityHint: '跨模型路由历史上下文时，只有 Key（以及勾选下方选项时的上游）相同，才会保留密文（例如 encrypted_content、signature）。\n不兼容的可选密文会被丢弃；必需密文会被拒绝。',
           bindOpaqueBlobsToUpstream: '将兼容性绑定到当前上游',
           opaqueBlobCompatibilityKey: '兼容性 Key',
           endpoints: '支持的 API',
