@@ -88,10 +88,11 @@ export const projectCustomModels = (
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
     const internal: ProviderModel = {
       id: publicModelId(model),
       limits: { ...(model.limits ?? {}) },
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
@@ -99,7 +100,7 @@ export const projectCustomModels = (
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
-    if (model.chat) internal.chat = model.chat;
+    if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
   if (!config.modelsFetch.enabled || response === undefined) return manualModels;

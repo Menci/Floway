@@ -100,6 +100,7 @@ test('getProvidedModels returns only manual models and never fetches when models
         kind: 'chat',
         endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Only',
+        chat: { image_detail_original: true },
       },
     ],
   });
@@ -115,6 +116,7 @@ test('getProvidedModels returns only manual models and never fetches when models
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'manual-only');
+      assertEquals(models[0].chat, { image_detail_original: true });
     },
   );
   assertEquals(fetchCalls, 0);
@@ -279,10 +281,12 @@ test('manual runtime kind follows rerank endpoints when stored kind is stale', a
       kind: 'chat',
       endpoints: { rerank: {} },
       rerankTarget: { protocol: 'cohere-v2' },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'rerank');
+  assertEquals(model?.chat, undefined);
   assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
 });
 
@@ -293,10 +297,12 @@ test('manual runtime kind follows transcription endpoints when stored kind is st
       upstreamModelId: 'raw-transcriber',
       kind: 'chat',
       endpoints: { openaiAudioTranscriptions: {} },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'transcription');
+  assertEquals(model?.chat, undefined);
 });
 
 test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {

@@ -73,6 +73,35 @@ test('createAzureProvider projects configured models into upstream models', asyn
   assertEquals(models[0].limits.max_context_window_tokens, 128000);
 });
 
+test('createAzureProvider drops chat metadata when endpoints derive a non-chat kind', async () => {
+  const record = azureRecord({
+    config: {
+      endpoint: 'https://example.openai.azure.com',
+      apiKey: 'az-key',
+      models: [
+        {
+          upstreamModelId: 'legacy-embedding',
+          kind: 'chat',
+          endpoints: { openaiEmbeddings: {} },
+          chat: { image_detail_original: true },
+        },
+        {
+          upstreamModelId: 'chat-model',
+          kind: 'chat',
+          endpoints: { openaiResponses: {} },
+          chat: { image_detail_original: true },
+        },
+      ],
+    },
+  });
+  const [embedding, chat] = await createAzureProvider(record).instance.getProvidedModels(directFetcher);
+
+  assertEquals(embedding?.kind, 'embedding');
+  assertEquals(embedding?.chat, undefined);
+  assertEquals(chat?.kind, 'chat');
+  assertEquals(chat?.chat, { image_detail_original: true });
+});
+
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
   const instance = createAzureProvider(azureRecord());
   const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
