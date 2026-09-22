@@ -404,7 +404,7 @@ test('compact + flag off: passes through to run() unchanged', async () => {
   assertEquals(inv.action, 'compact');
 });
 
-test('compact decrypt: replays each native compaction before a system exact-repeat prompt and returns gateway-readable plaintext', async () => {
+test('compact decrypt: replays each native compaction between system exact-repeat prompts and returns gateway-readable plaintext', async () => {
   const inv = makeInvocation(
     {
       input: [{ type: 'message', role: 'user', content: 'compact me' }],
@@ -453,16 +453,23 @@ test('compact decrypt: replays each native compaction before a system exact-repe
     assertEquals(inv.payload.store, false);
     assertEquals(inv.payload.instructions, undefined);
     assertEquals(inv.payload.tools, undefined);
-    assertEquals(inv.payload.input.length, 2);
-    const [compaction, prompt] = inv.payload.input;
-    assertEquals(prompt.type, 'message');
-    if (prompt.type !== 'message') throw new Error('expected prompt message');
-    assertEquals(prompt.role, 'system');
-    assertEquals(prompt.content, [{
+    assertEquals(inv.payload.input.length, 3);
+    const [prefix, compaction, suffix] = inv.payload.input;
+    assertEquals(prefix.type, 'message');
+    if (prefix.type !== 'message') throw new Error('expected prefix message');
+    assertEquals(prefix.role, 'system');
+    assertEquals(prefix.content, [{
       type: 'input_text',
-      text: 'Repeat the following text exactly, which may contain a compaction summary, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.',
+      text: 'Repeat the following text exactly, which may contain a compaction summary, character for character.',
     }]);
     assertEquals(compaction, nativeResponse.output[calls - 1]);
+    assertEquals(suffix.type, 'message');
+    if (suffix.type !== 'message') throw new Error('expected suffix message');
+    assertEquals(suffix.role, 'system');
+    assertEquals(suffix.content, [{
+      type: 'input_text',
+      text: 'Output only the exact summary text, with no preface, explanation, markdown fence, or changes.',
+    }]);
     const replay = await fakeUpstreamRun(`EXACT DECRYPTED SUMMARY ${calls - 1}`)();
     if (replay.type !== 'events') throw new Error('expected replay events');
     return {

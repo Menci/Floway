@@ -55,8 +55,9 @@
 //
 // When `openai-responses-compact-decrypt` is enabled while the shim is off,
 // native compaction runs first. Each returned opaque compaction item is then
-// replayed through the same model as exactly two input items: the compaction
-// item followed by a system-role exact-repeat instruction. The recovered
+// replayed through the same model between two system-role instructions: the
+// first identifies the following text and the second constrains the output.
+// The recovered
 // plaintext is packed into the same gateway-owned base64url envelope used by
 // the shim, so later requests expand it before reaching the upstream.
 
@@ -153,8 +154,8 @@ const SUMMARY_PREFIX
 
 export { SUMMARY_PREFIX };
 
-const EXACT_REPEAT_PROMPT
-  = 'Repeat the following text exactly, which may contain a compaction summary, character for character. Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
+const EXACT_REPEAT_PREFIX = 'Repeat the following text exactly, which may contain a compaction summary, character for character.';
+const EXACT_REPEAT_SUFFIX = 'Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
 
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
@@ -446,11 +447,16 @@ const decryptNativeCompaction = async (
     ctx.payload = {
       model: originalModel,
       input: [
+        {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text: EXACT_REPEAT_PREFIX }],
+        },
         item,
         {
           type: 'message',
           role: 'system',
-          content: [{ type: 'input_text', text: EXACT_REPEAT_PROMPT }],
+          content: [{ type: 'input_text', text: EXACT_REPEAT_SUFFIX }],
         },
       ],
       store: false,
