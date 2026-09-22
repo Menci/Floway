@@ -59,8 +59,8 @@ describe('model alias metadata editor', () => {
     // A switch's root carries `fui-Switch` and nests its input, so the row is
     // the second ancestor up.
     expect(group.querySelector('h4')).toBeNull();
-    // Both switches resolve by their own accessible names; the detail switch's
-    // explicit name avoids whitespace introduced by its inline code element.
+    // The explicit accessible name avoids whitespace introduced by the inline
+    // code element.
     const detailSwitch = screen.getByRole('switch', { name: imageDetailOriginalLabel });
     expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
       .toBe(detailSwitch.parentElement?.parentElement);
