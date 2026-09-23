@@ -308,7 +308,7 @@ describe('upstream model listing failure wording', () => {
       upstreamResponse: { status: 401, headers: [['content-type', 'application/json']], body: '{\n  "error": "unauthorized"\n}' },
     }} />);
     const heading = screen.getByText(models('listingFailed'));
-    const banner = heading.closest('.fui-MessageBar');
+    const banner = heading.closest<HTMLElement>('.fui-MessageBar');
     expect.assert(banner);
     const copyButton = within(banner).getByRole('button', { name: models('copyError') });
     expect(copyButton.parentElement).toBe(heading.parentElement);
