@@ -326,7 +326,7 @@ test('a model error cannot echo an API key as a JSON field name', async () => {
   expect(message).not.toContain('sk-custom');
 });
 
-test.each(['api_key', 'api_token', 'password', 'client_secret'])('model discovery redacts a %s endpoint query credential', async parameter => {
+test.each(['api_key', 'api_token', 'password', 'client_secret', 'api_secret'])('model discovery redacts a %s endpoint query credential', async parameter => {
   const { repo, record } = await setupCustom();
   const config = { ...record.config as Record<string, unknown> };
   delete config.apiKey;
@@ -345,7 +345,8 @@ test.each(['api_key', 'api_token', 'password', 'client_secret'])('model discover
     },
   );
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
-  expect(message).toContain('rejected banana [REDACTED]');
+  expect(message).toContain('rejected [REDACTED] [REDACTED]');
+  expect(message).not.toContain('banana');
   expect(message).not.toContain('query-secret-42');
 });
 
