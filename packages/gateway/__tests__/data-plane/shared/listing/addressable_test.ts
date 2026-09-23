@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { createModelsRefreshScheduler } from '../../../../src/execution/models-refresh.ts';
+import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -14,7 +15,7 @@ describe('enumerateAddressableModelIds', () => {
   test('returns the listed catalog as listed entries when no provider contributes addressable-only forms', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord());
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
 
     await withMockedFetch(
       request => {
@@ -37,7 +38,7 @@ describe('enumerateAddressableModelIds', () => {
   test('emits the addressable-only prefix form whenever modelPrefix.addressable ⊋ modelPrefix.listed', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_custom_prefixed',
       // Listed only as `cust/gpt-5.4`, but the bare `gpt-5.4` form remains
       // addressable for clients that still talk to the upstream by its raw

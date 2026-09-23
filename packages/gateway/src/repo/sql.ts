@@ -902,10 +902,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return row ? toUpstreamRecord(row) : null;
   }
 
-  save(upstream: UpstreamRecord): Promise<void> {
-    return this.saveRecord(upstream);
-  }
-
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
       .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
@@ -1009,51 +1005,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
       )
       .first<UpstreamRow>();
     return row === null ? null : toUpstreamRecord(row);
-  }
-
-  private async saveRecord(upstream: UpstreamRecord): Promise<void> {
-    // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
-    // wins, and re-saves preserve that timestamp regardless of what the caller passes.
-    await this.db
-      .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET
-           provider = excluded.provider,
-           name = excluded.name,
-           enabled = excluded.enabled,
-           sort_order = excluded.sort_order,
-           updated_at = excluded.updated_at,
-           config_version = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides AND proxy_fallback_list_json = excluded.proxy_fallback_list_json THEN config_version ELSE config_version + 1 END,
-           config_json = excluded.config_json,
-           state_json = excluded.state_json,
-           flag_overrides = excluded.flag_overrides,
-           disabled_public_model_ids = excluded.disabled_public_model_ids,
-           proxy_fallback_list_json = excluded.proxy_fallback_list_json,
-           model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue,
-           models_cache_json = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides THEN models_cache_json ELSE NULL END,
-           models_refresh_json = CASE
-             WHEN provider != excluded.provider OR config_json != excluded.config_json OR flag_overrides != excluded.flag_overrides OR proxy_fallback_list_json != excluded.proxy_fallback_list_json THEN NULL
-             ELSE models_refresh_json
-           END`,
-      )
-      .bind(
-        upstream.id,
-        upstream.kind,
-        upstream.name,
-        upstream.enabled ? 1 : 0,
-        upstream.sortOrder,
-        upstream.createdAt,
-        upstream.updatedAt,
-        serializeStoredConfig(upstream.config),
-        serializeStoredState(upstream.state),
-        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
-        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
-        upstream.hue,
-      )
-      .run();
   }
 
   async delete(id: string): Promise<boolean> {

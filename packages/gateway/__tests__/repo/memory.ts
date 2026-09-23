@@ -749,30 +749,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  // Mirrors the SQL upsert: config changes advance the version and clear
-  // the snapshot; other writes preserve it. New rows always start uncached.
-  save(upstream: UpstreamRecord): Promise<void> {
-    const existing = this.store.get(upstream.id);
-    const modelConfigChanged = existing !== undefined
-      && (existing.kind !== upstream.kind
-        || serializeStoredConfig(existing.config) !== serializeStoredConfig(upstream.config)
-        || serializeStoredConfig(existing.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides));
-    const transportChanged = existing !== undefined
-      && serializeStoredConfig(existing.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
-    const refreshInputsChanged = modelConfigChanged || transportChanged;
-    const preserved = existing
-      ? {
-          ...upstream,
-          createdAt: existing.createdAt,
-          configVersion: existing.configVersion + (refreshInputsChanged ? 1 : 0),
-          modelsCache: modelConfigChanged ? null : existing.modelsCache,
-        }
-      : { ...upstream, configVersion: 1, modelsCache: null };
-    this.store.set(preserved.id, cloneUpstreamRecord(preserved));
-    if (refreshInputsChanged) this.modelsRefreshes.delete(preserved.id);
-    return Promise.resolve();
-  }
-
   insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     if (this.store.has(upstream.id)) return Promise.resolve(null);
     const stored = cloneUpstreamRecord({ ...upstream, configVersion: 1, modelsCache: null });

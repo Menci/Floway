@@ -5,6 +5,7 @@ import { createProvider } from '../../../src/data-plane/providers/registry.ts';
 import { InvalidProxyConfigurationError } from '../../../src/dial/per-request.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
@@ -12,7 +13,7 @@ import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/te
 const setupCustom = async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
   const record = await repo.upstreams.getById('up_custom');
   if (record === null) throw new Error('custom upstream missing');
   return { repo, record };
@@ -110,7 +111,7 @@ test('automatic and explicit callers across locations share one base cell', asyn
 
 test('explicit join still validates proxy configuration excluded from the automatic owner location', async () => {
   const { repo, record } = await setupCustom();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...record,
     proxyFallbackList: [{ id: 'missing', colos: ['NRT'] }, { id: 'direct_fetch' }],
   });
@@ -197,7 +198,7 @@ test('a clean explicit failure makes one attempt and records one failure', async
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {
   const { repo, record } = await setupCustom();
-  await repo.upstreams.save({ ...record, proxyFallbackList: [{ id: 'missing' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...record, proxyFallbackList: [{ id: 'missing' }] });
   const invalid = await repo.upstreams.getById(record.id);
   if (invalid === null) throw new Error('invalid-proxy upstream missing');
   const target = modelsRefreshTarget(invalid);
@@ -230,7 +231,7 @@ test('failure persistence retains the upstream error when recording also fails',
 
 test('a changed config fences an old execution target before fetching', async () => {
   const { repo, record } = await setupCustom();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     config: { ...record.config as Record<string, unknown>, apiKey: 'changed' },
   }));
   const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [] }));
@@ -278,7 +279,7 @@ test('custom explicit refresh returns discovered dashboard models from the same 
 
 test('explicit discovery retries after an automatic refresh skips disabled fetching', async () => {
   const { repo, record } = await setupCustom();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...record,
     config: { ...record.config as Record<string, unknown>, modelsFetch: { enabled: false } },
   });

@@ -2,6 +2,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -57,8 +58,8 @@ test('PATCH /api/keys/:id rejects unsupported OpenAI Responses retention values'
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_y', name: 'Y' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_y', name: 'Y' }));
 
   const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_y', 'up_x'] }, apiKey.key);
   assertEquals(response.status, 200);
@@ -72,7 +73,7 @@ test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async ()
 
 test('PATCH /api/keys/:id resets to default with upstream_ids: null', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   await ownerPatch(apiKey.id, { upstream_ids: ['up_x'] }, apiKey.key);
 
   const response = await ownerPatch(apiKey.id, { upstream_ids: null }, apiKey.key);
@@ -100,7 +101,7 @@ test('PATCH /api/keys/:id saves an empty upstream restriction and can disable it
 
 test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_known', name: 'Known' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_known', name: 'Known' }));
 
   const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_known', 'up_ghost'] }, apiKey.key);
   assertEquals(response.status, 400);
@@ -113,8 +114,8 @@ test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error'
 
 test('PATCH /api/keys/:id rejects entries outside the user-level upstream cap', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A' }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_b', name: 'B' }));
   // Tighten the user cap to up_a only; the key owner cannot expand to up_b.
   const owner = await repo.users.getById(apiKey.userId);
   if (!owner) throw new Error('owner missing');
@@ -133,14 +134,14 @@ test('PATCH /api/keys/:id rejects entries outside the user-level upstream cap', 
 
 test('PATCH /api/keys/:id rejects duplicate ids inside the whitelist', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_x', 'up_x'] }, apiKey.key);
   assertEquals(response.status, 400);
 });
 
 test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   await ownerPatch(apiKey.id, { upstream_ids: ['up_x'] }, apiKey.key);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
@@ -150,7 +151,7 @@ test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent',
 
 test('PATCH /api/keys/:id keeps a stored deleted-upstream id but hides it from the response', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   // Stale id surviving from a prior write; only touched by writes that target upstream_ids.
   await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_x', 'up_gone'] });
 
@@ -165,7 +166,7 @@ test('PATCH /api/keys/:id keeps a stored deleted-upstream id but hides it from t
 
 test('GET /api/keys drops deleted-upstream ids so the editor cannot re-submit them', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_gone', 'up_x'] });
 
   const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
@@ -196,7 +197,7 @@ test('PATCH /api/keys/:id is owner-only — admins are not privileged on other u
 
 test('POST /api/keys creates a key under the actor with optional upstream_ids', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
 
   const response = await requestApp('/api/keys', {
     method: 'POST',

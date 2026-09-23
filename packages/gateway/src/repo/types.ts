@@ -347,7 +347,6 @@ export interface WebSearchConfigRepo {
 export interface UpstreamRepo {
   list(): Promise<StoredUpstreamRecord[]>;
   getById(id: string): Promise<StoredUpstreamRecord | null>;
-  save(upstream: UpstreamRecord): Promise<void>;
   insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
   replaceForModels(input: {
     previous: StoredUpstreamRecord;

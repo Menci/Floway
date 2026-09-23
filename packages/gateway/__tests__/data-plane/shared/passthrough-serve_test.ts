@@ -17,6 +17,7 @@
 
 import { test, vi } from 'vitest';
 
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -27,7 +28,7 @@ const registerOpenAIEmbeddingsUpstream = async (
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_passthrough',
     name: 'Passthrough Embedding Provider',
     sortOrder: 100,
@@ -296,11 +297,11 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
 const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_a', name: 'Upstream A', sortOrder: 100,
     config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_b', name: 'Upstream B', sortOrder: 200,
     config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
   }));

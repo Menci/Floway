@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { hashPassword } from '../../../src/shared/passwords.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -222,7 +223,7 @@ test('PATCH /api/users/me/password rejects API key auth (must be a session)', as
 
 test('GET /api/users and /auth/me drop a cap entry whose upstream was deleted', async () => {
   const { adminSession, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   const admin = await repo.users.getById(1);
   assertExists(admin);
   await repo.users.save({ ...admin, upstreamIds: ['up_gone', 'up_x'] });

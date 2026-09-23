@@ -9,6 +9,7 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/sh
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { trackBackground } from '../../../test-utils/background-tracker.ts';
@@ -1551,7 +1552,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCodexUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord({
     flagOverrides: { 'openai-responses-compact-decrypt': false },
   }));
   const upstreamBodies: Record<string, unknown>[] = [];

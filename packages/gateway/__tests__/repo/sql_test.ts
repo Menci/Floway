@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { saveUpstreamForTest } from './upstreams.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
 import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { StoredUpstreamRecord } from '../../src/repo/types.ts';
@@ -40,7 +41,7 @@ const ownValue = (value: unknown, key: string): unknown => {
 
 test('SQL upstream repo preserves nested own __proto__ fields in opaque config and state', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord({
+  await saveUpstreamForTest(repo, baseRecord({
     config: JSON.parse('{"nested":{"__proto__":{"marker":"config"}}}'),
     state: JSON.parse('{"nested":{"__proto__":{"marker":"state"}}}'),
   }));
@@ -52,7 +53,7 @@ test('SQL upstream repo preserves nested own __proto__ fields in opaque config a
 
 test('SQL upstream repo round-trips the cached catalog and its revision', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
@@ -69,7 +70,7 @@ test('SQL upstream repo round-trips the cached catalog and its revision', async 
 test('SQL refresh replaces a catalog from an old schema revision', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
     revision: MODEL_CATALOG_REVISION - 1,
     fetchedAt: 1_700_000_000_000,
@@ -88,7 +89,7 @@ test('SQL refresh replaces a catalog from an old schema revision', async () => {
 test('SQL upstream repo rejects shape-invalid JSON in a cached catalog with row context', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
     .bind(JSON.stringify({
       revision: MODEL_CATALOG_REVISION,
@@ -107,7 +108,7 @@ test('SQL upstream repo rejects shape-invalid JSON in a cached catalog with row 
 
 test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
@@ -126,7 +127,7 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
 test('SQL upstream repo hydrates deeply nested opaque provider data without recursively copying it', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   const depth = 20_000;
   const providerData = `${'{"next":'.repeat(depth)}null${'}'.repeat(depth)}`;
   const cache = `{"revision":${MODEL_CATALOG_REVISION},"fetchedAt":1700000000000,"models":[{"id":"deep-model","upstreamModelId":"deep-model","limits":{},"kind":"chat","endpoints":{"openaiResponses":{}},"opaqueBlobCompatibilityScope":{"bindToUpstream":true},"providerData":${providerData},"enabledFlags":[]}],"lastError":null}`;
@@ -139,7 +140,7 @@ test('SQL upstream repo hydrates deeply nested opaque provider data without recu
 
 test('SQL upstream repo annotates a cached catalog and successful publication clears the error', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
@@ -161,7 +162,7 @@ test('SQL upstream repo annotates a cached catalog and successful publication cl
 
 test('SQL upstream repo persists an immediately-stale empty catalog on first failure', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
 
   await seedModelsCacheError(repo, 'up_test', identityFor(baseRecord()), { message: 'boom', at: 1_700_000_500_000 });
 
@@ -175,7 +176,7 @@ test('SQL upstream repo persists an immediately-stale empty catalog on first fai
 
 test('SQL upstream repo catalog-aware replacement can clear the cached catalog atomically', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
@@ -207,7 +208,7 @@ test('SQL model-cache identity accepts semantically equal noncanonical config JS
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   const record = baseRecord();
-  await repo.save(record);
+  await saveUpstreamForTest(repo, record);
   const noncanonicalConfig = `{ "accounts": ${JSON.stringify((record.config as { accounts: unknown }).accounts)} }`;
   await db.prepare('UPDATE upstreams SET config_json = ? WHERE id = ?').bind(noncanonicalConfig, record.id).run();
   const parsed = await repo.getById(record.id);
@@ -223,9 +224,9 @@ test('SQL model-cache identity accepts semantically equal noncanonical config JS
   assertEquals((await repo.getById(record.id))?.modelsCache?.models.map(model => model.id), ['cached-model']);
 });
 
-test('SQL upstream repo save leaves an existing cached catalog alone', async () => {
+test('SQL upstream replacement leaves an existing cached catalog alone', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
@@ -234,7 +235,7 @@ test('SQL upstream repo save leaves an existing cached catalog alone', async () 
 
   // An operator edit carries whatever catalog the request happened to read —
   // here, none at all. The refresh path stays the only writer.
-  await repo.save(baseRecord({ name: 'Renamed', modelsCache: null }));
+  await saveUpstreamForTest(repo, baseRecord({ name: 'Renamed', modelsCache: null }));
 
   const record = await repo.getById('up_test');
   assertEquals(record?.name, 'Renamed');
@@ -244,7 +245,7 @@ test('SQL upstream repo save leaves an existing cached catalog alone', async () 
 test('SQL rejects malformed persisted model refresh state', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
 
   await assertRejects(
     () => db.prepare('UPDATE upstreams SET models_refresh_json = ? WHERE id = ?')
@@ -253,17 +254,17 @@ test('SQL rejects malformed persisted model refresh state', async () => {
   );
 });
 
-test('SQL upstream repo round-trips state_json on save/list/getById', async () => {
+test('SQL upstream repo round-trips state_json on insert/list/getById', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   const original = baseRecord();
-  await repo.save(original);
+  await saveUpstreamForTest(repo, original);
   assertEquals((await repo.getById('up_test'))?.state, { accounts: [goodAccount] });
   assertEquals((await repo.list())[0].state, { accounts: [goodAccount] });
 });
 
 test('SQL upstream repo saveState applies the mutator to the stored state', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await repo.saveState('up_test', current => {
     assertEquals(current, { accounts: [goodAccount] });
     return { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] };
@@ -303,7 +304,7 @@ const withWriterRacingReads = (db: SqlDatabase, race: () => Promise<unknown>, ti
 test('SQL upstream repo saveState re-applies the mutator against the write that won', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   const racing = new SqlRepo(withWriterRacingReads(db, () =>
     db.prepare('UPDATE upstreams SET state_json = ? WHERE id = ?')
       .bind(JSON.stringify({ accounts: [{ ...goodAccount, state_message: 'written by a sibling' }] }), 'up_test')
@@ -328,7 +329,7 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
 test('SQL upstream repo saveState gives up after a bounded number of lost races', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   let siblingWrites = 0;
   const racing = new SqlRepo(withWriterRacingReads(db, () => {
     siblingWrites += 1;
@@ -361,7 +362,7 @@ test('SQL upstream repo saveState throws when the row is gone', async () => {
 // A mutator that decided there is nothing to do hands back what it was given.
 test('SQL upstream repo saveState skips the write when the mutator changes nothing', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await repo.save(baseRecord());
+  await saveUpstreamForTest(repo, baseRecord());
   await repo.saveState('up_test', current => current);
   assertEquals((await repo.getById('up_test'))?.state, { accounts: [goodAccount] });
 });

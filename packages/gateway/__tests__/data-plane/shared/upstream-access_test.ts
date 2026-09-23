@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse } from '../../test-utils/app.ts';
 import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
@@ -34,7 +35,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
         models: [{ upstreamModelId: `model_${suffix}`, kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
       },
     });
-    await repo.upstreams.save(upstream);
+    await saveUpstreamForTest(repo.upstreams, upstream);
     const stored = await repo.upstreams.getById(upstream.id);
     if (stored === null) throw new Error(`Upstream ${upstream.id} was not saved`);
     assertEquals(await seedModelsCache(repo.upstreams, upstream.id, modelsRefreshIdentity(stored), {

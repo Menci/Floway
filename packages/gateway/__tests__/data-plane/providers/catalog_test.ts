@@ -5,6 +5,7 @@ import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { createModelsRefreshScheduler } from '../../../src/execution/models-refresh.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -104,8 +105,8 @@ test('compareModelIds keeps case-only differences adjacent via lowercase tie-bre
 test('catalog assembly returns the merged catalog plus the per-id upstream index', async () => {
   const { repo } = await setupAppTest();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord());
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 50 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 50 }));
 
   await withMockedFetch(
     request => {
@@ -198,12 +199,12 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
 test('catalog merge exposes a shared scope only when every contributor agrees', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_first',
     sortOrder: 1,
     config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_second',
     sortOrder: 2,
     config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
@@ -232,12 +233,12 @@ test('catalog merge exposes a shared scope only when every contributor agrees', 
 test('catalog merge preserves unanimous image-detail support on the public row', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_first',
     sortOrder: 1,
     config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_second',
     sortOrder: 2,
     config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
@@ -283,7 +284,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 
   // up_a disables a solo model and a shared one (by public id, including a
   // publicModelId override); up_b still serves the shared id, enabled.
-  await repo.upstreams.save(azureUpstream({
+  await saveUpstreamForTest(repo.upstreams, azureUpstream({
     id: 'up_a',
     sortOrder: 1,
     models: [
@@ -294,7 +295,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     ],
     disabledPublicModelIds: ['gpt-solo', 'gpt-shared', 'gpt-override'],
   }));
-  await repo.upstreams.save(azureUpstream({
+  await saveUpstreamForTest(repo.upstreams, azureUpstream({
     id: 'up_b',
     sortOrder: 2,
     models: [{ upstreamModelId: 'gpt-shared' }],
@@ -331,7 +332,7 @@ test('catalog refresh triggers fan out per upstream in parallel', async () => {
     { id: 'up_p3', host: 'p3.example.com', model: 'p3-model' },
   ];
   for (const [index, u] of upstreams.entries()) {
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: u.id,
       name: u.id,
       sortOrder: index,
@@ -372,19 +373,19 @@ test('catalog assembly: a rejected provider does not block other providers', asy
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_ok_1',
     name: 'OK 1',
     sortOrder: 1,
     config: { baseUrl: 'https://ok1.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 2,
     config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_ok_2',
     name: 'OK 2',
     sortOrder: 3,
@@ -419,7 +420,7 @@ describe('catalog listing under modelPrefix', () => {
   test('null prefix lists bare ids only (today\'s behavior)', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
       config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -443,7 +444,7 @@ describe('catalog listing under modelPrefix', () => {
   test('listed=[prefixed] lists only the prefixed surface and routes the prefixed request to the upstream', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_prefixed',
       sortOrder: 1,
       config: { baseUrl: 'https://prefixed.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -490,7 +491,7 @@ describe('catalog listing under modelPrefix', () => {
     // per-provider catalog lookup.
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_dual_addressable',
       sortOrder: 1,
       config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -530,12 +531,12 @@ describe('catalog listing under modelPrefix', () => {
     // to up_dual because up_plain's catalog does not contain `or/gpt-4o`.
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
       config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 2,
       config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -585,7 +586,7 @@ describe('catalog listing under modelPrefix', () => {
     // `prefixed` iteration order (see `FORM_ORDER` in `model-prefix.ts`).
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 1,
       config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -623,7 +624,7 @@ describe('catalog listing under modelPrefix', () => {
     // `or/gpt-4o` survives from up_dual; `gpt-mini` and `or/gpt-mini` stay.
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 1,
       config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
@@ -663,19 +664,19 @@ describe('catalog listing under modelPrefix', () => {
   test('three upstreams advertising the same public id via different paths all enumerate as matches', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_short_prefix',
       sortOrder: 1,
       config: { baseUrl: 'https://short.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'aa/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_long_prefix',
       sortOrder: 2,
       config: { baseUrl: 'https://long.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'aa/bb/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_bare',
       sortOrder: 3,
       config: { baseUrl: 'https://bare.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },

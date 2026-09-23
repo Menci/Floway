@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -51,8 +52,8 @@ test('/api/models returns an empty catalog when the gateway has no upstreams', a
 
 test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await repo.upstreams.save(azureUpstream());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await saveUpstreamForTest(repo.upstreams, azureUpstream());
 
   await withMockedFetch(
     request => {
@@ -104,8 +105,8 @@ const modelsFetchHandler = (request: Request): Response => {
 
 test('/api/models is scoped to the caller\'s effective upstreams — a removed upstream\'s models disappear from the dashboard', async () => {
   const { repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await repo.upstreams.save(azureUpstream());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await saveUpstreamForTest(repo.upstreams, azureUpstream());
 
   // The seed tester (user 2) overrides their available upstreams to exclude
   // Azure, then browses the dashboard Models tab via a session token — the
@@ -134,7 +135,7 @@ test('/api/models is scoped to the caller\'s effective upstreams — a removed u
 
 test('/api/models appends visible alias entries with aliasedFrom alongside real catalog rows', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
 
   await withMockedFetch(modelsFetchHandler, async () => {
     const response = await requestAppWithWarmModels('/api/models', { headers: { 'x-api-key': apiKey.key } });
@@ -146,8 +147,8 @@ test('/api/models appends visible alias entries with aliasedFrom alongside real 
 
 test('/api/models for an admin session returns the gateway-wide catalog, bypassing the admin\'s own user.upstreamIds cap', async () => {
   const { adminSession, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await repo.upstreams.save(azureUpstream());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await saveUpstreamForTest(repo.upstreams, azureUpstream());
 
   // Admin self-restricts. The dashboard's editor surfaces (alias edit,
   // upstream edit) need to see "what exists on the entire gateway", and
@@ -180,7 +181,7 @@ test('/api/models — admin sees raw alias.targets; non-admin sees the caller-na
   // non-admin who can reach the real target must see only that target
   // — never the typo, never out-of-cap target ids.
   const { adminSession, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
   await repo.modelAliases.insert({
     id: 'alias_mix',
     name: 'mix',
@@ -242,7 +243,7 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
   // not a per-caller derivation.
   const { adminSession, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_small',
     name: 'Small',
     sortOrder: 100,
@@ -256,7 +257,7 @@ test('/api/models — admin self-restriction does NOT leak per-alias metadata va
       modelsFetch: { enabled: false },
     },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_big',
     name: 'Big',
     sortOrder: 200,

@@ -6,6 +6,7 @@ import { getRepo, initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
+import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -225,7 +226,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     },
   };
   const copilotUpstream = options.copilotUpstream ?? buildCopilotUpstreamRecord(githubAccount);
-  await repo.upstreams.save(copilotUpstream);
+  await saveUpstreamForTest(repo.upstreams, copilotUpstream);
 
   if (options.webSearchConfig !== undefined) {
     await repo.webSearchConfig.save(options.webSearchConfig);

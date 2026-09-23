@@ -94,7 +94,8 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     modelPrefix: null,
     hue: 210,
   };
-  await repo.upstreams.save(upstreamRecord);
+  const inserted = await repo.upstreams.insertForModels(upstreamRecord);
+  if (inserted === null) throw new Error('expected upstream fixture insert');
   const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
   if (storedUpstream === null) throw new Error('expected stored upstream fixture');
   await repo.upstreams.publishModelsRefresh({

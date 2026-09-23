@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -18,7 +19,7 @@ const SECOND_ACCOUNT = {
 test('/v1/models returns a cold snapshot before its triggered upstream fetch settles', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
   let resolveFetch: ((response: Response) => void) | null = null;
 
   await withMockedFetch(
@@ -44,7 +45,7 @@ test('/v1/models returns a cold snapshot before its triggered upstream fetch set
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_oai',
     name: 'Test OpenAI',
     sortOrder: 100,
@@ -256,7 +257,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
   // Image-kind projection requires a non-Copilot id like gpt-image-* (matched
   // by the Tier 2 id heuristic) since the Copilot fixture only emits chat and
   // embedding models.
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_images_proj',
     name: 'Image Provider',
     sortOrder: 100,
@@ -364,7 +365,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_secret_provider',
     name: 'Secret Provider',
     sortOrder: 100,
@@ -406,7 +407,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_healthy',
     name: 'Healthy',
     sortOrder: 1,
@@ -418,7 +419,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
       endpoints: { openaiChatCompletions: {} },
     },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 2,
@@ -459,7 +460,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_http_secret_provider',
     name: 'HTTP Secret Provider',
     sortOrder: 100,
@@ -505,7 +506,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_throw_secret_provider',
     name: 'Throw Secret Provider',
     sortOrder: 100,
@@ -543,7 +544,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_malformed_secret_provider',
     name: 'Malformed Secret Provider',
     sortOrder: 100,
@@ -601,7 +602,7 @@ test('/v1/models surfaces the actionable "no upstream configured" hint when no p
 
 test('/v1/models returns the id-sorted union of every connected GitHub account', async () => {
   const { repo, apiKey, githubAccount } = await setupAppTest();
-  await repo.upstreams.save(buildCopilotUpstreamRecord(SECOND_ACCOUNT, { id: 'up_copilot_second', sortOrder: 1 }));
+  await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(SECOND_ACCOUNT, { id: 'up_copilot_second', sortOrder: 1 }));
 
   const tokenForGithubToken = new Map([
     [githubAccount.token, 'copilot-first'],
@@ -715,7 +716,7 @@ test('/v1/models returns the last real error when every account model load fails
 test('/v1/models appends visible aliases with their aliasedFrom block and folds alias-id collisions onto the alias entry', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_oai',
     name: 'Test OpenAI',
     sortOrder: 100,
@@ -821,7 +822,7 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
   // two entries with the same id.
   const { repo, apiKey } = await setupAppTest();
   await repo.modelAliases.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_shadow',
     name: 'Shadow Provider',
     sortOrder: 100,

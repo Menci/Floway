@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -138,7 +139,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom LLM',
     sortOrder: 100,
@@ -191,7 +192,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     sortOrder: 100,
@@ -234,7 +235,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_secret_gemini_provider',
     name: 'Secret Gemini Provider',
     sortOrder: 100,
@@ -273,7 +274,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_http_secret_gemini_provider',
     name: 'HTTP Secret Gemini Provider',
     sortOrder: 100,
@@ -316,7 +317,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_throw_secret_gemini_provider',
     name: 'Throw Secret Gemini Provider',
     sortOrder: 100,
@@ -356,7 +357,7 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_malformed_secret_gemini_provider',
     name: 'Malformed Secret Gemini Provider',
     sortOrder: 100,
@@ -404,7 +405,7 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_gemini_alias',
     name: 'Alias Provider for Gemini Listing',
     sortOrder: 100,

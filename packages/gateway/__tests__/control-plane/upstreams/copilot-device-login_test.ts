@@ -16,6 +16,7 @@ vi.mock('../../../src/execution/models-refresh.ts', async importOriginal => ({
 }));
 
 import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -42,7 +43,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll waits for the post-OAuth mo
   const { adminSession, githubAccount, repo } = await setupAppTest();
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_blocking_warm' });
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(existing);
+  await saveUpstreamForTest(repo.upstreams, existing);
   let releaseWarm: (() => void) | null = null;
   modelsCacheMock.pending = new Promise<void>(resolve => { releaseWarm = resolve; });
 
@@ -315,7 +316,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_existing_copilot', name: 'Pinned Copilot', sortOrder: 9 });
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(existing);
+  await saveUpstreamForTest(repo.upstreams, existing);
 
   await withMockedFetch(
     request => {
@@ -369,7 +370,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(existing);
+  await saveUpstreamForTest(repo.upstreams, existing);
   await seedModelsCache(repo.upstreams, existing.id, await storedModelsRefreshIdentity(repo.upstreams, existing.id), {
     revision: 1,
     fetchedAt: 1_700_000_000_000,

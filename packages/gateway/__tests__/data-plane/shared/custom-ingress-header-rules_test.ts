@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -17,7 +18,7 @@ const INGRESS_HEADERS_RULES = [
 const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_rules',
     config: {
       baseUrl: 'https://custom.example.com',

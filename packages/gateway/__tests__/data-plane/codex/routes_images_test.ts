@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { copilotModels, MOCKED_FETCH_EGRESS, requestApp, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { CODEX_USER_AGENT } from '@floway-dev/provider-codex';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -8,7 +9,7 @@ import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@flow
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
 
 const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'az-image',
     kind: 'azure',
     name: 'azure-images',
@@ -35,7 +36,7 @@ const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
 };
 
 const saveCodexImages = async (repo: InMemoryRepo): Promise<void> => {
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'codex-image',
     kind: 'codex',
     name: 'ChatGPT Team',

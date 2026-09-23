@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -13,7 +14,7 @@ const saveRerankUpstream = async (
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_rerank',
     name: 'Rerank Provider',
     config: {

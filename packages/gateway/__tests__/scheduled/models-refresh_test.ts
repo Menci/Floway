@@ -4,6 +4,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { scheduleModelsCacheRefreshes } from '../../src/scheduled/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
+import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
@@ -34,8 +35,8 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
 test('scheduled maintenance submits enabled refreshes without waiting for model I/O', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await repo.upstreams.save(custom('enabled', true));
-  await repo.upstreams.save(custom('disabled', false));
+  await saveUpstreamForTest(repo.upstreams, custom('enabled', true));
+  await saveUpstreamForTest(repo.upstreams, custom('disabled', false));
   let resolveFetch: ((response: Response) => void) | null = null;
   const requested: string[] = [];
 
@@ -66,8 +67,8 @@ test('scheduled maintenance submits enabled refreshes without waiting for model 
 test('one malformed upstream does not prevent later refreshes from being scheduled', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await repo.upstreams.save({ ...custom('malformed', true), config: null });
-  await repo.upstreams.save(custom('healthy', true));
+  await saveUpstreamForTest(repo.upstreams, { ...custom('malformed', true), config: null });
+  await saveUpstreamForTest(repo.upstreams, custom('healthy', true));
   const background: Promise<unknown>[] = [];
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -92,8 +93,8 @@ test('locationless scheduled events skip colo-scoped-only egress policies', asyn
   const repo = new InMemoryRepo();
   initRepo(repo);
   await repo.proxies.save({ id: 'bad-scoped', name: 'Bad scoped proxy', url: 'not a URL', dialTimeoutSeconds: null });
-  await repo.upstreams.save({ ...custom('scoped', true), proxyFallbackList: [{ id: 'direct_fetch', colos: ['HKG'] }] });
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, { ...custom('scoped', true), proxyFallbackList: [{ id: 'direct_fetch', colos: ['HKG'] }] });
+  await saveUpstreamForTest(repo.upstreams, {
     ...custom('global', true),
     proxyFallbackList: [
       { id: 'bad-scoped', colos: ['HKG'] },

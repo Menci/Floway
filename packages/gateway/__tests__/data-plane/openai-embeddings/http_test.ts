@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -198,7 +199,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,
@@ -272,7 +273,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'Chat Only Provider',
     enabled: true,
@@ -331,7 +332,7 @@ test('/v1/embeddings reports the failed upstream parenthetically when /v1/models
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,
@@ -390,7 +391,7 @@ test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s
   const { apiKey, repo } = await setupAppTest();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,

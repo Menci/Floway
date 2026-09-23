@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { InMemoryRepo } from './memory.ts';
 import { modelsRefreshIdentity } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { saveUpstreamForTest } from './upstreams.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
@@ -35,7 +36,7 @@ const factories: [string, () => Promise<Repo>][] = [
 describe.each(factories)('%s models refresh persistence', (_name, createRepo) => {
   test('applies retry backoff and lets an explicit refresh bypass it', async () => {
     const repo = (await createRepo()).upstreams;
-    await repo.save(record);
+    await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     let now = 1_800_000_000_000;
 
@@ -61,7 +62,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
 
   test('success publishes the catalog and clears failure backoff', async () => {
     const repo = (await createRepo()).upstreams;
-    await repo.save(record);
+    await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     const now = 1_800_000_000_000;
     await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
@@ -80,7 +81,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
 
   test('config changes fence stale success and failure publication', async () => {
     const repo = (await createRepo()).upstreams;
-    await repo.save(record);
+    await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     const current = await repo.getById(record.id);
     if (current === null) throw new Error('upstream row missing');
@@ -96,7 +97,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
 
   test('cache publication fences stale completions from the same config', async () => {
     const repo = (await createRepo()).upstreams;
-    await repo.save(record);
+    await saveUpstreamForTest(repo, record);
     const cold = modelsRefreshIdentity(record);
     await expect(repo.publishModelsRefresh({
       id: record.id,
@@ -131,7 +132,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
 
   test('state and metadata changes preserve the config version and backoff', async () => {
     const repo = (await createRepo()).upstreams;
-    await repo.save(record);
+    await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     const now = 1_800_000_000_000;
     await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });

@@ -5,6 +5,7 @@ import { initRepo } from '../../../../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../../../../src/repo/models-cache-contract.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { seedModelsCache, storedModelsRefreshIdentity } from '../../../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../../../repo/upstreams.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -43,7 +44,7 @@ const upstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
 
 test('resolves v1 affinity from the current provider-model cache', async () => {
   const record = upstream();
-  await repo.upstreams.save(record);
+  await saveUpstreamForTest(repo.upstreams, record);
   await seedModelsCache(repo.upstreams, record.id, await storedModelsRefreshIdentity(repo.upstreams, record.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
@@ -59,7 +60,7 @@ test('resolves v1 affinity from the current provider-model cache', async () => {
 });
 
 test('resolves v1 affinity from manual configuration when the catalog is cold', async () => {
-  await repo.upstreams.save(upstream({
+  await saveUpstreamForTest(repo.upstreams, upstream({
     config: {
       baseUrl: 'https://example.com',
       authStyle: 'bearer',

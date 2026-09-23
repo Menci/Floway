@@ -1,6 +1,7 @@
 import { test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -12,7 +13,7 @@ const registerAudioModel = async (
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_audio',
     kind: 'custom',
     name: 'Audio Provider',

@@ -6,6 +6,7 @@ import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tool
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
@@ -163,7 +164,7 @@ describe('/alpha/search data plane', () => {
       };
       const { apiKey, repo } = await setupAppTest({ webSearchConfig });
       await repo.upstreams.deleteAll();
-      await repo.upstreams.save(buildCustomUpstreamRecord({
+      await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
         id: 'up_alpha',
         name: 'Alpha Search',
         config: {

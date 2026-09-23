@@ -5,6 +5,7 @@ import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/share
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
 import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
@@ -331,7 +332,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_azure_single_endpoint',
     kind: 'azure',
     name: 'Azure Single Endpoint',
@@ -378,7 +379,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
 test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_azure_flag_overrides',
     kind: 'azure',
     name: 'Azure Per-Model Flags',
@@ -443,9 +444,9 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   const freshRecord = { ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 };
   const warmRecord = { ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 };
   const failedRecord = { ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 };
-  await repo.upstreams.save(freshRecord);
-  await repo.upstreams.save(warmRecord);
-  await repo.upstreams.save(failedRecord);
+  await saveUpstreamForTest(repo.upstreams, freshRecord);
+  await saveUpstreamForTest(repo.upstreams, warmRecord);
+  await saveUpstreamForTest(repo.upstreams, failedRecord);
 
   await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsRefreshIdentity(repo.upstreams, 'up_warm'), {
     revision: MODEL_CATALOG_REVISION,
@@ -475,7 +476,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
 
 test('GET /api/upstream-options returns the minimal picker shape to admin and non-admin callers', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_disabled_custom',
     kind: 'custom',
     name: 'Disabled Custom',
@@ -675,7 +676,7 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
     config: { ...customConfig, apiKey: 'sk-refresh' },
     state: null,
   };
-  await repo.upstreams.save(savedRecord);
+  await saveUpstreamForTest(repo.upstreams, savedRecord);
 
   let upstreamCalls = 0;
   await withMockedFetch(
@@ -715,7 +716,7 @@ test('POST /api/upstreams/:id/list-models rejects a missing saved upstream', asy
 
 test('POST /api/upstreams/:id/list-models rejects an unknown saved proxy', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_bad_proxy', proxyFallbackList: [{ id: 'missing', colos: ['NRT'] }] }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_bad_proxy', proxyFallbackList: [{ id: 'missing', colos: ['NRT'] }] }));
 
   const response = await requestApp('/api/upstreams/up_bad_proxy/list-models', {
     method: 'POST',
@@ -1128,7 +1129,7 @@ test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal sta
   const created = await createCodexUpstreamViaExchange(adminSession);
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...stored!,
     state: { accounts: storedState.accounts.map(a => ({ ...a, state: 'session_terminated' })) },
   });
@@ -1147,7 +1148,7 @@ test('POST /api/upstreams/codex/oauth/refresh rejects an access-only credential 
   const created = await createCodexUpstreamViaExchange(adminSession);
   const stored = await getRecord(repo, created.id);
   const state = stored.state as { accounts: Array<Record<string, unknown>> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...stored,
     state: { accounts: state.accounts.map(account => ({ ...account, refresh_token: null })) },
   });
@@ -1477,7 +1478,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh rejects a record in a termin
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...stored!,
     state: {
       accounts: storedState.accounts.map(a => ({
@@ -1641,7 +1642,7 @@ test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping dir
   // A proxy delete is refused while an upstream still names it, so reach past
   // the route to reproduce a raced delete or a hand-edited row.
   const stored = await repo.upstreams.getById(created.id);
-  await repo.upstreams.save({ ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
 
   const single = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(single.status, 200);
@@ -1692,7 +1693,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh honors the record.proxy_fall
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   // Persist a non-direct fallback list so a successful default-path refresh
   // would route through `p_real`. The envelope's list should win.
-  await repo.upstreams.save({ ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_real' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_real' }] });
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
   envelope.proxy_fallback_list = [{ id: 'p_unknown' }];
@@ -2052,7 +2053,7 @@ test('POST /api/upstreams/claude-code/probe mints a fresh access token when the 
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   const staleRow = await getRecord(repo, created.id);
   const staleState = staleRow.state as { accounts: Array<Record<string, unknown> & { accessToken: Record<string, unknown> | null }> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...staleRow,
     state: {
       accounts: staleState.accounts.map(a => ({
@@ -2333,7 +2334,7 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
   // Persist a non-default fallback list — this is what MUST survive the
   // probe. The envelope's list serves ONLY as a per-request routing
   // override; the probe endpoint never writes it back.
-  await repo.upstreams.save({ ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_persisted' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_persisted' }] });
   const originalList = (await getRecord(repo, created.id)).proxyFallbackList;
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
@@ -2380,7 +2381,7 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
     },
     state: null,
   };
-  await repo.upstreams.save(savedRecord);
+  await saveUpstreamForTest(repo.upstreams, savedRecord);
 
   const envelope = envelopeFromRecord(savedRecord);
   envelope.name = 'Mutated';
@@ -2675,7 +2676,7 @@ test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling
         // a rotated refresh_token + a fresh access token.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({
@@ -2725,7 +2726,7 @@ test('POST /api/upstreams/codex/oauth/refresh surfaces terminal error when a sib
         // returns null, and the original invalid_grant propagates.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({
@@ -2774,7 +2775,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh recovers as success when a s
         // fresh accessToken and returns success without a re-mint.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({

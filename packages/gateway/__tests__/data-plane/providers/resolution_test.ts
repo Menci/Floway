@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -28,7 +29,7 @@ const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
   const background: Promise<unknown>[] = [];
   let releaseFetch: ((response: Response) => void) | undefined;
   const fetch = vi.fn(() => new Promise<Response>(resolve => { releaseFetch = resolve; }));
@@ -61,7 +62,7 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 
-  await repo.upstreams.save(
+  await saveUpstreamForTest(repo.upstreams,
     buildCustomUpstreamRecord({
       config: {
         baseUrl: 'https://custom.example.com',
@@ -70,8 +71,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
         apiKey: 'sk-custom',
         endpoints: { anthropicMessages: {} },
       },
-    }),
-  );
+    }));
 
   await withMockedFetch(
     request => {
@@ -116,7 +116,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
 test('enumerateModelCandidates does not retry when the inbound id has no dated suffix', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(
+  await saveUpstreamForTest(repo.upstreams,
     buildCustomUpstreamRecord({
       config: {
         baseUrl: 'https://custom.example.com',
@@ -125,8 +125,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
         apiKey: 'sk-custom',
         endpoints: { anthropicMessages: {} },
       },
-    }),
-  );
+    }));
 
   await withMockedFetch(
     request => {
@@ -151,7 +150,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
   // never enters the candidate list.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(
+  await saveUpstreamForTest(repo.upstreams,
     buildCustomUpstreamRecord({
       config: {
         baseUrl: 'https://custom.example.com',
@@ -160,8 +159,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
         apiKey: 'sk-custom',
         endpoints: { anthropicMessages: {} },
       },
-    }),
-  );
+    }));
 
   await withMockedFetch(
     request => {
@@ -188,13 +186,13 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
 test('enumerateRealModelCandidates only loads the selected providers\' catalogs', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
     config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
@@ -239,7 +237,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
 test('enumerateRealModelCandidates rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_x',
     kind: 'azure',
     name: 'X',
@@ -275,7 +273,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 test('a recorded refresh failure is irrelevant when the prefix policy cannot address the model id', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_prefixed_failure',
     name: 'Prefixed failure',
     modelPrefix: { prefix: 'tenant/', addressable: ['prefixed'], listed: ['prefixed'] },
@@ -307,13 +305,13 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
     config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
@@ -357,7 +355,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'ChatOnly',
     sortOrder: 1,
@@ -397,7 +395,7 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 1,
@@ -432,7 +430,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 test('an AbortError from background catalog refresh does not abort model resolution', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_aborting',
     name: 'Aborting',
     sortOrder: 1,
@@ -471,7 +469,7 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
   await repo.upstreams.deleteAll();
   // A populated catalog is the case under test: the empty cap, not an empty
   // catalog, is what yields the empty triple.
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 1 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 1 }));
 
   const resolved = await enumerateModelCandidates({
     upstreamIds: [],
@@ -513,11 +511,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
 
   const seedUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
     await repo.upstreams.deleteAll();
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_a', name: 'A', sortOrder: 1,
       config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
-    await repo.upstreams.save(buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_b', name: 'B', sortOrder: 2,
       config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
