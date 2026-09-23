@@ -6,18 +6,10 @@ import { useTranslation } from '../../i18n/translation';
 
 const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Tooltip } = fluentComponents;
 
-// WinUI lays an InfoBar's text out vertically as soon as one of its parts is
-// taller than InfoBarMinHeight, which is the case a body of several messages is
-// always in; Fluent's own reflow watches inline overflow alone and so never
-// reaches its multiline layout here. This marker is what the vertical-orientation
-// geometry in `winui/controls/message-bar.css.ts` is addressed by, and it appears
-// only from the second message on, matching the panel's own arrange.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBarPanel.cpp#L69
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBarPanel.cpp#L107-L111
-const MessageBarLines = ({ children }: { children: ReactNode }) => {
-  const lines = Children.toArray(children);
+const MessageBarContent = ({ children }: { children: ReactNode }) => {
+  const messages = Children.toArray(children);
 
-  return lines.length > 1 ? <div data-winui-message-lines="">{lines}</div> : lines;
+  return messages.length > 1 ? <div className="winui-message-items">{messages}</div> : messages;
 };
 
 // Nothing dismisses this on a timer: it carries a server's own words, which may
@@ -44,7 +36,7 @@ export function OutcomeMessageBar({
     <MessageBar className={className} intent={intent}>
       <MessageBarBody>
         {title && <MessageBarTitle>{title}</MessageBarTitle>}
-        <MessageBarLines>{children}</MessageBarLines>
+        <MessageBarContent>{children}</MessageBarContent>
       </MessageBarBody>
       {(action ?? onDismiss) && <MessageBarActions
         containerAction={onDismiss && <Tooltip content={dismissLabel} relationship="label">

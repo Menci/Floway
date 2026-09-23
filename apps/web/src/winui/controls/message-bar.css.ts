@@ -54,17 +54,20 @@ ${severityCss({ card: '.fui-MessageBar', icon: '.fui-MessageBar__icon' })}
    https://drafts.csswg.org/css-text-4/#overflow-wrap-property */
 .fui-MessageBarBody.fui-MessageBarBody {
   padding-inline-end: 16px;
+  /* A 20px line plus 12px on each side fits the 48px minimum (including its
+     border). Taller content keeps the same spacing even when one React child
+     grows without triggering Fluent's reflow. This unifies WinUI's separate
+     horizontal and vertical content padding for the web layout.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L66-L86 */
+  padding-block: 12px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 /* The leading 12px of InfoBarMessageHorizontalOrientationMargin replaces the
    literal space Fluent emits from the ::after below — the two go together, or
-   the margin lands on top of a gap that is still there. The shared 14px top
-   term of that thickness and of InfoBarTitleHorizontalOrientationMargin is not
-   spent: we keep Fluent's centring, which agrees with WinUI's top-alignment to
-   within a pixel on a 48px single-line bar, and the wrapping case is the
-   multiline layout with its own term below.
+   the margin lands on top of a gap that is still there. Body padding keeps the
+   shared 14px top alignment for a short message without a second layout mode.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L83 */
 .fui-MessageBarTitle.fui-MessageBarTitle {
@@ -98,17 +101,11 @@ ${severityCss({ card: '.fui-MessageBar', icon: '.fui-MessageBar__icon' })}
   width: 16px;
 }
 
-/* Vertical orientation. Fluent's 10px of multiline root padding offsets every
-   child; WinUI offsets the text panel alone, so the root term is zeroed and the
-   panel carries its own block padding — otherwise the glyph and the close
-   button sit 26 and 15 down instead of 16 and 5.
-
-   InfoBarPanelVerticalOrientationPadding is 0,14,0,18, and Fluent lifts the
-   action buttons into a grid row of their own, so the trailing 18 goes on that
-   row instead of on the body. The actions row and the reflow spacer share one
-   cell and both carry it, which keeps 18px below the last content whether or
-   not there are actions, since Fluent hides the row outright when there are
-   none. InfoBarActionVerticalOrientationMargin 0,12,0,0 is the gap above it.
+/* Fluent's multiline grid moves actions into another row. Its root padding
+   is removed so the body's 12px stays the only leading term. That body padding
+   also supplies the gap before an action row; the row supplies the 18px
+   trailing room. With no actions, the spacer adds the remaining 6px after the
+   body's own 12px. The body never needs a second padding rule.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L75
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L80
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L86 */
@@ -116,31 +113,18 @@ ${severityCss({ card: '.fui-MessageBar', icon: '.fui-MessageBar__icon' })}
   padding-block-start: 0;
 }
 
-.fui-MessageBar:has(> .fui-MessageBar__bottomReflowSpacer) .fui-MessageBarBody.fui-MessageBarBody {
-  padding-block-start: 14px;
-}
-
 .fui-MessageBar:has(> .fui-MessageBar__bottomReflowSpacer) .fui-MessageBarActions.fui-MessageBarActions {
-  margin-block: 12px 18px;
+  margin-block: 0 18px;
 }
 
 .fui-MessageBar__bottomReflowSpacer.fui-MessageBar__bottomReflowSpacer {
-  margin-block-end: 18px;
+  margin-block-end: 6px;
 }
 
-/* A body of several messages is the same vertical orientation reached by another
-   route, so it takes the same InfoBarPanelVerticalOrientationPadding terms. The
-   gap is the leading 4 of InfoBarMessageVerticalOrientationMargin, which
-   ArrangeOverride adds between children and not before the first, so a bar of one
-   message is untouched. Wrapping is restored because the root's nowrap belongs to
-   the horizontal orientation this content is no longer in.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L80
+/* Separate messages have the 4px gap of InfoBarMessageVerticalOrientationMargin.
+   Wrapping is restored because Fluent's root defaults to nowrap.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L84 */
-.fui-MessageBar:has([data-winui-message-lines]) .fui-MessageBarBody.fui-MessageBarBody {
-  padding-block: 14px 18px;
-}
-
-[data-winui-message-lines] {
+.winui-message-items {
   display: grid;
   gap: 4px;
   white-space: normal;
