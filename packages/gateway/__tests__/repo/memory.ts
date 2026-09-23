@@ -4,6 +4,7 @@ import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
+import { matchesModelsRefreshInputs } from '../../src/repo/models-refresh-inputs.ts';
 import {
   assertSameStoredOpenAIResponsesItem,
   cloneStoredOpenAIResponsesItem,
@@ -804,17 +805,19 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, cache } = input;
+    const { id, configVersion, cacheEpoch, refreshInputs, cache } = input;
     const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
+      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
 
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
+    const { id, configVersion, cacheEpoch, refreshInputs, error, previousFailureCount } = input;
     const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
+      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     if ((existing.modelsCache?.lastError?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
     const lastError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
     if (existing.modelsCache?.revision === MODEL_CATALOG_REVISION) existing.modelsCache.lastError = lastError;

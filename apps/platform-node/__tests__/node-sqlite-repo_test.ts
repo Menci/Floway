@@ -102,6 +102,12 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     id: 'up_node',
     configVersion: storedUpstream.configVersion,
     cacheEpoch: 0,
+    refreshInputs: {
+      provider: storedUpstream.kind,
+      configJson: JSON.stringify(storedUpstream.config),
+      flagOverridesJson: '{}',
+      proxyFallbackListJson: '[]',
+    },
     cache: {
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1_786_000_000_000,

@@ -3,6 +3,7 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from './models-cache-contract.ts';
+import { matchesModelsRefreshInputs } from './models-refresh-inputs.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
@@ -1031,17 +1032,43 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
+  private async modelsRefreshFence(input: ModelsRefreshSuccessInput | ModelsRefreshFailureInput): Promise<{
+    provider: string;
+    config_json: string;
+    flag_overrides: string;
+    proxy_fallback_list_json: string;
+  } | null> {
+    const row = await this.db
+      .prepare('SELECT provider, config_json, flag_overrides, proxy_fallback_list_json FROM upstreams WHERE id = ? AND config_version = ?')
+      .bind(input.id, input.configVersion)
+      .first<{ provider: string; config_json: string; flag_overrides: string; proxy_fallback_list_json: string }>();
+    if (row === null || !matchesModelsRefreshInputs({
+      kind: parseUpstreamKind(input.id, row.provider),
+      config: decodeUpstreamConfig(row.config_json, input.id),
+      flagOverrides: parseFlagOverrides(input.id, row.flag_overrides),
+      proxyFallbackList: parseProxyFallbackList(input.id, row.proxy_fallback_list_json),
+    }, input.refreshInputs)) return null;
+    return row;
+  }
+
   async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
     const { id, configVersion, cacheEpoch, cache } = input;
+    const fence = await this.modelsRefreshFence(input);
+    if (fence === null) return false;
     const result = await this.db
-      .prepare(`UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND config_version = ? AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion, cacheEpoch)
+      .prepare(`UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND config_version = ?
+        AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
+        AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion,
+        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json, cacheEpoch)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
     const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
+    const fence = await this.modelsRefreshFence(input);
+    if (fence === null) return false;
     // A cold failure remains immediately stale while preserving the error for
     // the next request and dashboard read.
     const nextError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
@@ -1052,11 +1079,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
            models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
              THEN json_set(models_cache_json, '$.lastError', json(?)) ELSE ? END
          WHERE id = ? AND config_version = ?
+           AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
            AND ${MODELS_CACHE_EPOCH_SQL} = ?
            AND coalesce(CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
              THEN json_extract(models_cache_json, '$.lastError.failureCount') END, 0) = ?`,
       )
-      .bind(JSON.stringify(nextError), coldFailure, id, configVersion, cacheEpoch, previousFailureCount)
+      .bind(JSON.stringify(nextError), coldFailure, id, configVersion,
+        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json,
+        cacheEpoch, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }

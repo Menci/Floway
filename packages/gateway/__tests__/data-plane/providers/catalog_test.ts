@@ -366,9 +366,6 @@ test('catalog refresh triggers fan out per upstream in parallel', async () => {
   );
 });
 
-// A single upstream's catalog fetch failure is surfaced as `lastError` and
-// recorded against `sawSuccess === true`; the public catalog still includes
-// every successful upstream's models.
 test('catalog assembly: a rejected provider does not block other providers', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();

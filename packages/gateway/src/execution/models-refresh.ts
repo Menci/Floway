@@ -1,8 +1,9 @@
 import { createPreviewProvider } from '../data-plane/providers/registry.ts';
 import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
-import { MODEL_CATALOG_REVISION } from '../repo/models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
+import { modelsRefreshInputHash, modelsRefreshInputs } from '../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../repo/types.ts';
 import { getExecutionCellNamespace } from '../runtime/execution.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -11,14 +12,14 @@ import type { FlagId } from '@floway-dev/provider/flags';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
 
 export type ModelsRefreshExecutionInput =
-  | { kind: 'saved'; upstreamId: string; configVersion: number; mode: 'automatic' | 'explicit'; runtimeLocation: string | null }
+  | { kind: 'saved'; upstreamId: string; configVersion: number; inputHash: string; mode: 'automatic' | 'explicit'; runtimeLocation: string | null }
   | { kind: 'draft'; record: UpstreamRecord; runtimeLocation: string | null; nonce: string };
 
 export type ModelsRefreshExecutionResult =
   | { kind: 'discovered'; models: ProviderModel[]; discovered?: UpstreamModelConfig[]; publication: 'published' | 'lost-race' | 'draft' }
-  | { kind: 'backoff' | 'superseded' };
+  | { kind: 'backoff' | 'not-due' | 'superseded' };
 
-export type ModelsRefreshTarget = Pick<Extract<ModelsRefreshExecutionInput, { kind: 'saved' }>, 'upstreamId' | 'configVersion'>;
+export type ModelsRefreshTarget = Pick<Extract<ModelsRefreshExecutionInput, { kind: 'saved' }>, 'upstreamId' | 'configVersion' | 'inputHash'>;
 export type ModelsRefreshScheduler = (target: ModelsRefreshTarget) => void;
 
 type WireProviderModel = Omit<ProviderModel, 'enabledFlags'> & { enabledFlags: FlagId[] };
@@ -36,9 +37,41 @@ const decodeModelsRefreshResult = (result: WireResult): ModelsRefreshExecutionRe
 export const modelsRefreshTarget = (record: StoredUpstreamRecord): ModelsRefreshTarget => ({
   upstreamId: record.id,
   configVersion: record.configVersion,
+  inputHash: modelsRefreshInputHash(record),
 });
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+const credentialHeaders = ['authorization', 'x-api-key', 'api-key'] as const;
+
+const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetcher: Fetcher) => Promise<T>): Promise<T> => {
+  const credentials = new Set<string>();
+  const trackingFetcher: Fetcher = async (url, init) => {
+    const headers = new Headers(init.headers);
+    for (const name of credentialHeaders) {
+      const value = headers.get(name);
+      if (!value) continue;
+      credentials.add(value);
+      if (name === 'authorization') {
+        const token = /^(?:Bearer|Basic)\s+(\S+)/i.exec(value)?.[1];
+        if (token) credentials.add(token);
+      }
+    }
+    return await fetcher(url, init);
+  };
+  try {
+    return await discover(trackingFetcher);
+  } catch (error) {
+    if (!(error instanceof ProviderModelsUnavailableError) || error.displayResponse === null || credentials.size === 0) throw error;
+    const redact = (text: string): string => [...credentials].sort((a, b) => b.length - a.length)
+      .reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
+    throw new ProviderModelsUnavailableError(error.httpResponse, error, {
+      ...error.displayResponse,
+      headers: error.displayResponse.headers.map(([name, value]) => [name, redact(value)]),
+      body: redact(error.displayResponse.body),
+    });
+  }
+};
+
 export const modelsRefreshErrorMessage = (error: unknown): string => {
   if (error instanceof ProviderModelsUnavailableError) {
     if (error.displayResponse !== null) {
@@ -57,15 +90,15 @@ export const isModelsRefreshConfigurationError = (error: unknown): error is Inva
 const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCustomLive: boolean): Promise<{
   models: ProviderModel[];
   discovered?: UpstreamModelConfig[];
-}> => {
+}> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
     if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record) };
-    const response = await fetchCustomModels(custom.config, fetcher);
+    const response = await fetchCustomModels(custom.config, trackedFetcher);
     return { models: projectCustomModels(record, response), discovered: projectCustomDiscoveredModels(record, response) };
   }
-  return { models: [...await createPreviewProvider(record).instance.getProvidedModels(fetcher)] };
-};
+  return { models: [...await createPreviewProvider(record).instance.getProvidedModels(trackedFetcher)] };
+});
 
 export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): Promise<ModelsRefreshExecutionResult> => {
   const repo = getRepo().upstreams;
@@ -76,23 +109,18 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
   }
 
   const record = await repo.getById(input.upstreamId);
-  if (record === null || record.configVersion !== input.configVersion) return { kind: 'superseded' };
+  if (record === null || record.configVersion !== input.configVersion || modelsRefreshInputHash(record) !== input.inputHash) return { kind: 'superseded' };
+  if (input.mode === 'automatic' && !shouldScheduleModelsRefresh(record.modelsCache, Date.now())) return { kind: 'not-due' };
   const epoch = record.modelsCache?.fetchedAt ?? 0;
   const previousFailureCount = record.modelsCache?.lastError?.failureCount ?? 0;
   if (input.mode === 'automatic' && record.modelsCache?.lastError
     && modelsRefreshRetryAt(record.modelsCache.lastError) > Date.now()) return { kind: 'backoff' };
 
+  let result: Awaited<ReturnType<typeof discoverModels>>;
   try {
     const createFetcher = input.mode === 'explicit' ? createValidatedPerRequestFetcher : createPerRequestFetcher;
     const fetcher = (await createFetcher(input.runtimeLocation, [record]))(record.id);
-    const result = await discoverModels(record, fetcher, input.mode === 'explicit');
-    const published = await repo.publishModelsRefresh({
-      id: record.id,
-      configVersion: input.configVersion,
-      cacheEpoch: epoch,
-      cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: Math.max(Date.now(), epoch + 1), models: result.models },
-    });
-    return { kind: 'discovered', ...result, publication: published ? 'published' : 'lost-race' };
+    result = await discoverModels(record, fetcher, input.mode === 'explicit');
   } catch (error) {
     if (input.mode === 'explicit' && isModelsRefreshConfigurationError(error)) throw error;
     try {
@@ -100,6 +128,7 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
         id: record.id,
         configVersion: input.configVersion,
         cacheEpoch: epoch,
+        refreshInputs: modelsRefreshInputs(record),
         error: { message: modelsRefreshErrorMessage(error), at: Date.now() },
         previousFailureCount,
       });
@@ -108,11 +137,19 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
     }
     throw error;
   }
+  const published = await repo.publishModelsRefresh({
+    id: record.id,
+    configVersion: input.configVersion,
+    cacheEpoch: epoch,
+    refreshInputs: modelsRefreshInputs(record),
+    cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: Math.max(Date.now(), epoch + 1), models: result.models },
+  });
+  return { kind: 'discovered', ...result, publication: published ? 'published' : 'lost-race' };
 };
 
 const executeThroughCell = async (input: ModelsRefreshExecutionInput): Promise<ModelsRefreshExecutionResult> => {
   const cellId = input.kind === 'saved'
-    ? JSON.stringify(['models', 'saved', input.upstreamId, input.configVersion, input.mode, input.runtimeLocation])
+    ? JSON.stringify(['models', 'saved', input.upstreamId, input.configVersion, input.inputHash, input.mode, input.runtimeLocation])
     : JSON.stringify(['models', 'draft', input.nonce]);
   const response = await getExecutionCellNamespace().fetch(cellId, new Request('https://execution.floway/models/refresh', {
     method: 'POST',

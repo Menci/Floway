@@ -295,7 +295,7 @@ test('a failed explicit Fetch reports model discovery failure after Save succeed
       },
     });
   });
-  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: persisted detail'));
+  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
   expect(screen.getByTestId('upstream-response-status').textContent).toBe('503');
   expect(screen.getByTestId('cache-last-error').textContent).toBe('HTTP 503: persisted detail');
   expect(apiMocks.patch).toHaveBeenCalledTimes(1);

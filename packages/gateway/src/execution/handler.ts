@@ -30,11 +30,13 @@ const parseModelsRefreshInput = (value: unknown): ModelsRefreshExecutionInput =>
   if (input.kind !== 'saved') throw new TypeError('Models refresh kind must be saved or draft');
   if (typeof input.upstreamId !== 'string' || input.upstreamId === '') throw new TypeError('Models refresh upstreamId must be a non-empty string');
   if (!Number.isSafeInteger(input.configVersion) || (input.configVersion as number) < 1) throw new TypeError('Models refresh configVersion must be a positive integer');
+  if (typeof input.inputHash !== 'string' || input.inputHash === '') throw new TypeError('Models refresh inputHash must be non-empty');
   if (input.mode !== 'automatic' && input.mode !== 'explicit') throw new TypeError('Models refresh mode must be automatic or explicit');
   return {
     kind: 'saved',
     upstreamId: input.upstreamId,
     configVersion: input.configVersion as number,
+    inputHash: input.inputHash,
     runtimeLocation: input.runtimeLocation as string | null,
     mode: input.mode,
   };

@@ -104,6 +104,20 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       .resolves.toBe(false);
   });
 
+  test('deleting and reinserting the same ID cannot accept old refresh results', async () => {
+    const repo = (await createRepo()).upstreams;
+    await saveUpstreamForTest(repo, record);
+    const oldIdentity = modelsRefreshIdentity(record);
+    await repo.delete(record.id);
+    await saveUpstreamForTest(repo, { ...record, config: { tenant: 'replacement' } });
+
+    await expect(repo.publishModelsRefresh({ id: record.id, ...oldIdentity, cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: 1, models: [] } }))
+      .resolves.toBe(false);
+    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...oldIdentity, error: { message: 'old', at: 1 }, previousFailureCount: 0 }))
+      .resolves.toBe(false);
+    expect((await repo.getById(record.id))?.modelsCache).toBeNull();
+  });
+
   test('cache publication fences stale completions from the same config', async () => {
     const repo = (await createRepo()).upstreams;
     await saveUpstreamForTest(repo, record);
@@ -152,7 +166,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     const repo = (await createRepo()).upstreams;
     await saveUpstreamForTest(repo, record);
     await repo.publishModelsRefresh({ id: record.id, ...modelsRefreshIdentity(record), cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: 10, models: [] } });
-    await repo.recordModelsRefreshFailure({ id: record.id, configVersion: 1, cacheEpoch: 10, error: { message: 'failure', at: 20 }, previousFailureCount: 0 });
+    await repo.recordModelsRefreshFailure({ id: record.id, ...modelsRefreshIdentity(record), cacheEpoch: 10, error: { message: 'failure', at: 20 }, previousFailureCount: 0 });
     const failed = await repo.getById(record.id);
     if (failed === null) throw new Error('failed upstream missing');
     await repo.replaceForModels({ previous: failed, upstream: { ...failed, name: 'Metadata' } });

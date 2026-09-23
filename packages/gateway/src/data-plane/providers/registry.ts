@@ -1,4 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
+import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
@@ -19,6 +20,7 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 
 export type GatewayProvider = Provider & {
   readonly configVersion: number;
+  readonly modelsRefreshInputHash: string;
 };
 
 export const createProvider = (
@@ -28,6 +30,7 @@ export const createProvider = (
   return {
     ...provider,
     configVersion: record.configVersion,
+    modelsRefreshInputHash: modelsRefreshInputHash(record),
   };
 };
 

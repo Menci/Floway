@@ -67,7 +67,7 @@ export const projectCustomDiscoveredModels = (
     if (displayName !== undefined) projected.display_name = displayName;
     if (model.limits !== undefined) projected.limits = { ...model.limits };
     if (model.pricing !== undefined) projected.pricing = model.pricing;
-    if (model.chat !== undefined) projected.chat = model.chat;
+    if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
     projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
     return projected;
   });

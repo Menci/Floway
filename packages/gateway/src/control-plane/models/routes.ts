@@ -117,11 +117,11 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
       : realModels;
     // Alias-synthesized rows never bind to an upstream — hand an empty
     // list; real rows read the reverse index built from `callerAddressable`.
-    const listedRows = merged.map(model => toControlPlaneModel(
-      model,
-      model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? []),
-      hueByUpstream,
-    ));
+    const listedRows = merged.map(model => {
+      const upstreams = model.aliasedFrom !== undefined ? [] : upstreamsByListedId.get(model.id);
+      if (upstreams === undefined) throw new Error(`Missing upstream index for listed model ${model.id}`);
+      return toControlPlaneModel(model, upstreams, hueByUpstream);
+    });
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
     // Copilot variant) would otherwise emit two rows with the same id but

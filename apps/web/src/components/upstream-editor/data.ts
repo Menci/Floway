@@ -150,7 +150,7 @@ const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalog
   return {
     discovered: null,
     modelsError: {
-      message: modelsCache?.lastError?.message ?? error.message,
+      message: error.message,
       upstreamResponse: body?.error?.upstreamResponse ?? null,
     },
     modelsCache,

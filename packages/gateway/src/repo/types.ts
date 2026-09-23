@@ -369,6 +369,12 @@ export interface ModelsRefreshIdentity {
   id: string;
   configVersion: number;
   cacheEpoch: number;
+  refreshInputs: {
+    provider: UpstreamRecord['kind'];
+    configJson: string;
+    flagOverridesJson: string;
+    proxyFallbackListJson: string;
+  };
 }
 
 export interface ModelsRefreshSuccessInput extends ModelsRefreshIdentity {

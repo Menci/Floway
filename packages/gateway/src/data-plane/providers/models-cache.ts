@@ -25,6 +25,7 @@ export const readUpstreamModelsSnapshotAndScheduleRefresh = (
     scheduleRefresh({
       upstreamId: instance.upstreamId,
       configVersion: instance.configVersion,
+      inputHash: instance.modelsRefreshInputHash,
     });
   }
   return snapshot;

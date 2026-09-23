@@ -761,6 +761,45 @@ test('POST /api/upstreams/:id/list-models rejects an unknown saved proxy', async
   assertStringIncludes(JSON.stringify(await response.json()), 'unknown proxy id');
 });
 
+test('saved model fetch rejects a config edit that wins before a failed response', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  let release: ((response: Response) => void) | undefined;
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { release = resolve; }),
+    async () => {
+      const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      await vi.waitFor(() => assertEquals(typeof release, 'function'));
+      const current = await repo.upstreams.getById(record.id);
+      if (current === null) throw new Error('upstream missing');
+      await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, config: { ...current.config as Record<string, unknown>, apiKey: 'changed' } } });
+      release!(new Response('old failure', { status: 503 }));
+      assertEquals((await pending).status, 409);
+    },
+  );
+  assertEquals((await repo.upstreams.getById(record.id))?.modelsCache, null);
+});
+
+test('saved model fetch reports a deleted row as a conflict after discovery', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  let release: ((response: Response) => void) | undefined;
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { release = resolve; }),
+    async () => {
+      const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      await vi.waitFor(() => assertEquals(typeof release, 'function'));
+      await repo.upstreams.delete(record.id);
+      release!(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
+      assertEquals((await pending).status, 409);
+    },
+  );
+});
+
 test('POST /api/upstreams/preview-models rejects an invalid kind with 400', async () => {
   const { adminSession } = await setupAppTest();
 

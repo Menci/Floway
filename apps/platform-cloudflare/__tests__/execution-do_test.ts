@@ -4,9 +4,7 @@ import { test } from 'vitest';
 import { ExecutionDO } from '../src/execution-do.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// Minimal stub of the CF DurableObject runtime surface the actor touches.
-// Tests don't run in workerd; install just enough of the WS hibernation API
-// for the actor's fetch + broadcast + closeAll + lifecycle-hook paths.
+// Vitest has no workerd; stub the WebSocket and loopback export APIs used here.
 class FakeWebSocket implements WebSocket {
   readyState = 1;
   binaryType: BinaryType = 'arraybuffer';

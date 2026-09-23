@@ -64,7 +64,7 @@ const createFetcherResolver = async (
     return createFetcher({
       repo,
       upstreamId,
-      fallbackList: list,
+      fallbackList: configuredById.get(upstreamId)!,
       runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,

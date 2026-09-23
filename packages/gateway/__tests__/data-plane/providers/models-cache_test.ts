@@ -131,6 +131,34 @@ test('a config edit during discovery returns its models without publishing the o
   expect((await repo.upstreams.getById(record.id))?.modelsCache).toBeNull();
 });
 
+test('a replacement row gets a separate cell and discards its predecessor’s models', async () => {
+  const { repo, record } = await setupCustom();
+  const releases = new Map<string, (response: Response) => void>();
+
+  await withMockedFetch(
+    request => new Promise<Response>(resolve => { releases.set(new URL(request.url).hostname, resolve); }),
+    async () => {
+      const old = refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
+      await vi.waitFor(() => expect(releases.size).toBe(1));
+      await repo.upstreams.delete(record.id);
+      const replacement = await repo.upstreams.insertForModels({
+        ...record,
+        config: { ...record.config as Record<string, unknown>, baseUrl: 'https://replacement.example.com' },
+      });
+      if (replacement === null) throw new Error('replacement insert failed');
+      const current = refreshModelsExplicit(modelsRefreshTarget(replacement), 'TEST');
+      await vi.waitFor(() => expect(releases.size).toBe(2));
+      releases.get('replacement.example.com')!(jsonResponse({ object: 'list', data: [{ id: 'new-model' }] }));
+      await expect(current).resolves.toMatchObject({ kind: 'discovered', publication: 'published' });
+      for (const [hostname, release] of releases) {
+        if (hostname !== 'replacement.example.com') release(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
+      }
+      await expect(old).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race' });
+    },
+  );
+  expect((await repo.upstreams.getById(record.id))?.modelsCache?.models.map(model => model.id)).toEqual(['new-model']);
+});
+
 test('automatic and explicit callers across locations have separate cells and both return models', async () => {
   const { record } = await setupCustom();
   const releases: Array<(response: Response) => void> = [];
@@ -189,6 +217,23 @@ test('background refreshes honor backoff and explicit refreshes bypass it', asyn
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
+test('automatic execution skips a cache refreshed after its target was scheduled', async () => {
+  const { repo, record } = await setupCustom();
+  const target = modelsRefreshTarget(record);
+  await seedModelsCache(repo.upstreams, record.id, modelsRefreshIdentity(record), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: Date.now(),
+    models: [stubProviderModel({ id: 'fresh' })],
+  });
+  const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [{ id: 'explicit' }] }));
+
+  await withMockedFetch(fetch, async () => {
+    await expect(refreshModels(target, 'TEST')).resolves.toEqual({ kind: 'not-due' });
+    await expect(refreshModelsExplicit(target, 'TEST')).resolves.toMatchObject({ kind: 'discovered', publication: 'published' });
+  });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
 test('a clean explicit failure makes one attempt and records one failure', async () => {
   const { repo, record } = await setupCustom();
   const fetch = vi.fn(() => new Response('unavailable', { status: 503 }));
@@ -200,6 +245,33 @@ test('a clean explicit failure makes one attempt and records one failure', async
 
   expect(fetch).toHaveBeenCalledTimes(1);
   expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.failureCount).toBe(1);
+});
+
+test('a model-list error redacts credentials echoed by the upstream', async () => {
+  const { repo, record } = await setupCustom();
+  await withMockedFetch(
+    request => {
+      const authorization = request.headers.get('authorization');
+      return new Response(JSON.stringify({ error: `rejected ${authorization}` }), {
+        status: 401,
+        headers: { 'content-type': 'application/json', 'x-error': authorization! },
+      });
+    },
+    async () => {
+      try {
+        await refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
+        throw new Error('refresh unexpectedly succeeded');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+        const response = (error as ProviderModelsUnavailableError).displayResponse;
+        expect(JSON.stringify(response)).toContain('rejected [REDACTED]');
+        expect(JSON.stringify(response)).not.toContain('sk-custom');
+      }
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('rejected [REDACTED]');
+  expect(message).not.toContain('sk-custom');
 });
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {
@@ -233,6 +305,22 @@ test('failure persistence retains the upstream error when recording also fails',
       }
     },
   );
+});
+
+test('publication failure is not recorded as an upstream failure', async () => {
+  const { repo, record } = await setupCustom();
+  const storageError = new Error('publication unavailable');
+  vi.spyOn(repo.upstreams, 'publishModelsRefresh').mockRejectedValue(storageError);
+  const recordFailure = vi.spyOn(repo.upstreams, 'recordModelsRefreshFailure');
+
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'discovered' }] }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toBe(storageError);
+    },
+  );
+  expect(recordFailure).not.toHaveBeenCalled();
+  expect((await repo.upstreams.getById(record.id))?.modelsCache).toBeNull();
 });
 
 test('a changed config fences an old execution target before fetching', async () => {
@@ -313,7 +401,7 @@ test('successful refresh advances the cache epoch monotonically', async () => {
   try {
     await withMockedFetch(
       () => jsonResponse({ object: 'list', data: [{ id: 'fresh' }] }),
-      async () => await refreshModels(modelsRefreshTarget(cached), 'TEST'),
+      async () => await refreshModelsExplicit(modelsRefreshTarget(cached), 'TEST'),
     );
   } finally {
     now.mockRestore();

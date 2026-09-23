@@ -1,11 +1,13 @@
+import { modelsRefreshInputs } from '../../src/repo/models-refresh-inputs.ts';
 import type { ModelsRefreshIdentity, UpstreamRepo } from '../../src/repo/types.ts';
-import type { UpstreamModelsCache } from '@floway-dev/provider';
+import type { UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 type ModelsRefreshRowIdentity = Omit<ModelsRefreshIdentity, 'id'>;
 
-export const modelsRefreshIdentity = (record: { configVersion: number; modelsCache: UpstreamModelsCache | null }): ModelsRefreshRowIdentity => ({
+export const modelsRefreshIdentity = (record: UpstreamRecord & { configVersion: number }): ModelsRefreshRowIdentity => ({
   configVersion: record.configVersion,
   cacheEpoch: record.modelsCache?.fetchedAt ?? 0,
+  refreshInputs: modelsRefreshInputs(record),
 });
 
 export const storedModelsRefreshIdentity = async (

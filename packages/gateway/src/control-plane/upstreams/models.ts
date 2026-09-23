@@ -76,24 +76,26 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (record === null) return c.json({ error: 'Upstream not found' }, 404);
+  const target = modelsRefreshTarget(record);
   const runtimeLocation = getRuntimeLocation(c.req.raw);
 
   try {
-    const result = await refreshModelsExplicit(modelsRefreshTarget(record), runtimeLocation);
+    const result = await refreshModelsExplicit(target, runtimeLocation);
     if (result.kind !== 'discovered') return c.json({ error: 'Upstream changed during models refresh' }, 409);
     const refreshed = await getRepo().upstreams.getById(id);
-    if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
-    if (refreshed.configVersion !== record.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
+    if (refreshed === null || modelsRefreshTarget(refreshed).inputHash !== target.inputHash
+      || refreshed.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
     const data = record.kind === 'custom' ? result.discovered : result.models.map(reshapeModelForDashboard);
     if (data === undefined) throw new Error(`Upstream ${id} models refresh did not return a catalog`);
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const afterFailure = await getRepo().upstreams.getById(id);
-      const modelsCache = afterFailure?.configVersion === record.configVersion ? modelsCacheStatus(afterFailure) : null;
+      if (afterFailure === null || modelsRefreshTarget(afterFailure).inputHash !== target.inputHash
+        || afterFailure.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
       return c.json({
         error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse },
-        modelsCache,
+        modelsCache: modelsCacheStatus(afterFailure),
       }, 502);
     }
     if (isModelsRefreshConfigurationError(e)) return c.json({ error: errorMessage(e) }, 400);

@@ -32,6 +32,8 @@
   // `@reclaimprotocol/tls/webcrypto` (used by packages/http and the proxy
   // REALITY dialer) still imports `webcrypto` from `crypto`, so the Worker
   // cannot resolve those modules at cold start without the Node compat flag.
+  // `ctx.exports` needs an explicit flag at this compatibility date:
+  // https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports
   "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
   "triggers": {
     // Minute scheduling provides catch-up throughput while bounded deletion
