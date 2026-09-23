@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { forwardRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -307,7 +307,13 @@ describe('upstream model listing failure wording', () => {
       message: 'HTTP 401: unauthorized',
       upstreamResponse: { status: 401, headers: [['content-type', 'application/json']], body: '{\n  "error": "unauthorized"\n}' },
     }} />);
-    expect(screen.getByText(models('listingFailed'))).toBeTruthy();
+    const heading = screen.getByText(models('listingFailed'));
+    const banner = heading.closest('.fui-MessageBar');
+    expect.assert(banner);
+    const copyButton = within(banner).getByRole('button', { name: models('copyError') });
+    expect(copyButton.parentElement).toBe(heading.parentElement);
+    expect(heading.parentElement?.nextElementSibling?.tagName).toBe('PRE');
+    expect(banner.querySelector('.fui-MessageBarActions')).toBeNull();
     expect(screen.getByText(/HTTP 401/).textContent).toContain('content-type: application/json');
     expect(screen.getByText(/HTTP 401/).textContent).toContain('"error": "unauthorized"');
   });

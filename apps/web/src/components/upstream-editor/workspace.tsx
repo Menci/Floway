@@ -408,22 +408,23 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
         </>}
       </>}
     />
-    {modelsError && <OutcomeMessageBar
-      action={<TooltipIconButton
-        icon={copyOutcomeIcon(outcomeFor('models-error'))}
-        label={copyLabel(outcomeFor('models-error'), t('dashboard.upstreamEditor.models.copyError'))}
-        onClick={() => copy(modelsError.message, 'models-error')}
-      />}
-      intent="warning"
-    >
-      {modelsError.upstreamResponse === null
-        ? t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
-        : <div className="flex min-w-0 flex-col gap-2">
-            <span>{t('dashboard.upstreamEditor.models.listingFailed')}</span>
-            <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[var(--winui-control-corner-radius)] border border-solid border-fui-stroke1 bg-fui-bg2 p-3 font-mono text-xs">
-              {`HTTP ${modelsError.upstreamResponse.status}\n${modelsError.upstreamResponse.headers.map(([name, value]) => `${name}: ${value}`).join('\n')}\n\n${modelErrorExcerpt(modelsError.upstreamResponse.body, MODEL_ERROR_EDITOR_LENGTH)}`}
-            </pre>
-          </div>}
+    {modelsError && <OutcomeMessageBar intent="warning">
+      <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <span className="min-w-0">{modelsError.upstreamResponse === null
+            ? t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
+            : t('dashboard.upstreamEditor.models.listingFailed')}</span>
+          <TooltipIconButton
+            className="flex-none"
+            icon={copyOutcomeIcon(outcomeFor('models-error'))}
+            label={copyLabel(outcomeFor('models-error'), t('dashboard.upstreamEditor.models.copyError'))}
+            onClick={() => copy(modelsError.message, 'models-error')}
+          />
+        </div>
+        {modelsError.upstreamResponse !== null && <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[var(--winui-control-corner-radius)] border border-solid border-fui-stroke1 bg-fui-bg2 p-3 font-mono text-xs">
+          {`HTTP ${modelsError.upstreamResponse.status}\n${modelsError.upstreamResponse.headers.map(([name, value]) => `${name}: ${value}`).join('\n')}\n\n${modelErrorExcerpt(modelsError.upstreamResponse.body, MODEL_ERROR_EDITOR_LENGTH)}`}
+        </pre>}
+      </div>
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
