@@ -1,5 +1,5 @@
 [Container]
-ContainerName=floway-server
+ContainerName=floway
 Environment="ADMIN_KEY=<admin-secret>" FLOWAY_DB_PATH=/data/floway.db FLOWAY_FILES_DIR=/data/files HOST=0.0.0.0 PORT=8788 RUNTIME_LOCATION=LOCAL
 HealthCmd=["node", "-e", "fetch('http://127.0.0.1:8788/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 HealthInterval=10s
@@ -11,9 +11,13 @@ Image=ghcr.io/menci/floway-server:latest
 Mount=type=volume,source=floway-data.volume,destination=/data
 Notify=healthy
 Pod=floway.pod
+PublishPort=8788:8788
 
 # Auto-update
 Pull=newer
+
+# If you need to access host services (like Ollama on the host):
+AddHost=host.containers.internal:host-gateway
 
 [Service]
 Restart=always

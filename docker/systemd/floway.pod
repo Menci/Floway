@@ -1,9 +1,0 @@
-[Pod]
-# If you need to access host services (like Ollama on the host):
-AddHost=host.containers.internal:host-gateway
-
-# floway-server
-#PublishPort=8788:8788
-
-# Dashboard, data plane, and control plane
-PublishPort=18088:8788

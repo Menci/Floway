@@ -30,7 +30,7 @@ cd Floway
 ADMIN_KEY='replace-with-a-secret' docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Open <http://localhost:18088>, leave the username blank, and use `ADMIN_KEY` as
+Open <http://localhost:8788>, leave the username blank, and use `ADMIN_KEY` as
 the password. Then:
 
 1. Add at least one provider under **Providers → Upstreams**.
@@ -46,6 +46,10 @@ The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,
 which performs model resolution, upstream dispatch, and any required protocol
 translation. Both planes are served by the same gateway process.
+
+**Upgrade notice:** Floway used to listen on both `0.0.0.0:8788` and
+`0.0.0.0:18088`. As a result of container image merging, Floway only listen on
+one single port now.
 
 ## Compatibility
 
