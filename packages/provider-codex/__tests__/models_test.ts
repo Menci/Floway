@@ -74,9 +74,11 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('chatgpt-account-id')).toBeNull();
   });
 
-  test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/401/);
+  test('preserves the upstream response when catalog fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401, headers: { 'retry-after': '30' } }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toMatchObject({
+      displayResponse: { status: 401, headers: [['content-type', 'text/plain;charset=UTF-8'], ['retry-after', '30']], body: '{\n  "error": "unauthorized"\n}' },
+    });
   });
 
   test('throws on missing models key (forward-compatible shape guard)', async () => {

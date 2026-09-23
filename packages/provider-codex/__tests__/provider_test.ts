@@ -174,7 +174,9 @@ describe('createCodexProvider', () => {
   test('getProvidedModels propagates catalog fetch failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
     const instance = createCodexProvider(baseRecord);
-    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
+    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toMatchObject({
+      displayResponse: { status: 502, body: 'upstream down' },
+    });
   });
 
   test('getProvidedModels omits image models only for an explicit Free plan', async () => {

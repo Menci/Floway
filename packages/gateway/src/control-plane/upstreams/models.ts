@@ -89,17 +89,16 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
     if (data === undefined) throw new Error(`Upstream ${id} models refresh did not return a catalog`);
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
+    if (!(e instanceof ProviderModelsUnavailableError) && !isModelsRefreshConfigurationError(e) && !malformedConfigResponse(e)) throw e;
+    const afterFailure = await getRepo().upstreams.getById(id);
+    if (afterFailure === null || modelsRefreshTarget(afterFailure).inputHash !== target.inputHash
+      || afterFailure.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
     if (e instanceof ProviderModelsUnavailableError) {
-      const afterFailure = await getRepo().upstreams.getById(id);
-      if (afterFailure === null || modelsRefreshTarget(afterFailure).inputHash !== target.inputHash
-        || afterFailure.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
       return c.json({
         error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse },
         modelsCache: modelsCacheStatus(afterFailure),
       }, 502);
     }
-    if (isModelsRefreshConfigurationError(e)) return c.json({ error: errorMessage(e) }, 400);
-    if (malformedConfigResponse(e)) return c.json({ error: errorMessage(e) }, 400);
-    throw e;
+    return c.json({ error: errorMessage(e) }, 400);
   }
 };

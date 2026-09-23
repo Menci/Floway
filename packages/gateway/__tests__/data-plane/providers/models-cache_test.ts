@@ -247,31 +247,46 @@ test('a clean explicit failure makes one attempt and records one failure', async
   expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.failureCount).toBe(1);
 });
 
-test('a model-list error redacts credentials echoed by the upstream', async () => {
+test.each([
+  { name: 'plain', apiKey: 'sk-custom' },
+  { name: 'JSON-escaped', apiKey: 'a"b' },
+  { name: 'long', apiKey: 'x'.repeat(15_300) },
+])('a model-list error redacts the echoed $name credential', async ({ apiKey }) => {
   const { repo, record } = await setupCustom();
+  const configured = await repo.upstreams.replaceForModels({
+    previous: record,
+    upstream: { ...record, config: { ...record.config as Record<string, unknown>, apiKey } },
+  });
+  if (configured === null) throw new Error('credential update failed');
   await withMockedFetch(
     request => {
       const authorization = request.headers.get('authorization');
+      const headers = new Headers({ 'content-type': 'application/json' });
+      if (apiKey.length < 100) headers.set('x-error', authorization!);
       return new Response(JSON.stringify({ error: `rejected ${authorization}` }), {
         status: 401,
-        headers: { 'content-type': 'application/json', 'x-error': authorization! },
+        headers,
       });
     },
     async () => {
       try {
-        await refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
+        await refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST');
         throw new Error('refresh unexpectedly succeeded');
       } catch (error) {
         expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
         const response = (error as ProviderModelsUnavailableError).displayResponse;
         expect(JSON.stringify(response)).toContain('rejected [REDACTED]');
-        expect(JSON.stringify(response)).not.toContain('sk-custom');
+        expect(JSON.stringify(response)).not.toContain(apiKey);
+        expect(JSON.stringify(response)).not.toContain(JSON.stringify(apiKey).slice(1, -1));
+        if (apiKey.length > 100) expect(JSON.stringify(response)).not.toContain(apiKey.slice(0, 100));
       }
     },
   );
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
   expect(message).toContain('rejected [REDACTED]');
-  expect(message).not.toContain('sk-custom');
+  expect(message).not.toContain(apiKey);
+  expect(message).not.toContain(JSON.stringify(apiKey).slice(1, -1));
+  if (apiKey.length > 100) expect(message).not.toContain(apiKey.slice(0, 100));
 });
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {

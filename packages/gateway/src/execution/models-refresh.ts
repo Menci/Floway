@@ -7,7 +7,7 @@ import { modelsRefreshInputHash, modelsRefreshInputs } from '../repo/models-refr
 import type { StoredUpstreamRecord } from '../repo/types.ts';
 import { getExecutionCellNamespace } from '../runtime/execution.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, redactProviderModelsFailure, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
 
@@ -62,13 +62,10 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
     return await discover(trackingFetcher);
   } catch (error) {
     if (!(error instanceof ProviderModelsUnavailableError) || error.displayResponse === null || credentials.size === 0) throw error;
-    const redact = (text: string): string => [...credentials].sort((a, b) => b.length - a.length)
-      .reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
-    throw new ProviderModelsUnavailableError(error.httpResponse, error, {
-      ...error.displayResponse,
-      headers: error.displayResponse.headers.map(([name, value]) => [name, redact(value)]),
-      body: redact(error.displayResponse.body),
-    });
+    const escapedCredentials = [...credentials].flatMap(credential => [credential, JSON.stringify(credential).slice(1, -1)]);
+    const orderedCredentials = [...new Set(escapedCredentials)].sort((a, b) => b.length - a.length);
+    const redact = (text: string): string => orderedCredentials.reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
+    throw redactProviderModelsFailure(error, redact);
   }
 };
 

@@ -7,7 +7,7 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
-import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 interface CodexProviderData {
   useResponsesLite: boolean;
@@ -48,8 +48,7 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
     signal: opts.signal,
   });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Codex /models fetch failed: ${response.status} ${body.slice(0, 200)}`);
+    throw new ProviderModelsUnavailableError({ status: response.status, headers: new Headers(response.headers), body: await response.text() });
   }
   const parsed = await response.json() as { models?: unknown };
   if (!Array.isArray(parsed.models)) throw new Error('Codex /models response missing models array');

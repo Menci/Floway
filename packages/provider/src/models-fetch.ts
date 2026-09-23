@@ -6,16 +6,17 @@ export interface ProviderModelsFailureResponse {
 
 const MAX_FAILURE_BODY_LENGTH = 12_288;
 
-const displayFailureBody = (body: string): string => {
+const displayFailureBody = (body: string, redact: (text: string) => string = text => text): string => {
   let display = body;
   try {
     display = JSON.stringify(JSON.parse(body), null, 2);
   } catch {
     // A non-JSON upstream error body is displayed as text.
   }
-  return display.length > MAX_FAILURE_BODY_LENGTH
-    ? `${display.slice(0, MAX_FAILURE_BODY_LENGTH)}…`
-    : display;
+  const safeDisplay = redact(display);
+  return safeDisplay.length > MAX_FAILURE_BODY_LENGTH
+    ? `${safeDisplay.slice(0, MAX_FAILURE_BODY_LENGTH)}…`
+    : safeDisplay;
 };
 
 export class ProviderModelsUnavailableError extends Error {
@@ -35,6 +36,28 @@ export class ProviderModelsUnavailableError extends Error {
     });
   }
 }
+
+export const redactProviderModelsFailure = (
+  failure: ProviderModelsUnavailableError,
+  redact: (text: string) => string,
+): ProviderModelsUnavailableError => {
+  const response = failure.httpResponse;
+  if (response === null) {
+    const display = failure.displayResponse;
+    if (display === null) return failure;
+    return new ProviderModelsUnavailableError(null, failure, {
+      ...display,
+      headers: display.headers.map(([name, value]) => [name, redact(value)]),
+      body: redact(display.body),
+    });
+  }
+  const headers = new Headers([...response.headers].map(([name, value]) => [name, redact(value)]));
+  return new ProviderModelsUnavailableError({ status: response.status, headers, body: redact(response.body) }, failure, {
+    status: response.status,
+    headers: [...headers],
+    body: displayFailureBody(response.body, redact),
+  });
+};
 
 // Reconstruct a Response from the captured upstream HTTP frame, or null
 // when none was captured (e.g. network errors or malformed bodies) — that

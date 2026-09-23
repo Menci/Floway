@@ -800,6 +800,23 @@ test('saved model fetch reports a deleted row as a conflict after discovery', as
   );
 });
 
+test('saved model fetch rejects obsolete proxy validation errors', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord({ proxyFallbackList: [{ id: 'missing' }] });
+  await saveUpstreamForTest(repo.upstreams, record);
+  let releaseProxies: ((proxies: Awaited<ReturnType<typeof repo.proxies.list>>) => void) | undefined;
+  vi.spyOn(repo.proxies, 'list').mockImplementation(() => new Promise(resolve => { releaseProxies = resolve; }));
+
+  const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+  await vi.waitFor(() => assertEquals(typeof releaseProxies, 'function'));
+  const current = await repo.upstreams.getById(record.id);
+  if (current === null) throw new Error('upstream missing');
+  await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, proxyFallbackList: [{ id: 'direct_fetch' }] } });
+  releaseProxies!([]);
+  assertEquals((await pending).status, 409);
+});
+
 test('POST /api/upstreams/preview-models rejects an invalid kind with 400', async () => {
   const { adminSession } = await setupAppTest();
 
