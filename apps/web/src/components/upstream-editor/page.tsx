@@ -140,7 +140,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
-  const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields);
+  const manualModelsDirty = Boolean(formState.dirtyFields.manualModels);
+  const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields)
+    || (record.kind === 'ollama' && manualModelsDirty);
   const oauth = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const fetchDialog = useDialogInvocation<void>();
   // Save resets the form and record in one commit. The immediately following
@@ -192,20 +194,23 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   };
 
   const submitForm = async (): Promise<UpstreamRecord | null> => {
-    cancelModelsRefresh();
     if (oauth && (formState.dirtyFields.config || formState.dirtyFields.state)) {
       setSaveError(t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'));
       return null;
     }
+    let yamlModelsChanged = false;
     if (modelsYamlDraft !== null) {
       const parsed = parseModels(modelsYamlDraft.text, { allowRerank: record.kind === 'custom' });
       if (!parsed.ok) {
         setModelsYamlDraft({ ...modelsYamlDraft, error: parsed.message });
         return null;
       }
+      yamlModelsChanged = JSON.stringify(parsed.models) !== JSON.stringify(getValues('manualModels'));
       setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
       setModelsYamlDraft(null);
     }
+    const invalidatesPendingFetch = hasUnsavedDiscoveryInputs(formState.dirtyFields) || manualModelsDirty || yamlModelsChanged;
+    const invalidatesDiscovered = discoveryInputsDirty || (record.kind === 'ollama' && yamlModelsChanged);
     let savedRecord: UpstreamRecord | null = null;
     await handleSubmit(async values => {
       setSaving(true); setSaveError(null);
@@ -219,9 +224,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
       const saved: UpstreamRecord = result.data;
+      if (invalidatesPendingFetch) cancelModelsRefresh();
       updateRecord(saved);
       reset(valuesFromRecord(saved));
-      if (discoveryInputsDirty) { setModelsError(null); setDiscovered([]); setCatalogAvailable(false); }
+      if (invalidatesDiscovered) { setModelsError(null); setDiscovered([]); setCatalogAvailable(false); }
       handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
       savedRecord = saved;
       // `saving` stays set during the route handoff; the old form is still
