@@ -158,14 +158,14 @@ const nonEmptyStringField = (value: unknown, field: string): string => {
 
 const baseUrlField = (value: unknown): string => {
   const baseUrl = nonEmptyStringField(value, 'baseUrl').trim();
+  let parsed: URL;
   try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error('invalid protocol');
-    }
+    parsed = new URL(baseUrl);
   } catch {
     throw new Error('Malformed custom upstream config: baseUrl must be an http(s) URL');
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Malformed custom upstream config: baseUrl must be an http(s) URL');
+  if (parsed.username !== '' || parsed.password !== '') throw new Error('Malformed custom upstream config: baseUrl must not contain credentials');
   return baseUrl;
 };
 

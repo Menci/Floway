@@ -73,7 +73,6 @@ export {
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
   httpResponseToResponse,
-  redactProviderModelsFailure,
 } from './models-fetch.ts';
 export type { ProviderModelsFailureResponse } from './models-fetch.ts';
 

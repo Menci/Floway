@@ -7,7 +7,7 @@ import { modelsRefreshInputHash, modelsRefreshInputs } from '../repo/models-refr
 import type { StoredUpstreamRecord } from '../repo/types.ts';
 import { getExecutionCellNamespace } from '../runtime/execution.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { ProviderModelsUnavailableError, redactProviderModelsFailure, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
 
@@ -45,6 +45,19 @@ const credentialHeaders = ['authorization', 'x-api-key', 'api-key'] as const;
 
 const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetcher: Fetcher) => Promise<T>): Promise<T> => {
   const credentials = new Set<string>();
+  const redact = (text: string): string => {
+    const variants = [...credentials].flatMap(credential => [credential, JSON.stringify(credential).slice(1, -1), encodeURIComponent(credential)]);
+    return [...new Set(variants)].sort((a, b) => b.length - a.length)
+      .reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
+  };
+  const redactJsonValues = (value: unknown): unknown => {
+    if (typeof value === 'string') return redact(value);
+    if (Array.isArray(value)) return value.map(redactJsonValues);
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactJsonValues(entry)]));
+    }
+    return value;
+  };
   const trackingFetcher: Fetcher = async (url, init) => {
     const headers = new Headers(init.headers);
     for (const name of credentialHeaders) {
@@ -52,20 +65,48 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
       if (!value) continue;
       credentials.add(value);
       if (name === 'authorization') {
-        const token = /^(?:Bearer|Basic)\s+(\S+)/i.exec(value)?.[1];
+        const token = /^\S+\s+(.+)$/.exec(value)?.[1];
         if (token) credentials.add(token);
       }
     }
-    return await fetcher(url, init);
+    if (typeof init.body === 'string') {
+      const contentType = headers.get('content-type');
+      const refreshToken = contentType?.startsWith('application/json') && init.body.includes('"refresh_token"')
+        ? (JSON.parse(init.body) as { refresh_token?: unknown }).refresh_token
+        : contentType?.startsWith('application/x-www-form-urlencoded')
+          ? new URLSearchParams(init.body).get('refresh_token')
+          : null;
+      if (typeof refreshToken === 'string' && refreshToken !== '') credentials.add(refreshToken);
+    }
+    const response = await fetcher(url, init);
+    if (response.ok || credentials.size === 0) return response;
+    const rawBody = response.body === null ? null : await response.text();
+    let body: string | null = null;
+    if (rawBody !== null) {
+      try {
+        body = JSON.stringify(redactJsonValues(JSON.parse(rawBody)));
+      } catch {
+        body = redact(rawBody);
+      }
+    }
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers([...response.headers].map(([name, value]) => [name, redact(value)])),
+    });
   };
   try {
     return await discover(trackingFetcher);
   } catch (error) {
-    if (!(error instanceof ProviderModelsUnavailableError) || error.displayResponse === null || credentials.size === 0) throw error;
-    const escapedCredentials = [...credentials].flatMap(credential => [credential, JSON.stringify(credential).slice(1, -1)]);
-    const orderedCredentials = [...new Set(escapedCredentials)].sort((a, b) => b.length - a.length);
-    const redact = (text: string): string => orderedCredentials.reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
-    throw redactProviderModelsFailure(error, redact);
+    if (error instanceof Error && credentials.size > 0) {
+      error.message = redact(error.message);
+      if (error.stack !== undefined) error.stack = redact(error.stack);
+      if (error instanceof ProviderModelsUnavailableError && error.cause instanceof Error) {
+        error.cause.message = redact(error.cause.message);
+        if (error.cause.stack !== undefined) error.cause.stack = redact(error.cause.stack);
+      }
+    }
+    throw error;
   }
 };
 

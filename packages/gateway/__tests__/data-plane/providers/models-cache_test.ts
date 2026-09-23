@@ -6,7 +6,7 @@ import { InvalidProxyConfigurationError } from '../../../src/dial/per-request.ts
 import { createModelsRefreshScheduler, discoverDraftModels, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
+import { buildCodexUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -250,6 +250,7 @@ test('a clean explicit failure makes one attempt and records one failure', async
 test.each([
   { name: 'plain', apiKey: 'sk-custom' },
   { name: 'JSON-escaped', apiKey: 'a"b' },
+  { name: 'spaced', apiKey: 'key with spaces' },
   { name: 'long', apiKey: 'x'.repeat(15_300) },
 ])('a model-list error redacts the echoed $name credential', async ({ apiKey }) => {
   const { repo, record } = await setupCustom();
@@ -287,6 +288,105 @@ test.each([
   expect(message).not.toContain(apiKey);
   expect(message).not.toContain(JSON.stringify(apiKey).slice(1, -1));
   if (apiKey.length > 100) expect(message).not.toContain(apiKey.slice(0, 100));
+});
+
+test('Copilot token exchange cannot echo the GitHub PAT into the model error', async () => {
+  const { repo, copilotUpstream, githubAccount } = await setupAppTest();
+  const record = await repo.upstreams.getById(copilotUpstream.id);
+  if (record === null) throw new Error('Copilot upstream missing');
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        expect(request.headers.get('authorization')).toBe(`token ${githubAccount.token}`);
+        return new Response(JSON.stringify({ error: `rejected ${githubAccount.token}` }), { status: 401 });
+      }
+      throw new Error(`Unexpected request ${request.url}`);
+    },
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('rejected [REDACTED]');
+  expect(message).not.toContain(githubAccount.token);
+});
+
+test('Codex OAuth failure cannot echo a refresh token into the model error', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const codex = buildCodexUpstreamRecord();
+  const state = codex.state as { accounts: Array<Record<string, unknown>> };
+  await saveUpstreamForTest(repo.upstreams, {
+    ...codex,
+    state: { accounts: state.accounts.map(account => ({ ...account, accessToken: null })) },
+  });
+  const record = await repo.upstreams.getById(codex.id);
+  if (record === null) throw new Error('Codex upstream missing');
+  await withMockedFetch(
+    async request => {
+      expect(new URL(request.url).pathname).toBe('/oauth/token');
+      const refreshToken = new URLSearchParams(await request.text()).get('refresh_token');
+      expect(refreshToken).toBe('rt_v1');
+      return jsonResponse({ error: { code: 'app_session_terminated', message: `expired ${refreshToken}` } }, 401);
+    },
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toThrow('expired [REDACTED]');
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('expired [REDACTED]');
+  expect(message).not.toContain('rt_v1');
+});
+
+test('Claude Code OAuth failure cannot echo a refresh token into the model error', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord({
+    id: 'up_claude',
+    kind: 'claude-code',
+    config: { accounts: [{ email: 'a@b.com', accountUuid: 'acc-1', organizationUuid: null, subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x' }] },
+    state: {
+      accounts: [{
+        accountUuid: 'acc-1', tokenKind: 'oauth', refreshToken: 'claude-refresh-token', state: 'active',
+        stateUpdatedAt: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null, usageProbeSnapshot: null,
+      }],
+    },
+  });
+  await saveUpstreamForTest(repo.upstreams, record);
+  const stored = await repo.upstreams.getById(record.id);
+  if (stored === null) throw new Error('Claude Code upstream missing');
+  await withMockedFetch(
+    async request => {
+      const refreshToken = (await request.json() as { refresh_token: string }).refresh_token;
+      expect(refreshToken).toBe('claude-refresh-token');
+      return jsonResponse({ error: 'invalid_grant', error_description: `revoked ${refreshToken}` }, 401);
+    },
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(stored), 'TEST')).rejects.toThrow('revoked [REDACTED]');
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('revoked [REDACTED]');
+  expect(message).not.toContain('claude-refresh-token');
+});
+
+test('a malformed Codex catalog cannot echo its bearer token in a parser error', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord());
+  const record = await repo.upstreams.getById('up_codex');
+  if (record === null) throw new Error('Codex upstream missing');
+  await withMockedFetch(
+    () => jsonResponse({ models: [{ slug: 'codex-access-token' }] }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toThrow('model entry [REDACTED] missing display_name');
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('[REDACTED]');
+  expect(message).not.toContain('codex-access-token');
 });
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {
