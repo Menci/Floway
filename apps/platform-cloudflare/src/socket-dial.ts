@@ -22,7 +22,7 @@ class ProxyConnectRejection extends Error {}
 // rather than as an opaque first-read failure later.
 
 export const cloudflareSocketDial: SocketDial = {
-  isFetchFallbackConnectError: error => error instanceof ProxyConnectRejection,
+  shouldConnectErrorFallbackToFetch: error => error instanceof ProxyConnectRejection,
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
     const dialHost = normalizeDialHost(host);

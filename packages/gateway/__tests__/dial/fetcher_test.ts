@@ -322,9 +322,9 @@ describe('createFetcher', () => {
   it('uses one implicit fetch for a Cloudflare CONNECT rejection when the current colo has no fetch entry', async () => {
     const repo = new InMemoryRepo();
     const blocked = new Error('blocked by workerd');
-    const dial: SocketDial & { isFetchFallbackConnectError(error: unknown): boolean } = {
+    const dial: SocketDial & { shouldConnectErrorFallbackToFetch(error: unknown): boolean } = {
       ...stubSocketDial,
-      isFetchFallbackConnectError: error => error === blocked,
+      shouldConnectErrorFallbackToFetch: error => error === blocked,
     };
     const calls: string[] = [];
     const body = new FormData();
@@ -370,7 +370,7 @@ describe('createFetcher', () => {
       runProxied: async () => { throw new Error('unexpected proxy'); },
       runDirectConnect: async () => { throw new ProxyDialError('tcp connect failed', 'tcp-connect', { cause: blocked }); },
       runDirectFetch: async () => { throw fetchError; },
-      socketDial: () => ({ ...stubSocketDial, isFetchFallbackConnectError: error => error === blocked }),
+      socketDial: () => ({ ...stubSocketDial, shouldConnectErrorFallbackToFetch: error => error === blocked }),
     });
 
     await expect(fetcher('https://example.com', { method: 'GET' })).rejects.toBe(fetchError);
@@ -391,7 +391,7 @@ describe('createFetcher', () => {
         throw new ProxyDialError('tcp connect failed', 'tcp-connect', { cause: blocked });
       },
       runDirectFetch: async () => { calls.push('fetch'); return new Response('fetched'); },
-      socketDial: () => ({ ...stubSocketDial, isFetchFallbackConnectError: error => error === blocked }),
+      socketDial: () => ({ ...stubSocketDial, shouldConnectErrorFallbackToFetch: error => error === blocked }),
     });
 
     expect(await (await fetcher('https://example.com', { method: 'GET' })).text()).toBe('proxied');
@@ -412,7 +412,7 @@ describe('createFetcher', () => {
       runDirectFetch: fetch,
       socketDial: () => socketDial,
     });
-    const cloudflareDial = { ...stubSocketDial, isFetchFallbackConnectError: (error: unknown) => error === blocked };
+    const cloudflareDial = { ...stubSocketDial, shouldConnectErrorFallbackToFetch: (error: unknown) => error === blocked };
 
     await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
     await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);

@@ -33,17 +33,17 @@ it.each([
 
   expect(error.message).toBe('dial example.com:443 failed');
   expect(error.cause).toBe(cause);
-  expect(cloudflareSocketDial.isFetchFallbackConnectError?.(error)).toBe(true);
+  expect(cloudflareSocketDial.shouldConnectErrorFallbackToFetch?.(error)).toBe(true);
 });
 
 it('does not tag other opened failures or synchronous connect errors', async () => {
   vi.mocked(connect).mockReturnValueOnce(failedSocket(new Error('TLS handshake failed')));
   const openedError = await rejectedConnect();
-  expect(cloudflareSocketDial.isFetchFallbackConnectError?.(openedError)).toBe(false);
+  expect(cloudflareSocketDial.shouldConnectErrorFallbackToFetch?.(openedError)).toBe(false);
 
   const synchronousError = new Error('proxy request failed, cannot connect to the specified address');
   vi.mocked(connect).mockImplementationOnce(() => { throw synchronousError; });
   const thrown = await rejectedConnect();
   expect(thrown).toBe(synchronousError);
-  expect(cloudflareSocketDial.isFetchFallbackConnectError?.(thrown)).toBe(false);
+  expect(cloudflareSocketDial.shouldConnectErrorFallbackToFetch?.(thrown)).toBe(false);
 });

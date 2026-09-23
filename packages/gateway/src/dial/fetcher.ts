@@ -240,7 +240,7 @@ const tryOne = async (
       if (err instanceof ProxyDialError) {
         // The Cloudflare socket adapter tags only a rejected socket.opened.
         // Fetch owns the outcome here, including an HTTP error or rejection.
-        if (!hasDirectFetch && err.stage === 'tcp-connect' && directSocketDial?.isFetchFallbackConnectError?.(err.cause)) {
+        if (!hasDirectFetch && err.stage === 'tcp-connect' && directSocketDial?.shouldConnectErrorFallbackToFetch?.(err.cause)) {
           return await input.runDirectFetch(url, request.fetchInit());
         }
         errors.push(err);
