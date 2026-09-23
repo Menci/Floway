@@ -7,7 +7,7 @@ import { createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '
 test('config-version migration preserves cached models and gives existing failures one retry count', async () => {
   const db = await createSqlJsDatabase();
   for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename >= '0084_upstream_config_version.sql') break;
+    if (filename >= '0085_upstream_config_version.sql') break;
     db.run(sql);
   }
   const cache = {
@@ -23,7 +23,7 @@ test('config-version migration preserves cached models and gives existing failur
     JSON.stringify({ baseUrl: 'https://example.com', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }),
     JSON.stringify(cache),
   ]);
-  const migration = migrationSqlByFilename.find(([filename]) => filename === '0084_upstream_config_version.sql');
+  const migration = migrationSqlByFilename.find(([filename]) => filename === '0085_upstream_config_version.sql');
   if (!migration) throw new Error('config version migration missing');
   db.run(migration[1]);
 
