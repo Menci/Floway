@@ -418,8 +418,6 @@ export const upstreamRecordEnvelope = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).passthrough();
 
-// The bare envelope contract — every action endpoint that takes no extras
-// beyond `record` (refresh, probe, quota, draft preview) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
 // Shared authorize-url contract for the codex and claude-code authorize-url
