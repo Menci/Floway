@@ -410,7 +410,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
     />
     {modelsError && <OutcomeMessageBar intent="warning">
       <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
-        <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-start justify-between gap-2">
           <span className="min-w-0">{modelsError.upstreamResponse === null
             ? t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
             : t('dashboard.upstreamEditor.models.listingFailed')}</span>
