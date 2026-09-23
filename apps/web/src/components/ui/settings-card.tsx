@@ -267,6 +267,7 @@ const useStyles = makeStyles({
     background: 'none',
     ...shorthands.borderWidth(0),
     cursor: 'pointer',
+    '&:disabled': { cursor: 'not-allowed' },
     inset: 0,
     margin: 0,
     padding: 0,
@@ -445,11 +446,13 @@ export function SettingsCard({ action, description, header, icon }: {
 // switch. In the toolkit that falls out of routed events, which the DOM does
 // not do on its own.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
-export function SettingsExpander({ action, children, defaultOpen = false, description, header, icon, revealOn, toggledOn }: {
+export function SettingsExpander({ action, children, defaultOpen = false, description, disclosureDisabled = false, header, icon, revealOn, toggledOn }: {
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
   description?: string;
+  /** Disable the disclosure while leaving a trailing action operable. */
+  disclosureDisabled?: boolean;
   header: ReactNode;
   icon?: ReactNode;
   /**
@@ -489,12 +492,13 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   // https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
   return <div className={styles.row}>
-    <div className={mergeClasses(styles.card, styles.interactive, styles.expanderHeader, open && styles.expanderHeaderOpen)}>
+    <div className={mergeClasses(styles.card, !disclosureDisabled && styles.interactive, styles.expanderHeader, open && styles.expanderHeaderOpen)}>
       <button
         aria-controls={contentId}
         aria-expanded={open}
         aria-labelledby={headerId}
         className={styles.expanderDisclosure}
+        disabled={disclosureDisabled}
         onClick={() => setOpen(value => !value)}
         type="button"
       />

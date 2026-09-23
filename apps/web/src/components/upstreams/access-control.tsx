@@ -80,6 +80,7 @@ export function UpstreamAccessControl({
         onChange={toggleOverride}
       />}
       description={t('dashboard.upstreamAccess.description')}
+      disclosureDisabled={!override}
       header={t('dashboard.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
       toggledOn={override}
