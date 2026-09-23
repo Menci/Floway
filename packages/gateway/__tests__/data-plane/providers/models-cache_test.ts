@@ -326,23 +326,26 @@ test('a model error cannot echo an API key as a JSON field name', async () => {
   expect(message).not.toContain('sk-custom');
 });
 
-test('model discovery redacts credentials supplied in endpoint query parameters', async () => {
+test.each(['api_key', 'api_token', 'password', 'client_secret'])('model discovery redacts a %s endpoint query credential', async parameter => {
   const { repo, record } = await setupCustom();
   const config = { ...record.config as Record<string, unknown> };
   delete config.apiKey;
   const configured = await repo.upstreams.replaceForModels({
     previous: record,
-    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: '/v1/models?api_key=query-secret-42' } } },
+    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: `/v1/models?monkey=banana&${parameter}=query-secret-42` } } },
   });
   if (configured === null) throw new Error('query-auth update failed');
   await withMockedFetch(
-    request => new Response(JSON.stringify({ error: `rejected ${new URL(request.url).searchParams.get('api_key')}` }), { status: 401 }),
+    request => {
+      const query = new URL(request.url).searchParams;
+      return new Response(JSON.stringify({ error: `rejected ${query.get('monkey')} ${query.get(parameter)}` }), { status: 401 });
+    },
     async () => {
       await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     },
   );
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
-  expect(message).toContain('rejected [REDACTED]');
+  expect(message).toContain('rejected banana [REDACTED]');
   expect(message).not.toContain('query-secret-42');
 });
 

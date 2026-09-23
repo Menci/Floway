@@ -42,7 +42,7 @@ export const modelsRefreshTarget = (record: StoredUpstreamRecord): ModelsRefresh
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const credentialHeaders = ['authorization', 'x-api-key', 'api-key'] as const;
-const credentialQueryParam = /^(?:x[-_]?api[-_]?key|api[-_]?key|key|access[-_]?token|refresh[-_]?token|token|secret)$/i;
+const credentialQueryParam = /^(?:(?:x[-_])?api[-_]?(?:key|token)|(?:access|refresh|client|auth)[-_]?(?:key|token|secret|password)|key|token|secret|password|credential|auth)$/i;
 
 const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetcher: Fetcher) => Promise<T>): Promise<T> => {
   const credentials = new Set<string>();
