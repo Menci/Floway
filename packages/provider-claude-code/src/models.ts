@@ -77,7 +77,7 @@ export const fetchClaudeCodeModelsList = async (
 const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
   if (typeof value !== 'object' || value === null) throw new TypeError('Claude Code /v1/models entry is not an object');
   const { id, display_name, max_input_tokens, capabilities } = value as Record<string, unknown>;
-  if (typeof id !== 'string') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
+  if (typeof id !== 'string') throw new TypeError('Claude Code /v1/models entry missing id');
   if (typeof display_name !== 'string') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
   if (typeof max_input_tokens !== 'number') throw new TypeError(`Claude Code /v1/models entry ${id} missing max_input_tokens`);
   return {

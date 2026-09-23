@@ -25,6 +25,18 @@ test('catalog fetch exposes the upstream HTTP failure', async () => {
   }
 });
 
+test('malformed catalog entry errors do not echo upstream data', async () => {
+  const token = 'secret-token-'.repeat(30);
+  try {
+    await fetchClaudeCodeModelsList(token, async () => Response.json({ data: [{ id: null, echo: token }] }));
+    throw new Error('catalog fetch unexpectedly succeeded');
+  } catch (error) {
+    expect(error).toBeInstanceOf(TypeError);
+    expect((error as Error).message).toBe('Claude Code /v1/models entry missing id');
+    expect((error as Error).message).not.toContain(token.slice(0, 100));
+  }
+});
+
 const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', max_input_tokens: 1_000_000 },
   { id: 'claude-fable-5-1', display_name: 'Claude Fable 5.1', max_input_tokens: 1_000_000 },

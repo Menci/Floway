@@ -313,6 +313,57 @@ test('Copilot token exchange cannot echo the GitHub PAT into the model error', a
   expect(message).not.toContain(githubAccount.token);
 });
 
+test('a model error cannot echo an API key as a JSON field name', async () => {
+  const { repo, record } = await setupCustom();
+  await withMockedFetch(
+    () => jsonResponse({ 'sk-custom': 'rejected' }, 401),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('[REDACTED]');
+  expect(message).not.toContain('sk-custom');
+});
+
+test('model discovery redacts credentials supplied in endpoint query parameters', async () => {
+  const { repo, record } = await setupCustom();
+  const config = { ...record.config as Record<string, unknown> };
+  delete config.apiKey;
+  const configured = await repo.upstreams.replaceForModels({
+    previous: record,
+    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: '/v1/models?api_key=query-secret-42' } } },
+  });
+  if (configured === null) throw new Error('query-auth update failed');
+  await withMockedFetch(
+    request => new Response(JSON.stringify({ error: `rejected ${new URL(request.url).searchParams.get('api_key')}` }), { status: 401 }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('rejected [REDACTED]');
+  expect(message).not.toContain('query-secret-42');
+});
+
+test('model discovery redacts userinfo from a URL construction failure', async () => {
+  const { repo, record } = await setupCustom();
+  const configured = await repo.upstreams.replaceForModels({
+    previous: record,
+    upstream: { ...record, config: { ...record.config as Record<string, unknown>, baseUrl: 'https://user:secret@custom.example.com' } },
+  });
+  if (configured === null) throw new Error('userinfo update failed');
+  await withMockedFetch(
+    () => new Response('upstream unavailable', { status: 401 }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).not.toContain('secret');
+  expect(message).not.toContain('user:secret');
+});
+
 test('Codex OAuth failure cannot echo a refresh token into the model error', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -338,6 +389,28 @@ test('Codex OAuth failure cannot echo a refresh token into the model error', asy
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
   expect(message).toContain('expired [REDACTED]');
   expect(message).not.toContain('rt_v1');
+});
+
+test('Codex OAuth failure redacts a form-encoded refresh token echo', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const codex = buildCodexUpstreamRecord();
+  const state = codex.state as { accounts: Array<Record<string, unknown>> };
+  await saveUpstreamForTest(repo.upstreams, {
+    ...codex,
+    state: { accounts: state.accounts.map(account => ({ ...account, refresh_token: 'rt with spaces', accessToken: null })) },
+  });
+  const record = await repo.upstreams.getById(codex.id);
+  if (record === null) throw new Error('Codex upstream missing');
+  await withMockedFetch(
+    async request => new Response(`denied ${await request.text()}`, { status: 503 }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toThrow('refresh_token=[REDACTED]');
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('refresh_token=[REDACTED]');
+  expect(message).not.toContain('rt+with+spaces');
 });
 
 test('Claude Code OAuth failure cannot echo a refresh token into the model error', async () => {

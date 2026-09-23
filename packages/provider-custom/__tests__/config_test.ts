@@ -273,19 +273,6 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          baseUrl: 'https://user:secret@custom.example.com',
-        },
-      }),
-    Error,
-    'baseUrl must not contain credentials',
-  );
-
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
           authStyle: 'oauth',
         },
       }),

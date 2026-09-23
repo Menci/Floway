@@ -42,23 +42,30 @@ export const modelsRefreshTarget = (record: StoredUpstreamRecord): ModelsRefresh
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const credentialHeaders = ['authorization', 'x-api-key', 'api-key'] as const;
+const credentialQueryParam = /^(?:x[-_]?api[-_]?key|api[-_]?key|key|access[-_]?token|refresh[-_]?token|token|secret)$/i;
 
 const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetcher: Fetcher) => Promise<T>): Promise<T> => {
   const credentials = new Set<string>();
   const redact = (text: string): string => {
-    const variants = [...credentials].flatMap(credential => [credential, JSON.stringify(credential).slice(1, -1), encodeURIComponent(credential)]);
+    const variants = [...credentials].flatMap(credential => [
+      credential,
+      JSON.stringify(credential).slice(1, -1),
+      encodeURIComponent(credential),
+      new URLSearchParams({ v: credential }).toString().slice(2),
+    ]);
     return [...new Set(variants)].sort((a, b) => b.length - a.length)
       .reduce((result, credential) => result.replaceAll(credential, '[REDACTED]'), text);
   };
-  const redactJsonValues = (value: unknown): unknown => {
-    if (typeof value === 'string') return redact(value);
-    if (Array.isArray(value)) return value.map(redactJsonValues);
-    if (value !== null && typeof value === 'object') {
-      return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactJsonValues(entry)]));
-    }
-    return value;
-  };
   const trackingFetcher: Fetcher = async (url, init) => {
+    const requestUrl = new URL(url, 'https://execution.floway');
+    for (const encoded of [requestUrl.username, requestUrl.password]) {
+      if (encoded === '') continue;
+      credentials.add(encoded);
+      credentials.add(new URLSearchParams(`value=${encoded}`).get('value')!);
+    }
+    for (const [name, value] of requestUrl.searchParams) {
+      if (credentialQueryParam.test(name) && value !== '') credentials.add(value);
+    }
     const headers = new Headers(init.headers);
     for (const name of credentialHeaders) {
       const value = headers.get(name);
@@ -84,7 +91,7 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
     let body: string | null = null;
     if (rawBody !== null) {
       try {
-        body = JSON.stringify(redactJsonValues(JSON.parse(rawBody)));
+        body = redact(JSON.stringify(JSON.parse(rawBody)));
       } catch {
         body = redact(rawBody);
       }
