@@ -1,4 +1,4 @@
-import { encodeModelsRefreshResult, executeModelsRefresh, isModelsRefreshConfigurationError, type ModelsRefreshExecutionInput } from './models-refresh.ts';
+import { encodeModelsRefreshResult, executeModelsRefresh, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, type ModelsRefreshExecutionInput } from './models-refresh.ts';
 import { ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
 
 export const handleExecutionRequest = async (request: Request): Promise<Response> => {
@@ -14,7 +14,7 @@ export const handleExecutionRequest = async (request: Request): Promise<Response
       return Response.json({ kind: 'invalid-configuration', message: error.message }, { status: 400 });
     }
     if (!(error instanceof ProviderModelsUnavailableError)) throw error;
-    return Response.json({ kind: 'provider-unavailable' }, { status: 502 });
+    return Response.json({ kind: 'provider-unavailable', message: modelsRefreshErrorMessage(error), upstreamResponse: error.displayResponse }, { status: 502 });
   }
 };
 

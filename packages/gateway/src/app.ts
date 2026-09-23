@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 
 import { AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
@@ -14,7 +15,9 @@ import { internalErrorResponse } from './middleware/internal-error-response.ts';
 // because apps/web reaches /v1/chat/completions etc. by plain fetch, not through
 // the RPC client, so its route types need not be preserved.
 export const app = new Hono<{ Variables: AuthVars }>()
-  .onError(internalErrorResponse)
+  .onError((error, c) => error instanceof HTTPException
+    ? c.json({ error: error.message }, error.status)
+    : internalErrorResponse(error, c))
   // The public Agent Setup script endpoints reveal the selected API key as
   // executable source to an unauthenticated machine on purpose. They are mounted
   // here, structurally ahead of the logger / CORS / auth middleware below, so no

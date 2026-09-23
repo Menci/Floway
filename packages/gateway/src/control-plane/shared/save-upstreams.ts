@@ -1,3 +1,5 @@
+import { HTTPException } from 'hono/http-exception';
+
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -12,7 +14,7 @@ export const saveUpstream = async ({ previous, next }: UpstreamChange): Promise<
   const saved = previous === null
     ? await upstreams.insertForModels(next)
     : await upstreams.replaceForModels({ previous, upstream: next });
-  if (saved === null) throw new Error(`Upstream ${next.id} changed concurrently`);
+  if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
   return saved;
 };
 

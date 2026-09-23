@@ -34,11 +34,12 @@ vi.mock('../../../src/components/upstream-editor/config-sidebar', () => ({
 vi.mock('../../../src/components/upstream-editor/workspace', () => ({
   UpstreamWorkspace: ({ discovered, modelsError, onModelsYamlDraftChange }: {
     discovered: { upstreamModelId: string }[];
-    modelsError: { message: string } | null;
+    modelsError: { message: string; upstreamResponse: { status: number } | null } | null;
     onModelsYamlDraftChange: (draft: { baseline: string; text: string; error: null }) => void;
   }) => <>
     <output data-testid="discovered">{discovered.map(model => model.upstreamModelId).join(',')}</output>
     <output data-testid="models-error">{modelsError?.message ?? ''}</output>
+    <output data-testid="upstream-response-status">{modelsError?.upstreamResponse?.status ?? ''}</output>
     <button type="button" onClick={() => onModelsYamlDraftChange({
       baseline: '[]',
       text: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n',
@@ -282,9 +283,17 @@ test('a failed explicit Fetch reports model discovery failure after Save succeed
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   expect(screen.getAllByText(i18n.t('dashboard.upstreamEditor.toast.saved')).length).toBeGreaterThan(0);
   await act(async () => {
-    finishFetch!({ data: null, error: { message: 'Models unavailable', raw: { error: { code: 'upstream_model_listing_failed' } } } });
+    finishFetch!({
+      data: null,
+      error: {
+        message: 'HTTP 503: unavailable', raw: {
+          error: { code: 'upstream_model_listing_failed', upstreamResponse: { status: 503, headers: [], body: 'unavailable' } },
+        },
+      },
+    });
   });
-  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('Models unavailable'));
+  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
+  expect(screen.getByTestId('upstream-response-status').textContent).toBe('503');
   expect(apiMocks.patch).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeNull();
 });

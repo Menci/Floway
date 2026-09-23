@@ -1,14 +1,15 @@
 import { modelsCacheStatus } from './models-cache-status.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { ListedUpstreamModel } from './types.ts';
-import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
+import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+
+const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
 
 const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => ({
   upstreamModelId: model.upstreamModelId,
@@ -60,7 +61,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     return c.json({ kind, data });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
+      return c.json({ error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse } }, 502);
     }
     if (malformedConfigResponse(e) || isModelsRefreshConfigurationError(e)) {
       return c.json({ error: errorMessage(e) }, 400);
@@ -88,7 +89,7 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
+      return c.json({ error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse } }, 502);
     }
     if (isModelsRefreshConfigurationError(e)) return c.json({ error: errorMessage(e) }, 400);
     if (malformedConfigResponse(e)) return c.json({ error: errorMessage(e) }, 400);

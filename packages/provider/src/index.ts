@@ -74,6 +74,7 @@ export {
   fetchUpstreamModels,
   httpResponseToResponse,
 } from './models-fetch.ts';
+export type { ProviderModelsFailureResponse } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {

@@ -5,10 +5,10 @@ import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
   ProxyRecord,
+  ProviderModelsFailureResponse,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
@@ -136,30 +136,16 @@ export interface ModelCatalogFetch {
   modelsCache: UpstreamRecord['modelsCache'] | null;
 }
 
-// The gateway squashes a genuine upstream failure to a message that names
-// nothing, so the editor writes that case in its own words and quotes every
-// other message. The code carries that distinction, and taking its type from
-// the gateway makes a rename there fail this declaration.
-const MODEL_LISTING_FAILURE_CODE: typeof GatewayModelListingFailureCode = 'upstream_model_listing_failed';
-
-// Hono infers one response union for the route rather than one per status, so
-// the failure body is read structurally.
-const failureCode = (raw: unknown): unknown =>
-  typeof raw === 'object' && raw !== null && 'error' in raw
-  && typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error
-    ? raw.error.code
-    : null;
-
 export interface ModelListingFailure {
   message: string;
-  upstreamListingFailed: boolean;
+  upstreamResponse: ProviderModelsFailureResponse | null;
 }
 
 const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => ({
   discovered: null,
   modelsError: {
     message: error.message,
-    upstreamListingFailed: failureCode(error.raw) === MODEL_LISTING_FAILURE_CODE,
+    upstreamResponse: (error.raw as { error?: { upstreamResponse?: ProviderModelsFailureResponse | null } } | undefined)?.error?.upstreamResponse ?? null,
   },
   modelsCache: null,
 });

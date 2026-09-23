@@ -209,6 +209,11 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse 
   assertEquals(thrown.httpResponse?.status, 429);
   assertEquals(thrown.httpResponse?.body, 'rate limit');
   assertEquals(thrown.httpResponse?.headers.get('retry-after'), '5');
+  assertEquals(thrown.displayResponse, {
+    status: 429,
+    headers: [['content-type', 'text/plain;charset=UTF-8'], ['retry-after', '5']],
+    body: 'rate limit',
+  });
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on network error', async () => {

@@ -10,6 +10,7 @@ export type {
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
   CodexQuotaSnapshotMap,
+  ProviderModelsFailureResponse,
   UpstreamRecord,
 } from '@floway-dev/gateway/control-plane/upstreams/types';
 

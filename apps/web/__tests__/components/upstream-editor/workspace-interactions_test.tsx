@@ -293,12 +293,18 @@ describe('upstream model workspace field-array transitions', () => {
 });
 
 describe('upstream model listing failure wording', () => {
-  it('writes the squashed upstream failure in its own words and quotes any other message', () => {
-    const { unmount } = renderInApp(<Harness modelsError={{ message: 'Upstream model listing failed', upstreamListingFailed: true }} />);
-    expect(screen.getByText(models('listingFailed'))).toBeTruthy();
-    unmount();
+  it('shows the concrete failure returned by the explicit Fetch', () => {
+    renderInApp(<Harness modelsError={{ message: 'HTTP 401: unauthorized', upstreamResponse: null }} />);
+    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: 'HTTP 401: unauthorized' }))).toBeTruthy();
+  });
 
-    renderInApp(<Harness modelsError={{ message: 'Malformed custom upstream config', upstreamListingFailed: false }} />);
-    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: 'Malformed custom upstream config' }))).toBeTruthy();
+  it('shows the upstream HTTP status, headers, and parsed body', () => {
+    renderInApp(<Harness modelsError={{
+      message: 'HTTP 401: unauthorized',
+      upstreamResponse: { status: 401, headers: [['content-type', 'application/json']], body: '{\n  "error": "unauthorized"\n}' },
+    }} />);
+    expect(screen.getByText(models('listingFailed'))).toBeTruthy();
+    expect(screen.getByText(/HTTP 401/).textContent).toContain('content-type: application/json');
+    expect(screen.getByText(/HTTP 401/).textContent).toContain('"error": "unauthorized"');
   });
 });

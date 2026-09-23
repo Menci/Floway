@@ -1,7 +1,6 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
-import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
 import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
@@ -271,6 +270,24 @@ test('PATCH /api/upstreams rejects kind changes and preserves the row', async ()
   assertEquals(patch.status, 400);
   assertEquals(((await patch.json()) as { error?: string }).error, 'kind cannot be changed');
   assertEquals((await repo.upstreams.getById(created.id))?.kind, 'custom');
+});
+
+test('PATCH /api/upstreams reports a concurrent save as a conflict', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string };
+  const replace = vi.spyOn(repo.upstreams, 'replaceForModels').mockResolvedValueOnce(null);
+
+  const response = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ name: 'Concurrent edit' }),
+  });
+  replace.mockRestore();
+
+  assertEquals(response.status, 409);
+  assertEquals((await response.json() as { error: string }).error, `Upstream ${created.id} changed concurrently`);
+  assertEquals((await repo.upstreams.getById(created.id))?.name, 'Test custom upstream');
 });
 
 test('PATCH /api/upstreams preserves omitted secrets and invalidates the old catalog without fetching', async () => {
@@ -608,9 +625,28 @@ test('POST /api/upstreams/preview-models surfaces upstream model-listing failure
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string; upstreamResponse: { status: number; body: string } } };
       assertEquals(body.error.type, 'api_error');
-      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
+      assertEquals(body.error.code, 'upstream_model_listing_failed');
+      assertEquals(body.error.upstreamResponse.status, 401);
+      assertEquals(body.error.upstreamResponse.body, '{\n  "error": "unauthorized"\n}');
+    },
+  );
+});
+
+test('POST /api/upstreams/preview-models shows a network failure cause', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    () => { throw new Error('dial timed out'); },
+    async () => {
+      const response = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+        record: blueprintEnvelope('custom', { config: customConfig }),
+      }));
+      assertEquals(response.status, 502);
+      const failure = (await response.json() as JsonObject).error;
+      assertEquals(failure.message, 'dial timed out');
+      assertEquals(failure.upstreamResponse, null);
     },
   );
 });
@@ -633,9 +669,11 @@ test('POST /api/upstreams/preview-models surfaces an ollama /api/tags failure as
         }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string; upstreamResponse: { status: number; body: string } } };
       assertEquals(body.error.type, 'api_error');
-      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
+      assertEquals(body.error.code, 'upstream_model_listing_failed');
+      assertEquals(body.error.upstreamResponse.status, 401);
+      assertEquals(body.error.upstreamResponse.body, '{\n  "error": "unauthorized"\n}');
     },
   );
 });
@@ -777,8 +815,12 @@ test('model-listing failure belongs to the explicit Fetch after a successful Sav
     () => requestApp(`/api/upstreams/${saved.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } }),
   );
   assertEquals(fetchResponse.status, 502);
-  assertEquals((await fetchResponse.json() as JsonObject).error.code, MODEL_LISTING_FAILURE_CODE);
+  const failure = (await fetchResponse.json() as JsonObject).error;
+  assertEquals(failure.code, 'upstream_model_listing_failed');
+  assertEquals(failure.message, 'HTTP 503: unavailable');
+  assertEquals(failure.upstreamResponse, { status: 503, headers: [['content-type', 'text/plain;charset=UTF-8']], body: 'unavailable' });
   assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.failureCount, 1);
+  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.message, 'HTTP 503: unavailable');
 });
 
 test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {

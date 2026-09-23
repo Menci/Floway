@@ -6,7 +6,7 @@ import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
 import type { StoredUpstreamRecord } from '../repo/types.ts';
 import { getExecutionCellNamespace } from '../runtime/execution.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
 
@@ -39,6 +39,16 @@ export const modelsRefreshTarget = (record: StoredUpstreamRecord): ModelsRefresh
 });
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+export const modelsRefreshErrorMessage = (error: unknown): string => {
+  if (error instanceof ProviderModelsUnavailableError) {
+    if (error.displayResponse !== null) {
+      const body = error.displayResponse.body.trim();
+      return body === '' ? `HTTP ${error.displayResponse.status}` : `HTTP ${error.displayResponse.status}: ${body}`;
+    }
+    if (error.cause !== undefined) return errorMessage(error.cause);
+  }
+  return errorMessage(error);
+};
 export const isModelsRefreshConfigurationError = (error: unknown): error is InvalidProxyConfigurationError =>
   error instanceof InvalidProxyConfigurationError;
 
@@ -88,11 +98,11 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
         id: record.id,
         configVersion: input.configVersion,
         cacheEpoch: epoch,
-        error: { message: errorMessage(error), at: Date.now() },
+        error: { message: modelsRefreshErrorMessage(error), at: Date.now() },
         previousFailureCount,
       });
     } catch (recordError) {
-      throw new AggregateError([error, recordError], errorMessage(error));
+      throw new AggregateError([error, recordError], modelsRefreshErrorMessage(error));
     }
     throw error;
   }
@@ -108,8 +118,10 @@ const executeThroughCell = async (input: ModelsRefreshExecutionInput): Promise<M
     body: JSON.stringify(input),
   }));
   if (response.ok) return decodeModelsRefreshResult(await response.json() as WireResult);
-  const error = await response.json() as { kind?: unknown; message?: unknown };
-  if (response.status === 502 && error.kind === 'provider-unavailable') throw new ProviderModelsUnavailableError(null);
+  const error = await response.json() as { kind?: unknown; message?: unknown; upstreamResponse?: ProviderModelsFailureResponse | null };
+  if (response.status === 502 && error.kind === 'provider-unavailable' && typeof error.message === 'string') {
+    throw new ProviderModelsUnavailableError(null, new Error(error.message), error.upstreamResponse);
+  }
   if (response.status === 400 && error.kind === 'invalid-configuration' && typeof error.message === 'string') {
     throw new InvalidProxyConfigurationError(error.message);
   }

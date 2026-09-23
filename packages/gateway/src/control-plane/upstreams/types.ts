@@ -42,6 +42,7 @@ import type {
 } from '@floway-dev/provider-ollama';
 
 export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CustomModelsFetch, ProxyFallbackEntry };
+export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
 
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
