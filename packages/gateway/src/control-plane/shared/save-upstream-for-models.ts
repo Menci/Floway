@@ -5,7 +5,7 @@ import { modelsRefreshTarget, refreshModels } from '../../execution/models-refre
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { reshapeModelForDashboard } from '../upstreams/models.ts';
+import { reshapeModelForDashboard } from '../upstreams/model-projection.ts';
 import { ProviderModelsUnavailableError, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { logInfo } from '@floway-dev/provider-claude-code';
 
