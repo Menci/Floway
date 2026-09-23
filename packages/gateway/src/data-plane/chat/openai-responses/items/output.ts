@@ -2,7 +2,7 @@ import { hashOpenAIResponsesItem, openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiResponsesResultToEvents, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 // Floway derives canonical output identity from `response.output_item.done`
 // lifecycles. Normalize terminal snapshots from that ordered set before
@@ -101,7 +101,7 @@ export const wrapOpenAIResponsesClientOutput = async function* (
 
     if (event.type === 'response.output_item.done') {
       if (store.writesState) {
-        if (event.item.type === 'compaction') sawCompactionItem = true;
+        if (isOpenAIResponsesCompactionItem(event.item)) sawCompactionItem = true;
         await persistFinalizedItem(event.item, event.output_index);
       }
       yield frame;

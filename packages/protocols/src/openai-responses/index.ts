@@ -477,11 +477,16 @@ export interface OpenAIResponsesContextCompactionItem extends OpenAIResponsesPer
 
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
 export interface OpenAIResponsesCompactionItem {
-  type: 'compaction';
+  // Codex accepts compaction_summary as the wire alias of compaction.
+  // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1233
+  type: 'compaction' | 'compaction_summary';
   id?: string | null;
   encrypted_content: string;
   created_by?: string;
 }
+
+export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
+  item.type === 'compaction' || item.type === 'compaction_summary';
 
 // Payload-free trailing input item for a RemoteCompactionV2 round trip.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902

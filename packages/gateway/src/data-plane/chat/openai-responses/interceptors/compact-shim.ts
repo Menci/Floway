@@ -22,11 +22,12 @@
 //     (Codex CLI's RemoteCompactionV2 path: a `generate` call whose input
 //     ends in a control item that semantically requests compaction).
 //
-// Every request first walks `payload.input` for `compaction` items whose
-// `encrypted_content` decodes as our base64url-JSON marker. Each match is
-// replaced inline with the items it originally encoded. This normalization is
-// independent of both flags because gateway-owned payloads are portable and
-// must never be forwarded as if they were an upstream's opaque state.
+// Every request first walks `payload.input` for `compaction` and
+// `compaction_summary` items whose `encrypted_content` decodes as our
+// base64url-JSON marker. Each match is replaced inline with the items it
+// originally encoded. This normalization is independent of both flags because
+// gateway-owned payloads are portable and must never be forwarded as if they
+// were an upstream's opaque state.
 //
 // When simulation is engaged for a compact-shaped request:
 //   1. Pivot the action to 'generate', prepend a role=system
@@ -54,12 +55,12 @@
 // codex / copilot / azure / custom upstreams that answer compact themselves.
 //
 // When `openai-responses-compact-decrypt` is enabled while the shim is off,
-// native compaction runs first. Each returned opaque compaction item is then
-// replayed through the same model between two system-role instructions: the
-// first identifies the following text and the second constrains the output.
-// The recovered
-// plaintext is packed into the same gateway-owned base64url envelope used by
-// the shim, so later requests expand it before reaching the upstream.
+// native compaction runs first. Each returned opaque compaction item, including
+// `compaction_summary`, is then replayed through the same model between two
+// system-role instructions: the first identifies the following text and the
+// second constrains the output. The recovered plaintext is packed into the
+// same gateway-owned base64url envelope used by the shim, so later requests
+// expand it before reaching the upstream.
 
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
@@ -67,7 +68,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
 import { sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
@@ -169,7 +170,7 @@ const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputI
 export const isOpenAIResponsesCompactShimItem = (
   item: { readonly type: string; readonly encrypted_content?: unknown },
 ): boolean =>
-  item.type === 'compaction'
+  isOpenAIResponsesCompactionItem(item)
   && typeof item.encrypted_content === 'string'
   && isShimCompactionPayload(decodeBase64UrlJson(item.encrypted_content));
 
@@ -184,7 +185,7 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
   const rewritten: OpenAIResponsesInputItem[] = [];
   let changed = false;
   for (const item of payload.input) {
-    if (item.type !== 'compaction') {
+    if (!isOpenAIResponsesCompactionItem(item)) {
       rewritten.push(item);
       continue;
     }
@@ -438,7 +439,7 @@ const decryptNativeCompaction = async (
   const output: OpenAIResponsesOutputItem[] = [];
 
   for (const item of nativeResponse.output) {
-    if (item.type !== 'compaction') {
+    if (!isOpenAIResponsesCompactionItem(item)) {
       output.push(item);
       continue;
     }

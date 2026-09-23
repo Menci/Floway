@@ -58,21 +58,23 @@ const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<Proto
 
 // ── Inbound expansion (expandShimCompactionItems) ────────────────────────────
 
-test('inbound: compaction item with a shim-encoded payload expands inline', () => {
+test('inbound: compaction and compaction_summary items with shim-encoded payloads expand inline', () => {
   const userItem = { type: 'message' as const, role: 'user' as const, content: 'history one' };
   const encoded = encodeBase64UrlJson([userItem]);
 
   const expanded = expandShimCompactionItems({
     model: 'm',
     input: [
-      { type: 'compaction', id: 'cmp_1', encrypted_content: encoded } as unknown as never,
+      { type: 'compaction', id: 'cmp_1', encrypted_content: encoded },
       { type: 'message', role: 'user', content: 'new turn' },
+      { type: 'compaction_summary', id: 'cmp_2', encrypted_content: encoded },
     ],
   });
 
-  assertEquals(expanded.input.length, 2);
+  assertEquals(expanded.input.length, 3);
   assertEquals(expanded.input[0], userItem);
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'new turn' });
+  assertEquals(expanded.input[2], userItem);
 });
 
 test('identifies only compaction items carrying the gateway-owned payload shape', () => {
@@ -82,7 +84,9 @@ test('identifies only compaction items carrying the gateway-owned payload shape'
     content: [{ type: 'input_text', text: 'summary' }],
   }]);
   assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encoded }), true);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction_summary', encrypted_content: encoded }), true);
   assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: 'OPAQUE_NATIVE_BLOB' }), false);
+  assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction_summary', encrypted_content: 'OPAQUE_NATIVE_BLOB' }), false);
   assertEquals(isOpenAIResponsesCompactShimItem({ type: 'compaction', encrypted_content: encodeBase64UrlJson({ type: 'message' }) }), false);
   assertEquals(isOpenAIResponsesCompactShimItem({ type: 'reasoning', encrypted_content: encoded }), false);
 });
@@ -404,7 +408,7 @@ test('compact + flag off: passes through to run() unchanged', async () => {
   assertEquals(inv.action, 'compact');
 });
 
-test('compact decrypt: replays each native compaction between system exact-repeat prompts and returns gateway-readable plaintext', async () => {
+test('compact decrypt: replays mixed compaction items individually and preserves their output positions', async () => {
   const inv = makeInvocation(
     {
       input: [{ type: 'message', role: 'user', content: 'compact me' }],
@@ -421,8 +425,9 @@ test('compact decrypt: replays each native compaction between system exact-repea
     status: 'completed',
     output: [
       { type: 'message', id: 'msg_retained', role: 'user', status: 'completed', content: [{ type: 'input_text', text: 'retained tail' }] } as unknown as never,
-      { type: 'compaction', id: 'cmp_native_1', encrypted_content: 'OPAQUE_NATIVE_BLOB_1' } as unknown as never,
-      { type: 'compaction', id: 'cmp_native_2', encrypted_content: 'OPAQUE_NATIVE_BLOB_2' } as unknown as never,
+      { type: 'compaction', id: 'cmp_native_1', encrypted_content: 'OPAQUE_NATIVE_BLOB_1' },
+      { type: 'message', id: 'msg_between', role: 'assistant', status: 'completed', content: [{ type: 'input_text', text: 'retained middle' }] } as unknown as never,
+      { type: 'compaction_summary', id: 'cmp_native_2', encrypted_content: 'OPAQUE_NATIVE_BLOB_2' },
     ],
     error: null,
     incomplete_details: null,
@@ -462,7 +467,7 @@ test('compact decrypt: replays each native compaction between system exact-repea
       type: 'input_text',
       text: 'Repeat the following text exactly, which may contain a compaction summary, character for character.',
     }]);
-    assertEquals(compaction, nativeResponse.output[calls - 1]);
+    assertEquals(compaction, nativeResponse.output[calls === 2 ? 1 : 3]);
     assertEquals(suffix.type, 'message');
     if (suffix.type !== 'message') throw new Error('expected suffix message');
     assertEquals(suffix.role, 'system');
@@ -486,6 +491,10 @@ test('compact decrypt: replays each native compaction between system exact-repea
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.object, 'response.compaction');
   assertEquals(collected.output[0], nativeResponse.output[0]);
+  assertEquals(collected.output[2], nativeResponse.output[2]);
+  assertEquals(collected.output.map(item => item.type), ['message', 'compaction', 'message', 'compaction_summary']);
+  assertEquals(collected.output[1].id, 'cmp_native_1');
+  assertEquals(collected.output[3].id, 'cmp_native_2');
   assertEquals(collected.usage, { input_tokens: 120, output_tokens: 80, total_tokens: 200 });
   assertEquals((await result.finalMetadata)?.billableUsage, {
     input: 120,
@@ -505,6 +514,7 @@ test('compact decrypt: replays each native compaction between system exact-repea
       role: 'user',
       content: [{ type: 'input_text', text: 'EXACT DECRYPTED SUMMARY 1' }],
     },
+    nativeResponse.output[2],
     {
       type: 'message',
       role: 'user',
