@@ -156,12 +156,8 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  // Stub every outbound request: the post-save warm tries to mint a Copilot
-  // token + fetch the model catalog, neither of which the test cares about.
-  // 403 is the terminal status the Copilot auth retry loop short-circuits on,
-  // so the warm fails fast instead of burning ~7s of exponential backoff.
   const created = await withMockedFetch(
-    () => jsonResponse({ error: 'forbidden' }, 403),
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', name: 'Copilot', config: copilotConfig })));
       assertEquals(resp.status, 201);
@@ -277,15 +273,13 @@ test('PATCH /api/upstreams rejects kind changes and preserves the row', async ()
   assertEquals((await repo.upstreams.getById(created.id))?.kind, 'custom');
 });
 
-test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cache', async () => {
+test('PATCH /api/upstreams preserves omitted secrets and invalidates the old catalog without fetching', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
-  // Plant a stale row so the post-PATCH read can verify the warm overwrote
-  // it with the new upstream-supplied catalog rather than leaving the old
-  // models in place.
+  // A changed model configuration cannot serve the previous catalog.
   await seedModelsCache(repo.upstreams, created.id, await getRefreshIdentity(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
@@ -293,13 +287,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   });
 
   await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'fresh-model' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const patch = await requestApp(`/api/upstreams/${created.id}`, {
         method: 'PATCH',
@@ -315,6 +303,9 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
         }),
       });
       assertEquals(patch.status, 200);
+      const response = (await patch.json()) as JsonObject;
+      assertEquals(response.config.apiKey, 'sk-test');
+      assertEquals(response.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
     },
   );
 
@@ -324,9 +315,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { openaiResponses: {} });
   assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
-  const cached = updated?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
-  assertEquals(cached!.fetchedAt > 1, true);
+  assertEquals(updated?.modelsCache, null);
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
@@ -747,60 +736,52 @@ test('POST /api/upstreams/preview-models refuses OAuth drafts without a persiste
   assertEquals(body.error.type, 'invalid_request_error');
 });
 
-test('POST /api/upstreams warms the models cache before responding', async () => {
+test('POST /api/upstreams saves without starting model discovery', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const created = await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-create' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
       assertEquals(resp.status, 201);
-      return (await resp.json()) as { id: string; configVersion: number; modelDiscovery: { kind: string; data: Array<{ upstreamModelId: string }> }; modelsCache: { fetchedAt: number | null; lastError: unknown } };
+      return (await resp.json()) as JsonObject;
     },
   );
 
-  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['warmed-on-create']);
-  // The dashboard re-seeds its draft from this body, so it has to carry the
-  // freshness the warm just produced rather than the record's pre-warm one.
-  assertEquals(created.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
-  assertEquals(created.modelsCache.lastError, null);
-  assertEquals(created.configVersion, 1);
-  assertEquals(created.modelDiscovery.kind, 'success');
-  assertEquals(created.modelDiscovery.data.map(model => model.upstreamModelId), ['warmed-on-create']);
+  assertEquals((await repo.upstreams.getById(created.id))?.modelsCache, null);
+  assertEquals(created.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
+  assertEquals('modelDiscovery' in created, false);
 });
 
-test('POST /api/upstreams reports a successful save and failed warm separately', async () => {
+test('model-listing failure belongs to the explicit Fetch after a successful Save', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const response = await withMockedFetch(
+  const savedResponse = await withMockedFetch(
     () => new Response('unavailable', { status: 503 }),
     () => requestApp('/api/upstreams', authed(adminSession, createBody())),
   );
-  assertEquals(response.status, 201);
-  const saved = (await response.json()) as JsonObject;
-  assertEquals(saved.modelDiscovery.kind, 'failure');
-  assertEquals(saved.modelDiscovery.upstreamListingFailed, true);
-  assertEquals(saved.modelsCache.lastError !== null, true);
-  assertEquals(saved.modelsCache.fetchedAt, null);
-  assertEquals(saved.modelsCache.modelCount, null);
+  assertEquals(savedResponse.status, 201);
+  const saved = (await savedResponse.json()) as JsonObject;
+  assertEquals(saved.modelsCache.lastError, null);
+  const fetchResponse = await withMockedFetch(
+    () => new Response('unavailable', { status: 503 }),
+    () => requestApp(`/api/upstreams/${saved.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } }),
+  );
+  assertEquals(fetchResponse.status, 502);
+  assertEquals((await fetchResponse.json() as JsonObject).error.code, MODEL_LISTING_FAILURE_CODE);
   assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.failureCount, 1);
 });
 
 test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  const created = await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'cached-model' }] }),
-    async () => await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string },
-  );
+  const created = await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string };
+  await seedModelsCache(repo.upstreams, created.id, await getRefreshIdentity(repo, created.id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
   const configVersion = (await repo.upstreams.getById(created.id))?.configVersion;
   let modelRequests = 0;
 
@@ -2076,10 +2057,8 @@ test('POST /api/upstreams/claude-code/probe mints a fresh access token when the 
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  // Create with a fresh access token so the create-time cache warm doesn't
-  // trip an unwanted refresh through the (unmocked) globalThis.fetch, then
-  // stale the persisted state directly so the probe's
-  // ensureClaudeCodeAccessToken call falls through to the refresh path.
+  // Stale the persisted state so the probe's ensureClaudeCodeAccessToken
+  // call falls through to the refresh path.
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   const staleRow = await getRecord(repo, created.id);
   const staleState = staleRow.state as { accounts: Array<Record<string, unknown> & { accessToken: Record<string, unknown> | null }> };
@@ -2193,9 +2172,6 @@ test('spec invariant (3): POST /api/upstreams/copilot/oauth/device-login/poll ig
       if (request.url === 'https://api.github.com/copilot_internal/v2/token') {
         return jsonResponse({ token: 'ct_rotated', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800, endpoints: { api: 'https://api.githubcopilot.com' } });
       }
-      // The post-save models-cache warm hits `/models` on the copilot API
-      // host; 403 short-circuits the auth retry loop instead of racing the
-      // ~7s exponential backoff.
       return jsonResponse({ error: 'forbidden' }, 403);
     },
     async () => {

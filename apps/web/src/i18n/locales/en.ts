@@ -1007,7 +1007,6 @@ const en = {
           message: 'Model discovery uses the saved upstream configuration. Save these changes to fetch its models.',
           saveAndFetch: 'Save and fetch models',
           unsavedCredential: 'Apply credential changes using the provider controls before saving.',
-          reloadFailed: 'Settings were saved, but the updated record could not be loaded: {{error}}',
         },
       },
       requests: {

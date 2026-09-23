@@ -11,7 +11,6 @@ import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
 const apiMocks = vi.hoisted(() => ({
-  get: vi.fn(),
   patch: vi.fn(),
 }));
 
@@ -20,7 +19,6 @@ vi.mock('../../../src/api/client', () => ({
     api: {
       upstreams: {
         ':id': {
-          $get: apiMocks.get,
           $patch: apiMocks.patch,
         },
       },
@@ -94,7 +92,6 @@ describe('upstream editor YAML submission', () => {
       config: { ...record.config, models: [model('replacement')] },
     };
     apiMocks.patch.mockResolvedValue({ data: saved, error: null });
-    apiMocks.get.mockResolvedValue({ data: saved, error: null });
     renderPage();
 
     const save = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }) as HTMLButtonElement;

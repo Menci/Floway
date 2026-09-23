@@ -1,19 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest';
-
-// Copilot OAuth poll handlers warm the model cache after rotating the PAT. The
-// cache behavior has dedicated coverage; these route tests isolate credential
-// exchange and persistence.
-const modelsCacheMock = vi.hoisted<{ calls: number; error: Error | null; pending: Promise<void> | null }>(() => ({ calls: 0, error: null, pending: null }));
-
-vi.mock('../../../src/execution/models-refresh.ts', async importOriginal => ({
-  ...await importOriginal<typeof import('../../../src/execution/models-refresh.ts')>(),
-  refreshModels: async () => {
-    modelsCacheMock.calls++;
-    if (modelsCacheMock.pending) await modelsCacheMock.pending;
-    if (modelsCacheMock.error) throw modelsCacheMock.error;
-    return { kind: 'refreshed' };
-  },
-}));
+import { test } from 'vitest';
 
 import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -33,28 +18,20 @@ const githubAccessToken = (accessToken: string) => ({
   scope: 'read:user',
 });
 
-afterEach(() => {
-  modelsCacheMock.calls = 0;
-  modelsCacheMock.error = null;
-  modelsCacheMock.pending = null;
-});
-
-test('/api/upstreams/copilot/oauth/device-login/poll waits for the post-OAuth model warm', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll persists credentials without fetching models', async () => {
   const { adminSession, githubAccount, repo } = await setupAppTest();
-  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_blocking_warm' });
+  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_no_models_fetch' });
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, existing);
-  let releaseWarm: (() => void) | null = null;
-  modelsCacheMock.pending = new Promise<void>(resolve => { releaseWarm = resolve; });
 
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_blocking_warm'));
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_no_models_fetch'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
-          token: 'ct_blocking_warm',
+          token: 'ct_no_models_fetch',
           expires_at: Math.floor(Date.now() / 1000) + 1500,
           refresh_in: 1200,
           endpoints: { api: 'https://api.business.githubcopilot.com' },
@@ -63,17 +40,12 @@ test('/api/upstreams/copilot/oauth/device-login/poll waits for the post-OAuth mo
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      let settled = false;
-      const responsePromise = requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
         body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: existing.id }, deviceCode: 'device' }),
-      }).finally(() => { settled = true; });
-
-      await vi.waitFor(() => expect(modelsCacheMock.calls).toBe(1));
-      expect(settled).toBe(false);
-      releaseWarm!();
-      expect((await responsePromise).status).toBe(200);
+      });
+      assertEquals(response.status, 200);
     },
   );
 });
@@ -331,9 +303,6 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
-      // Warmup probes /models on the per-tier host — return an empty catalog
-      // so the post-persist warm completes without waiting on a real fetch.
-      if (url.hostname === 'api.business.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -364,7 +333,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
 });
 
-test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache before warming', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache', async () => {
   const { repo, adminSession, githubAccount } = await setupAppTest({
     githubAccount: { token: 'ghu_old', user: githubUser },
   });
@@ -376,7 +345,6 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],
   });
-  modelsCacheMock.error = new Error('new tenant catalog unavailable');
 
   await withMockedFetch(
     request => {

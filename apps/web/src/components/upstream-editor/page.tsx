@@ -5,11 +5,9 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 
-import { CATALOG_HANDOFF_QUERY, stageCatalogHandoff } from './catalog-handoff';
 import { UpstreamConfigSidebar } from './config-sidebar';
 import { refineCustomIngressHeaderRules } from './custom-ingress-header-rules-validation';
 import {
-  catalogFromSave,
   createBody,
   fetchSavedModelCatalog,
   hasUnsavedDiscoveryInputs,
@@ -66,7 +64,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // form's saved state, so the hand-off is state rather than a call: naming the
   // id lets the navigation wait for the render that the save made clean instead
   // of racing it and having to be excused from the prompt.
-  const [createdUpstream, setCreatedUpstream] = useState<{ id: string; token: string } | null>(null);
+  const [createdUpstreamId, setCreatedUpstreamId] = useState<string | null>(null);
   const [initialValues] = useState(() => valuesFromRecord(data.record));
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
@@ -114,9 +112,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // Declared after the blocker so that within the commit the save produces, the
   // blocker is re-registered against the now-clean form before this runs.
   useEffect(() => {
-    if (createdUpstream === null) return;
-    void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(createdUpstream.id)}?${CATALOG_HANDOFF_QUERY}=${encodeURIComponent(createdUpstream.token)}`, rewrite);
-  }, [createdUpstream, navigate, rewrite]);
+    if (createdUpstreamId === null) return;
+    void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(createdUpstreamId)}`, rewrite);
+  }, [createdUpstreamId, navigate, rewrite]);
 
   // Releasing the blocker commits the route change, which would unmount this
   // body-portaled dialog mid-exit. So confirm only closes it and the blocker is
@@ -144,13 +142,20 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields);
   const oauth = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const fetchDialog = useDialogInvocation<void>();
+  // Save resets the form and record in one commit. The immediately following
+  // Fetch must use that saved record even before React commits the new render.
+  const savedFetchAfterSave = useRef<UpstreamRecord | null>(null);
   // The workspace's refresh button and the custom provider's fetch switch both
   // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
   const { refresh: refreshModels, cancel: cancelModelsRefresh, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setModelsError(null);
-    const catalog = isPersisted(record) && !discoveryInputsDirty
-      ? await fetchSavedModelCatalog(record, { signal })
-      : await previewDraftModelCatalog(record, getValues(), { signal });
+    const saved = savedFetchAfterSave.current;
+    savedFetchAfterSave.current = null;
+    const catalog = saved !== null
+      ? await fetchSavedModelCatalog(saved, { signal })
+      : isPersisted(record) && !discoveryInputsDirty
+        ? await fetchSavedModelCatalog(record, { signal })
+        : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered) setDiscovered(catalog.discovered);
@@ -158,6 +163,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   }, [discoveryInputsDirty, getValues, record, updateRecord]));
 
   const requestModels = () => {
+    if (saving) return;
     if (oauth && discoveryInputsDirty) fetchDialog.open();
     else void refreshModels();
   };
@@ -183,25 +189,25 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     });
   };
 
-  const submitForm = () => {
+  const submitForm = async (): Promise<UpstreamRecord | null> => {
     cancelModelsRefresh();
     if (oauth && (formState.dirtyFields.config || formState.dirtyFields.state)) {
       setSaveError(t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'));
-      return;
+      return null;
     }
     if (modelsYamlDraft !== null) {
       const parsed = parseModels(modelsYamlDraft.text, { allowRerank: record.kind === 'custom' });
       if (!parsed.ok) {
         setModelsYamlDraft({ ...modelsYamlDraft, error: parsed.message });
-        return;
+        return null;
       }
       setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
       setModelsYamlDraft(null);
     }
-    return handleSubmit(async values => {
+    let savedRecord: UpstreamRecord | null = null;
+    await handleSubmit(async values => {
       setSaving(true); setSaveError(null);
-      // A save is one round-trip on create and two on edit, so it announces
-      // itself while it runs. The dashboard's toaster sits above the outlet, so
+      // The dashboard's toaster sits above the outlet, so
       // the create branch's toast outlives the navigation that follows it.
       const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
       const result = data.mode === 'create'
@@ -210,36 +216,23 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           }))
         : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
-      let saved: UpstreamRecord = result.data;
-      if (data.mode === 'edit') {
-        const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-        if (full.error) {
-          handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
-          setSaveError(t('dashboard.upstreamEditor.fetchDirty.reloadFailed', { error: full.error.message }));
-          setSaving(false);
-          return;
-        }
-        saved = full.data;
-      }
+      const saved: UpstreamRecord = result.data;
       updateRecord(saved);
       reset(valuesFromRecord(saved));
-      const catalog = catalogFromSave(result.data.modelDiscovery, result.data.modelsCache);
-      if (result.data.modelDiscovery !== null) {
-        setModelsError(catalog.modelsError);
-        setDiscovered(catalog.discovered ?? []);
-      }
+      if (discoveryInputsDirty) { setModelsError(null); setDiscovered([]); }
       handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
+      savedRecord = saved;
       // `saving` stays set during the route handoff; the old form is still
       // mounted until navigation commits, and another Save would create twice.
       if (data.mode === 'create') {
-        const token = stageCatalogHandoff({ upstreamId: saved.id, configVersion: result.data.configVersion, catalog });
-        setCreatedUpstream({ id: saved.id, token });
+        setCreatedUpstreamId(saved.id);
       } else setSaving(false);
     }, () => {
       // Field rejections render on the control that produced them; the
       // page-level bar is only where a server says no.
       setSaveError(null);
     })();
+    return savedRecord;
   };
 
   return <FormProvider {...form}>
@@ -295,7 +288,15 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       actionLabel={t('dashboard.upstreamEditor.fetchDirty.saveAndFetch')}
       key={fetchDialog.invocation.key}
       message={t('dashboard.upstreamEditor.fetchDirty.message')}
-      onConfirm={() => { fetchDialog.close(); void submitForm(); }}
+      onConfirm={() => {
+        fetchDialog.close();
+        void (async () => {
+          const saved = await submitForm();
+          if (saved === null) return;
+          savedFetchAfterSave.current = saved;
+          await refreshModels();
+        })();
+      }}
       onOpenChange={open => { if (!open) fetchDialog.close(); }}
       open={fetchDialog.isOpen}
       title={t('dashboard.upstreamEditor.fetchDirty.title')}

@@ -10,10 +10,10 @@ import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), listModels: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ patch: vi.fn(), listModels: vi.fn() }));
 
 vi.mock('../../../src/api/client', () => ({
-  api: { api: { upstreams: { ':id': { $get: apiMocks.get, $patch: apiMocks.patch, 'list-models': { $post: apiMocks.listModels } } } } },
+  api: { api: { upstreams: { ':id': { $patch: apiMocks.patch, 'list-models': { $post: apiMocks.listModels } } } } },
   callApi: (operation: () => unknown) => operation(),
 }));
 
@@ -59,8 +59,7 @@ const renderPage = () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  apiMocks.get.mockResolvedValue({ data: record, error: null });
-  apiMocks.patch.mockResolvedValue({ data: { ...record, modelDiscovery: { kind: 'success', data: discovered }, configVersion: 2 }, error: null });
+  apiMocks.patch.mockResolvedValue({ data: record, error: null });
   apiMocks.listModels.mockResolvedValue({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
 });
 
@@ -74,7 +73,7 @@ test('metadata-only OAuth edits fetch the saved record and keep form changes uns
   expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Unsaved name');
 });
 
-test('dirty OAuth discovery inputs ask before saving and use the save warm once', async () => {
+test('dirty OAuth discovery inputs save first, then make one independent Fetch request', async () => {
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
@@ -86,25 +85,25 @@ test('dirty OAuth discovery inputs ask before saving and use the save warm once'
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
+  expect(apiMocks.patch.mock.invocationCallOrder[0]).toBeLessThan(apiMocks.listModels.mock.invocationCallOrder[0]!);
 });
 
-test('a failed save warm leaves Save successful and reports model discovery failure', async () => {
-  apiMocks.patch.mockResolvedValue({
-    data: {
-      ...record, configVersion: 2,
-      modelDiscovery: { kind: 'failure', message: 'Models unavailable', upstreamListingFailed: true },
-    },
-    error: null,
-  });
+test('a failed explicit Fetch reports model discovery failure after Save succeeded', async () => {
+  let finishFetch: ((value: unknown) => void) | undefined;
+  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+  expect(screen.getAllByText(i18n.t('dashboard.upstreamEditor.toast.saved')).length).toBeGreaterThan(0);
+  await act(async () => {
+    finishFetch!({ data: null, error: { message: 'Models unavailable', raw: { error: { code: 'upstream_model_listing_failed' } } } });
+  });
   await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('Models unavailable'));
   expect(apiMocks.patch).toHaveBeenCalledTimes(1);
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeNull();
 });
 
@@ -119,29 +118,31 @@ test('invalid edits do not save or fetch after confirmation', async () => {
   expect(apiMocks.listModels).not.toHaveBeenCalled();
 });
 
-test('a pending saved fetch cannot overwrite the catalog returned by Save', async () => {
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
+test('a pending old Fetch cannot overwrite the new Fetch after Save', async () => {
+  const finishFetches: Array<(value: unknown) => void> = [];
+  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetches.push(resolve); }));
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    finishFetches[1]!({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
+  });
   await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
   await act(async () => {
-    finishFetch!({ data: { kind: 'copilot', data: [{ upstreamModelId: 'obsolete' }], modelsCache: record.modelsCache }, error: null });
+    finishFetches[0]!({ data: { kind: 'copilot', data: [{ upstreamModelId: 'obsolete' }], modelsCache: record.modelsCache }, error: null });
   });
   expect(screen.getByTestId('discovered').textContent).toBe('new-model');
 });
 
-test('a failed full-record reload reports saved settings without resetting from a redacted PATCH response', async () => {
-  apiMocks.get.mockResolvedValue({ data: null, error: { message: 'reload unavailable' } });
+test('ordinary Save acknowledges persistence without issuing a model Fetch', async () => {
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
-  await waitFor(() => expect(screen.getByText(i18n.t('dashboard.upstreamEditor.fetchDirty.reloadFailed', { error: 'reload unavailable' }))).toBeTruthy());
-  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+  expect(screen.getAllByText(i18n.t('dashboard.upstreamEditor.toast.saved')).length).toBeGreaterThan(0);
   expect(apiMocks.listModels).not.toHaveBeenCalled();
 });

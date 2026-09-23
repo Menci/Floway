@@ -1,6 +1,6 @@
-import { reshapeModelForDashboard } from './model-projection.ts';
 import { modelsCacheStatus } from './models-cache-status.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
@@ -8,7 +8,20 @@ import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
-import { ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+
+const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => ({
+  upstreamModelId: model.upstreamModelId,
+  publicModelId: model.id,
+  kind: model.kind,
+  endpoints: model.endpoints,
+  ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+  ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
+  ...(model.pricing ? { pricing: model.pricing } : {}),
+  ...(model.chat ? { chat: model.chat } : {}),
+  opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope,
+  ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
+});
 
 const malformedConfigResponse = (error: unknown): boolean =>
   error instanceof Error && /Malformed .* upstream config/.test(error.message);

@@ -1,4 +1,4 @@
-import type { InferRequestType, InferResponseType } from 'hono/client';
+import type { InferRequestType } from 'hono/client';
 
 import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
@@ -106,8 +106,8 @@ export const loadEditorAux = async (): Promise<EditorAuxData> => {
 
 // Whether a listing request has anything to ask with. It reads the edited
 // config rather than the stored one, so the switch and the base URL the
-// operator is typing decide, and it is the single answer behind the loader,
-// the refresh action and the refresh button.
+// operator is typing decide, and it is the single answer behind the explicit
+// refresh actions and their buttons.
 export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEditorValues['config']): boolean => {
   switch (record.kind) {
   case 'custom': {
@@ -135,19 +135,6 @@ export interface ModelCatalogFetch {
   modelsError: ModelListingFailure | null;
   modelsCache: UpstreamRecord['modelsCache'] | null;
 }
-
-type SavedModelDiscovery = InferResponseType<typeof api.api.upstreams.$post, 201>['modelDiscovery'];
-
-export const catalogFromSave = (
-  discovery: SavedModelDiscovery,
-  modelsCache: UpstreamRecord['modelsCache'],
-): ModelCatalogFetch => ({
-  discovered: discovery?.kind === 'success' ? discovery.data : null,
-  modelsError: discovery?.kind === 'failure'
-    ? { message: discovery.message, upstreamListingFailed: discovery.upstreamListingFailed }
-    : null,
-  modelsCache,
-});
 
 // The gateway squashes a genuine upstream failure to a message that names
 // nothing, so the editor writes that case in its own words and quotes every
@@ -198,17 +185,6 @@ export const fetchSavedModelCatalog = async (
   const result = await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init }));
   if (result.error) return listingFailure(result.error);
   return { discovered: result.data.data, modelsError: null, modelsCache: result.data.modelsCache };
-};
-
-export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
-  const result = isPersisted(record)
-    ? await fetchSavedModelCatalog(record)
-    : await previewDraftModelCatalog(record, valuesFromRecord(record));
-  return {
-    discovered: result.discovered ?? [],
-    modelsError: result.modelsError,
-    record: result.modelsCache === null ? record : { ...record, modelsCache: result.modelsCache } as UpstreamRecord,
-  };
 };
 
 // A field react-hook-form has registered owns its key from then on: mounting it
