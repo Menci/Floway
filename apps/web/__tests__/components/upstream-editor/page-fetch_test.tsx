@@ -223,6 +223,38 @@ test('reordering YAML object keys does not invalidate a pending Fetch', async ()
   expect(screen.getByTestId('catalog-available').textContent).toBe('true');
 });
 
+test('saving Ollama YAML models clears the previous manual-inclusive catalog', async () => {
+  const ollama = upstreamRecord('up_ollama', {
+    kind: 'ollama',
+    config: {
+      baseUrl: 'https://ollama.example.com', cloudUsage: false,
+      models: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
+    },
+    state: null,
+  });
+  apiMocks.patch.mockResolvedValue({
+    data: {
+      ...ollama,
+      config: { ...ollama.config, models: [{ upstreamModelId: 'replacement', publicModelId: 'replacement', kind: 'chat', endpoints: { openaiChatCompletions: {} } }] },
+    }, error: null,
+  });
+  apiMocks.listModels.mockResolvedValue({
+    data: {
+      kind: 'ollama', data: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
+      modelsCache: ollama.modelsCache,
+    }, error: null,
+  });
+  renderPage(ollama);
+  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
+  await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('old-manual'));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit YAML' }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId('discovered').textContent).toBe('');
+  expect(screen.getByTestId('catalog-available').textContent).toBe('false');
+});
+
 test('dirty OAuth discovery inputs save first, then make one independent Fetch request', async () => {
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
