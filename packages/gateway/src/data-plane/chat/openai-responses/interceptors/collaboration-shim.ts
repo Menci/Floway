@@ -213,6 +213,14 @@ const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: stri
 const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet<string>) => {
   type Binding = { name?: string; namespace?: string; encrypted: boolean; keys: Set<string> };
   const bindings = new Map<string, Binding>();
+  // `function_call` items and `arguments.done` completions carry a dispatch
+  // identity; a sparse `arguments.delta` does not. Upstream may echo a call as
+  // a flat `namespace__name` in a delta's `name` while the preceding
+  // `output_item.added` used separated `namespace`/`name`, so a delta's
+  // `name`/`namespace` must never reach the conflict check below — it only
+  // contributes encrypted evidence and correlation keys.
+  // https://github.com/lidge-jun/opencodex/blob/e45692f8d8e4dedfb4e9b0217fc245080fb2fba8/src/responses/plaintext-v2-agent-messages.ts#L827-L902
+  const IDENTITY_TYPES = new Set(['function_call', 'response.function_call_arguments.done']);
   const bind = (value: Record<string, unknown>, outputIndex?: number): Record<string, unknown> => {
     value = rewriteIdentity(value, upstreamNamespace, upstreamNamespace, names, new Set());
     const keys = [
@@ -230,9 +238,29 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
       keys: new Set(keys),
       encrypted: (marker !== undefined && (!Array.isArray(marker) || marker.length > 0)) || groups.some(group => group.encrypted),
     };
-    for (const identity of [...groups, value]) {
+    const isIdentityCarrier = typeof value.type === 'string' && IDENTITY_TYPES.has(value.type);
+    // An upstream may echo the same call with a flat `namespace__name` (or
+    // `namespace.name`) in `name` while a prior event used separated
+    // `namespace`/`name`. Normalize every candidate to a separated pair before
+    // the conflict check: a flat name with no explicit namespace contributes
+    // its own prefix as the namespace, so both spellings of the same call
+    // compare equal regardless of event order. The rightmost separator splits
+    // off the tool name so a multi-segment namespace such as `mcp__cua_repl`
+    // survives intact (`mcp__cua_repl__js` → `mcp__cua_repl` + `js`).
+    const normalize = (identity: Record<string, unknown>): { namespace?: unknown; name?: unknown } => {
+      const name = identity.name;
+      if (typeof name !== 'string') return identity;
+      if (identity.namespace !== undefined && identity.namespace !== null) return identity;
+      for (const separator of ['__', '.']) {
+        const at = name.lastIndexOf(separator);
+        if (at > 0) return { namespace: name.slice(0, at), name: name.slice(at + separator.length) };
+      }
+      return identity;
+    };
+    for (const identity of [...groups, ...(isIdentityCarrier ? [value] : [])]) {
+      const candidate = normalize(identity);
       for (const field of ['namespace', 'name'] as const) {
-        const next = identity[field];
+        const next = candidate[field];
         if (next === undefined) continue;
         if (typeof next !== 'string' || (binding[field] !== undefined && binding[field] !== next)) {
           throw new TypeError('Conflicting collaboration stream call identity');

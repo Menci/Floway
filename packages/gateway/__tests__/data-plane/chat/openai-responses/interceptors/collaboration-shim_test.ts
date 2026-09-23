@@ -593,3 +593,43 @@ test.each([false, undefined])('preserves upstream schema echoes with differing c
     if (frame.event.type === 'response.output_item.done') expect(frame.event.item).toMatchObject({ tools: expected });
   }
 });
+
+// Upstream may echo the same call with a flat `namespace__name` in an argument
+// event's `name` while the preceding `output_item.added` used separated
+// `namespace`/`name`. For a foreign-namespace call the flat echo is not
+// rewritable, so binding the flat name against the split name would manufacture
+// a false conflict and fail the turn. A delta is not an identity carrier at
+// all; a `done` flat name normalizes back to the binding's separated identity.
+// The namespace here is multi-segment (`mcp__cua_repl`) to pin the rightmost-
+// separator split.
+test.each(['delta', 'done'] as const)('does not manufacture a conflict from a flat argument %s echo', async argumentEvent => {
+  const ctx = invocation();
+  const argumentFrame = argumentEvent === 'delta'
+    ? { type: 'response.function_call_arguments.delta' as const, delta: '{}' }
+    : { type: 'response.function_call_arguments.done' as const, arguments: '{}' };
+  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
+    eventResult((async function* () {
+      yield eventFrame({
+        type: 'response.output_item.added', output_index: 0, item: {
+          type: 'function_call', id: 'fc_flat', call_id: 'flat',
+          namespace: 'mcp__cua_repl', name: 'js', arguments: '', status: 'in_progress',
+        },
+      });
+      yield eventFrame({
+        ...argumentFrame, item_id: 'fc_flat', output_index: 0,
+        name: 'mcp__cua_repl__js', call_id: 'flat',
+      } as unknown as OpenAIResponsesStreamEvent);
+      yield eventFrame({
+        type: 'response.output_item.done', output_index: 0, item: {
+          type: 'function_call', id: 'fc_flat', call_id: 'flat',
+          namespace: 'mcp__cua_repl', name: 'js', arguments: '{}', status: 'completed',
+        },
+      });
+    })(), testTelemetryModelIdentity));
+  if (result.type !== 'events') throw new Error('Expected events');
+  for await (const frame of result.events) {
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+      expect(frame.event.item).toMatchObject({ namespace: 'mcp__cua_repl', name: 'js' });
+    }
+  }
+});
