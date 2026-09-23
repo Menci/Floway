@@ -731,6 +731,7 @@ const en = {
           cacheFetched: 'Fetched {{time}}',
           cacheFailed: 'Last fetch failed',
           cacheErrorDetail: '{{time}} - {{message}}',
+          copyError: 'Copy full error',
           listingFailed: 'Could not fetch the model list from the upstream.',
           listingFailedWithDetail:
               'Could not fetch the model list from the upstream: {{message}}',

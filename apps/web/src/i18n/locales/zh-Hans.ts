@@ -701,6 +701,7 @@ const zhHansCN = {
           cacheFetched: '获取于{{time}}',
           cacheFailed: '上次获取失败',
           cacheErrorDetail: '{{time}}：{{message}}',
+          copyError: '复制完整错误',
           listingFailed: '无法从上游获取模型列表。',
           listingFailedWithDetail: '无法从上游获取模型列表：{{message}}',
           search: '搜索模型名称或 ID',

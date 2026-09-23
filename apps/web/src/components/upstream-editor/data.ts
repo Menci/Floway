@@ -141,14 +141,21 @@ export interface ModelListingFailure {
   upstreamResponse: ProviderModelsFailureResponse | null;
 }
 
-const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => ({
-  discovered: null,
-  modelsError: {
-    message: error.message,
-    upstreamResponse: (error.raw as { error?: { upstreamResponse?: ProviderModelsFailureResponse | null } } | undefined)?.error?.upstreamResponse ?? null,
-  },
-  modelsCache: null,
-});
+const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => {
+  const body = error.raw as {
+    error?: { upstreamResponse?: ProviderModelsFailureResponse | null };
+    modelsCache?: UpstreamRecord['modelsCache'];
+  } | undefined;
+  const modelsCache = body?.modelsCache ?? null;
+  return {
+    discovered: null,
+    modelsError: {
+      message: modelsCache?.lastError?.message ?? error.message,
+      upstreamResponse: body?.error?.upstreamResponse ?? null,
+    },
+    modelsCache,
+  };
+};
 
 export const previewDraftModelCatalog = async (
   record: UpstreamRecord,

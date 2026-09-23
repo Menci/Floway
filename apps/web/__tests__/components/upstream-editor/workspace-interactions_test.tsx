@@ -6,9 +6,11 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
+import { copyToClipboard } from '../../../src/components/ui/copy-to-clipboard';
 import type { ModelListingFailure, UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { UpstreamWorkspace, type ModelsYamlDraft } from '../../../src/components/upstream-editor/workspace';
+import { MODEL_ERROR_EDITOR_LENGTH, modelErrorExcerpt } from '../../../src/components/upstreams/model-error';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -23,6 +25,8 @@ vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
 vi.mock('../../../src/components/ui/scroll-area', () => ({
   ScrollArea: forwardRef<HTMLDivElement, PropsWithChildren>(({ children }, ref) => <div ref={ref}>{children}</div>),
 }));
+
+vi.mock('../../../src/components/ui/copy-to-clipboard', () => ({ copyToClipboard: vi.fn().mockResolvedValue(true) }));
 
 const model = (id: string, chat?: UpstreamChatModelConfig) => ({
   upstreamModelId: id,
@@ -306,5 +310,21 @@ describe('upstream model listing failure wording', () => {
     expect(screen.getByText(models('listingFailed'))).toBeTruthy();
     expect(screen.getByText(/HTTP 401/).textContent).toContain('content-type: application/json');
     expect(screen.getByText(/HTTP 401/).textContent).toContain('"error": "unauthorized"');
+  });
+
+  it('shortens the visible error and lets the operator copy the stored full message', async () => {
+    const message = 'x'.repeat(MODEL_ERROR_EDITOR_LENGTH + 100);
+    const source = { ...record, modelsCache: { fetchedAt: null, modelCount: null, lastError: { message, at: 100 } } };
+    renderInApp(<Harness source={source} modelsError={{ message, upstreamResponse: null }} />);
+
+    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.models.listingFailedWithDetail', {
+      message: modelErrorExcerpt(message, MODEL_ERROR_EDITOR_LENGTH),
+    }))).toBeTruthy();
+    const copyButtons = screen.getAllByRole('button', { name: models('copyError') });
+    expect(copyButtons).toHaveLength(2);
+    fireEvent.click(copyButtons[0]);
+    await waitFor(() => expect(vi.mocked(copyToClipboard)).toHaveBeenCalledWith(message));
+    fireEvent.click(copyButtons[1]);
+    await waitFor(() => expect(vi.mocked(copyToClipboard)).toHaveBeenCalledTimes(2));
   });
 });

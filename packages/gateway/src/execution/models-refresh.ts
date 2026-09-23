@@ -43,7 +43,9 @@ export const modelsRefreshErrorMessage = (error: unknown): string => {
   if (error instanceof ProviderModelsUnavailableError) {
     if (error.displayResponse !== null) {
       const body = error.displayResponse.body.trim();
-      return body === '' ? `HTTP ${error.displayResponse.status}` : `HTTP ${error.displayResponse.status}: ${body}`;
+      const summary = body === '' ? `HTTP ${error.displayResponse.status}` : `HTTP ${error.displayResponse.status}: ${body}`;
+      const headers = error.displayResponse.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
+      return headers === '' ? summary : `${summary}\n\n${headers}`;
     }
     if (error.cause !== undefined) return errorMessage(error.cause);
   }

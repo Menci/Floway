@@ -4,7 +4,7 @@ export interface ProviderModelsFailureResponse {
   body: string;
 }
 
-const MAX_FAILURE_BODY_LENGTH = 4096;
+const MAX_FAILURE_BODY_LENGTH = 12_288;
 
 const displayFailureBody = (body: string): string => {
   let display = body;

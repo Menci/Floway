@@ -33,6 +33,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { shortAccountId } from '../components/upstreams/account-id';
 import { planLabel } from '../components/upstreams/codex-account';
+import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { fluentComponents } from '../fluent';
@@ -570,7 +571,7 @@ function ModelStatus({
   const healthy = count !== null && count > 0 && !record.modelsCache.lastError;
   const cacheDetail = record.modelsCache.lastError
     ? t('dashboard.upstreams.cache.failedDetail', {
-        message: record.modelsCache.lastError.message,
+        message: modelErrorExcerpt(record.modelsCache.lastError.message, MODEL_ERROR_TOOLTIP_LENGTH),
         time: dateTime(record.modelsCache.lastError.at, locale),
       })
     : record.modelsCache.fetchedAt !== null

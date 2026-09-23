@@ -815,12 +815,14 @@ test('model-listing failure belongs to the explicit Fetch after a successful Sav
     () => requestApp(`/api/upstreams/${saved.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } }),
   );
   assertEquals(fetchResponse.status, 502);
-  const failure = (await fetchResponse.json() as JsonObject).error;
+  const failedFetch = await fetchResponse.json() as JsonObject;
+  const failure = failedFetch.error;
   assertEquals(failure.code, 'upstream_model_listing_failed');
-  assertEquals(failure.message, 'HTTP 503: unavailable');
+  assertEquals(failure.message.startsWith('HTTP 503: unavailable'), true);
   assertEquals(failure.upstreamResponse, { status: 503, headers: [['content-type', 'text/plain;charset=UTF-8']], body: 'unavailable' });
+  assertEquals(failedFetch.modelsCache.lastError.message, failure.message);
   assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.failureCount, 1);
-  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.message, 'HTTP 503: unavailable');
+  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.message, failure.message);
 });
 
 test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {

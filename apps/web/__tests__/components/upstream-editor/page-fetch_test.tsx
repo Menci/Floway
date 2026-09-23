@@ -32,14 +32,16 @@ vi.mock('../../../src/components/upstream-editor/config-sidebar', () => ({
 }));
 
 vi.mock('../../../src/components/upstream-editor/workspace', () => ({
-  UpstreamWorkspace: ({ discovered, modelsError, onModelsYamlDraftChange }: {
+  UpstreamWorkspace: ({ discovered, modelsError, onModelsYamlDraftChange, record: currentRecord }: {
     discovered: { upstreamModelId: string }[];
     modelsError: { message: string; upstreamResponse: { status: number } | null } | null;
     onModelsYamlDraftChange: (draft: { baseline: string; text: string; error: null }) => void;
+    record: { modelsCache: { lastError: { message: string } | null } };
   }) => <>
     <output data-testid="discovered">{discovered.map(model => model.upstreamModelId).join(',')}</output>
     <output data-testid="models-error">{modelsError?.message ?? ''}</output>
     <output data-testid="upstream-response-status">{modelsError?.upstreamResponse?.status ?? ''}</output>
+    <output data-testid="cache-last-error">{currentRecord.modelsCache.lastError?.message ?? ''}</output>
     <button type="button" onClick={() => onModelsYamlDraftChange({
       baseline: '[]',
       text: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n',
@@ -288,12 +290,14 @@ test('a failed explicit Fetch reports model discovery failure after Save succeed
       error: {
         message: 'HTTP 503: unavailable', raw: {
           error: { code: 'upstream_model_listing_failed', upstreamResponse: { status: 503, headers: [], body: 'unavailable' } },
+          modelsCache: { fetchedAt: null, modelCount: null, lastError: { message: 'HTTP 503: persisted detail', at: 100 } },
         },
       },
     });
   });
-  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
+  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: persisted detail'));
   expect(screen.getByTestId('upstream-response-status').textContent).toBe('503');
+  expect(screen.getByTestId('cache-last-error').textContent).toBe('HTTP 503: persisted detail');
   expect(apiMocks.patch).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeNull();
 });

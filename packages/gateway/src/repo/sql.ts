@@ -2,7 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
-import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from './models-cache-contract.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
@@ -1044,7 +1044,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
     // A cold failure remains immediately stale while preserving the error for
     // the next request and dashboard read.
-    const nextError = { ...error, failureCount: previousFailureCount + 1 };
+    const nextError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
     const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: nextError });
     const result = await this.db
       .prepare(

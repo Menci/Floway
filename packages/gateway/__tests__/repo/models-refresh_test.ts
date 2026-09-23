@@ -4,7 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { modelsRefreshIdentity } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { saveUpstreamForTest } from './upstreams.ts';
-import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
+import { MAX_STORED_MODEL_ERROR_LENGTH, MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, StoredUpstreamRecord } from '../../src/repo/types.ts';
@@ -34,6 +34,24 @@ const factories: [string, () => Promise<Repo>][] = [
 ];
 
 describe.each(factories)('%s models refresh persistence', (_name, createRepo) => {
+  test('bounds a stored failure without changing the caller input', async () => {
+    const repo = (await createRepo()).upstreams;
+    await saveUpstreamForTest(repo, record);
+    const message = 'x'.repeat(MAX_STORED_MODEL_ERROR_LENGTH + 100);
+
+    await repo.recordModelsRefreshFailure({
+      id: record.id,
+      ...modelsRefreshIdentity(record),
+      error: { message, at: 100 },
+      previousFailureCount: 0,
+    });
+
+    const stored = (await repo.getById(record.id))?.modelsCache?.lastError?.message;
+    expect(stored).toHaveLength(MAX_STORED_MODEL_ERROR_LENGTH);
+    expect(stored?.endsWith('…')).toBe(true);
+    expect(message).toHaveLength(MAX_STORED_MODEL_ERROR_LENGTH + 100);
+  });
+
   test('derives exponential retry times from the persisted failure count', async () => {
     const repo = (await createRepo()).upstreams;
     await saveUpstreamForTest(repo, record);

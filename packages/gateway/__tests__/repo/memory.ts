@@ -3,7 +3,7 @@ import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.t
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
-import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
 import {
   assertSameStoredOpenAIResponsesItem,
   cloneStoredOpenAIResponsesItem,
@@ -816,7 +816,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     if ((existing.modelsCache?.lastError?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
-    const lastError = { ...error, failureCount: previousFailureCount + 1 };
+    const lastError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
     if (existing.modelsCache?.revision === MODEL_CATALOG_REVISION) existing.modelsCache.lastError = lastError;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
     return Promise.resolve(true);

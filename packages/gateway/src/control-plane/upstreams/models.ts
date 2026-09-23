@@ -89,7 +89,12 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse } }, 502);
+      const afterFailure = await getRepo().upstreams.getById(id);
+      const modelsCache = afterFailure?.configVersion === record.configVersion ? modelsCacheStatus(afterFailure) : null;
+      return c.json({
+        error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse },
+        modelsCache,
+      }, 502);
     }
     if (isModelsRefreshConfigurationError(e)) return c.json({ error: errorMessage(e) }, 400);
     if (malformedConfigResponse(e)) return c.json({ error: errorMessage(e) }, 400);
