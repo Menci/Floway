@@ -35,6 +35,7 @@ interface OpenAIResponsesAttemptBaseArgs {
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
+  readonly targetApiOverride?: ChatTargetApi;
 }
 
 interface OpenAIResponsesSourceState {
@@ -84,7 +85,10 @@ export const openaiResponsesAttempt = {
   invoke: async (args: OpenAIResponsesAttemptInvokeArgs): Promise<OpenAIResponsesAttemptResult> => {
     const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
-    const targetApi = openaiResponsesTarget.pick(candidate.model.endpoints);
+    const targetApi = args.targetApiOverride ?? openaiResponsesTarget.pick(candidate.model.endpoints);
+    if (args.targetApiOverride !== undefined && candidate.model.endpoints[targetApi] === undefined) {
+      throw new Error(`OpenAI Responses target override '${targetApi}' is unavailable for this model.`);
+    }
     const payload = { ...klona(args.payload), model: candidate.model.id };
     ctx.store.beginAttempt(args.sourceState?.privatePayloads ?? new Map());
     // Copilot compaction and Azure-native compaction both emit assistant
@@ -183,6 +187,7 @@ const dispatchOpenAIResponses = async (
       }),
       translated => anthropicMessagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
+        skipDynamicToolBridge: true,
       }),
       captureFromDump(ctx.dump, targetApi),
     );

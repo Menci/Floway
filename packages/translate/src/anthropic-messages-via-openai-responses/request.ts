@@ -130,22 +130,50 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
 
 // Preserve per-block boundaries when the source carries a
 // AnthropicMessagesTextBlock[]; single-string source stays as string content.
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIResponsesInputItem[] => [
-  {
-    type: 'message',
-    role: 'system',
-    content: typeof message.content === 'string'
-      ? message.content
-      : message.content.map(block => ({ type: 'input_text', text: block.text })),
-  },
-];
+const translateAnthropicMessagesSystem = (
+  message: AnthropicMessagesSystemMessage,
+  clientTools: readonly AnthropicMessagesClientTool[],
+): OpenAIResponsesInputItem[] => {
+  if (typeof message.content === 'string') return [{ type: 'message', role: 'system', content: message.content }];
+  const input: OpenAIResponsesInputItem[] = [];
+  const pendingText: AnthropicMessagesTextBlock[] = [];
+  const flushText = () => {
+    if (pendingText.length === 0) return;
+    input.push({ type: 'message', role: 'system', content: pendingText.map(block => ({ type: 'input_text', text: block.text })) });
+    pendingText.length = 0;
+  };
+  for (const block of message.content) {
+    if (block.type === 'text') {
+      pendingText.push(block);
+      continue;
+    }
+    flushText();
+    if (block.type === 'tool_removal') {
+      throw new TranslatorInputError('Anthropic tool_removal has no corresponding OpenAI Responses tool-availability item.');
+    }
+    const reference = block.tool;
+    const tool = reference.type === 'tool_definition'
+      ? reference.definition
+      : reference.type === 'tool_reference'
+        ? clientTools.find(candidate => candidate.name === reference.name)
+        : undefined;
+    if (tool === undefined || (tool.type !== undefined && tool.type !== 'custom')) {
+      throw new TranslatorInputError('Anthropic tool_addition must define or reference a client-executed tool.');
+    }
+    const translated = translateTools([tool]);
+    if (translated === null) throw new TranslatorInputError('Anthropic tool_addition contains no callable tool.');
+    input.push({ type: 'additional_tools', role: 'developer', tools: translated });
+  }
+  flushText();
+  return input;
+};
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): OpenAIResponsesInputItem[] =>
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], clientTools: readonly AnthropicMessagesClientTool[]): OpenAIResponsesInputItem[] =>
   messages.flatMap((message, messageIdx): OpenAIResponsesInputItem[] => {
     switch (message.role) {
     case 'user': return translateUserMessage(message, messageIdx);
     case 'assistant': return translateAssistantMessage(message, messageIdx);
-    case 'system': return translateAnthropicMessagesSystem(message);
+    case 'system': return translateAnthropicMessagesSystem(message, clientTools);
     default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
   });
@@ -188,6 +216,7 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
     // OpenAI Responses tools default stricter than Anthropic/OpenAI-Chat-Completions-style function tools,
     // so omitted source strictness is made explicit as false.
     strict: tool.strict ?? false,
+    ...(tool.defer_loading !== undefined ? { defer_loading: tool.defer_loading } : {}),
     ...(tool.description ? { description: tool.description } : {}),
   }));
 };
@@ -237,7 +266,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
-    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages)],
+    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages, clientTools ?? [])],
     ...(instructions !== null ? { instructions } : {}),
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),

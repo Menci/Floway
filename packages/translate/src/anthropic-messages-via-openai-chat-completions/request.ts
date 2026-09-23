@@ -198,10 +198,13 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
 // as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
 // does not silently merge them. Falls back to the simple string form when
 // the source is already a single-string field.
-const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlock[]): string | OpenAIChatCompletionsContentPart[] =>
+const systemContentFromBlocks = (system: AnthropicMessagesSystemMessage['content']): string | OpenAIChatCompletionsContentPart[] =>
   typeof system === 'string'
     ? system
-    : system.map(block => ({ type: 'text', text: block.text }));
+    : system.map(block => {
+        if (block.type !== 'text') throw new TranslatorInputError(`Anthropic ${block.type} requires dynamic tool compatibility before Chat Completions translation.`);
+        return { type: 'text', text: block.text };
+      });
 
 const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIChatCompletionsMessage[] => [
   {

@@ -250,10 +250,25 @@ export interface AnthropicMessagesAssistantMessage {
 // Anthropic backend accepts them) include role: "system". Honor the schema.
 export interface AnthropicMessagesSystemMessage {
   role: 'system';
-  content: string | AnthropicMessagesTextBlock[];
+  content: string | AnthropicMessagesSystemContentBlock[];
 }
 
 export type AnthropicMessagesMessage = AnthropicMessagesUserMessage | AnthropicMessagesAssistantMessage | AnthropicMessagesSystemMessage;
+
+export type AnthropicMessagesToolChangeReference =
+  | { type: 'tool_reference'; name: string }
+  | { type: 'mcp_tool_reference'; server_name: string; name: string }
+  | { type: 'mcp_toolset_reference'; server_name: string };
+
+export type AnthropicMessagesToolAdditionTarget = AnthropicMessagesToolChangeReference | {
+  type: 'tool_definition';
+  definition: AnthropicMessagesTool;
+};
+
+export type AnthropicMessagesSystemContentBlock =
+  | AnthropicMessagesTextBlock
+  | { type: 'tool_addition'; tool: AnthropicMessagesToolAdditionTarget }
+  | { type: 'tool_removal'; tool: AnthropicMessagesToolChangeReference };
 
 export interface AnthropicMessagesClientTool {
   type?: 'custom';
@@ -261,6 +276,7 @@ export interface AnthropicMessagesClientTool {
   description?: string;
   input_schema: Record<string, unknown>;
   strict?: boolean;
+  defer_loading?: boolean;
   cache_control?: AnthropicMessagesCacheControl;
 }
 

@@ -111,8 +111,8 @@ const projectResponse = (
   projectedByCallId: Map<string, ProjectedCall>,
 ): OpenAIResponsesResult => ({
   ...response,
-  ...(prepared.clientTools === undefined ? { tools: undefined } : { tools: prepared.clientTools ?? undefined }),
-  tool_choice: prepared.clientToolChoice,
+  tools: prepared.clientTools ?? [],
+  tool_choice: prepared.clientToolChoice ?? 'auto',
   output: response.output.flatMap<OpenAIResponsesOutputItem>(item => {
     if (!hasDispatcherCall(item)) return [item];
     const projected = projectedByCallId.get(item.call_id);

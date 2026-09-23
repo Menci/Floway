@@ -235,7 +235,7 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
   const calls = new Map<string, 'function' | 'custom' | 'search'>();
   for (const item of source.input.slice(prefixEnd)) {
     if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
-      if (item.type === 'tool_search_output' && item.execution === 'client') {
+      if (item.type === 'tool_search_output' && (item.execution === 'client' || (typeof item.call_id === 'string' && calls.get(item.call_id) === 'search'))) {
         if (typeof item.call_id !== 'string' || calls.get(item.call_id) !== 'search') {
           throw new DynamicToolInputError('Client tool_search_output has no matching tool_search_call.');
         }
@@ -251,11 +251,9 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
       continue;
     }
     if (item.type === 'tool_search_call') {
-      if (item.execution !== 'client' || typeof item.call_id !== 'string') {
-        throw new DynamicToolInputError('Cannot replay a server-executed tool_search_call through a client tool dispatcher.');
-      }
-      if (catalog.searchDefinition === undefined) {
-        throw new DynamicToolInputError('tool_search_call requires a client-executed tool_search declaration.');
+      if (typeof item.call_id !== 'string') {
+        if (item.execution === 'client') throw new DynamicToolInputError('Client tool_search_call has no call_id.');
+        continue;
       }
       const args = item.arguments;
       if (args === null || typeof args !== 'object' || Array.isArray(args)) {

@@ -9,6 +9,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputFunctionCall, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { eventResult } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { translateOpenAIResponsesViaAnthropicMessages, translateOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const customer = {
   type: 'function' as const,
@@ -76,6 +77,13 @@ test('replays client tool search and announces its loaded namespace tools after 
   expect(searched.type).toBe('message');
   if (searched.type !== 'message') throw new Error('Expected searched tool announcement');
   expect(searched.content).toContain('tool/function/orders/audit');
+
+  const continuation = prepareDynamicTools(payload([
+    { type: 'tool_search_call', id: 'tsc_1', call_id: 'call_search', execution: 'client', arguments: { goal: 'audit order' } },
+    { type: 'tool_search_output', id: 'tso_1', call_id: 'call_search', execution: 'client', tools: [{ type: 'function', name: 'audit', parameters: { type: 'object' } }] },
+    { type: 'message', role: 'user', content: 'Use the loaded tool.' },
+  ]));
+  expect(continuation.payload.input.map(item => item.type)).toEqual(['function_call', 'function_call_output', 'message', 'message']);
 });
 
 test('preserves namespace and freeform custom call identity through history', () => {
@@ -128,6 +136,20 @@ test('activates automatically on translation and only by flag for a native Respo
   const forced = makeInvocation('openaiResponses', new Set(['dynamic-tool-shim']));
   await withOpenAIResponsesDynamicToolShim(forced, mockChatGatewayCtx(), run);
   expect(forced.payload.tools?.at(-1)).toMatchObject({ type: 'function', name: DYNAMIC_TOOL_DISPATCHER });
+});
+
+test('both translated targets receive only the stable dispatcher and the positional system announcement', async () => {
+  const prepared = prepareDynamicTools(payload([
+    { type: 'message', role: 'user', content: 'Before the tool exists.' },
+    { type: 'additional_tools', role: 'developer', tools: [customer] },
+    { type: 'message', role: 'user', content: 'Look up customer 42.' },
+  ]));
+  const chat = await translateOpenAIResponsesViaOpenAIChatCompletions(prepared.payload, { model: 'model' });
+  const anthropic = await translateOpenAIResponsesViaAnthropicMessages(prepared.payload, { model: 'model', fallbackMaxOutputTokens: 1024, loadRemoteImage: async () => null });
+  expect(chat.target.tools?.map(tool => tool.function.name)).toEqual([DYNAMIC_TOOL_DISPATCHER]);
+  expect(chat.target.messages.map(message => message.role)).toEqual(['user', 'system', 'user']);
+  expect(anthropic.target.tools?.map(tool => tool.name)).toEqual([DYNAMIC_TOOL_DISPATCHER]);
+  expect(anthropic.target.messages.map(message => message.role)).toEqual(['user', 'system', 'user']);
 });
 
 test('buffers a dispatcher call until its real client-visible tool and arguments are known', async () => {

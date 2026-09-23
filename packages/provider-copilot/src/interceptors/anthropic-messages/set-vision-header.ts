@@ -1,5 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesSystemMessage, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
@@ -17,7 +17,7 @@ import type { AnthropicMessagesAssistantMessage, AnthropicMessagesUserMessage } 
  * References:
  * - https://github.com/caozhiyuan/copilot-api/commit/1f6b98924ae092db9b2010846c32e5cbf10817df
  */
-const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | AnthropicMessagesAssistantMessage['content']): boolean => {
+const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | AnthropicMessagesAssistantMessage['content'] | AnthropicMessagesSystemMessage['content']): boolean => {
   if (!Array.isArray(content)) return false;
   return content.some(block => {
     if (block.type === 'image') return true;
