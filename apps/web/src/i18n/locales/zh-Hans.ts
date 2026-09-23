@@ -627,6 +627,11 @@ const zhHansCN = {
               label: 'OpenAI Responses 协作兼容',
               description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
             },
+            'dynamic-tool-shim': {
+              label: '动态工具兼容层',
+              description:
+                  '在对话中的原始位置引入动态客户端工具，同时只给上游提供一个稳定的调用工具。客户端响应显示实际工具调用。\n当 OpenAI Responses 请求翻译到其他协议时，此开关被视为开启。对于不能原生处理动态新增工具的 Responses 上游，可手动开启。',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
               description:

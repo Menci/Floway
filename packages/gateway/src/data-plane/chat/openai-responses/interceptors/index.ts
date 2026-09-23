@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withOpenAIResponsesCollaborationShim } from './collaboration-shim.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
+import { withOpenAIResponsesDynamicToolShim } from './dynamic-tool-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
@@ -55,6 +56,7 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
   withOpenAIResponsesCompactShim,
   withOpenAIResponsesCollaborationShim,
+  withOpenAIResponsesDynamicToolShim,
   withOpenAIResponsesServerToolShim([
     webSearchServerTool,
     imageGenerationServerTool,

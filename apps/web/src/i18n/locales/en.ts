@@ -657,6 +657,11 @@ const en = {
               label: 'OpenAI Responses Collaboration Shim',
               description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every provider; disable it for an upstream or model that should use its native collaboration contract.',
             },
+            'dynamic-tool-shim': {
+              label: 'Dynamic Tool Compatibility Shim',
+              description:
+                  'Keeps dynamically introduced client tools in their conversation position while giving the upstream one stable dispatcher tool. Client responses show the actual tool call.\nThis option is treated as enabled when an OpenAI Responses request is translated to another protocol. Enable it for a Responses upstream that cannot process dynamically added tools natively.',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:
