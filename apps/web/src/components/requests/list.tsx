@@ -10,6 +10,8 @@ import type { CSSProperties, KeyboardEvent } from 'react';
 import { List } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 
+import { BatchExport } from './batch-export';
+import { RequestFilters } from './filters';
 import { errorLabel, requestSeverity, totalTokens } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -21,8 +23,9 @@ import { NO_READING } from '../../lib/no-reading';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { EmptyState } from '../ui/empty-state';
-import { Dropdown } from '../ui/fluent-form-controls';
+import { Checkbox, Dropdown } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
+import { PANEL_INSET_CLASS } from '../ui/panel';
 import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -59,32 +62,56 @@ const useStyles = makeStyles({
       '--floway-select-fill': 'var(--colorSubtleBackgroundPressed)',
       '--floway-select-fill-hover': 'var(--colorSubtleBackgroundPressed)',
     },
-    '& .fui-Dropdown__button': { paddingInlineStart: '16px' },
+    '& .fui-Dropdown__button': {
+      paddingInlineStart: 'var(--floway-panel-inset)',
+      paddingBlock: 'var(--spacingVerticalM)',
+    },
+  },
+  toolbar: {
+    flexShrink: 0,
+    paddingBottom: 'var(--spacingVerticalS)',
+    // The fixed band and scrolling rows meet at WinUI's divider brush.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
+    borderBottom: '1px solid var(--winui-divider-stroke-default)',
   },
   list: { outlineStyle: 'none' },
+  selectionRow: {
+    backgroundColor: 'transparent',
+    display: 'flex',
+    paddingInline: 'var(--floway-panel-inset)',
+    // A divider rather than a card stroke, shared by the selection cell and content.
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
+    borderBottom: '1px solid var(--winui-divider-stroke-default)',
+    // The full row owns the fill; the content link and selection cell share it.
+    // ../../winui/controls/list.css.ts
+    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
+    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L90
+    '@media (forced-colors: active)': {
+      ':hover': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':active': { backgroundColor: 'Highlight', color: 'HighlightText' },
+      ':hover *': { color: 'HighlightText' },
+      ':active *': { color: 'HighlightText' },
+    },
+  },
   row: {
     backgroundColor: 'transparent',
     // The row addresses the record it opens, and an anchor would otherwise take
     // the user-agent link colour and underline.
     color: 'inherit',
     textDecorationLine: 'none',
-    // A divider rather than a card stroke: the card stroke is black in both
-    // themes and disappears against a dark page.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
-    borderBottom: '1px solid var(--winui-divider-stroke-default)',
     cursor: 'pointer',
     display: 'grid',
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
     outlineStyle: 'none',
-    padding: '6px 10px',
-    // ../../winui/controls/list.css.ts
-    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
-    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
+    padding: '6px 0 6px var(--spacingHorizontalL)',
+    position: 'relative',
+    flex: 1,
+    minWidth: 0,
     // Two concentric strokes held a pixel clear of the row's edge, keeping the
     // ring off the divider shared with the row above. The inner stroke's
-    // pseudo-element resolves against the row, which is a containing block only
-    // because the virtualizer positions every row absolutely.
+    // pseudo-element resolves against the relatively positioned content link.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248
@@ -102,16 +129,6 @@ const useStyles = makeStyles({
       inset: '3px',
       boxShadow: 'inset 0 0 0 1px var(--winui-focus-stroke-inner)',
       pointerEvents: 'none',
-    },
-    // A forced palette repaints every colour it can reach, so the foreground is
-    // restated on the descendants, which carry colours of their own.
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L83-L84
-    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L89-L90
-    '@media (forced-colors: active)': {
-      ':hover': { backgroundColor: 'Highlight', color: 'HighlightText' },
-      ':active': { backgroundColor: 'Highlight', color: 'HighlightText' },
-      ':hover *': { color: 'HighlightText' },
-      ':active *': { color: 'HighlightText' },
     },
   },
   // Restated per state because the row's hover rule is a pseudo-class and would
@@ -146,6 +163,9 @@ const useStyles = makeStyles({
 });
 
 interface RequestListProps {
+  q?: string;
+  failures?: boolean;
+  onFilterChange?: (q: string, failures: boolean) => void;
   /** Where the record a row opens is read, so the row can be opened in a second tab. */
   addressOfRecord: (recordId: string) => string;
   apiKeys: ApiKey[];
@@ -161,6 +181,8 @@ interface RequestListProps {
 }
 
 interface RowProps {
+  exportIds: Set<string>;
+  onToggleExport: (id: string) => void;
   addressOfRecord: (recordId: string) => string;
   now: number;
   onSelect: (recordId: string) => void;
@@ -175,7 +197,7 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
   return <RequestRowContent {...rest} index={index} record={record} records={records} style={style} />;
 }
 
-function RequestRowContent({ addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
+function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
   record: DumpMetadata;
   style: CSSProperties;
@@ -204,75 +226,79 @@ function RequestRowContent({ addressOfRecord, index, now, onSelect, record, reco
   };
 
   return (
-    <a
-      {...address}
-      aria-selected={selected}
-      className={mergeClasses(s.row, selected && s.selected)}
-      data-record-index={index}
-      onKeyDown={handleKeyDown}
-      role="option"
-      style={style}
-      tabIndex={selected || (selectedId === null && index === 0) ? 0 : -1}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
-        <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
-        <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
-          {record.model ?? t('dashboard.requests.unknownModel')}
-        </Text>
-        {/* These triggers stay unfocusable: the row is an `option` under a
+    <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
+      <Checkbox aria-label={t('dashboard.requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
+      <a
+        {...address}
+        aria-selected={selected}
+        className={s.row}
+        data-record-index={index}
+        onKeyDown={handleKeyDown}
+        role="option"
+        tabIndex={selected || (selectedId === null && index === 0) ? 0 : -1}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
+          <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
+          <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
+            {record.model ?? t('dashboard.requests.unknownModel')}
+          </Text>
+          {/* These triggers stay unfocusable: the row is an `option` under a
             roving tabindex, and a focusable descendant breaks that stop. */}
-        <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
-          <Text size={200} className="ml-auto shrink-0 text-fui-fg3">
-            {/* The narrow style, alone in the app: a trailing column in a dense
+          <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
+            <Text size={200} className="ml-auto shrink-0 text-fui-fg3">
+              {/* The narrow style, alone in the app: a trailing column in a dense
                 virtualized row has to fit "4m ago" beside the model name. */}
-            {relativeTime(record.startedAt, locale, { now, style: 'narrow' }) ?? shortDate(record.startedAt, locale)}
-          </Text>
-        </Tooltip>
-      </div>
-      <div className="flex items-center gap-2 min-w-0">
-        <Tooltip content={`${record.method} ${record.path}`} relationship="description">
-          <Text size={200} className="min-w-0 flex-1 text-fui-fg3 font-mono" truncate wrap={false}>
-            {record.path}
-          </Text>
-        </Tooltip>
-        {record.upstream && <ProviderBadge
-          upstream={record.upstream}
-          label={record.upstream.name}
-          title={`${record.upstream.kind}, ${record.upstream.id}`}
-        />}
-      </div>
-      <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
-        <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
-          </span>
-        </Tooltip>
-        <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
-          </span>
-        </Tooltip>
-        <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
-          </span>
-        </Tooltip>
-        {rowError
-          ? <TruncationTooltip content={rowError} relationship="label">
-              {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
-            </TruncationTooltip>
-          : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
-              {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
-            </Text>}
-      </div>
-    </a>
+              {relativeTime(record.startedAt, locale, { now, style: 'narrow' }) ?? shortDate(record.startedAt, locale)}
+            </Text>
+          </Tooltip>
+        </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <Tooltip content={`${record.method} ${record.path}`} relationship="description">
+            <Text size={200} className="min-w-0 flex-1 text-fui-fg3 font-mono" truncate wrap={false}>
+              {record.path}
+            </Text>
+          </Tooltip>
+          {record.upstream && <ProviderBadge
+            upstream={record.upstream}
+            label={record.upstream.name}
+            title={`${record.upstream.kind}, ${record.upstream.id}`}
+          />}
+        </div>
+        <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
+          <Tooltip content={t('dashboard.requests.duration', { value: record.durationMs })} relationship="description">
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+            </span>
+          </Tooltip>
+          <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>
+            </span>
+          </Tooltip>
+          <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.responseBytes, locale)}</Text>
+            </span>
+          </Tooltip>
+          {rowError
+            ? <TruncationTooltip content={rowError} relationship="label">
+                {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
+              </TruncationTooltip>
+            : <Text size={200} className="ml-auto text-fui-fg3" truncate wrap={false}>
+                {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
+              </Text>}
+        </div>
+      </a>
+    </div>
   );
 }
 
 export function RequestListPanel(props: RequestListProps) {
   const { t } = useTranslation();
   const s = useStyles();
+  const [exportIds, setExportIds] = useState<Set<string>>(new Set());
+  const onToggleExport = useCallback((id: string) => setExportIds(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }), []);
   const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
   const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: listRef?.element ?? null });
   const now = useNow(30_000);
@@ -288,13 +314,14 @@ export function RequestListPanel(props: RequestListProps) {
   }, [listRef, onRecordChange, records]);
 
   const rowProps = useMemo<RowProps>(() => ({
+    exportIds, onToggleExport,
     addressOfRecord: props.addressOfRecord,
     now,
     onSelect: onRecordChange,
     records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
+  }), [exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -307,9 +334,13 @@ export function RequestListPanel(props: RequestListProps) {
       >
         {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
       </Dropdown>
+      <div className={mergeClasses(PANEL_INSET_CLASS, 'flex flex-col gap-2', s.toolbar)}>
+        {props.onFilterChange && <RequestFilters key={`${props.q}-${props.failures}`} q={props.q ?? ''} failures={props.failures ?? false} onChange={props.onFilterChange} />}
+        <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />
+      </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (
-        <EmptyState className="flex-1 p-6" title={t('dashboard.requests.empty')} />
+        <EmptyState className="flex-1 p-6" title={t(props.q || props.failures ? 'dashboard.requests.noMatches' : 'dashboard.requests.empty')} />
       ) : (
         <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
           <List

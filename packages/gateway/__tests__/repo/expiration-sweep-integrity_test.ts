@@ -14,7 +14,7 @@ const integrityMigration = (): string => {
   return migration[1];
 };
 
-const createPreIntegrityDatabase = async () => {
+const createPreIntegrityDatabase = async (): Promise<{ raw: Awaited<ReturnType<typeof createSqlJsDatabase>>; db: ReturnType<typeof wrapSqlJsDatabase> }> => {
   const raw = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
@@ -25,6 +25,22 @@ const createPreIntegrityDatabase = async () => {
   } catch (error) {
     raw.close();
     throw error;
+  }
+};
+
+// Run every migration at and after `fromMigration` so a DB seeded before that
+// migration reaches the present schema. The backfill SQL selects columns
+// introduced by later migrations (e.g. the upstream body descriptor from
+// 0089), so a DB frozen at an earlier migration would fail on a missing
+// column instead of the behavior under test.
+const runMigrationsFrom = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, fromMigration: string): void => {
+  let started = false;
+  for (const [filename, sql] of migrationSqlByFilename) {
+    if (!started) {
+      if (filename === fromMigration) started = true;
+      else continue;
+    }
+    raw.run(sql);
   }
 };
 
@@ -206,7 +222,7 @@ test('repaired inactive dump queues drain in bounded ticks', async () => {
     raw.run("UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = 'disabled'");
     raw.run("UPDATE api_keys SET deleted_at = '2026-01-02T00:00:00Z' WHERE id = 'deleted'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps'");
-    raw.run(integrityMigration());
+    runMigrationsFrom(raw, '0082_expiration_sweep_integrity.sql');
 
     const repo = new SqlRepo(db);
     initRepo(repo);

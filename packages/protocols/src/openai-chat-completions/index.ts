@@ -181,6 +181,6 @@ export * from './errors.ts';
 
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
 
-export { OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
+export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { reassembleOpenAIChatCompletionsEvents } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

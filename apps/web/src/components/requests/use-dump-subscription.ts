@@ -17,7 +17,7 @@ export interface DumpSubscription {
   loadOlder: () => Promise<void>;
 }
 
-export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[]): DumpSubscription => {
+export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[], q = '', failures = false): DumpSubscription => {
   const { t } = useTranslation();
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
@@ -51,9 +51,10 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
 
   // Discarding during render rather than in the effect keeps the component from
   // ever painting one key's records under another key's heading.
-  const [subscribedKeyId, setSubscribedKeyId] = useState(keyId);
-  if (subscribedKeyId !== keyId) {
-    setSubscribedKeyId(keyId);
+  const scope = JSON.stringify([keyId, q, failures]);
+  const [subscribedKeyId, setSubscribedKeyId] = useState(scope);
+  if (subscribedKeyId !== scope) {
+    setSubscribedKeyId(scope);
     setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
@@ -67,7 +68,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
 
     const token = getSessionToken();
     if (!token) throw new Error('Authenticated dump subscription has no session token');
-    const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}`);
+    const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}&q=${encodeURIComponent(q)}&failures=${failures}`);
 
     source.addEventListener('snapshot', raw => {
       const snapshot = (JSON.parse((raw as MessageEvent).data) as { records: DumpMetadata[] }).records;
@@ -108,7 +109,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       olderRequestRef.current?.abort();
       source.close();
     };
-  }, [keyId]);
+  }, [keyId, q, failures]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);
@@ -120,7 +121,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     try {
       const result = await callApi(() => api.api.dump.keys[':keyId'].records.$get({
         param: { keyId },
-        query: { before: oldest.id, limit: String(PAGE_LIMIT) },
+        query: { before: oldest.id, limit: String(PAGE_LIMIT), q, failures: failures ? 'true' : 'false' },
       }, { init: { signal: request.signal } }));
       if (generation !== generationRef.current) return;
       if (result.error) {
@@ -138,7 +139,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     } finally {
       if (loadingOlderRef.current === generation) loadingOlderRef.current = null;
     }
-  }, [hasOlder, keyId, records]);
+  }, [failures, hasOlder, keyId, q, records]);
 
   const dismissError = useCallback(() => setError(null), []);
 

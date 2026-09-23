@@ -16,8 +16,7 @@ services:
     volumes:
       - floway-data:/data
     ports:
-      - "${FLOWAY_SERVER_PORT:-8788}:8788"
-      - "${FLOWAY_WEB_PORT:-18088}:8788"
+      - "${FLOWAY_PORT:-8788}:8788"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

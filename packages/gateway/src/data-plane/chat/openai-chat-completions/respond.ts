@@ -12,7 +12,7 @@ import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiChatCompletionsProtocolFrameToSSEFrame, OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -112,7 +112,7 @@ const observeOpenAIChatCompletionsFrames = async function* (frames: AsyncIterabl
     yield frame;
     if (isOpenAIChatCompletionsTerminalFrame(frame)) return;
   }
-  throw new Error(OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+  state.completed = true;
 };
 
 const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {

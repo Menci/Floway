@@ -10,7 +10,7 @@ import type { ApiKey } from '../api/types';
 import { RequestDetailPanel } from '../components/requests/detail';
 import { refreshRequestKeys } from '../components/requests/key-refresh';
 import { RequestListPanel } from '../components/requests/list';
-import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
+import { collectKindFromTargetApi, collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
@@ -36,6 +36,7 @@ const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = f
 // key they may already have.
 interface LoaderData {
   collected: CollectedStream | null;
+  upstreamCollected: CollectedStream | null;
   error: string | null;
   keys: ApiKey[] | null;
   record: DumpRecord | null;
@@ -56,10 +57,10 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
   const recordId = url.searchParams.get('record');
   if (!selectedKeyId) {
-    return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
+    return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } })),
+    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q: url.searchParams.get('q') ?? '', failures: url.searchParams.get('failures') === 'true' ? 'true' : 'false' } })),
     recordId
       ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
       : Promise.resolve(null),
@@ -68,8 +69,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
   const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
+  // The pre-translation upstream view: dispatched by `meta.targetApi` (the
+  // target protocol) rather than `meta.path` (the source protocol). Only
+  // translated turns carry an upstream body.
+  const upstreamCollectKind = record?.meta.targetApi ? collectKindFromTargetApi(record.meta.targetApi) : null;
+  const upstreamStreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
+  const upstreamCollected = upstreamCollectKind && upstreamStreamEvents.length ? await collectStream(upstreamCollectKind, upstreamStreamEvents) : null;
   return {
     collected,
+    upstreamCollected,
     error: keysResult.error?.message ?? null,
     keys,
     record,
@@ -103,11 +111,31 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
-  const subscription = useDumpSubscription(selectedKeyId, loaderData.records);
+  const q = searchParams.get('q') ?? '';
+  const failures = searchParams.get('failures') === 'true';
+  const subscription = useDumpSubscription(selectedKeyId, loaderData.records, q, failures);
+  const changeFilter = (query: string, onlyFailures: boolean) => {
+    if (!selectedKeyId) return;
+    const next = selectionSearch(selectedKeyId);
+    if (query) next.set('q', query);
+    if (onlyFailures) next.set('failures', 'true');
+    setSearchParams(next, rewrite);
+  };
+  const recordSearch = (recordId?: string | null) => {
+    const next = selectionSearch(selectedKeyId!, recordId);
+    if (q) next.set('q', q);
+    if (failures) next.set('failures', 'true');
+    return next;
+  };
 
   const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
-    setSearchParams(selectionSearch(keyId, recordId), rewrite);
-  }, [rewrite, setSearchParams]);
+    const next = selectionSearch(keyId, recordId);
+    if (keyId === selectedKeyId) {
+      if (q) next.set('q', q);
+      if (failures) next.set('failures', 'true');
+    }
+    setSearchParams(next, rewrite);
+  }, [failures, q, rewrite, selectedKeyId, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
     currentKeys: keys,
@@ -156,7 +184,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : selectedKeyId ? narrow ? <>
         <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
           <RequestListPanel
-            addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
+            key={selectedKeyId}
+            q={q} failures={failures} onFilterChange={changeFilter}
+            addressOfRecord={recordId => `?${recordSearch(recordId)}`}
             apiKeys={keys}
             error={subscription.error ?? shown.recordsError ?? keysError}
             hasOlder={subscription.hasOlder}
@@ -183,18 +213,20 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">
             <div className="h-full min-h-0" inert={selectedRecordId === null}>
-              <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
+              <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
             </div>
           </DrawerBody>
         </OverlayDrawer>
       </> : (
         <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
-            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
+            <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
-              addressOfRecord={recordId => `?${selectionSearch(selectedKeyId, recordId)}`}
+              key={selectedKeyId}
+              q={q} failures={failures} onFilterChange={changeFilter}
+              addressOfRecord={recordId => `?${recordSearch(recordId)}`}
               apiKeys={keys}
               error={subscription.error ?? shown.recordsError ?? keysError}
               hasOlder={subscription.hasOlder}
