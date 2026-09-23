@@ -45,6 +45,11 @@ vi.mock('../../../src/components/upstream-editor/workspace', () => ({
       error: null,
     })}>Edit YAML</button>
     <button type="button" onClick={() => onModelsYamlDraftChange({ baseline: '[]', text: '[] # formatting only\n', error: null })}>Reformat YAML</button>
+    <button type="button" onClick={() => onModelsYamlDraftChange({
+      baseline: 'original',
+      text: '- upstreamModelId: manual\n  publicModelId: manual\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n    openaiChatCompletions: {}\n',
+      error: null,
+    })}>Reorder YAML keys</button>
   </>,
 }));
 
@@ -184,6 +189,35 @@ test('saving YAML formatting alone keeps a pending explicit Fetch', async () => 
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
   await act(async () => {
     finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
+  });
+  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
+  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
+});
+
+test('reordering YAML object keys does not invalidate a pending Fetch', async () => {
+  const custom = upstreamRecord('up_custom', {
+    kind: 'custom',
+    config: {
+      ...(customRecord.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']),
+      models: [{
+        upstreamModelId: 'manual', publicModelId: 'manual', kind: 'chat',
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
+      }],
+    },
+    state: null,
+  });
+  apiMocks.patch.mockResolvedValue({ data: custom, error: null });
+  let finishFetch: ((value: unknown) => void) | undefined;
+  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
+  renderPage(custom);
+  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reorder YAML keys' }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: custom.modelsCache }, error: null });
   });
   expect(screen.getByTestId('discovered').textContent).toBe('new-model');
   expect(screen.getByTestId('catalog-available').textContent).toBe('true');

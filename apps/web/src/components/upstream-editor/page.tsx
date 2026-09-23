@@ -39,6 +39,11 @@ import { useRefresh } from '../ui/use-refresh';
 
 const { Button, Spinner, Text } = fluentComponents;
 
+const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
+  item !== null && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).toSorted().map(key => [key, item[key]]))
+    : item);
+
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -205,7 +210,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         setModelsYamlDraft({ ...modelsYamlDraft, error: parsed.message });
         return null;
       }
-      yamlModelsChanged = JSON.stringify(parsed.models) !== JSON.stringify(getValues('manualModels'));
+      yamlModelsChanged = canonicalJson(parsed.models) !== canonicalJson(getValues('manualModels'));
       setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
       setModelsYamlDraft(null);
     }
