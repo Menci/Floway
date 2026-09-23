@@ -5,7 +5,6 @@ import type {
   ModelPrefixConfig,
   ProxyFallbackEntry,
   UpstreamModelConfig,
-  UpstreamProviderKind,
 } from '@floway-dev/provider';
 import type { AzureUpstreamConfig as StoredAzureUpstreamConfig } from '@floway-dev/provider-azure';
 import type {
