@@ -52,7 +52,7 @@ initOpenAIResponsesWebSocketUpgradeResolver((c, events) =>
 
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
-const scheduledRuntimeLocation = getEnvOptional('RUNTIME_LOCATION', 'LOCAL').toUpperCase();
+const scheduledRuntimeLocation = getEnvOptional('RUNTIME_LOCATION', 'LOCAL').toUpperCase() || 'LOCAL';
 const hostname = getEnvOptional('HOST', '127.0.0.1');
 const fetch = createNodeFetchHandler(app.fetch, { distDir: nodeWebDistDir() });
 
