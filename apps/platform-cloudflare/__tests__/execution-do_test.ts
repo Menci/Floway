@@ -169,8 +169,10 @@ test('ExecutionDO coalesces concurrent operations and returns independent respon
   const first = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
   const second = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
 
-  assertEquals((await first).status, 202);
+  const firstResponse = await first;
   const secondResponse = await second;
+  assertEquals(firstResponse.status, 202);
+  assertEquals(await firstResponse.text(), 'models refreshed');
   assertEquals(await secondResponse.text(), 'models refreshed');
   assertEquals(secondResponse.headers.get('x-execution'), 'done');
   assertEquals(calls, 1);

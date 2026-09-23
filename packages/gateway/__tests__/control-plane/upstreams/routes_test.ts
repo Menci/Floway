@@ -536,6 +536,14 @@ test('POST /api/upstreams/preview-models fetches a draft custom upstream model l
   );
 });
 
+test('POST /api/upstreams/preview-models requires the draft egress policy', async () => {
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+    record: { ...blueprintEnvelope('custom', { config: customConfig }), proxy_fallback_list: undefined },
+  }));
+  assertEquals(resp.status, 400);
+});
+
 test('POST /api/upstreams/preview-models projects an ollama draft into UpstreamModelConfig rows with capability-derived endpoints', async () => {
   const { adminSession } = await setupAppTest();
 
@@ -719,7 +727,7 @@ test('POST /api/upstreams/preview-models rejects an invalid kind with 400', asyn
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
-    record: { id: '', kind: 'bogus-kind', config: {}, state: null },
+    record: { id: '', kind: 'bogus-kind', config: {}, state: null, proxy_fallback_list: [] },
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { message: string; type: string } };

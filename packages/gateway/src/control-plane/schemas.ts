@@ -515,6 +515,7 @@ export const claudeCodeProbeBody = recordOnlyBody;
 // while direct preview callers can omit unrelated display metadata.
 export const previewModelsBody = z.object({
   record: upstreamRecordEnvelope.extend({
+    proxy_fallback_list: proxyFallbackListSchema,
     name: z.string().optional(),
     enabled: z.boolean().optional(),
     sort_order: z.number().int().optional(),

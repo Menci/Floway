@@ -17,8 +17,5 @@ export const saveUpstream = async ({ previous, next }: UpstreamChange): Promise<
 };
 
 export const saveUpstreams = async (changes: readonly UpstreamChange[]): Promise<void> => {
-  if (new Set(changes.map(change => change.next.id)).size !== changes.length) {
-    throw new Error('Duplicate upstream ids in save batch');
-  }
   for (const change of changes) await saveUpstream(change);
 };

@@ -72,9 +72,9 @@ export interface UpstreamRecord {
   // Gateway-written state that can change without an operator editing config;
   // null when a provider has no runtime state.
   state: unknown;
-  // The upstream's cached catalog, read on the same round trip as the row
-  // rather than through a second query. Null until the first successful fetch.
-  // Catalog refresh writes it; changing provider configuration clears it.
+  // The cached catalog is read with the upstream row. It is null before any
+  // refresh attempt and after provider configuration changes; a failed first
+  // refresh stores an empty entry with its error.
   modelsCache: UpstreamModelsCache | null;
   flagOverrides: FlagOverrides;
   // Model ids the operator switched off for this upstream, matched against the

@@ -56,6 +56,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setRecord(next);
   }, []);
   const [discovered, setDiscovered] = useState(data.discovered);
+  const [catalogAvailable, setCatalogAvailable] = useState(false);
   const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -158,6 +159,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
+    setCatalogAvailable(catalog.discovered !== null && catalog.modelsError === null);
     if (catalog.discovered) setDiscovered(catalog.discovered);
     if (catalog.modelsCache) updateRecord({ ...recordRef.current, modelsCache: catalog.modelsCache } as UpstreamRecord);
   }, [discoveryInputsDirty, getValues, record, updateRecord]));
@@ -219,7 +221,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       const saved: UpstreamRecord = result.data;
       updateRecord(saved);
       reset(valuesFromRecord(saved));
-      if (discoveryInputsDirty) { setModelsError(null); setDiscovered([]); }
+      if (discoveryInputsDirty) { setModelsError(null); setDiscovered([]); setCatalogAvailable(false); }
       handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
       savedRecord = saved;
       // `saving` stays set during the route handoff; the old form is still
@@ -257,7 +259,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       <div className={`grid grid-cols-[380px_minmax(0,1fr)] ${PANE_GAP_CLASS} min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1`}>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamConfigSidebar
-            catalogAvailable={modelsError === null}
+            catalogAvailable={catalogAvailable}
             discovered={discovered}
             onPatch={applyProviderPatch}
             onRefreshModels={requestModels}

@@ -13,7 +13,7 @@
 
 import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
 import type { StoredUpstreamRecord } from '../../../repo/types.ts';
-import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
+import { compareModelIds, getModelsFromProviders, mergeIntoCatalog } from '../../providers/catalog.ts';
 import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
 import type { InternalModel, Provider } from '@floway-dev/provider';
@@ -68,6 +68,8 @@ export const enumerateAddressableModelIds = async (
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
+  const unlistedOnlyModels = new Map<string, InternalModel>();
+  const unlistedOnlyUpstreams = new Map<string, Provider[]>();
   const seen = new Set<string>();
   const push = (entry: AddressableIdEntry): void => {
     if (seen.has(entry.id)) return;
@@ -97,6 +99,13 @@ export const enumerateAddressableModelIds = async (
 
     for (const upstreamModel of upstreamModels) {
       if (!upstreamModel.id || disabled.has(upstreamModel.id)) continue;
+      if (cfg.listed.length === 0) {
+        for (const form of addressableOnly) {
+          const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
+          mergeIntoCatalog(unlistedOnlyModels, unlistedOnlyUpstreams, provider, upstreamModel, id);
+        }
+        continue;
+      }
       const canonicalPublicId = canonicalForm === 'prefixed'
         ? `${cfg.prefix}${upstreamModel.id}`
         : upstreamModel.id;
@@ -109,6 +118,10 @@ export const enumerateAddressableModelIds = async (
         push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
       }
     }
+  }
+
+  for (const [id, model] of unlistedOnlyModels) {
+    push({ id, unlisted: true, model, upstreams: unlistedOnlyUpstreams.get(id)! });
   }
 
   // Stable id ordering matches the listed surface so consumers can rely on

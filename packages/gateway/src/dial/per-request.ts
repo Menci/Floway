@@ -84,10 +84,3 @@ export const createValidatedPerRequestFetcher = (
   runtimeLocation: string | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'eager');
-
-export const validateUpstreamProxyConfiguration = async (
-  runtimeLocation: string | null,
-  upstream: UpstreamRecord,
-): Promise<void> => {
-  (await createValidatedPerRequestFetcher(runtimeLocation, [upstream]))(upstream.id);
-};

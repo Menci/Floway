@@ -223,6 +223,3 @@ export interface ListedUpstreamModel extends UpstreamModelConfig {
   publicModelId: string;
   endpoints: ModelEndpoints;
 }
-
-export type ListUpstreamModelsResponse =
-  { kind: UpstreamProviderKind; data: UpstreamModelConfig[] };

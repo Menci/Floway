@@ -7,11 +7,5 @@ export const scheduleModelsCacheRefreshes = async (runtimeLocation: string | nul
   const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, scheduler);
   const upstreams = (await getRepo().upstreams.list()).filter(upstream =>
     upstream.enabled && (runtimeLocation !== null || hasLocationIndependentEgress(upstream.proxyFallbackList)));
-  for (const upstream of upstreams) {
-    try {
-      scheduleRefresh(modelsRefreshTarget(upstream));
-    } catch (error) {
-      console.error(`[scheduled] models.refresh failed for ${upstream.id}`, error);
-    }
-  }
+  for (const upstream of upstreams) scheduleRefresh(modelsRefreshTarget(upstream));
 };

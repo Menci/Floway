@@ -18,9 +18,10 @@ vi.mock('../../../src/api/client', () => ({
 }));
 
 vi.mock('../../../src/components/upstream-editor/config-sidebar', () => ({
-  UpstreamConfigSidebar: ({ onRefreshModels }: { onRefreshModels: () => void }) => {
+  UpstreamConfigSidebar: ({ catalogAvailable, onRefreshModels }: { catalogAvailable: boolean; onRefreshModels: () => void }) => {
     const { register, setValue } = useFormContext<UpstreamEditorValues>();
     return <>
+      <output data-testid="catalog-available">{String(catalogAvailable)}</output>
       <input aria-label="Name" {...register('name')} />
       <button type="button" onClick={() => setValue('flagOverrides', { 'vendor-kimi': true }, { shouldDirty: true })}>Edit discovery</button>
       <button type="button" onClick={onRefreshModels}>Fetch models</button>
@@ -37,6 +38,7 @@ vi.mock('../../../src/components/upstream-editor/workspace', () => ({
 
 const record = upstreamRecord('up_copilot', {
   kind: 'copilot',
+  disabled_public_model_ids: ['saved-model'],
   config: {
     githubHost: 'github.com',
     githubToken: 'secret',
@@ -65,9 +67,11 @@ beforeEach(() => {
 
 test('metadata-only OAuth edits fetch the saved record and keep form changes unsaved', async () => {
   renderPage();
+  expect(screen.getByTestId('catalog-available').textContent).toBe('false');
   fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Unsaved name' } });
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByTestId('catalog-available').textContent).toBe('true'));
   expect(apiMocks.patch).not.toHaveBeenCalled();
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fetchDirty.title'))).toBeNull();
   expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Unsaved name');

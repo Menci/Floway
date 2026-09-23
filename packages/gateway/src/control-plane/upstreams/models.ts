@@ -35,8 +35,6 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
   if (kind !== 'custom' && kind !== 'ollama') {
     return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);
   }
-  const proxyFallbackList = record.proxy_fallback_list ?? [];
-
   const synthRecord: UpstreamRecord = {
     id: record.id || 'draft',
     kind,
@@ -47,7 +45,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     updatedAt: record.updated_at ?? '',
     flagOverrides: record.flag_overrides ?? {},
     disabledPublicModelIds: record.disabled_public_model_ids ?? [],
-    proxyFallbackList,
+    proxyFallbackList: record.proxy_fallback_list,
     modelPrefix: record.model_prefix ?? null,
     hue: record.hue ?? 0,
     config: record.config,

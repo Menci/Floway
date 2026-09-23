@@ -881,19 +881,21 @@ const MODELS_CACHE_EPOCH_SQL = `CASE
   ELSE 0
 END`;
 
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
   async list(): Promise<StoredUpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at`)
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -902,7 +904,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
       .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
-        RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
+        RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         upstream.id,
         upstream.kind,
@@ -928,6 +930,11 @@ class SqlUpstreamRepo implements UpstreamRepo {
     upstream: UpstreamRecord;
   }): Promise<StoredUpstreamRecord | null> {
     const { previous, upstream } = input;
+    const storedRow = await this.db
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
+      .bind(upstream.id)
+      .first<UpstreamRow>();
+    if (storedRow === null) return null;
     const modelConfigChanged = previous.kind !== upstream.kind
       || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
       || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
@@ -935,11 +942,18 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const refreshInputsChanged = modelConfigChanged || transportChanged;
     const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
+    const stored = toUpstreamRecord(storedRow);
+    const comparable = (record: StoredUpstreamRecord): StoredUpstreamRecord => ({
+      ...record,
+      modelsCache: null,
+      state: replaceState ? record.state : null,
+    });
+    if (serializeStoredConfig(comparable(stored)) !== serializeStoredConfig(comparable(previous))) return null;
     const modelsCacheUpdate = modelConfigChanged
       ? ', models_cache_json = NULL'
       : transportChanged
         ? `, models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
-            THEN json_set(models_cache_json, '$.lastError', json('null')) ELSE models_cache_json END`
+            THEN json_set(models_cache_json, '$.lastError', json('null')) ELSE NULL END`
         : '';
     const row = await this.db
       .prepare(
@@ -971,7 +985,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND proxy_fallback_list_json = ?
            AND model_prefix_json IS ?
            AND hue = ?
-         RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`,
+         RETURNING ${UPSTREAM_COLUMNS}`,
       )
       .bind(
         upstream.kind,
@@ -995,13 +1009,13 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.sortOrder,
         previous.updatedAt,
         previous.configVersion,
-        serializeStoredConfig(previous.config),
+        storedRow.config_json,
         sqliteBoolean(replaceState),
-        serializeStoredState(previous.state),
-        JSON.stringify(normalizeFlagOverrides(previous.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(previous.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(previous.proxyFallbackList)),
-        previous.modelPrefix === null ? null : JSON.stringify(previous.modelPrefix),
+        storedRow.state_json,
+        storedRow.flag_overrides,
+        storedRow.disabled_public_model_ids,
+        storedRow.proxy_fallback_list_json,
+        storedRow.model_prefix_json,
         previous.hue,
       )
       .first<UpstreamRow>();

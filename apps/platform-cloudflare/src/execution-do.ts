@@ -1,9 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 
-import { responseFromExecutionSnapshot, snapshotExecutionResponse, type ExecutionResponseSnapshot } from '@floway-dev/platform';
-
 export class ExecutionDO extends DurableObject {
-  private execution: Promise<ExecutionResponseSnapshot> | null = null;
+  private execution: Promise<Response> | null = null;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
@@ -40,15 +38,13 @@ export class ExecutionDO extends DurableObject {
 
   private async execute(request: Request): Promise<Response> {
     if (this.execution === null) {
-      const operation = this.ctx.exports.ExecutionOperationEntrypoint.fetch(request).then(snapshotExecutionResponse);
+      const operation = this.ctx.exports.ExecutionOperationEntrypoint.fetch(request);
       this.execution = operation;
-      void operation.then(
-        () => { if (this.execution === operation) this.execution = null; },
-        () => { if (this.execution === operation) this.execution = null; },
-      );
+      const clear = (): void => { this.execution = null; };
+      void operation.then(clear, clear);
       void operation.catch(error => console.error('ExecutionDO operation failed', error));
     }
-    return responseFromExecutionSnapshot(await this.execution);
+    return (await this.execution).clone();
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): Promise<void> {

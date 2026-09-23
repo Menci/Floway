@@ -222,6 +222,27 @@ test('SQL upstream repo catalog-aware replacement can clear the cached catalog a
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
+test('SQL upstream replacement accepts valid JSON reordered by a migration', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await saveUpstreamForTest(repo, baseRecord({
+    flagOverrides: { 'rewrite-developer-to-system': true, 'strip-billing-attribution': true },
+  }));
+  await db.prepare(`UPDATE upstreams SET flag_overrides = json_set(
+    json_remove(flag_overrides, '$."rewrite-developer-to-system"'),
+    '$."rewrite-developer-to-system"', json('true')) WHERE id = ?`)
+    .bind('up_test')
+    .run();
+  const raw = await db.prepare('SELECT flag_overrides FROM upstreams WHERE id = ?').bind('up_test').first<{ flag_overrides: string }>();
+  assertEquals(raw?.flag_overrides, '{"strip-billing-attribution":true,"rewrite-developer-to-system":true}');
+
+  const previous = await repo.getById('up_test');
+  if (previous === null) throw new Error('upstream missing');
+  const saved = await repo.replaceForModels({ previous, upstream: { ...previous, name: 'Renamed' } });
+  assertEquals(saved?.name, 'Renamed');
+  assertEquals(saved?.configVersion, previous.configVersion);
+});
+
 test('SQL model-cache identity accepts semantically equal noncanonical config JSON', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;

@@ -9,7 +9,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
+import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -25,7 +25,7 @@ import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/pro
 // a candidate. `sawAnyId` is true whenever the lookup id appeared in the
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
-const enumerateOneUpstreamCandidates = async (
+const enumerateOneUpstreamCandidates = (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
@@ -33,7 +33,7 @@ const enumerateOneUpstreamCandidates = async (
     fetcher: Fetcher;
     scheduleRefresh: ModelsRefreshScheduler;
   },
-): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
+): { candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean } => {
   const { fetcher, scheduleRefresh } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
@@ -64,15 +64,15 @@ const enumerateOneUpstreamCandidates = async (
 
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
-// Cancellation (`AbortError`) propagates so a disconnected request cannot
-// mask its rejection while inspecting the snapshots.
+// Scheduling failures propagate as internal errors rather than being reported
+// as persisted model-list failures for an upstream.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
 // uses it to decide whether to retry with a stripped dated suffix (no
 // point retrying if the id matched but only under the wrong kind — the
 // suffix strip cannot change kind).
-export const enumerateRealModelCandidates = async (
+export const enumerateRealModelCandidates = (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
@@ -80,37 +80,23 @@ export const enumerateRealModelCandidates = async (
     fetcherForUpstream: (upstreamId: string) => Fetcher;
     scheduleRefresh: ModelsRefreshScheduler;
   },
-): Promise<{
+): {
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
-}> => {
+} => {
   const { fetcherForUpstream, scheduleRefresh } = context;
-  const settled = await Promise.allSettled(providers.map(provider => {
-    return enumerateOneUpstreamCandidates(
-      provider,
-      modelId,
-      kind,
-      {
-        fetcher: fetcherForUpstream(provider.upstreamId),
-        scheduleRefresh,
-      },
-    );
-  }));
-
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
-  for (const [index, result] of settled.entries()) {
-    if (result.status === 'rejected') {
-      const error = result.reason;
-      if (isAbortError(error)) throw error;
-      failedUpstreams.push(providers[index].name);
-      continue;
-    }
-    candidates.push(...result.value.candidates);
-    sawAnyId = sawAnyId || result.value.sawAnyId;
-    if (result.value.modelsError) failedUpstreams.push(providers[index].name);
+  for (const provider of providers) {
+    const result = enumerateOneUpstreamCandidates(provider, modelId, kind, {
+      fetcher: fetcherForUpstream(provider.upstreamId),
+      scheduleRefresh,
+    });
+    candidates.push(...result.candidates);
+    sawAnyId = sawAnyId || result.sawAnyId;
+    if (result.modelsError) failedUpstreams.push(provider.name);
   }
   return { candidates, sawAnyId, failedUpstreams };
 };
@@ -127,22 +113,22 @@ const DATED_SUFFIX = /-\d{8}$/;
 // directly (when we already hold the provider list) and by
 // `enumerateModelCandidates` below, which lists providers and then delegates
 // here — once for each alias target when the inbound id names an alias.
-const resolveRealCandidates = async (
+const resolveRealCandidates = (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
   context: Parameters<typeof enumerateRealModelCandidates>[3],
-): Promise<{
+): {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-}> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, context);
+} => {
+  const first = enumerateRealModelCandidates(modelId, kind, providers, context);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, context);
+  const second = enumerateRealModelCandidates(stripped, kind, providers, context);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -225,7 +211,7 @@ export const enumerateModelCandidates = async ({
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, resolutionContext);
+    return resolveRealCandidates(model, kind, providers, resolutionContext);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -237,7 +223,7 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, resolutionContext);
+    const result = resolveRealCandidates(target.target_model_id, kind, providers, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {

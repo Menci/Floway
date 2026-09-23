@@ -59,20 +59,20 @@ export const internalModelFromProviderModel = (providerModel: ProviderModel, ups
   };
 };
 
-// When multiple upstreams expose the same public model id, the first wins
-// for `/models` metadata and later ones union-merge their endpoint capability
-// map — the merged `endpoints` is the gateway-wide reach for that public id.
+// When multiple upstreams expose the same surfaced model id, the first wins
+// for metadata and later ones union-merge their endpoint capability map — the
+// merged `endpoints` is the gateway-wide reach for that id.
 // `chat.image_detail_original` is the safety exception: it is true only when
 // every chat provider behind the id explicitly accepts it.
 // `kind` is recomputed from the union so a chat-only id that later acquires
 // an embedding-capable upstream gets correctly reclassified. Each contribution
 // adds its own entry to `providerModels` keyed on the contributing upstream id
-// with the emitted `ProviderModel` stored verbatim, so the same public id
+// with the emitted `ProviderModel` stored verbatim, so the same id
 // carrying data from N upstreams ends up with N entries. The reverse index
 // `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
 // enumeration order, so the control plane can render its per-model upstream
 // chips without re-walking the catalog.
-const mergeIntoCatalog = (
+export const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
   upstreamsByPublicId: Map<string, Provider[]>,
   instance: Provider,
