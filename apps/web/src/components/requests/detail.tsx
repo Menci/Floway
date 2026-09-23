@@ -34,9 +34,9 @@ function CopyButton({ text }: { text: string }) {
 function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   const { t } = useTranslation();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  return <table className="w-full font-mono text-left"><tbody>
+  return <table className="w-full table-fixed font-mono text-left"><colgroup><col className="w-1/3" /><col className="w-2/3" /></colgroup><tbody>
     {headers.map(([name, value], index) => <tr key={index}>
-      <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-all">{name}</th>
+      <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-words">{name}</th>
       <td className="py-2 pl-2 break-all">
         {isSensitiveHeader(name) && !revealed.has(index) ? redactHeaderValue(value) : value}
         {isSensitiveHeader(name) && <TooltipIconButton
