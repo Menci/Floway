@@ -42,6 +42,12 @@ export const modelsRefreshTarget = (record: StoredUpstreamRecord): ModelsRefresh
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const credentialHeaders = ['authorization', 'x-api-key', 'api-key'] as const;
+const credentialQueryWords = new Set(['key', 'token', 'secret', 'password', 'credential', 'auth']);
+const isCredentialQueryParam = (name: string): boolean => {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().split(/[-_]/);
+  return words.some(word => credentialQueryWords.has(word))
+    || /^(?:x?api|access|refresh|client|auth)(?:key|token|secret|password|credential)$/i.test(name);
+};
 
 const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetcher: Fetcher) => Promise<T>): Promise<T> => {
   const credentials = new Set<string>();
@@ -62,8 +68,13 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
       credentials.add(encoded);
       credentials.add(new URLSearchParams(`value=${encoded}`).get('value')!);
     }
-    for (const value of requestUrl.searchParams.values()) {
-      if (value !== '') credentials.add(value);
+    for (const field of requestUrl.search.slice(1).split('&')) {
+      if (field === '') continue;
+      const [name, value] = [...new URLSearchParams(field)][0]!;
+      if (!isCredentialQueryParam(name) || value === '') continue;
+      credentials.add(value);
+      const equals = field.indexOf('=');
+      if (equals >= 0) credentials.add(field.slice(equals + 1));
     }
     const headers = new Headers(init.headers);
     for (const name of credentialHeaders) {

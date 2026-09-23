@@ -332,22 +332,41 @@ test.each(['api_key', 'api_token', 'password', 'client_secret', 'api_secret'])('
   delete config.apiKey;
   const configured = await repo.upstreams.replaceForModels({
     previous: record,
-    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: `/v1/models?monkey=banana&${parameter}=query-secret-42` } } },
+    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: `/v1/models?limit=1&monkey=banana&${parameter}=query-secret-42` } } },
   });
   if (configured === null) throw new Error('query-auth update failed');
   await withMockedFetch(
     request => {
       const query = new URL(request.url).searchParams;
-      return new Response(JSON.stringify({ error: `rejected ${query.get('monkey')} ${query.get(parameter)}` }), { status: 401 });
+      return new Response(JSON.stringify({ error: `HTTP 401 rejected ${query.get('monkey')} ${query.get(parameter)}` }), { status: 401 });
     },
     async () => {
       await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     },
   );
   const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
-  expect(message).toContain('rejected [REDACTED] [REDACTED]');
-  expect(message).not.toContain('banana');
+  expect(message).toContain('HTTP 401 rejected banana [REDACTED]');
   expect(message).not.toContain('query-secret-42');
+});
+
+test('model discovery redacts the sent spelling of a percent-encoded query credential', async () => {
+  const { repo, record } = await setupCustom();
+  const config = { ...record.config as Record<string, unknown> };
+  delete config.apiKey;
+  const configured = await repo.upstreams.replaceForModels({
+    previous: record,
+    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: '/v1/models?api_key=query%2fsecret' } } },
+  });
+  if (configured === null) throw new Error('encoded query-auth update failed');
+  await withMockedFetch(
+    request => new Response(`rejected ${request.url}`, { status: 401 }),
+    async () => {
+      await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+    },
+  );
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  expect(message).toContain('rejected https://custom.example.com/v1/models?api_key=[REDACTED]');
+  expect(message).not.toContain('query%2fsecret');
 });
 
 test('model discovery redacts userinfo from a URL construction failure', async () => {
