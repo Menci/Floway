@@ -1,3 +1,6 @@
+import { useState } from 'react';
+
+import { CodexResetCards } from './codex-reset-cards';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
@@ -20,8 +23,12 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const account = record.config.accounts[0];
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
-  const entries = quotaEntries(record.codex_quota, now);
-  const credits = latestCredits(record.codex_quota);
+  const [reset, setReset] = useState<{ accountId: string | null; at: number } | null>(null);
+  const visibleQuota = reset?.accountId === account.chatgptAccountId
+    ? Object.fromEntries(Object.entries(record.codex_quota ?? {}).filter(([, snapshot]) => Date.parse(snapshot.observed_at) > reset.at))
+    : record.codex_quota;
+  const entries = quotaEntries(visibleQuota, now);
+  const credits = latestCredits(visibleQuota);
   const status = accountStatus(lookup, entries);
 
   const statusLabel = status.reason === 'heavy'
@@ -101,5 +108,11 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
     {credential?.state_updated_at && <Text size={200} className="text-fui-fg3 border-0 border-t border-solid border-fui-divider pt-3">
       {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at, locale) })}
     </Text>}
+
+    {record.id !== '' && <CodexResetCards
+      key={`${record.id}:${account.chatgptAccountId}`}
+      record={record}
+      onQuotaReset={() => setReset({ accountId: account.chatgptAccountId, at: Date.now() })}
+    />}
   </section>;
 }
