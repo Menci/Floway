@@ -50,12 +50,12 @@ export interface ProxyFallbackEntry {
 // A cached projection of one upstream's catalog, stored on the upstream row.
 // `revision` is the catalog contract version the entry was written under, so a
 // deploy that changes the projection invalidates older entries; `lastError`
-// annotates a previously-successful entry whose refresh failed.
+// records a failed refresh even if no successful catalog exists yet.
 export interface UpstreamModelsCache {
   revision: number;
   fetchedAt: number;
   models: ProviderModel[];
-  lastError: { message: string; at: number } | null;
+  lastError: { message: string; at: number; failureCount: number } | null;
 }
 
 // One upstream's persisted record. `config` is a per-provider opaque payload;

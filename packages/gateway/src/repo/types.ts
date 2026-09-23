@@ -361,7 +361,6 @@ export interface UpstreamRepo {
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
-  beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult>;
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
@@ -372,24 +371,14 @@ export interface ModelsRefreshIdentity {
   cacheEpoch: number;
 }
 
-export interface ModelsRefreshBeginInput extends ModelsRefreshIdentity {
-  now: number;
-  bypassBackoff: boolean;
-}
-
 export interface ModelsRefreshSuccessInput extends ModelsRefreshIdentity {
   cache: Omit<UpstreamModelsCache, 'lastError'>;
 }
 
 export interface ModelsRefreshFailureInput extends ModelsRefreshIdentity {
-  error: NonNullable<UpstreamModelsCache['lastError']>;
+  error: Pick<NonNullable<UpstreamModelsCache['lastError']>, 'message' | 'at'>;
   previousFailureCount: number;
-  failedAt: number;
 }
-
-export type ModelsRefreshBeginResult = { kind: 'ready'; failureCount: number }
-  | { kind: 'backoff' }
-  | { kind: 'superseded' };
 
 export interface ProxyRecord {
   id: string;

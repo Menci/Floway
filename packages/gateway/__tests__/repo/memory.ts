@@ -4,7 +4,6 @@ import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import {
   assertSameStoredOpenAIResponsesItem,
   cloneStoredOpenAIResponsesItem,
@@ -29,8 +28,6 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsRefreshBeginInput,
-  ModelsRefreshBeginResult,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
@@ -738,7 +735,6 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
-  private modelsRefreshes = new Map<string, { failureCount: number; retryAt: number }>();
 
   list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
@@ -778,21 +774,19 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       createdAt: existing.createdAt,
       configVersion,
       state: replaceState ? upstream.state : existing.state,
-      modelsCache: modelConfigChanged ? null : existing.modelsCache,
+      modelsCache: modelConfigChanged ? null : transportChanged && existing.modelsCache
+        ? { ...existing.modelsCache, lastError: null } : existing.modelsCache,
     });
     this.store.set(upstream.id, next);
-    if (refreshInputsChanged) this.modelsRefreshes.delete(upstream.id);
     return Promise.resolve(cloneUpstreamRecord(next));
   }
 
   delete(id: string): Promise<boolean> {
-    this.modelsRefreshes.delete(id);
     return Promise.resolve(this.store.delete(id));
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
-    this.modelsRefreshes.clear();
     return Promise.resolve();
   }
 
@@ -814,31 +808,18 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
-    this.modelsRefreshes.delete(id);
     return Promise.resolve(true);
   }
 
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, error, previousFailureCount, failedAt } = input;
-    const failureCount = previousFailureCount + 1;
-    const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
-    const refresh = this.modelsRefreshes.get(id);
-    if ((refresh?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
+    const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
-    if (existing.modelsCache) existing.modelsCache.lastError = error;
-    else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
-    this.modelsRefreshes.set(id, { failureCount, retryAt });
+    if ((existing.modelsCache?.lastError?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
+    const lastError = { ...error, failureCount: previousFailureCount + 1 };
+    if (existing.modelsCache?.revision === MODEL_CATALOG_REVISION) existing.modelsCache.lastError = lastError;
+    else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
     return Promise.resolve(true);
-  }
-
-  beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
-    const { id, configVersion, cacheEpoch, now, bypassBackoff } = input;
-    const stored = this.store.get(id);
-    if (!stored || stored.configVersion !== configVersion || (stored.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve({ kind: 'superseded' });
-    const existing = this.modelsRefreshes.get(id);
-    if (!bypassBackoff && existing !== undefined && existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
-    return Promise.resolve({ kind: 'ready', failureCount: existing?.failureCount ?? 0 });
   }
 
 }

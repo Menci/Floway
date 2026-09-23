@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { createProvider } from '../../../src/data-plane/providers/registry.ts';
 import { InvalidProxyConfigurationError } from '../../../src/dial/per-request.ts';
-import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
+import { createModelsRefreshScheduler, discoverDraftModels, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
@@ -85,31 +85,71 @@ test('concurrent callers share one upstream fetch', async () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     release!(jsonResponse({ object: 'list', data: [{ id: 'shared' }] }));
     await expect(Promise.all([first, second])).resolves.toEqual([
-      expect.objectContaining({ kind: 'refreshed' }),
-      expect.objectContaining({ kind: 'refreshed' }),
+      expect.objectContaining({ kind: 'discovered', publication: 'published' }),
+      expect.objectContaining({ kind: 'discovered', publication: 'published' }),
     ]);
   });
 });
 
-test('automatic and explicit callers across locations share one base cell', async () => {
-  const { record } = await setupCustom();
+test('draft discovery uses its supplied record without reading or writing an upstream row', async () => {
+  const { repo, record } = await setupCustom();
+  const read = vi.spyOn(repo.upstreams, 'getById');
+  const publish = vi.spyOn(repo.upstreams, 'publishModelsRefresh');
+  const draft = { ...record, config: { ...record.config as Record<string, unknown>, baseUrl: 'https://draft.example.com' } };
+
+  await withMockedFetch(
+    request => {
+      expect(new URL(request.url).hostname).toBe('draft.example.com');
+      return jsonResponse({ object: 'list', data: [{ id: 'draft-model' }] });
+    },
+    async () => {
+      const result = await discoverDraftModels(draft, 'TEST');
+      expect(result).toMatchObject({ kind: 'discovered', publication: 'draft', discovered: [{ upstreamModelId: 'draft-model' }] });
+      if (result.kind !== 'discovered') throw new Error('draft did not discover models');
+      expect(result.models[0]?.enabledFlags).toBeInstanceOf(Set);
+    },
+  );
+  expect(read).not.toHaveBeenCalled();
+  expect(publish).not.toHaveBeenCalled();
+});
+
+test('a config edit during discovery returns its models without publishing the old catalog', async () => {
+  const { repo, record } = await setupCustom();
   let release: ((response: Response) => void) | undefined;
-  const fetch = vi.fn(() => new Promise<Response>(resolve => { release = resolve; }));
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { release = resolve; }),
+    async () => {
+      const pending = refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
+      await vi.waitFor(() => expect(release).toBeDefined());
+      const current = await repo.upstreams.getById(record.id);
+      if (current === null) throw new Error('upstream disappeared');
+      await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, config: { ...current.config as Record<string, unknown>, baseUrl: 'https://next.example.com' } } });
+      release!(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
+      await expect(pending).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race', discovered: [{ upstreamModelId: 'old-model' }] });
+    },
+  );
+  expect((await repo.upstreams.getById(record.id))?.modelsCache).toBeNull();
+});
+
+test('automatic and explicit callers across locations have separate cells and both return models', async () => {
+  const { record } = await setupCustom();
+  const releases: Array<(response: Response) => void> = [];
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { releases.push(resolve); }));
 
   await withMockedFetch(fetch, async () => {
     const target = modelsRefreshTarget(record);
     const automatic = refreshModels(target, 'SIN');
-    const explicit = refreshModelsExplicit(target, 'NRT', true);
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    release!(jsonResponse({ object: 'list', data: [{ id: 'shared' }] }));
+    const explicit = refreshModelsExplicit(target, 'NRT');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    for (const release of releases) release(jsonResponse({ object: 'list', data: [{ id: 'shared' }] }));
     await expect(Promise.all([automatic, explicit])).resolves.toEqual([
-      expect.objectContaining({ kind: 'refreshed', discovered: [expect.objectContaining({ upstreamModelId: 'shared' })] }),
-      expect.objectContaining({ kind: 'refreshed', discovered: [expect.objectContaining({ upstreamModelId: 'shared' })] }),
+      expect.objectContaining({ kind: 'discovered', discovered: [expect.objectContaining({ upstreamModelId: 'shared' })] }),
+      expect.objectContaining({ kind: 'discovered', discovered: [expect.objectContaining({ upstreamModelId: 'shared' })] }),
     ]);
   });
 });
 
-test('explicit join still validates proxy configuration excluded from the automatic owner location', async () => {
+test('explicit fetch validates proxy configuration excluded from the automatic location', async () => {
   const { repo, record } = await setupCustom();
   await saveUpstreamForTest(repo.upstreams, {
     ...record,
@@ -123,42 +163,13 @@ test('explicit join still validates proxy configuration excluded from the automa
   await withMockedFetch(fetch, async () => {
     const target = modelsRefreshTarget(configured);
     const automatic = refreshModels(target, 'SIN');
-    const explicit = refreshModelsExplicit(target, 'NRT', true);
+    const explicit = expect(refreshModelsExplicit(target, 'NRT')).rejects.toBeInstanceOf(InvalidProxyConfigurationError);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     release!(jsonResponse({ object: 'list', data: [{ id: 'shared' }] }));
-    await expect(automatic).resolves.toMatchObject({ kind: 'refreshed', mode: 'automatic' });
-    await expect(explicit).rejects.toBeInstanceOf(InvalidProxyConfigurationError);
+    await expect(automatic).resolves.toMatchObject({ kind: 'discovered' });
+    await explicit;
   });
   expect(fetch).toHaveBeenCalledTimes(1);
-});
-
-test('explicit caller retries after joining a failed automatic refresh', async () => {
-  const { repo, record } = await setupCustom();
-  let failAutomatic: ((response: Response) => void) | undefined;
-  let stealingAutomatic: Promise<unknown> | undefined;
-  let reads = 0;
-  const getById = repo.upstreams.getById.bind(repo.upstreams);
-  vi.spyOn(repo.upstreams, 'getById').mockImplementation(async id => {
-    const current = await getById(id);
-    reads += 1;
-    if (reads === 2) stealingAutomatic = refreshModels(modelsRefreshTarget(record), 'HKG');
-    return current;
-  });
-  const fetch = vi.fn()
-    .mockImplementationOnce(() => new Promise<Response>(resolve => { failAutomatic = resolve; }))
-    .mockImplementationOnce(() => jsonResponse({ object: 'list', data: [{ id: 'retried' }] }));
-
-  await withMockedFetch(fetch, async () => {
-    const target = modelsRefreshTarget(record);
-    const automatic = refreshModels(target, 'SIN');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    const explicit = refreshModelsExplicit(target, 'NRT', true);
-    failAutomatic!(new Response('unavailable', { status: 503 }));
-    await expect(automatic).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
-    await expect(explicit).resolves.toMatchObject({ kind: 'refreshed', mode: 'explicit', discovered: [{ upstreamModelId: 'retried' }] });
-    await stealingAutomatic;
-  });
-  expect(fetch).toHaveBeenCalledTimes(2);
 });
 
 test('background refreshes honor backoff and explicit refreshes bypass it', async () => {
@@ -170,8 +181,8 @@ test('background refreshes honor backoff and explicit refreshes bypass it', asyn
     await expect(refreshModels(target, 'TEST'))
       .rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     await expect(refreshModels(target, 'TEST'))
-      .resolves.toEqual({ kind: 'backoff', mode: 'automatic' });
-    await expect(refreshModelsExplicit(target, 'TEST', false))
+      .resolves.toEqual({ kind: 'backoff' });
+    await expect(refreshModelsExplicit(target, 'TEST'))
       .rejects.toBeInstanceOf(ProviderModelsUnavailableError);
   });
 
@@ -183,17 +194,12 @@ test('a clean explicit failure makes one attempt and records one failure', async
   const fetch = vi.fn(() => new Response('unavailable', { status: 503 }));
 
   await withMockedFetch(fetch, async () => {
-    await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST', true))
+    await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST'))
       .rejects.toBeInstanceOf(ProviderModelsUnavailableError);
   });
 
   expect(fetch).toHaveBeenCalledTimes(1);
-  await expect(repo.upstreams.beginModelsRefresh({
-    id: record.id,
-    ...modelsRefreshIdentity(record),
-    now: Date.now(),
-    bypassBackoff: true,
-  })).resolves.toEqual({ kind: 'ready', failureCount: 1 });
+  expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.failureCount).toBe(1);
 });
 
 test('automatic proxy configuration failures are recorded and backed off', async () => {
@@ -205,7 +211,7 @@ test('automatic proxy configuration failures are recorded and backed off', async
 
   await expect(refreshModels(target, 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
   expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError).not.toBeNull();
-  await expect(refreshModels(target, 'TEST')).resolves.toEqual({ kind: 'backoff', mode: 'automatic' });
+  await expect(refreshModels(target, 'TEST')).resolves.toEqual({ kind: 'backoff' });
 });
 
 test('failure persistence retains the upstream error when recording also fails', async () => {
@@ -237,8 +243,8 @@ test('a changed config fences an old execution target before fetching', async ()
   const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [] }));
 
   await withMockedFetch(fetch, async () => {
-    await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST', false))
-      .resolves.toEqual({ kind: 'superseded', mode: 'explicit' });
+    await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST'))
+      .resolves.toEqual({ kind: 'superseded' });
   });
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -254,9 +260,8 @@ test('explicit refresh follows a newer cache epoch under the same config', async
   const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [{ id: 'current' }] }));
 
   await withMockedFetch(fetch, async () => {
-    await expect(refreshModelsExplicit(staleTarget, 'TEST', true)).resolves.toMatchObject({
-      kind: 'refreshed',
-      mode: 'explicit',
+    await expect(refreshModelsExplicit(staleTarget, 'TEST')).resolves.toMatchObject({
+      kind: 'discovered',
       discovered: [{ upstreamModelId: 'current' }],
     });
   });
@@ -268,16 +273,16 @@ test('custom explicit refresh returns discovered dashboard models from the same 
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'discovered', display_name: 'Discovered' }] }),
     async () => {
-      const result = await refreshModelsExplicit(modelsRefreshTarget(record), 'TEST', true);
+      const result = await refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
       expect(result).toMatchObject({
-        kind: 'refreshed',
+        kind: 'discovered',
         discovered: [{ upstreamModelId: 'discovered', publicModelId: 'discovered', display_name: 'Discovered' }],
       });
     },
   );
 });
 
-test('explicit discovery retries after an automatic refresh skips disabled fetching', async () => {
+test('explicit discovery fetches even when automatic custom fetch is disabled', async () => {
   const { repo, record } = await setupCustom();
   await saveUpstreamForTest(repo.upstreams, {
     ...record,
@@ -289,8 +294,8 @@ test('explicit discovery retries after an automatic refresh skips disabled fetch
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'discovered' }] }),
     async () => {
-      const result = await refreshModelsExplicit(modelsRefreshTarget(disabled), 'TEST', true);
-      expect(result).toMatchObject({ kind: 'refreshed', discovered: [{ upstreamModelId: 'discovered' }] });
+      const result = await refreshModelsExplicit(modelsRefreshTarget(disabled), 'TEST');
+      expect(result).toMatchObject({ kind: 'discovered', discovered: [{ upstreamModelId: 'discovered' }] });
     },
   );
 });

@@ -1,19 +1,16 @@
 import { modelsCacheStatus } from './models-cache-status.ts';
-import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { createPreviewProvider } from '../../data-plane/providers/registry.ts';
-import { isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
+import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels } from '@floway-dev/provider-custom';
+import { ProviderModelsUnavailableError, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
-const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
+export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
   return {
     upstreamModelId: model.upstreamModelId,
     publicModelId: model.id,
@@ -31,69 +28,53 @@ const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => 
 const malformedConfigResponse = (error: unknown): boolean =>
   error instanceof Error && /Malformed .* upstream config/.test(error.message);
 
-// Draft previews are deliberately detached from storage. The request carries
-// the exact editor values to probe, and neither a matching id nor matching
-// credentials can turn this operation into a cache write.
+// A draft never reads or writes its upstream row. Proxy resolution can still
+// access proxy records and backoff state; matching a saved id cannot publish
+// the draft's model catalog.
 export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) => {
   const { record } = c.req.valid('json');
-  if (!isValidProviderKind(record.kind)) {
-    return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
-  }
   const kind = record.kind;
-  const proxyFallbackList = (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[];
+  if (kind !== 'custom' && kind !== 'ollama') {
+    return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);
+  }
+  const proxyFallbackList = record.proxy_fallback_list ?? [];
 
-  const now = new Date().toISOString();
   const synthRecord: UpstreamRecord = {
-    id: 'draft',
+    id: record.id || 'draft',
     kind,
-    name: 'draft',
-    enabled: true,
-    sortOrder: 0,
-    createdAt: now,
-    updatedAt: now,
-    flagOverrides: {},
-    disabledPublicModelIds: [],
+    name: record.name ?? 'draft',
+    enabled: record.enabled ?? true,
+    sortOrder: record.sort_order ?? 0,
+    createdAt: record.created_at ?? '',
+    updatedAt: record.updated_at ?? '',
+    flagOverrides: record.flag_overrides ?? {},
+    disabledPublicModelIds: record.disabled_public_model_ids ?? [],
     proxyFallbackList,
-    modelPrefix: null,
-    // A draft only lists models; nothing renders its badge.
-    hue: 0,
+    modelPrefix: record.model_prefix ?? null,
+    hue: record.hue ?? 0,
     config: record.config,
     state: record.state,
-    // A draft is built from the request envelope and lists models live, so it
-    // never carries a cached catalog.
     modelsCache: null,
   };
-  let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({
-      override: proxyFallbackList,
-      runtimeLocation: getRuntimeLocation(c.req.raw),
-    });
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 400);
-  }
-
-  try {
-    if (kind === 'custom') {
-      const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const result = await fetchCustomModels(assertedConfig, fetcher);
-      return c.json({ kind, data: projectCustomDiscoveredModels(synthRecord, result) });
-    }
-    const models = await createPreviewProvider(synthRecord).instance.getProvidedModels(fetcher);
-    return c.json({ kind, data: models.map(reshapeModelForDashboard) });
+    const result = await discoverDraftModels(synthRecord, getRuntimeLocation(c.req.raw));
+    if (result.kind !== 'discovered') throw new Error('Draft discovery did not run');
+    const data = kind === 'custom' ? result.discovered : result.models.map(reshapeModelForDashboard);
+    if (data === undefined) throw new Error('Custom draft discovery did not return a catalog');
+    return c.json({ kind, data });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
     }
-    if (malformedConfigResponse(e)) {
+    if (malformedConfigResponse(e) || isModelsRefreshConfigurationError(e)) {
       return c.json({ error: errorMessage(e) }, 400);
     }
     throw e;
   }
 };
 
-// Saved refreshes accept only an id, then read the current config and version
-// from storage. A stale editor cannot publish a draft under the saved row.
+// The route pins the version; the cell loads the authoritative row and rejects
+// an edit that wins before discovery begins.
 export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
@@ -101,12 +82,13 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
   const runtimeLocation = getRuntimeLocation(c.req.raw);
 
   try {
-    const result = await refreshModelsExplicit(modelsRefreshTarget(record), runtimeLocation, record.kind === 'custom');
-    if (result.kind !== 'refreshed') throw new Error(`Upstream ${id} changed during models refresh`);
+    const result = await refreshModelsExplicit(modelsRefreshTarget(record), runtimeLocation);
+    if (result.kind !== 'discovered') return c.json({ error: 'Upstream changed during models refresh' }, 409);
     const refreshed = await getRepo().upstreams.getById(id);
     if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
-    const data = record.kind === 'custom' ? result.discovered : refreshed.modelsCache?.models.map(reshapeModelForDashboard);
-    if (data === undefined) throw new Error(`Upstream ${id} models refresh did not publish a catalog`);
+    if (refreshed.configVersion !== record.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
+    const data = record.kind === 'custom' ? result.discovered : result.models.map(reshapeModelForDashboard);
+    if (data === undefined) throw new Error(`Upstream ${id} models refresh did not return a catalog`);
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {

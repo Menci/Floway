@@ -149,7 +149,7 @@ test('SQL upstream repo annotates a cached catalog and successful publication cl
 
   await seedModelsCacheError(repo, 'up_test', await storedModelsRefreshIdentity(repo, 'up_test'), { message: 'boom', at: 1_700_000_500_000 });
   const annotated = (await repo.getById('up_test'))?.modelsCache;
-  assertEquals(annotated?.lastError, { message: 'boom', at: 1_700_000_500_000 });
+  assertEquals(annotated?.lastError, { message: 'boom', at: 1_700_000_500_000, failureCount: 1 });
   assertEquals(annotated?.models.map(model => model.id), ['cached-model']);
 
   await seedModelsCache(repo, 'up_test', await storedModelsRefreshIdentity(repo, 'up_test'), {
@@ -170,7 +170,25 @@ test('SQL upstream repo persists an immediately-stale empty catalog on first fai
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 0,
     models: [],
-    lastError: { message: 'boom', at: 1_700_000_500_000 },
+    lastError: { message: 'boom', at: 1_700_000_500_000, failureCount: 1 },
+  });
+});
+
+test('SQL replaces an old-revision cache with a visible cold error on failure', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await saveUpstreamForTest(repo, baseRecord());
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
+    .bind(JSON.stringify({ revision: MODEL_CATALOG_REVISION - 1, fetchedAt: 100, models: [], lastError: null }), 'up_test')
+    .run();
+  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
+
+  assertEquals(await seedModelsCacheError(repo, 'up_test', identityFor(baseRecord()), { message: 'cold failure', at: 200 }), true);
+  assertEquals((await repo.getById('up_test'))?.modelsCache, {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 0,
+    models: [],
+    lastError: { message: 'cold failure', at: 200, failureCount: 1 },
   });
 });
 
@@ -242,16 +260,15 @@ test('SQL upstream replacement leaves an existing cached catalog alone', async (
   assertEquals(record?.modelsCache?.models.map(model => model.id), ['cached-model']);
 });
 
-test('SQL rejects malformed persisted model refresh state', async () => {
+test('SQL rejects malformed persisted models-cache failure count', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await saveUpstreamForTest(repo, baseRecord());
 
-  await assertRejects(
-    () => db.prepare('UPDATE upstreams SET models_refresh_json = ? WHERE id = ?')
-      .bind(JSON.stringify({ failureCount: -1, retryAt: 0 }), 'up_test')
-      .run(),
-  );
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
+    .bind(JSON.stringify({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: { message: 'failure', at: 0, failureCount: -1 } }), 'up_test')
+    .run();
+  await assertRejects(() => repo.getById('up_test'));
 });
 
 test('SQL upstream repo round-trips state_json on insert/list/getById', async () => {

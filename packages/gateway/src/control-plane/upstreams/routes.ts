@@ -37,6 +37,7 @@ type SerializedUpstreamRecord = FullSerializedUpstreamRecord | RedactedSerialize
 type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
 
 type UpstreamWithCacheResponse = UpstreamResponse & {
+  configVersion: number;
   modelsCache: ModelsCacheStatus;
 };
 
@@ -75,6 +76,7 @@ const serializeForResponse = async (
   const serialized = baseSerialize(record);
   return {
     ...serialized,
+    configVersion: record.configVersion,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
     modelsCache: modelsCacheStatus(record),
     ...codexQuota,
@@ -279,7 +281,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   // Answer with the catalog status this warm produced, not the one the record
   // was built with — the dashboard re-seeds its draft from this body.
   const saved = await saveUpstreamAndWarmChangedModels({ previous: null, next: record }, c);
-  return c.json(await serializeForResponse(saved, knownProxyIds), 201);
+  return c.json({ ...await serializeForResponse(saved.record, knownProxyIds), modelDiscovery: saved.modelDiscovery }, 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -351,7 +353,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   next = { ...next, config: config.value };
 
   const saved = await saveUpstreamAndWarmChangedModels({ previous: existing, next }, c);
-  return c.json(await serializeForResponse(saved, knownProxyIds));
+  return c.json({ ...await serializeForResponse(saved.record, knownProxyIds), modelDiscovery: saved.modelDiscovery });
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

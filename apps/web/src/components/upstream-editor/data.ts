@@ -1,4 +1,4 @@
-import type { InferRequestType } from 'hono/client';
+import type { InferRequestType, InferResponseType } from 'hono/client';
 
 import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
@@ -51,9 +51,9 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
 // record.
 export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
 
-export const hasDraftModelInputs = (
+export const hasUnsavedDiscoveryInputs = (
   dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
-): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList].some(Boolean);
+): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList, dirtyFields.flagOverrides].some(Boolean);
 
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
@@ -135,6 +135,19 @@ export interface ModelCatalogFetch {
   modelsError: ModelListingFailure | null;
   modelsCache: UpstreamRecord['modelsCache'] | null;
 }
+
+type SavedModelDiscovery = InferResponseType<typeof api.api.upstreams.$post, 201>['modelDiscovery'];
+
+export const catalogFromSave = (
+  discovery: SavedModelDiscovery,
+  modelsCache: UpstreamRecord['modelsCache'],
+): ModelCatalogFetch => ({
+  discovered: discovery?.kind === 'success' ? discovery.data : null,
+  modelsError: discovery?.kind === 'failure'
+    ? { message: discovery.message, upstreamListingFailed: discovery.upstreamListingFailed }
+    : null,
+  modelsCache,
+});
 
 // The gateway squashes a genuine upstream failure to a message that names
 // nothing, so the editor writes that case in its own words and quotes every

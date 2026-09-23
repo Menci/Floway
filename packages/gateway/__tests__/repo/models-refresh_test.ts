@@ -34,28 +34,23 @@ const factories: [string, () => Promise<Repo>][] = [
 ];
 
 describe.each(factories)('%s models refresh persistence', (_name, createRepo) => {
-  test('applies retry backoff and lets an explicit refresh bypass it', async () => {
+  test('derives exponential retry times from the persisted failure count', async () => {
     const repo = (await createRepo()).upstreams;
     await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     let now = 1_800_000_000_000;
 
     for (const [failureCount, minutes] of [1, 5, 30, 120, 120].entries()) {
-      await expect(repo.beginModelsRefresh({ id: record.id, ...identity, now, bypassBackoff: false }))
-        .resolves.toEqual({ kind: 'ready', failureCount });
       await expect(repo.recordModelsRefreshFailure({
         id: record.id,
         ...identity,
         error: { message: 'failure', at: now },
         previousFailureCount: failureCount,
-        failedAt: now,
       })).resolves.toBe(true);
-      const retryAt = modelsRefreshRetryAt(now, failureCount);
+      const stored = await repo.getById(record.id);
+      expect(stored?.modelsCache?.lastError).toEqual({ message: 'failure', at: now, failureCount: failureCount + 1 });
+      const retryAt = modelsRefreshRetryAt(stored!.modelsCache!.lastError!);
       expect(retryAt - now).toBe(minutes * 60_000);
-      await expect(repo.beginModelsRefresh({ id: record.id, ...identity, now: retryAt - 1, bypassBackoff: false }))
-        .resolves.toEqual({ kind: 'backoff' });
-      await expect(repo.beginModelsRefresh({ id: record.id, ...identity, now: retryAt - 1, bypassBackoff: true }))
-        .resolves.toEqual({ kind: 'ready', failureCount: failureCount + 1 });
       now = retryAt;
     }
   });
@@ -65,7 +60,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     const now = 1_800_000_000_000;
-    await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
+    await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0 });
 
     await expect(repo.publishModelsRefresh({
       id: record.id,
@@ -74,9 +69,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     })).resolves.toBe(true);
     const refreshed = await repo.getById(record.id);
     if (refreshed === null) throw new Error('refreshed upstream missing');
-    await expect(repo.beginModelsRefresh({ id: record.id, ...modelsRefreshIdentity(refreshed), now: now + 2, bypassBackoff: false }))
-      .resolves.toEqual({ kind: 'ready', failureCount: 0 });
-    expect((await repo.getById(record.id))?.modelsCache).toMatchObject({ fetchedAt: now + 1, lastError: null });
+    expect(refreshed.modelsCache).toMatchObject({ fetchedAt: now + 1, lastError: null });
   });
 
   test('config changes fence stale success and failure publication', async () => {
@@ -87,11 +80,9 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     if (current === null) throw new Error('upstream row missing');
     await repo.replaceForModels({ previous: current, upstream: { ...current, config: { tenant: 'next' } } });
 
-    await expect(repo.beginModelsRefresh({ id: record.id, ...identity, now: 1, bypassBackoff: true }))
-      .resolves.toEqual({ kind: 'superseded' });
     await expect(repo.publishModelsRefresh({ id: record.id, ...identity, cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: 1, models: [] } }))
       .resolves.toBe(false);
-    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'old', at: 1 }, previousFailureCount: 0, failedAt: 1 }))
+    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'old', at: 1 }, previousFailureCount: 0 }))
       .resolves.toBe(false);
   });
 
@@ -109,7 +100,6 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       ...cold,
       error: { message: 'stale failure', at: 11 },
       previousFailureCount: 0,
-      failedAt: 11,
     })).resolves.toBe(false);
 
     const fresh = await repo.getById(record.id);
@@ -120,7 +110,6 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       ...modelsRefreshIdentity(fresh),
       error: { message: 'current failure', at: 12 },
       previousFailureCount: 0,
-      failedAt: 12,
     });
     await expect(repo.publishModelsRefresh({
       id: record.id,
@@ -130,20 +119,47 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     expect((await repo.getById(record.id))?.modelsCache).toMatchObject({ fetchedAt: 10, lastError: { message: 'current failure' } });
   });
 
+  test('one failure per cache epoch and prior failure count wins the CAS', async () => {
+    const repo = (await createRepo()).upstreams;
+    await saveUpstreamForTest(repo, record);
+    const identity = modelsRefreshIdentity(record);
+    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'first', at: 100 }, previousFailureCount: 0 }))
+      .resolves.toBe(true);
+    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'late', at: 101 }, previousFailureCount: 0 }))
+      .resolves.toBe(false);
+    expect((await repo.getById(record.id))?.modelsCache?.lastError).toEqual({ message: 'first', at: 100, failureCount: 1 });
+  });
+
+  test('transport edits retain models but clear backoff, while metadata edits preserve it', async () => {
+    const repo = (await createRepo()).upstreams;
+    await saveUpstreamForTest(repo, record);
+    await repo.publishModelsRefresh({ id: record.id, ...modelsRefreshIdentity(record), cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: 10, models: [] } });
+    await repo.recordModelsRefreshFailure({ id: record.id, configVersion: 1, cacheEpoch: 10, error: { message: 'failure', at: 20 }, previousFailureCount: 0 });
+    const failed = await repo.getById(record.id);
+    if (failed === null) throw new Error('failed upstream missing');
+    await repo.replaceForModels({ previous: failed, upstream: { ...failed, name: 'Metadata' } });
+    const renamed = await repo.getById(record.id);
+    expect(renamed?.modelsCache?.lastError?.failureCount).toBe(1);
+    if (renamed === null) throw new Error('renamed upstream missing');
+    await repo.replaceForModels({ previous: renamed, upstream: { ...renamed, proxyFallbackList: [{ id: 'direct_fetch' }] } });
+    const transported = await repo.getById(record.id);
+    expect(transported?.configVersion).toBe(2);
+    expect(transported?.modelsCache).toMatchObject({ fetchedAt: 10, models: [], lastError: null });
+  });
+
   test('state and metadata changes preserve the config version and backoff', async () => {
     const repo = (await createRepo()).upstreams;
     await saveUpstreamForTest(repo, record);
     const identity = modelsRefreshIdentity(record);
     const now = 1_800_000_000_000;
-    await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
+    await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0 });
     await repo.saveState(record.id, () => ({ credential: 'rotated' }));
     const current = await repo.getById(record.id);
     if (current === null) throw new Error('upstream row missing');
     await repo.replaceForModels({ previous: current, upstream: { ...current, name: 'Renamed' } });
 
     expect((await repo.getById(record.id))?.configVersion).toBe(1);
-    await expect(repo.beginModelsRefresh({ id: record.id, ...modelsRefreshIdentity(current), now: now + 1, bypassBackoff: false }))
-      .resolves.toEqual({ kind: 'backoff' });
+    expect((await repo.getById(record.id))?.modelsCache?.lastError?.failureCount).toBe(1);
   });
 
   test('catalog-aware writes reject stale and duplicate control-plane writers', async () => {

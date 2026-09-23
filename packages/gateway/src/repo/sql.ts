@@ -3,7 +3,6 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
-import { modelsRefreshRetryAt } from './models-refresh-backoff.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
@@ -21,8 +20,6 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsRefreshBeginInput,
-  ModelsRefreshBeginResult,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
@@ -938,8 +935,12 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const refreshInputsChanged = modelConfigChanged || transportChanged;
     const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
-    const modelsRefreshUpdate = refreshInputsChanged ? ', models_refresh_json = NULL' : '';
-    const modelsCacheUpdate = modelConfigChanged ? ', models_cache_json = NULL' : '';
+    const modelsCacheUpdate = modelConfigChanged
+      ? ', models_cache_json = NULL'
+      : transportChanged
+        ? `, models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
+            THEN json_set(models_cache_json, '$.lastError', json('null')) ELSE models_cache_json END`
+        : '';
     const row = await this.db
       .prepare(
         `UPDATE upstreams SET
@@ -955,7 +956,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = ?,
            proxy_fallback_list_json = ?,
            model_prefix_json = ?,
-           hue = ?${modelsRefreshUpdate}${modelsCacheUpdate}
+           hue = ?${modelsCacheUpdate}
          WHERE id = ?
            AND provider = ?
            AND name = ?
@@ -1019,46 +1020,31 @@ class SqlUpstreamRepo implements UpstreamRepo {
   async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
     const { id, configVersion, cacheEpoch, cache } = input;
     const result = await this.db
-      .prepare(`UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ? AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
+      .prepare(`UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND config_version = ? AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
       .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion, cacheEpoch)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, error, previousFailureCount, failedAt } = input;
-    const failureCount = previousFailureCount + 1;
-    const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
+    const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
     // A cold failure remains immediately stale while preserving the error for
     // the next request and dashboard read.
-    const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
+    const nextError = { ...error, failureCount: previousFailureCount + 1 };
+    const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: nextError });
     const result = await this.db
       .prepare(
         `UPDATE upstreams SET
-           models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
-           models_refresh_json = json_object('failureCount', CAST(? AS INTEGER), 'retryAt', CAST(? AS INTEGER))
+           models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
+             THEN json_set(models_cache_json, '$.lastError', json(?)) ELSE ? END
          WHERE id = ? AND config_version = ?
            AND ${MODELS_CACHE_EPOCH_SQL} = ?
-           AND coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) = ?`,
+           AND coalesce(CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
+             THEN json_extract(models_cache_json, '$.lastError.failureCount') END, 0) = ?`,
       )
-      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, configVersion, cacheEpoch, previousFailureCount)
+      .bind(JSON.stringify(nextError), coldFailure, id, configVersion, cacheEpoch, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
-  }
-
-  async beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
-    const { id, configVersion, cacheEpoch, now, bypassBackoff } = input;
-    const row = await this.db.prepare(
-      `SELECT
-         coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) AS failure_count,
-         coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) AS retry_at
-       FROM upstreams
-       WHERE id = ? AND config_version = ?
-         AND ${MODELS_CACHE_EPOCH_SQL} = ?`,
-    ).bind(id, configVersion, cacheEpoch).first<{ failure_count: number; retry_at: number }>();
-    if (row === null) return { kind: 'superseded' };
-    if (!bypassBackoff && row.retry_at > now) return { kind: 'backoff' };
-    return { kind: 'ready', failureCount: row.failure_count };
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner

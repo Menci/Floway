@@ -947,6 +947,13 @@ const zhHansCN = {
           stay: '继续编辑',
           leave: '放弃并离开',
         },
+        fetchDirty: {
+          title: '保存修改后获取模型？',
+          message: '模型发现使用已保存的上游配置。保存这些修改后即可获取模型。',
+          saveAndFetch: '保存并获取模型',
+          unsavedCredential: '请先通过对应的提供方控件应用凭据修改，再保存。',
+          reloadFailed: '设置已保存，但重新读取更新后的记录失败：{{error}}',
+        },
       },
       requests: {
         apiKey: '请求列表使用的 API 密钥',

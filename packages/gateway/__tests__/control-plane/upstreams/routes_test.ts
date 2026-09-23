@@ -737,6 +737,16 @@ test('POST /api/upstreams/preview-models rejects an invalid kind with 400', asyn
   assertEquals(body.error.type, 'invalid_request_error');
 });
 
+test('POST /api/upstreams/preview-models refuses OAuth drafts without a persisted credential row', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+    record: blueprintEnvelope('copilot', { config: copilotConfig }),
+  }));
+  assertEquals(response.status, 400);
+  const body = (await response.json()) as JsonObject;
+  assertEquals(body.error.type, 'invalid_request_error');
+});
+
 test('POST /api/upstreams warms the models cache before responding', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -752,7 +762,7 @@ test('POST /api/upstreams warms the models cache before responding', async () =>
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
       assertEquals(resp.status, 201);
-      return (await resp.json()) as { id: string; modelsCache: { fetchedAt: number | null; lastError: unknown } };
+      return (await resp.json()) as { id: string; configVersion: number; modelDiscovery: { kind: string; data: Array<{ upstreamModelId: string }> }; modelsCache: { fetchedAt: number | null; lastError: unknown } };
     },
   );
 
@@ -762,6 +772,26 @@ test('POST /api/upstreams warms the models cache before responding', async () =>
   // freshness the warm just produced rather than the record's pre-warm one.
   assertEquals(created.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
   assertEquals(created.modelsCache.lastError, null);
+  assertEquals(created.configVersion, 1);
+  assertEquals(created.modelDiscovery.kind, 'success');
+  assertEquals(created.modelDiscovery.data.map(model => model.upstreamModelId), ['warmed-on-create']);
+});
+
+test('POST /api/upstreams reports a successful save and failed warm separately', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const response = await withMockedFetch(
+    () => new Response('unavailable', { status: 503 }),
+    () => requestApp('/api/upstreams', authed(adminSession, createBody())),
+  );
+  assertEquals(response.status, 201);
+  const saved = (await response.json()) as JsonObject;
+  assertEquals(saved.modelDiscovery.kind, 'failure');
+  assertEquals(saved.modelDiscovery.upstreamListingFailed, true);
+  assertEquals(saved.modelsCache.lastError !== null, true);
+  assertEquals(saved.modelsCache.fetchedAt, null);
+  assertEquals(saved.modelsCache.modelCount, null);
+  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.failureCount, 1);
 });
 
 test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {
@@ -2355,14 +2385,9 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
 test('POST /api/upstreams/preview-models never writes the matching saved row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // Azure publishes through the persisted-snapshot branch alongside Copilot / Codex /
-  // claude-code, so this exercises the `readUpstreamModelsSnapshotAndScheduleRefresh` path a
-  // future "refresh row metadata" regression would land in. Azure's
-  // getProvidedModels reads directly from config.models — no upstream mock
-  // needed, no credential mint.
   const savedRecord: UpstreamRecord = {
     id: 'up_invariant_list_models',
-    kind: 'azure',
+    kind: 'custom',
     name: 'Original',
     enabled: true,
     sortOrder: 0,
@@ -2370,15 +2395,11 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: {
-      endpoint: 'https://invariant.openai.azure.com',
-      apiKey: 'sk-invariant',
-      models: [{ upstreamModelId: 'gpt-4o', publicModelId: 'gpt-4o', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
-    },
+    config: { ...customConfig, models: [] },
     state: null,
   };
   await saveUpstreamForTest(repo.upstreams, savedRecord);
@@ -2386,8 +2407,14 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
   const envelope = envelopeFromRecord(savedRecord);
   envelope.name = 'Mutated';
 
-  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record: envelope }));
-  assertEquals(resp.status, 200);
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'draft-only' }] }),
+    async () => {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record: envelope }));
+      assertEquals(resp.status, 200);
+      assertEquals(((await resp.json()) as JsonObject).data[0].upstreamModelId, 'draft-only');
+    },
+  );
 
   const stored = await repo.upstreams.getById(savedRecord.id);
   assertEquals(stored?.name, savedRecord.name);

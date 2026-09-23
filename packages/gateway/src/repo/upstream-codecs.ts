@@ -97,7 +97,7 @@ const modelsCacheSchema = z.object({
   revision: z.number(),
   fetchedAt: z.number(),
   models: z.array(providerModelSchema),
-  lastError: z.object({ message: z.string(), at: z.number() }).passthrough().nullable(),
+  lastError: z.object({ message: z.string(), at: z.number(), failureCount: z.number().int().positive() }).passthrough().nullable(),
 }).passthrough();
 const modelsCacheEnvelopeSchema = z.object({ revision: z.number() }).passthrough();
 

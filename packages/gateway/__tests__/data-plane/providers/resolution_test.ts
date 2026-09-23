@@ -217,7 +217,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     async () => {
       const first = await repo.upstreams.getById(providers[0].upstreamId);
       if (first === null) throw new Error('first upstream missing');
-      await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST', false);
+      await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST');
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
       const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });

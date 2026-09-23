@@ -30,7 +30,7 @@ export const seedModelsCacheError = async (
   repo: UpstreamRepo,
   id: string,
   identity: ModelsRefreshRowIdentity,
-  error: NonNullable<UpstreamModelsCache['lastError']>,
+  error: Pick<NonNullable<UpstreamModelsCache['lastError']>, 'message' | 'at'>,
 ): Promise<boolean> => {
-  return await repo.recordModelsRefreshFailure({ id, ...identity, error, previousFailureCount: 0, failedAt: -60_000 });
+  return await repo.recordModelsRefreshFailure({ id, ...identity, error, previousFailureCount: 0 });
 };

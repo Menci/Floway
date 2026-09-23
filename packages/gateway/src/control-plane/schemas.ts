@@ -511,9 +511,21 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
-// A draft preview always remains detached from storage, even when the
-// envelope originated from an existing editor record.
-export const previewModelsBody = recordOnlyBody;
+// The editor sends every discovery input, including model projection policy,
+// while direct preview callers can omit unrelated display metadata.
+export const previewModelsBody = z.object({
+  record: upstreamRecordEnvelope.extend({
+    name: z.string().optional(),
+    enabled: z.boolean().optional(),
+    sort_order: z.number().int().optional(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+    hue: upstreamHueSchema.optional(),
+    flag_overrides: flagOverridesSchema.optional(),
+    disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
+    model_prefix: modelPrefixSchema.optional(),
+  }),
+});
 // --- ollama ---
 
 export const ollamaUsageBody = recordOnlyBody;
