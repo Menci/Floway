@@ -4156,15 +4156,18 @@ test('tool_choice "auto" stays "auto" — no demotion when never forced', async 
 test('forced namespaced client tool choice is not mistaken for the hosted shim function', async () => {
   makeStubDeps();
   const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
-  const inv = makeInvocation({ payload: {
-    tool_choice: choice,
-    tools: [
-      { type: 'web_search' },
-      { type: 'namespace', name: 'client', description: 'Client tools', tools: [
-        { type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } },
-      ] },
-    ],
-  } });
+  const inv = makeInvocation({
+    payload: {
+      tool_choice: choice,
+      tools: [
+        { type: 'web_search' },
+        {
+          type: 'namespace', name: 'client', description: 'Client tools',
+          tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+        },
+      ],
+    },
+  });
   const seenToolChoices: unknown[] = [];
   const script = scriptedRun([searchCallTurn(0, 'call_search', 'q1'), messageTurn('done')]);
   const run = async () => {
