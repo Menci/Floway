@@ -4153,6 +4153,22 @@ test('tool_choice "auto" stays "auto" — no demotion when never forced', async 
   assertEquals(seenToolChoices[1], 'auto');
 });
 
+test('forced namespaced client tool choice is not mistaken for the hosted shim function', async () => {
+  makeStubDeps();
+  const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
+  const inv = makeInvocation({ payload: { tool_choice: choice } });
+  const seenToolChoices: unknown[] = [];
+  const script = scriptedRun([searchCallTurn(0, 'call_search', 'q1'), messageTurn('done')]);
+  const run = async () => {
+    seenToolChoices.push(inv.payload.tool_choice);
+    return await script.run();
+  };
+
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+
+  assertEquals(seenToolChoices, [choice, choice]);
+});
+
 test('cap-exceeded does NOT set tool_choice="none" — the cap snippet alone nudges the model toward other tools', async () => {
   // `'none'` blocks every tool the model can call — including client tools
   // the model needs to make progress on the user's task. The cap intent is
@@ -4744,6 +4760,29 @@ const consumeTurn = async (
     records,
   );
 };
+
+test('consumeTurn forwards a namespaced client call sharing the hosted shim name', async () => {
+  const call = {
+    type: 'function_call' as const,
+    id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
+    arguments: '{"query":"client data"}', status: 'completed',
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: { ...call, arguments: '', status: 'in_progress' },
+    }),
+    mkFunctionCallArgsDone(0, call.arguments, call.id),
+    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: call }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records, []);
+  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.sawClientToolCall, true);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [call]);
+});
 
 test('consumeTurn forwards queued only from the first upstream turn', async () => {
   const firstState = createMergeState();

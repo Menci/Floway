@@ -553,7 +553,7 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const item = event.item;
       if (item.type === 'function_call') {
-        const dispatcher = dispatchers.get(item.name);
+        const dispatcher = item.namespace === undefined ? dispatchers.get(item.name) : undefined;
         if (dispatcher !== undefined) {
           // Reserve the downstream index the shim call occupies now, at
           // `.added`; the actual slot count is only known at `.done`,
@@ -1034,6 +1034,7 @@ export const withOpenAIResponsesServerToolShim = (
     || (typeof finalToolChoice === 'object'
       && finalToolChoice !== null
       && finalToolChoice.type === 'function'
+      && finalToolChoice.namespace === undefined
       && dispatchers.has(finalToolChoice.name));
 
   const merge = createMergeState();
