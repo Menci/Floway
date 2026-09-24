@@ -5,7 +5,7 @@ import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/ch
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -586,6 +586,138 @@ test('compact decrypt: preserves a generate response envelope for the compaction
   assertEquals(calls, 2);
   assertEquals(collected.object, 'response');
   assertEquals(collected.output[0]?.type, 'compaction');
+});
+
+test('compact decrypt: succeeds when native compaction stream has empty terminal output and intermediate compacting events', async () => {
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'message', role: 'user', content: 'prior turn' },
+        { type: 'compaction_trigger' } as unknown as never,
+      ],
+    },
+    { flagOn: false, decryptFlagOn: true },
+  );
+
+  const nativeCompactionItem: OpenAIResponsesOutputItem = {
+    type: 'compaction',
+    id: 'cmp_native_capture',
+    encrypted_content: 'OPAQUE_CAPTURE_BLOB',
+    metadata: { turn_id: 'turn-123' },
+    internal_chat_message_metadata_passthrough: { turn_id: 'turn-123' },
+  };
+
+  const inProgressEnvelope: OpenAIResponsesResult = {
+    id: 'resp_capture',
+    object: 'response',
+    model: 'test-upstream-model',
+    status: 'in_progress',
+    output: [],
+    error: null,
+    incomplete_details: null,
+  };
+
+  const completedEnvelope: OpenAIResponsesResult = {
+    id: 'resp_capture',
+    object: 'response',
+    model: 'test-upstream-model',
+    status: 'completed',
+    output: [], // Empty terminal output, matching Codex upstream
+    error: null,
+    incomplete_details: null,
+    usage: { input_tokens: 150, output_tokens: 50, total_tokens: 200 },
+  };
+
+  let calls = 0;
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, async () => {
+    calls += 1;
+    if (calls === 1) {
+      return eventResult(
+        (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+          yield eventFrame({ type: 'response.created', sequence_number: 0, response: inProgressEnvelope });
+          yield eventFrame({ type: 'response.in_progress', sequence_number: 1, response: inProgressEnvelope });
+          yield eventFrame({
+            type: 'response.output_item.added',
+            sequence_number: 2,
+            output_index: 0,
+            item: nativeCompactionItem,
+          });
+          yield eventFrame({
+            type: 'response.compaction.compacting',
+            sequence_number: 3,
+            item_id: 'cmp_native_capture',
+            output_index: 0,
+          });
+          yield eventFrame({
+            type: 'response.compaction.compacting',
+            sequence_number: 4,
+            item_id: 'cmp_native_capture',
+            output_index: 0,
+          });
+          yield eventFrame({
+            type: 'response.output_item.done',
+            sequence_number: 5,
+            output_index: 0,
+            item: nativeCompactionItem,
+          });
+          yield eventFrame({ type: 'response.completed', sequence_number: 6, response: completedEnvelope });
+          yield doneFrame();
+        })(),
+        testTelemetryModelIdentity,
+        {
+          finalMetadata: Promise.resolve({
+            modelIdentity: testTelemetryModelIdentity,
+            billableUsage: { input: 150, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 50 },
+          }),
+        },
+      );
+    }
+
+    assertEquals(inv.action, 'generate');
+    assertEquals(inv.payload.store, false);
+    assertEquals(inv.payload.input.length, 3);
+    const [, replayCompaction] = inv.payload.input;
+    assertEquals(replayCompaction, nativeCompactionItem);
+
+    const replay = await fakeUpstreamRun('DECRYPTED CAPTURE SUMMARY')();
+    if (replay.type !== 'events') throw new Error('expected replay events');
+    return {
+      ...replay,
+      finalMetadata: Promise.resolve({
+        modelIdentity: testTelemetryModelIdentity,
+        billableUsage: { input: 15, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 25 },
+      }),
+    };
+  });
+
+  assertEquals(calls, 2);
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.output.length, 1);
+  const decryptedItem = collected.output[0] as unknown as {
+    type: string;
+    id: string;
+    encrypted_content: string;
+    metadata?: Record<string, unknown>;
+    internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+  };
+  assertEquals(decryptedItem.type, 'compaction');
+  assertEquals(decryptedItem.id, 'cmp_native_capture');
+  assertEquals(decryptedItem.metadata, { turn_id: 'turn-123' });
+  assertEquals(decryptedItem.internal_chat_message_metadata_passthrough, { turn_id: 'turn-123' });
+
+  const expanded = expandShimCompactionItems({
+    model: 'test-model',
+    input: [decryptedItem as unknown as OpenAIResponsesInputItem],
+  });
+  const expandedUserMessage = expanded.input[0] as {
+    type: string;
+    role: string;
+    content: Array<{ type: string; text: string }>;
+  };
+  assertEquals(expandedUserMessage.type, 'message');
+  assertEquals(expandedUserMessage.role, 'user');
+  assertEquals(expandedUserMessage.content[0].text, 'DECRYPTED CAPTURE SUMMARY');
 });
 
 // ── Bug 1 — engagement gating ────────────────────────────────────────────────

@@ -337,6 +337,8 @@ describe('Codex private Responses wire selection', () => {
       { type: 'response.output_item.added', output_index: 0, item: wireCall },
       future,
       { type: 'response.output_item.done', output_index: 0, item: wireCall },
+      { type: 'response.output_item.added', output_index: 1, item: opaque },
+      { type: 'response.output_item.done', output_index: 1, item: opaque },
       { type: 'response.completed', response: wireResponse },
     ]);
     upstream.headers.delete('content-type');
@@ -357,7 +359,9 @@ describe('Codex private Responses wire selection', () => {
       expect(frames[0]).toMatchObject({ type: 'event', event: { item: expectedCall } });
       expect(frames[1]).toEqual({ type: 'event', event: future });
       expect(frames[2]).toMatchObject({ type: 'event', event: { item: expectedCall } });
-      expect(frames[3]).toMatchObject({
+      expect(frames[3]).toMatchObject({ type: 'event', event: { item: opaque } });
+      expect(frames[4]).toMatchObject({ type: 'event', event: { item: opaque } });
+      expect(frames[5]).toMatchObject({
         type: 'event',
         event: {
           response: {
@@ -366,7 +370,7 @@ describe('Codex private Responses wire selection', () => {
           },
         },
       });
-      expect(frames[4]).toEqual({ type: 'done' });
+      expect(frames[6]).toEqual({ type: 'done' });
     } else {
       const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
       expect(collected).toMatchObject({

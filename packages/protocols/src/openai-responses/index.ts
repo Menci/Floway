@@ -33,6 +33,11 @@ export interface OpenAIResponsesPayload {
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
+  // `false` asks for a prewarm: a response that records this request's
+  // context without generating, which the next request continues from via
+  // `previous_response_id`. Codex sends it on its WebSocket transport.
+  // https://github.com/openai/codex/blob/6989c6548b3737f108e2bb5ae1171b1d2032e30c/codex-rs/codex-api/src/common.rs#L355
+  generate?: boolean | null;
   parallel_tool_calls?: boolean | null;
   reasoning?: {
     effort?: string;
@@ -483,6 +488,8 @@ export interface OpenAIResponsesCompactionItem {
   id?: string | null;
   encrypted_content: string;
   created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
@@ -1372,6 +1379,13 @@ type OpenAIResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
     diff: string;
+  }
+  // Codex remote-compaction progress event.
+  // https://github.com/openai/codex/blob/0a2eb4696c/codex-rs/codex-api/src/sse/responses.rs
+  | {
+    type: 'response.compaction.compacting';
+    item_id: string;
+    output_index: number;
   }
   | { type: 'response.completed'; response: OpenAIResponsesResult }
   | { type: 'response.incomplete'; response: OpenAIResponsesResult }
