@@ -251,15 +251,10 @@ const resultMetadata = async (
     ...(result.performance !== undefined ? { performance: result.performance } : {}),
   });
 
-// The spec makes the item lifecycle the authority and requires nothing of the
-// terminal's `output`; a Codex upstream states an `output` that omits the
-// assistant message it just closed. A turn that closed nothing falls back to
-// the terminal, as the client-facing egress does.
+// The reassembler takes `output` from the closed items, since a Codex upstream
+// states a terminal `output` that omits the assistant message it just closed.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated: readonly OpenAIResponsesOutputItem[]): string => {
-  const items = closed.size === 0
-    ? stated
-    : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
+const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string => {
   const parts: string[] = [];
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -273,17 +268,8 @@ const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated:
 const collectSummaryTurn = async (
   result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
 ): Promise<{ response: OpenAIResponsesResult; text: string }> => {
-  const closedItems = new Map<number, OpenAIResponsesOutputItem>();
-  const observed = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-    for await (const frame of result.events) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        closedItems.set(frame.event.output_index, frame.event.item);
-      }
-      yield frame;
-    }
-  })();
-  const response = await collectOpenAIResponsesProtocolEventsToResult(observed);
-  return { response, text: summaryTextFrom(closedItems, response.output) };
+  const response = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  return { response, text: summaryTextFrom(response.output) };
 };
 
 const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {

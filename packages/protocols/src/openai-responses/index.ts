@@ -483,6 +483,8 @@ export interface OpenAIResponsesCompactionItem {
   id?: string | null;
   encrypted_content: string;
   created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
@@ -1372,6 +1374,13 @@ type OpenAIResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
     diff: string;
+  }
+  // Codex remote-compaction progress event.
+  // https://github.com/openai/codex/blob/0a2eb4696c/codex-rs/codex-api/src/sse/responses.rs
+  | {
+    type: 'response.compaction.compacting';
+    item_id: string;
+    output_index: number;
   }
   | { type: 'response.completed'; response: OpenAIResponsesResult }
   | { type: 'response.incomplete'; response: OpenAIResponsesResult }
