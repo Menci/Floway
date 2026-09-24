@@ -153,6 +153,22 @@ test('client output preserves emitted ids and persists the exact complete item b
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).not.toBeNull();
 });
 
+test('client output replaces history when a compaction_summary item closes', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const item = { type: 'compaction_summary' as const, id: 'cmp_alias', encrypted_content: 'opaque' };
+  const commitSnapshot = vi.spyOn(store, 'commitSnapshot');
+  const emitted: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+
+  for await (const frame of wrapOpenAIResponsesClientOutput(frames(responseFor([item])), {
+    store,
+    responseId: 'resp_public',
+  })) emitted.push(frame);
+
+  expect(emitted).toContainEqual(eventFrame({ type: 'response.output_item.done', output_index: 0, item }));
+  expect(commitSnapshot).toHaveBeenCalledWith('resp_public', 'replace', ['cmp_alias']);
+  expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual(['cmp_alias']);
+});
+
 test('client output waits for persistence before publishing output_item.done', async () => {
   const { repo, store } = memoryOutputHarness();
   const insert = repo.openaiResponsesItems.insertMany.bind(repo.openaiResponsesItems);
