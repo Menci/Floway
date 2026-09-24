@@ -61,8 +61,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setRecord(next);
   }, []);
   const [discovered, setDiscovered] = useState(data.discovered);
-  const [catalogAvailable, setCatalogAvailable] = useState(false);
-  const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
+  const catalogAvailable = discovered !== null;
+  const [modelsError, setModelsError] = useState<ModelListingFailure | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [modelsYamlDraft, setModelsYamlDraft] = useState<ModelsYamlDraft | null>(null);
@@ -166,8 +166,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
-    setCatalogAvailable(catalog.discovered !== null && catalog.modelsError === null);
-    if (catalog.discovered) setDiscovered(catalog.discovered);
+    if (catalog.discovered !== null) {
+      setDiscovered(catalog.discovered);
+    } else if (catalog.modelsCache?.fetchedAt === null) setDiscovered(null);
     if (catalog.modelsCache) updateRecord({ ...recordRef.current, modelsCache: catalog.modelsCache } as UpstreamRecord);
   }, [discoveryInputsDirty, getValues, record, updateRecord]));
 
@@ -232,7 +233,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       if (invalidatesPendingFetch) cancelModelsRefresh();
       updateRecord(saved);
       reset(valuesFromRecord(saved));
-      if (invalidatesDiscovered) { setModelsError(null); setDiscovered([]); setCatalogAvailable(false); }
+      if (invalidatesDiscovered) { setModelsError(null); setDiscovered(null); }
       handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
       savedRecord = saved;
       // `saving` stays set during the route handoff; the old form is still
@@ -271,7 +272,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamConfigSidebar
             catalogAvailable={catalogAvailable}
-            discovered={discovered}
+            discovered={discovered ?? []}
             onPatch={applyProviderPatch}
             onRefreshModels={requestModels}
             proxies={data.proxies}
@@ -280,7 +281,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           />
         </Panel>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamWorkspace record={record} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
+          <UpstreamWorkspace record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
         </Panel>
       </div>
     </div>

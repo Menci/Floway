@@ -480,6 +480,46 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   });
 });
 
+test('GET /api/upstreams/:id exposes cached editor rows without an upstream request', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const createdResponse = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    kind: 'copilot',
+    name: 'Cached Copilot',
+    config: copilotConfig,
+    disabled_public_model_ids: ['hidden-model'],
+  })));
+  assertEquals(createdResponse.status, 201);
+  const created = (await createdResponse.json()) as { id: string };
+  const read = () => requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+
+  const cold = await read();
+  assertEquals(cold.status, 200);
+  assertEquals(((await cold.json()) as JsonObject).cachedModels, null);
+
+  await seedModelsCache(repo.upstreams, created.id, await storedModelsRefreshIdentity(repo.upstreams, created.id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [
+      stubProviderModel({ id: 'visible-model', upstreamModelId: 'visible-model', display_name: 'Visible' }),
+      stubProviderModel({ id: 'hidden-model', upstreamModelId: 'hidden-model' }),
+    ],
+  });
+
+  await withMockedFetch(
+    request => { throw new Error(`Editor read unexpectedly fetched ${request.url}`); },
+    async () => {
+      const response = await read();
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as JsonObject;
+      assertEquals(body.modelsCache.modelCount, 1);
+      assertEquals(body.cachedModels.map((model: { publicModelId: string }) => model.publicModelId), ['visible-model', 'hidden-model']);
+      assertEquals(body.cachedModels[0].display_name, 'Visible');
+      assertEquals(body.cachedModels[0].providerData, undefined);
+    },
+  );
+});
+
 test('GET /api/upstream-options returns the minimal picker shape to admin and non-admin callers', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, {
@@ -736,8 +776,59 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
       assertEquals(upstreamCalls, 1);
       const cached = (await repo.upstreams.getById(savedRecord.id))?.modelsCache;
       assertEquals(cached?.models.map((model: { id: string }) => model.id), ['fresh-model']);
+      assertEquals(cached?.discovered?.map(model => model.upstreamModelId), ['fresh-model']);
+      const stored = await requestApp(`/api/upstreams/${savedRecord.id}`, { headers: { 'x-floway-session': adminSession } });
+      assertEquals(stored.status, 200);
+      assertEquals(((await stored.json()) as JsonObject).cachedModels.map((model: { upstreamModelId: string }) => model.upstreamModelId), ['fresh-model']);
+      assertEquals(upstreamCalls, 1);
     },
   );
+});
+
+test('Custom cache retains discovered rows excluded from its routable catalog', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const response = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      ...customConfig,
+      modelsFetch: { enabled: true },
+      models: [{ upstreamModelId: 'overridden', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
+    },
+  })));
+  assertEquals(response.status, 201);
+  const { id } = (await response.json()) as { id: string };
+
+  await seedModelsCache(repo.upstreams, id, await storedModelsRefreshIdentity(repo.upstreams, id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 100,
+    models: [stubProviderModel({ id: 'overridden', upstreamModelId: 'overridden' })],
+  });
+  const previous = await requestApp(`/api/upstreams/${id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(((await previous.json()) as JsonObject).cachedModels, null);
+
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).hostname !== 'custom.example.com') throw new Error(`Unexpected fetch ${request.url}`);
+      return jsonResponse({
+        data: [
+          { id: 'overridden' },
+          { id: 'auto-only' },
+          { id: 'rerank-only', kind: 'rerank' },
+        ],
+      });
+    },
+    async () => {
+      const fetched = await requestApp(`/api/upstreams/${id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      assertEquals(fetched.status, 200);
+    },
+  );
+
+  const cache = (await repo.upstreams.getById(id))?.modelsCache;
+  assertEquals(cache?.models.map(model => model.upstreamModelId), ['overridden', 'auto-only']);
+  assertEquals(cache?.discovered?.map(model => model.upstreamModelId), ['overridden', 'auto-only', 'rerank-only']);
+  const stored = await requestApp(`/api/upstreams/${id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(stored.status, 200);
+  assertEquals(((await stored.json()) as JsonObject).cachedModels.map((model: { upstreamModelId: string }) => model.upstreamModelId), ['overridden', 'auto-only', 'rerank-only']);
 });
 
 test('POST /api/upstreams/:id/list-models rejects a missing saved upstream', async () => {

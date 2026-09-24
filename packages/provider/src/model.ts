@@ -1,5 +1,5 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
-import type { UpstreamChatModelConfig } from './model-config.ts';
+import type { UpstreamChatModelConfig, UpstreamModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, OpaqueBlobCompatibilityScope, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
 
@@ -55,6 +55,9 @@ export interface UpstreamModelsCache {
   revision: number;
   fetchedAt: number;
   models: ProviderModel[];
+  // Custom's editable auto rows include models overridden by manual entries
+  // and rerank rows that are not part of the routable provider catalog.
+  discovered?: UpstreamModelConfig[];
   lastError: { message: string; at: number; failureCount: number } | null;
 }
 

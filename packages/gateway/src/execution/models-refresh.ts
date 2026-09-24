@@ -148,7 +148,7 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
 }> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
-    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record) };
+    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record), discovered: [] };
     const response = await fetchCustomModels(custom.config, trackedFetcher);
     return { models: projectCustomModels(record, response), discovered: projectCustomDiscoveredModels(record, response) };
   }
@@ -197,7 +197,12 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
     configVersion: input.configVersion,
     cacheEpoch: epoch,
     refreshInputs: modelsRefreshInputs(record),
-    cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: Math.max(Date.now(), epoch + 1), models: result.models },
+    cache: {
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: Math.max(Date.now(), epoch + 1),
+      models: result.models,
+      ...(record.kind === 'custom' ? { discovered: result.discovered! } : {}),
+    },
   });
   return { kind: 'discovered', ...result, publication: published ? 'published' : 'lost-race' };
 };

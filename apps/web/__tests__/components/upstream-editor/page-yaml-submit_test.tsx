@@ -70,14 +70,11 @@ const renderPage = () => {
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      backoffs: [],
-      discovered: [],
+      discovered: null,
       mode: 'edit',
-      modelsError: null,
       proxies: [],
       record,
       runtime: { kind: 'node', runtimeLocation: 'test' },
-      upstreams: [record],
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor?view=yaml'] });
   return renderInApp(<RouterProvider router={router} />);

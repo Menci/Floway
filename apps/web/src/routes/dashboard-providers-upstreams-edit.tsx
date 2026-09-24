@@ -23,8 +23,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   return {
     ...aux,
     record: recordResult.data,
-    discovered: [],
-    modelsError: null,
+    discovered: recordResult.data.cachedModels,
     mode: 'edit' as const,
   };
 }

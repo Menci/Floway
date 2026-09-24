@@ -82,26 +82,27 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): {
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   await requireDashboardAdmin();
-  const [sourceResult, aux] = await Promise.all([
+  const [sourceResult, aux, upstreamsResult] = await Promise.all([
     callApi(() => api.api.upstreams[':id'].$get({ param: { id: params.id } })),
     loadEditorAux(),
+    callApi(() => api.api.upstreams.$get()),
   ]);
   if (sourceResult.error?.status === 404) {
     throw redirect('/dashboard/providers/upstreams?missing=1');
   }
   if (sourceResult.error) throw new Error(sourceResult.error.message);
+  if (upstreamsResult.error) throw new Error(upstreamsResult.error.message);
   const source = sourceResult.data;
   const { record, preserveCredentials } = copyableRecord(
     source,
     i18n.t('dashboard.upstreams.copy.nameSuffix', { name: source.name }),
-    pickDistinctHue(aux.upstreams.map(upstream => upstream.hue)),
+    pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   );
   return {
     ...aux,
     mode: 'create' as const,
     record,
-    discovered: [],
-    modelsError: null,
+    discovered: null,
     preserveCredentials,
   };
 }

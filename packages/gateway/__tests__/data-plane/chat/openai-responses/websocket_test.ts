@@ -559,7 +559,7 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
 
 test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
   const { apiKey } = await setupAppTest();
-  await withWorkerWebSocketRuntime(async () => {
+  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const received = waitForMessages(client, messages => messages.length === 1);
 
@@ -575,12 +575,12 @@ test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupp
         message: "Unsupported WebSocket event type 'session.update'.",
       },
     }]);
-  });
+  }));
 });
 
 test('OpenAI Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
   const { apiKey } = await setupAppTest();
-  await withWorkerWebSocketRuntime(async () => {
+  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const invalidJson = waitForMessages(client, messages => messages.length === 1);
 
@@ -656,7 +656,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
         param: 'input[0]',
       },
     }]);
-  });
+  }));
 });
 
 test('OpenAI Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {

@@ -809,7 +809,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
       || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
-    existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
+    existing.modelsCache = { ...cache, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
 
@@ -831,7 +831,7 @@ const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamReco
   ...upstream,
   config: structuredClone(upstream.config),
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
-  modelsCache: upstream.modelsCache === null ? null : { ...upstream.modelsCache, models: [...upstream.modelsCache.models] },
+  modelsCache: structuredClone(upstream.modelsCache),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),

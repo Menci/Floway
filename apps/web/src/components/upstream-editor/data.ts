@@ -3,7 +3,6 @@ import type { InferRequestType } from 'hono/client';
 import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
-  BackoffRow,
   ProxyRecord,
   ProviderModelsFailureResponse,
   UpstreamRecord,
@@ -23,15 +22,12 @@ export interface RuntimeInfo {
 
 export interface EditorAuxData {
   proxies: ProxyRecord[];
-  backoffs: BackoffRow[];
   runtime: RuntimeInfo;
-  upstreams: UpstreamRecord[];
 }
 
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
-  discovered: UpstreamModelConfig[];
-  modelsError: ModelListingFailure | null;
+  discovered: UpstreamModelConfig[] | null;
   // For providers whose credential is an API key, the editor can keep that
   // stored key when the form's blank secret field is left alone; OAuth
   // providers do not copy their tokens and start from the blueprint
@@ -88,19 +84,15 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
 };
 
 export const loadEditorAux = async (): Promise<EditorAuxData> => {
-  const [proxies, backoffs, runtime, upstreams] = await Promise.all([
+  const [proxies, runtime] = await Promise.all([
     callApi(() => api.api.proxies.$get()),
-    callApi(() => api.api.proxies.backoffs.$get()),
     callApi(() => api.api['runtime-info'].$get()),
-    callApi(() => api.api.upstreams.$get()),
   ]);
-  const error = proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
-  if (error) throw new Error(error.message);
+  if (proxies.error) throw new Error(proxies.error.message);
+  if (runtime.error) throw new Error(runtime.error.message);
   return {
-    proxies: proxies.data!,
-    backoffs: backoffs.data!,
-    runtime: runtime.data!,
-    upstreams: upstreams.data!,
+    proxies: proxies.data,
+    runtime: runtime.data,
   };
 };
 
@@ -130,7 +122,7 @@ export const manualModelsSupported = (record: UpstreamRecord): record is Extract
   record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama';
 
 export interface ModelCatalogFetch {
-  /** Null when nothing was listed, which leaves whatever the caller already shows. */
+  /** Null when the request produced no new catalog. */
   discovered: UpstreamModelConfig[] | null;
   modelsError: ModelListingFailure | null;
   modelsCache: UpstreamRecord['modelsCache'] | null;

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { modelsCacheStatus } from './models-cache-status.ts';
+import { cachedModelsForDashboard, modelsCacheStatus } from './models-cache-projection.ts';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
@@ -203,15 +203,17 @@ export const getUpstreamBlueprint = (c: Context) => {
 // Single-record read for the edit page. Returns the FULL record — no
 // secret redaction — because every editor-scoped action posts the record
 // back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). Codex quota and modelsCache are
-// response-only projections, so they are attached here alongside the
-// unredacted config/state — the edit page relies on `modelsCache` to
-// render the "last fetched / last error" panel on mount.
+// uses (refresh tokens, api keys, etc.). The cache status and editor model
+// snapshot are read from this same row, so opening the editor displays the
+// stored catalog without starting or waiting for a refresh.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson));
+  return c.json({
+    ...await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson),
+    cachedModels: cachedModelsForDashboard(record),
+  });
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {

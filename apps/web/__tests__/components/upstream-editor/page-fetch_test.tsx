@@ -10,6 +10,7 @@ import { UpstreamEditorPage } from '../../../src/components/upstream-editor/page
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const apiMocks = vi.hoisted(() => ({ patch: vi.fn(), listModels: vi.fn(), previewModels: vi.fn() }));
 
@@ -74,14 +75,14 @@ const customRecord = upstreamRecord('up_custom', {
   },
   state: null,
 });
-const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', endpoints: { openaiChatCompletions: {} } }];
+const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }];
 
-const renderPage = (currentRecord = record) => {
+const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null) => {
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      mode: 'edit', record: currentRecord, discovered: [], modelsError: null,
-      backoffs: [], proxies: [], upstreams: [currentRecord], runtime: { kind: 'node', runtimeLocation: 'TEST' },
+      mode: 'edit', record: currentRecord, discovered: initialDiscovered,
+      proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor'] });
   return renderInApp(<RouterProvider router={router} />);
@@ -92,6 +93,34 @@ beforeEach(() => {
   apiMocks.patch.mockResolvedValue({ data: record, error: null });
   apiMocks.listModels.mockResolvedValue({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
   apiMocks.previewModels.mockResolvedValue({ data: { kind: 'ollama', data: [] }, error: null });
+});
+
+test('opening an editor shows the stored model snapshot without fetching', () => {
+  renderPage(record, discovered);
+  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
+  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
+  expect(apiMocks.listModels).not.toHaveBeenCalled();
+});
+
+test('a successful empty snapshot is still available', () => {
+  renderPage(record, []);
+  expect(screen.getByTestId('discovered').textContent).toBe('');
+  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
+  expect(apiMocks.listModels).not.toHaveBeenCalled();
+});
+
+test('failed refresh keeps a previously loaded catalog available', async () => {
+  apiMocks.listModels.mockResolvedValue({
+    error: {
+      message: 'HTTP 503: unavailable',
+      raw: { modelsCache: { fetchedAt: 100, modelCount: 1, lastError: { message: 'HTTP 503: unavailable', at: 200 } } },
+    },
+  });
+  renderPage(record, discovered);
+  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
+  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
+  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
+  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
 });
 
 test('metadata-only OAuth edits fetch the saved record and keep form changes unsaved', async () => {

@@ -93,10 +93,28 @@ const providerModelSchema = z.object({
   flagOverrides: flagOverridesSchema.optional(),
 }).passthrough();
 
+const discoveredModelSchema = z.object({
+  upstreamModelId: z.string(),
+  publicModelId: z.string().optional(),
+  display_name: z.string().optional(),
+  limits: limitsSchema.optional(),
+  kind: z.enum(MODEL_KINDS),
+  pricing: pricingSchema.optional(),
+  chat: chatSchema.optional(),
+  endpoints: endpointsSchema,
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
+  rerankTarget: z.object({
+    protocol: z.enum(RERANK_PROTOCOLS),
+    path: z.string().optional(),
+  }).passthrough().optional(),
+  flagOverrides: flagOverridesSchema.optional(),
+}).passthrough();
+
 const modelsCacheSchema = z.object({
   revision: z.number(),
   fetchedAt: z.number(),
   models: z.array(providerModelSchema),
+  discovered: z.array(discoveredModelSchema).optional(),
   lastError: z.object({ message: z.string(), at: z.number(), failureCount: z.number().int().positive() }).passthrough().nullable(),
 }).passthrough();
 const modelsCacheEnvelopeSchema = z.object({ revision: z.number() }).passthrough();
