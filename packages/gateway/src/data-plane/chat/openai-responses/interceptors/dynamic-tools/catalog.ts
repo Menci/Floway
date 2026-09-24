@@ -113,9 +113,19 @@ const callableLeaves = (tool: OpenAIResponsesTool): DynamicCallable[] => {
 const inputContract = (tool: DynamicCallable): Record<string, unknown> | undefined => {
   if (tool.type === 'shell') return { arguments: { action: { commands: ['<command>'] }, environment: tool.environment } };
   if (tool.type === 'local_shell') return { arguments: { action: { type: 'exec', command: ['<command>'], env: {} } } };
-  if (tool.type === 'apply_patch') return { arguments: { operation: { type: 'create_file | update_file | delete_file', path: '<path>', diff: '<patch for create/update>' } } };
-  if (tool.type === 'computer') return { arguments: { actions: [{ type: 'screenshot' }] } };
-  if (tool.type === 'computer_use_preview') return { arguments: { action: { type: 'screenshot' }, pending_safety_checks: [] } };
+  if (tool.type === 'apply_patch') return {
+    arguments: { operation: { type: 'create_file', path: '<path>', diff: '<patch>' } },
+    operation_types: ['create_file', 'update_file', 'delete_file'],
+    delete_file_omits_diff: true,
+  };
+  if (tool.type === 'computer') return {
+    arguments: { actions: [{ type: 'screenshot' }] },
+    action_types: ['click', 'double_click', 'drag', 'keypress', 'move', 'screenshot', 'scroll', 'type', 'wait'],
+  };
+  if (tool.type === 'computer_use_preview') return {
+    arguments: { action: { type: 'screenshot' }, pending_safety_checks: [] },
+    action_types: ['click', 'double_click', 'drag', 'keypress', 'move', 'screenshot', 'scroll', 'type', 'wait'],
+  };
   return undefined;
 };
 
@@ -465,6 +475,10 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
   }
 
   const selection = rewriteChoice(source.tool_choice, catalog, tools);
+  if (selection.choice === 'required' && tools.length === 1
+    && catalog.activeByHandle.size === 0 && catalog.searchDefinition === undefined) {
+    throw new DynamicToolInputError('tool_choice required has no callable client tool.');
+  }
   if (selection.allowedHandles !== undefined) {
     input.push({
       type: 'message',

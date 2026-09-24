@@ -660,7 +660,7 @@ const en = {
             'dynamic-tool-shim': {
               label: 'Dynamic Tool Compatibility Shim',
               description:
-                  'Keeps dynamically introduced client tools in their conversation position while giving the upstream one stable dispatcher tool. Client responses show the actual tool call.\nThis option is treated as enabled when an OpenAI Responses request is translated to another protocol. Enable it for a Responses upstream that cannot process dynamically added tools natively.',
+                  'Announces dynamically introduced client tools at their conversation position while keeping a stable upstream dispatcher. Clients see the real tool call and can return its result normally.\nThis option is treated as enabled for translation to a protocol without native dynamic tools. Enable it for a native Responses or Anthropic Messages upstream that cannot process dynamic tool additions.',
             },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
@@ -685,7 +685,7 @@ const en = {
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
-                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Anthropic Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
+                  'Some upstreams reject or ignore `system` messages interleaved with conversation history (for example, DeepSeek-R1).\nWhen enabled, consecutive `system` messages at the beginning of a conversation are preserved, while later inline `system` messages are rewritten to `user` without changing their text. Use this for an upstream whose API or chat template cannot preserve inline system messages.',
             },
             'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',

@@ -131,6 +131,11 @@ test('exposes server-owned dynamic tools that have no execution adapter', () => 
   })).toThrow('Deferred MCP servers need a native connector or gateway execution adapter.');
 });
 
+test('required tool choice cannot force an empty dispatcher catalogue', () => {
+  expect(() => prepareDynamicTools({ ...payload([{ type: 'message', role: 'user', content: 'Hello.' }]), tool_choice: 'required' }))
+    .toThrow('tool_choice required has no callable client tool.');
+});
+
 test('structured shell and patch tools retain their native client calls and round-trip results', async () => {
   const cases: Array<{
     tool: OpenAIResponsesTool;

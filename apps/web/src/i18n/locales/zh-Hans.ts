@@ -630,7 +630,7 @@ const zhHansCN = {
             'dynamic-tool-shim': {
               label: '动态工具兼容层',
               description:
-                  '在对话中的原始位置引入动态客户端工具，同时只给上游提供一个稳定的调用工具。客户端响应显示实际工具调用。\n当 OpenAI Responses 请求翻译到其他协议时，此开关被视为开启。对于不能原生处理动态新增工具的 Responses 上游，可手动开启。',
+                  '在对话原始位置公告动态加入的客户端工具，同时保持稳定的上游调用工具。客户端会看到真实调用并正常返回结果。\n翻译到没有原生动态工具能力的协议时，此开关被视为开启。对于不能原生处理动态新增工具的 Responses 或 Anthropic Messages 上游，可手动开启。',
             },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
@@ -655,7 +655,7 @@ const zhHansCN = {
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:
-                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Anthropic Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
+                  '部分上游会拒绝或忽略穿插在对话历史中的 `system` 消息（如 DeepSeek-R1）。\n开启后，对话开头连续的 `system` 消息会保留，后续行内 `system` 消息则改写为 `user`，文本内容不变。若上游 API 或 chat template 无法保留行内 system 消息，请开启此项。',
             },
             'rewrite-developer-to-system': {
               label: '改写 developer 角色为 system',
