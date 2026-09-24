@@ -9,7 +9,7 @@ import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/ch
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputFunctionCall, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputFunctionCall, OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { eventResult } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import { translateOpenAIResponsesViaAnthropicMessages, translateOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
@@ -118,6 +118,120 @@ test('rejects ambiguous deferred search paths before sending a model request', (
       { type: 'namespace', name: 'get_customer', description: 'Conflicting namespace', tools: [{ type: 'function', name: 'other', defer_loading: true }] },
     ],
   })).toThrow("Deferred tool path 'get_customer' is ambiguous.");
+});
+
+test('exposes server-owned dynamic tools that have no execution adapter', () => {
+  expect(() => prepareDynamicTools(payload([{
+    type: 'additional_tools', role: 'developer',
+    tools: [{ type: 'file_search', vector_store_ids: ['store_1'] }],
+  }]))).toThrow('needs a native or gateway execution adapter');
+  expect(() => prepareDynamicTools({
+    ...payload([]),
+    tools: [{ type: 'mcp', server_label: 'remote', defer_loading: true }],
+  })).toThrow('Deferred MCP servers need a native connector or gateway execution adapter.');
+});
+
+test('structured shell and patch tools retain their native client calls and round-trip results', async () => {
+  const cases: Array<{
+    tool: OpenAIResponsesTool;
+    call: OpenAIResponsesInputItem;
+    output: OpenAIResponsesInputItem;
+    handle: string;
+    arguments: Record<string, unknown>;
+    expectedType: string;
+  }> = [
+    {
+      tool: { type: 'shell', environment: { type: 'local' } },
+      call: { type: 'shell_call', id: 'sh_1', call_id: 'call_shell', action: { commands: ['pwd'] }, environment: { type: 'local' }, status: 'completed' },
+      output: { type: 'shell_call_output', call_id: 'call_shell', output: [{ stdout: '/tmp', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' },
+      handle: 'tool/shell//shell',
+      arguments: { action: { commands: ['pwd'] }, environment: { type: 'local' } },
+      expectedType: 'shell_call',
+    },
+    {
+      tool: { type: 'local_shell' },
+      call: { type: 'local_shell_call', id: 'lsh_1', call_id: 'call_local', action: { type: 'exec', command: ['pwd'], env: {} }, status: 'completed' },
+      output: { type: 'local_shell_call_output', call_id: 'call_local', output: '/tmp', status: 'completed' },
+      handle: 'tool/local_shell//local_shell',
+      arguments: { action: { type: 'exec', command: ['pwd'], env: {} } },
+      expectedType: 'local_shell_call',
+    },
+    {
+      tool: { type: 'apply_patch' },
+      call: { type: 'apply_patch_call', id: 'ap_1', call_id: 'call_patch', operation: { type: 'create_file', path: 'hello.txt', diff: '+hello' }, status: 'completed' },
+      output: { type: 'apply_patch_call_output', call_id: 'call_patch', output: 'applied', status: 'completed' },
+      handle: 'tool/apply_patch//apply_patch',
+      arguments: { operation: { type: 'create_file', path: 'hello.txt', diff: '+hello' } },
+      expectedType: 'apply_patch_call',
+    },
+  ];
+
+  for (const scenario of cases) {
+    const prepared = prepareDynamicTools(payload([
+      { type: 'additional_tools', role: 'developer', tools: [scenario.tool] },
+      scenario.call,
+      scenario.output,
+    ]));
+    const modelCall = prepared.payload.input[1];
+    if (modelCall.type !== 'function_call') throw new Error('Expected dispatcher history call');
+    expect(JSON.parse(modelCall.arguments)).toEqual({ handle: scenario.handle, arguments: scenario.arguments });
+    expect(prepared.payload.input[2]).toMatchObject({ type: 'function_call_output', output: JSON.stringify(scenario.output) });
+
+    const call: OpenAIResponsesOutputFunctionCall = {
+      type: 'function_call', id: 'fc_dispatch', call_id: 'call_next', name: DYNAMIC_TOOL_DISPATCHER,
+      arguments: JSON.stringify({ handle: scenario.handle, arguments: scenario.arguments }), status: 'completed',
+    };
+    const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+    })();
+    const projected: OpenAIResponsesStreamEvent[] = [];
+    for await (const frame of projectDynamicToolEvents(frames, prepared)) if (frame.type === 'event') projected.push(frame.event);
+    expect(projected[0]).toMatchObject({ type: 'response.output_item.done', item: { type: scenario.expectedType, call_id: 'call_next' } });
+  }
+});
+
+test('modern and preview computer calls preserve screenshots through the dispatcher', async () => {
+  for (const preview of [false, true]) {
+    const tool: OpenAIResponsesTool = preview
+      ? { type: 'computer_use_preview', display_height: 800, display_width: 1200, environment: 'browser' }
+      : { type: 'computer' };
+    const handle = preview ? 'tool/computer_use_preview//computer_use_preview' : 'tool/computer//computer';
+    const args = preview
+      ? { action: { type: 'screenshot' }, pending_safety_checks: [] }
+      : { actions: [{ type: 'screenshot' }] };
+    const historyCall: OpenAIResponsesInputItem = preview
+      ? { type: 'computer_call', id: 'cu_preview', call_id: 'call_computer', action: { type: 'screenshot' }, pending_safety_checks: [], status: 'completed' }
+      : { type: 'computer_call', id: 'cu_modern', call_id: 'call_computer', actions: [{ type: 'screenshot' }], status: 'completed' };
+    const prepared = prepareDynamicTools({
+      ...payload([
+        { type: 'additional_tools', role: 'developer', tools: [tool] },
+        historyCall,
+        { type: 'computer_call_output', call_id: 'call_computer', output: { type: 'computer_screenshot', image_url: 'data:image/png;base64,AA==' } },
+      ]),
+      tool_choice: { type: preview ? 'computer_use_preview' : 'computer' },
+    });
+    expect(prepared.payload.tool_choice).toEqual({ type: 'function', name: DYNAMIC_TOOL_DISPATCHER });
+    const modelCall = prepared.payload.input[1];
+    if (modelCall.type !== 'function_call') throw new Error('Expected dispatcher history call');
+    expect(JSON.parse(modelCall.arguments)).toEqual({ handle, arguments: args });
+    expect(prepared.payload.input[2]).toMatchObject({
+      type: 'function_call_output', output: [
+        { type: 'input_text' },
+        { type: 'input_image', image_url: 'data:image/png;base64,AA==' },
+      ],
+    });
+
+    const call: OpenAIResponsesOutputFunctionCall = {
+      type: 'function_call', id: 'fc_computer', call_id: 'call_next', name: DYNAMIC_TOOL_DISPATCHER,
+      arguments: JSON.stringify({ handle, arguments: args }), status: 'completed',
+    };
+    const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+    })();
+    const projected: OpenAIResponsesStreamEvent[] = [];
+    for await (const frame of projectDynamicToolEvents(frames, prepared)) if (frame.type === 'event') projected.push(frame.event);
+    expect(projected[0]).toMatchObject({ type: 'response.output_item.done', item: { type: 'computer_call', call_id: 'call_next', ...args } });
+  }
 });
 
 test('forces a selected dynamic tool through the dispatcher and rejects other handles', async () => {

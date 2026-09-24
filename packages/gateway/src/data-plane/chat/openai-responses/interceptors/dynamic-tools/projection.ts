@@ -1,16 +1,22 @@
-import { DYNAMIC_TOOL_DISPATCHER, DYNAMIC_TOOL_SEARCH_HANDLE, DynamicToolInputError, validateDynamicToolArguments, type DynamicToolCatalog, type PreparedDynamicTools } from './catalog.ts';
+import { DYNAMIC_TOOL_DISPATCHER, DYNAMIC_TOOL_SEARCH_HANDLE, DynamicToolInputError, validateDynamicToolArguments, type DynamicCallable, type DynamicToolCatalog, type PreparedDynamicTools } from './catalog.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
+  type OpenAIResponsesApplyPatchCallItem,
+  type OpenAIResponsesComputerAction,
+  type OpenAIResponsesComputerCallItem,
+  type OpenAIResponsesComputerSafetyCheck,
+  type OpenAIResponsesLocalShellCallItem,
   type OpenAIResponsesOutputCustomToolCall,
   type OpenAIResponsesOutputFunctionCall,
   type OpenAIResponsesOutputItem,
   type OpenAIResponsesResult,
+  type OpenAIResponsesShellCallItem,
   type OpenAIResponsesStreamEvent,
   type OpenAIResponsesToolSearchCallItem,
 } from '@floway-dev/protocols/openai-responses';
 
-type ProjectedToolItem = OpenAIResponsesOutputFunctionCall | OpenAIResponsesOutputCustomToolCall | OpenAIResponsesToolSearchCallItem;
+type ProjectedToolItem = OpenAIResponsesOutputFunctionCall | OpenAIResponsesOutputCustomToolCall | OpenAIResponsesToolSearchCallItem | OpenAIResponsesShellCallItem | OpenAIResponsesLocalShellCallItem | OpenAIResponsesApplyPatchCallItem | OpenAIResponsesComputerCallItem;
 
 type ProjectedCall = {
   item: ProjectedToolItem;
@@ -30,6 +36,191 @@ const parseDispatcherArguments = (raw: string): Record<string, unknown> => {
   }
   if (!isRecord(parsed)) throw new DynamicToolInputError('Dispatcher arguments must be a JSON object.');
   return parsed;
+};
+
+const stringArray = (value: unknown, label: string): string[] => {
+  if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
+    throw new DynamicToolInputError(`${label} must be an array of strings.`);
+  }
+  return value;
+};
+
+const optionalNumber = (value: unknown, label: string): number | null | undefined => {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new DynamicToolInputError(`${label} must be a finite number.`);
+  return value;
+};
+
+const optionalString = (value: unknown, label: string): string | null | undefined => {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== 'string') throw new DynamicToolInputError(`${label} must be a string.`);
+  return value;
+};
+
+const computerAction = (value: unknown): OpenAIResponsesComputerAction => {
+  if (!isRecord(value) || typeof value.type !== 'string') throw new DynamicToolInputError('Computer action must be an object with a type.');
+  const coordinate = (entry: unknown, label: string) => {
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) throw new DynamicToolInputError(`${label} must be a finite number.`);
+  };
+  const keys = (entry: unknown, required: boolean) => {
+    if (entry === undefined && !required) return;
+    if (entry === null && !required) return;
+    stringArray(entry, 'computer action.keys');
+  };
+  switch (value.type) {
+  case 'click':
+    if (!['left', 'right', 'wheel', 'back', 'forward'].includes(String(value.button))) throw new DynamicToolInputError('Computer click has an invalid button.');
+    coordinate(value.x, 'computer click.x');
+    coordinate(value.y, 'computer click.y');
+    keys(value.keys, false);
+    break;
+  case 'double_click':
+    coordinate(value.x, 'computer double_click.x');
+    coordinate(value.y, 'computer double_click.y');
+    if (value.keys !== null) keys(value.keys, true);
+    break;
+  case 'drag':
+    if (!Array.isArray(value.path) || value.path.some(point => !isRecord(point) || typeof point.x !== 'number' || typeof point.y !== 'number')) {
+      throw new DynamicToolInputError('Computer drag.path must contain coordinate objects.');
+    }
+    for (const point of value.path) {
+      coordinate(point.x, 'computer drag.path.x');
+      coordinate(point.y, 'computer drag.path.y');
+    }
+    keys(value.keys, false);
+    break;
+  case 'keypress':
+    keys(value.keys, true);
+    break;
+  case 'move':
+    coordinate(value.x, 'computer move.x');
+    coordinate(value.y, 'computer move.y');
+    keys(value.keys, false);
+    break;
+  case 'screenshot':
+  case 'wait':
+    break;
+  case 'scroll':
+    for (const field of ['scroll_x', 'scroll_y', 'x', 'y']) coordinate(value[field], `computer scroll.${field}`);
+    keys(value.keys, false);
+    break;
+  case 'type':
+    if (typeof value.text !== 'string') throw new DynamicToolInputError('Computer type.text must be a string.');
+    break;
+  default:
+    throw new DynamicToolInputError(`Unknown computer action '${value.type}'.`);
+  }
+  return value as OpenAIResponsesComputerAction;
+};
+
+const computerSafetyChecks = (value: unknown): OpenAIResponsesComputerSafetyCheck[] => {
+  if (!Array.isArray(value) || value.some(check => !isRecord(check) || typeof check.id !== 'string')) {
+    throw new DynamicToolInputError('Computer pending_safety_checks must be an array of checks with IDs.');
+  }
+  return value as OpenAIResponsesComputerSafetyCheck[];
+};
+
+const projectStructuredClientCall = (
+  call: OpenAIResponsesOutputFunctionCall,
+  tool: DynamicCallable,
+  args: Record<string, unknown>,
+): ProjectedCall => {
+  const kind = tool.type;
+  if (kind !== 'shell' && kind !== 'local_shell' && kind !== 'apply_patch') {
+    throw new DynamicToolInputError(`Tool '${tool.name}' is not a structured client tool.`);
+  }
+  const input = args.arguments;
+  if (!isRecord(input) || args.text !== undefined) throw new DynamicToolInputError(`${kind} requires structured arguments.`);
+  const itemId = call.id ?? `${kind}_${crypto.randomUUID().replaceAll('-', '')}`;
+  if (kind === 'apply_patch') {
+    const operation = input.operation;
+    if (!isRecord(operation) || typeof operation.path !== 'string') throw new DynamicToolInputError('apply_patch requires an operation with a path.');
+    if (operation.type !== 'create_file' && operation.type !== 'update_file' && operation.type !== 'delete_file') {
+      throw new DynamicToolInputError('apply_patch has an unknown operation type.');
+    }
+    if (operation.type !== 'delete_file' && typeof operation.diff !== 'string') {
+      throw new DynamicToolInputError('apply_patch create/update operations require a diff string.');
+    }
+    const item: OpenAIResponsesApplyPatchCallItem = {
+      type: 'apply_patch_call', id: itemId, call_id: call.call_id,
+      operation: operation.type === 'delete_file'
+        ? { type: 'delete_file', path: operation.path }
+        : { type: operation.type, path: operation.path, diff: operation.diff as string },
+      status: 'completed',
+    };
+    return { item, itemId, input };
+  }
+  const action = input.action;
+  if (!isRecord(action)) throw new DynamicToolInputError(`${kind} requires an action object.`);
+  if (kind === 'shell') {
+    const environment = input.environment === undefined ? tool.environment : input.environment;
+    if (environment !== undefined && environment !== null && (!isRecord(environment)
+      || (environment.type !== 'local' && (environment.type !== 'container_reference' || typeof environment.container_id !== 'string')))) {
+      throw new DynamicToolInputError('shell environment must be local or a container reference.');
+    }
+    const item: OpenAIResponsesShellCallItem = {
+      type: 'shell_call', id: itemId, call_id: call.call_id,
+      action: {
+        commands: stringArray(action.commands, 'shell action.commands'),
+        ...(action.max_output_length === undefined ? {} : { max_output_length: optionalNumber(action.max_output_length, 'shell action.max_output_length') }),
+        ...(action.timeout_ms === undefined ? {} : { timeout_ms: optionalNumber(action.timeout_ms, 'shell action.timeout_ms') }),
+      },
+      ...(environment === undefined ? {} : {
+        environment: environment === null
+          ? null
+          : environment.type === 'local'
+            ? { type: 'local' as const }
+            : { type: 'container_reference' as const, container_id: environment.container_id as string },
+      }),
+      status: 'completed',
+    };
+    return { item, itemId, input };
+  }
+  if (action.type !== 'exec') throw new DynamicToolInputError('local_shell action.type must be exec.');
+  const env = action.env;
+  if (!isRecord(env) || Object.values(env).some(value => typeof value !== 'string')) {
+    throw new DynamicToolInputError('local_shell action.env must map strings to strings.');
+  }
+  const item: OpenAIResponsesLocalShellCallItem = {
+    type: 'local_shell_call', id: itemId, call_id: call.call_id,
+    action: {
+      type: 'exec', command: stringArray(action.command, 'local_shell action.command'), env: env as Record<string, string>,
+      ...(action.timeout_ms === undefined ? {} : { timeout_ms: optionalNumber(action.timeout_ms, 'local_shell action.timeout_ms') }),
+      ...(action.user === undefined ? {} : { user: optionalString(action.user, 'local_shell action.user') }),
+      ...(action.working_directory === undefined ? {} : { working_directory: optionalString(action.working_directory, 'local_shell action.working_directory') }),
+    },
+    status: 'completed',
+  };
+  return { item, itemId, input };
+};
+
+const projectComputerCall = (
+  call: OpenAIResponsesOutputFunctionCall,
+  tool: DynamicCallable,
+  args: Record<string, unknown>,
+): ProjectedCall => {
+  if (!isRecord(args.arguments) || args.text !== undefined) throw new DynamicToolInputError('Computer tools require structured arguments.');
+  const itemId = call.id ?? `cu_${crypto.randomUUID().replaceAll('-', '')}`;
+  const input = args.arguments;
+  let item: OpenAIResponsesComputerCallItem;
+  if (tool.type === 'computer') {
+    if (!Array.isArray(input.actions) || input.actions.length === 0) {
+      throw new DynamicToolInputError('Computer actions must be a nonempty array.');
+    }
+    item = {
+      type: 'computer_call', id: itemId, call_id: call.call_id,
+      actions: input.actions.map(computerAction),
+      status: 'completed',
+    };
+  } else {
+    item = {
+      type: 'computer_call', id: itemId, call_id: call.call_id,
+      action: computerAction(input.action),
+      pending_safety_checks: computerSafetyChecks(input.pending_safety_checks),
+      status: 'completed',
+    };
+  }
+  return { item, itemId, input };
 };
 
 const projectCall = (
@@ -65,6 +256,12 @@ const projectCall = (
 
   const tool = catalog.activeByHandle.get(handle);
   if (tool === undefined) throw new DynamicToolInputError(`Dispatcher handle '${handle}' is not available at this point in the conversation.`);
+  if (tool.type === 'shell' || tool.type === 'local_shell' || tool.type === 'apply_patch') {
+    return projectStructuredClientCall(call, tool, args);
+  }
+  if (tool.type === 'computer' || tool.type === 'computer_use_preview') {
+    return projectComputerCall(call, tool, args);
+  }
   if (tool.type === 'function') {
     if (!isRecord(args.arguments) || args.text !== undefined) {
       throw new DynamicToolInputError(`Function tool '${tool.name}' requires arguments as a JSON object.`);
