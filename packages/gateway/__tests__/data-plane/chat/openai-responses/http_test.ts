@@ -663,6 +663,28 @@ test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no
   assert(body.error.message.includes('does not support'));
 });
 
+test('POST /v1/responses returns a typed 400 for a malformed dynamic namespace before translation', async () => {
+  installRepo();
+  queueResolution([makeCandidate({ endpoints: { openaiChatCompletions: {} } })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { type: 'message', role: 'user', content: 'Hello' },
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'namespace', name: 'broken', description: 'Broken', tools: null }] },
+      ],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { type: string; message: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('namespace must have a name and a tools array'));
+});
+
 test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
   installRepo();
   const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResult['status'] });

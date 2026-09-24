@@ -32,7 +32,43 @@ type Expect<T extends true> = T;
 
 type _toolResultContentExcludesWebSearchResult = Expect<Equal<Extract<AnthropicMessagesToolResultContentBlock, AnthropicMessagesWebSearchResultBlock>, never>>;
 type _serverToolUseNameIsString = Expect<Equal<AnthropicMessagesServerToolUseBlock['name'], string>>;
-type _serverToolUseInputIsQueryObject = Expect<Equal<AnthropicMessagesServerToolUseBlock['input'], { query: string }>>;
+type _serverToolUseInputIsObject = Expect<Equal<AnthropicMessagesServerToolUseBlock['input'], Record<string, unknown>>>;
+
+test('reassembles streamed Anthropic tool search arguments and discovered references', async () => {
+  const result = await reassembleAnthropicMessagesEvents(makeEvents([
+    {
+      data: {
+        type: 'message_start',
+        message: {
+          id: 'msg_search', type: 'message', role: 'assistant', content: [], model: 'claude-test',
+          stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 },
+        },
+      },
+    },
+    { data: { type: 'content_block_start', index: 0, content_block: { type: 'server_tool_use', id: 'srv_search', name: 'tool_search_tool_regex', input: {} } } },
+    { data: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"pattern":"weather"}' } } },
+    { data: { type: 'content_block_stop', index: 0 } },
+    {
+      data: {
+        type: 'content_block_start', index: 1, content_block: {
+          type: 'tool_search_tool_result', tool_use_id: 'srv_search',
+          content: { type: 'tool_search_tool_search_result', tool_references: [{ type: 'tool_reference', tool_name: 'get_weather' }] },
+        },
+      },
+    },
+    { data: { type: 'content_block_stop', index: 1 } },
+    { data: { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 5 } } },
+    { data: { type: 'message_stop' } },
+  ]));
+  assertEquals(result.content, [
+    { type: 'server_tool_use', id: 'srv_search', name: 'tool_search_tool_regex', input: { pattern: 'weather' } },
+    {
+      type: 'tool_search_tool_result', tool_use_id: 'srv_search', content: {
+        type: 'tool_search_tool_search_result', tool_references: [{ type: 'tool_reference', tool_name: 'get_weather' }],
+      },
+    },
+  ]);
+});
 
 test('reassembleAnthropicMessagesEvents reassembles text response', async () => {
   const body = makeEvents([

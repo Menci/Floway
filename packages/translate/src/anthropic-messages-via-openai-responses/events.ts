@@ -85,6 +85,8 @@ interface OpenAIResponsesToAnthropicMessagesStreamState {
       name: string;
     }
   >;
+  searchToolName: string;
+  lastSearchToolUseId?: string;
 }
 
 type ContentBlockInit = { type: 'text'; text: '' } | { type: 'thinking'; thinking: '' } | { type: 'redacted_thinking'; data: string };
@@ -183,6 +185,53 @@ const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEvent, { type
 };
 
 const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+  if (event.item.type === 'tool_search_call') {
+    const events: AnthropicMessagesStreamEvent[] = [];
+    closeOpenBlocks(state, events);
+    const index = state.nextBlockIndex++;
+    const toolUseId = event.item.call_id ?? event.item.id ?? `tool_search_${index}`;
+    state.lastSearchToolUseId = toolUseId;
+    events.push({
+      type: 'content_block_start', index,
+      content_block: {
+        type: 'server_tool_use',
+        id: toolUseId,
+        name: state.searchToolName,
+        input: {},
+      },
+    });
+    events.push({ type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(event.item.arguments) } });
+    events.push({ type: 'content_block_stop', index });
+    return events;
+  }
+  if (event.item.type === 'tool_search_output') {
+    const events: AnthropicMessagesStreamEvent[] = [];
+    closeOpenBlocks(state, events);
+    const index = state.nextBlockIndex++;
+    const toolUseId = event.item.call_id ?? state.lastSearchToolUseId;
+    if (toolUseId === undefined) throw new Error('Tool search output has no preceding search call.');
+    events.push({
+      type: 'content_block_start', index,
+      content_block: {
+        type: 'tool_search_tool_result',
+        tool_use_id: toolUseId,
+        content: event.item.status === 'incomplete' || event.item.status === 'failed'
+          ? { type: 'tool_search_tool_result_error', error_code: 'unavailable' }
+          : {
+              type: 'tool_search_tool_search_result',
+              tool_references: event.item.tools.flatMap(tool =>
+                tool.type === 'function' || tool.type === 'custom'
+                  ? [{ type: 'tool_reference' as const, tool_name: tool.name }]
+                  : tool.type === 'namespace'
+                    ? tool.tools.map(child => ({ type: 'tool_reference' as const, tool_name: child.name }))
+                    : []),
+            },
+      },
+    });
+    events.push({ type: 'content_block_stop', index });
+    state.lastSearchToolUseId = undefined;
+    return events;
+  }
   if (event.item.type !== 'reasoning') return [];
 
   const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
@@ -454,7 +503,7 @@ const handleFailed = (response: OpenAIResponsesResult, state: OpenAIResponsesToA
 const handleError = (event: Extract<OpenAIResponsesStreamEvent, { type: 'error' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] =>
   handleStreamError(state, { code: event.code, message: event.message }, 'An unexpected error occurred during streaming.');
 
-export const createOpenAIResponsesToAnthropicMessagesStreamState = (): OpenAIResponsesToAnthropicMessagesStreamState => ({
+export const createOpenAIResponsesToAnthropicMessagesStreamState = (searchToolName = 'tool_search_tool_regex'): OpenAIResponsesToAnthropicMessagesStreamState => ({
   messageCompleted: false,
   nextBlockIndex: 0,
   blockIndexByKey: new Map(),
@@ -466,6 +515,7 @@ export const createOpenAIResponsesToAnthropicMessagesStreamState = (): OpenAIRes
   emittedFunctionArgumentOutputIndexes: new Set(),
   outputOrder: createOpenAIResponsesOutputOrderState(),
   functionCallState: new Map(),
+  searchToolName,
 });
 
 const translateReadyOpenAIResponsesEvent = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
@@ -540,8 +590,11 @@ export const translateOpenAIResponsesStreamEventToAnthropicMessagesEvents = (eve
   return events;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
-  const state = createOpenAIResponsesToAnthropicMessagesStreamState();
+export const translateToSourceEvents = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  searchToolName?: string,
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  const state = createOpenAIResponsesToAnthropicMessagesStreamState(searchToolName);
 
   for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {
     for (const translated of translateOpenAIResponsesStreamEventToAnthropicMessagesEvents(event, state)) {

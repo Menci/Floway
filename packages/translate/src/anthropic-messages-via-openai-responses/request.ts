@@ -10,6 +10,7 @@ import {
   type AnthropicMessagesAssistantMessage,
   type AnthropicMessagesClientTool,
   type AnthropicMessagesMessage,
+  type AnthropicMessagesNativeToolSearchTool,
   type AnthropicMessagesPayload,
   type AnthropicMessagesServerToolUseBlock,
   type AnthropicMessagesSystemMessage,
@@ -59,6 +60,9 @@ const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearch
   status: Array.isArray(block.content) ? 'completed' : 'incomplete',
 });
 
+const isNativeToolSearch = (tool: NonNullable<AnthropicMessagesPayload['tools']>[number]): tool is AnthropicMessagesNativeToolSearchTool =>
+  tool.type === 'tool_search_tool_regex_20251119' || tool.type === 'tool_search_tool_bm25_20251119';
+
 const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
@@ -89,7 +93,12 @@ const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx:
   return input;
 };
 
-const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
+const translateAssistantMessage = (
+  message: AnthropicMessagesAssistantMessage,
+  messageIdx: number,
+  clientTools: readonly AnthropicMessagesClientTool[],
+  searchNames: ReadonlySet<string>,
+): OpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
@@ -98,6 +107,37 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   for (const [blockIdx, block] of message.content.entries()) {
+    if (block.type === 'server_tool_use' && searchNames.has(block.name)) {
+      flushPendingContent(pendingContent, input, 'assistant');
+      input.push({
+        type: 'tool_search_call',
+        id: block.id,
+        call_id: block.id,
+        execution: 'server',
+        arguments: block.input,
+        status: 'completed',
+      });
+      continue;
+    }
+
+    if (block.type === 'tool_search_tool_result') {
+      flushPendingContent(pendingContent, input, 'assistant');
+      const references = block.content.type === 'tool_search_tool_search_result' ? block.content.tool_references : [];
+      const discovered = references.map(reference => {
+        const tool = clientTools.find(candidate => candidate.name === reference.tool_name);
+        if (tool === undefined) throw new TranslatorInputError(`Tool search returned undeclared tool '${reference.tool_name}'.`);
+        return tool;
+      });
+      input.push({
+        type: 'tool_search_output',
+        call_id: block.tool_use_id,
+        execution: 'server',
+        status: block.content.type === 'tool_search_tool_search_result' ? 'completed' : 'incomplete',
+        tools: translateTools(discovered) ?? [],
+      });
+      continue;
+    }
+
     if (block.type === 'tool_use' || block.type === 'server_tool_use') {
       flushPendingContent(pendingContent, input, 'assistant');
       input.push(toOpenAIResponsesFunctionCall(block));
@@ -130,22 +170,54 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
 
 // Preserve per-block boundaries when the source carries a
 // AnthropicMessagesTextBlock[]; single-string source stays as string content.
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIResponsesInputItem[] => [
-  {
-    type: 'message',
-    role: 'system',
-    content: typeof message.content === 'string'
-      ? message.content
-      : message.content.map(block => ({ type: 'input_text', text: block.text })),
-  },
-];
+const translateAnthropicMessagesSystem = (
+  message: AnthropicMessagesSystemMessage,
+  clientTools: readonly AnthropicMessagesClientTool[],
+): OpenAIResponsesInputItem[] => {
+  if (typeof message.content === 'string') return [{ type: 'message', role: 'system', content: message.content }];
+  const input: OpenAIResponsesInputItem[] = [];
+  const pendingText: AnthropicMessagesTextBlock[] = [];
+  const flushText = () => {
+    if (pendingText.length === 0) return;
+    input.push({ type: 'message', role: 'system', content: pendingText.map(block => ({ type: 'input_text', text: block.text })) });
+    pendingText.length = 0;
+  };
+  for (const block of message.content) {
+    if (block.type === 'text') {
+      pendingText.push(block);
+      continue;
+    }
+    flushText();
+    if (block.type === 'tool_removal') {
+      throw new TranslatorInputError('Anthropic tool_removal has no corresponding OpenAI Responses tool-availability item.');
+    }
+    const reference = block.tool;
+    const tool = reference.type === 'tool_definition'
+      ? reference.definition
+      : reference.type === 'tool_reference'
+        ? clientTools.find(candidate => candidate.name === reference.name)
+        : undefined;
+    if (tool === undefined || (tool.type !== undefined && tool.type !== 'custom')) {
+      throw new TranslatorInputError('Anthropic tool_addition must define or reference a client-executed tool.');
+    }
+    const translated = translateTools([tool]);
+    if (translated === null) throw new TranslatorInputError('Anthropic tool_addition contains no callable tool.');
+    input.push({ type: 'additional_tools', role: 'developer', tools: translated });
+  }
+  flushText();
+  return input;
+};
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): OpenAIResponsesInputItem[] =>
+const translateAnthropicMessagesInput = (
+  messages: AnthropicMessagesMessage[],
+  clientTools: readonly AnthropicMessagesClientTool[],
+  searchNames: ReadonlySet<string>,
+): OpenAIResponsesInputItem[] =>
   messages.flatMap((message, messageIdx): OpenAIResponsesInputItem[] => {
     switch (message.role) {
     case 'user': return translateUserMessage(message, messageIdx);
-    case 'assistant': return translateAssistantMessage(message, messageIdx);
-    case 'system': return translateAnthropicMessagesSystem(message);
+    case 'assistant': return translateAssistantMessage(message, messageIdx, clientTools, searchNames);
+    case 'system': return translateAnthropicMessagesSystem(message, clientTools);
     default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
   });
@@ -188,6 +260,7 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
     // OpenAI Responses tools default stricter than Anthropic/OpenAI-Chat-Completions-style function tools,
     // so omitted source strictness is made explicit as false.
     strict: tool.strict ?? false,
+    ...(tool.defer_loading !== undefined ? { defer_loading: tool.defer_loading } : {}),
     ...(tool.description ? { description: tool.description } : {}),
   }));
 };
@@ -199,10 +272,14 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
 // OpenAI Responses path and the OpenAI Responses → OpenAI Chat Completions path:
 // https://github.com/Wei-Shaw/sub2api/issues/4819
 // https://github.com/jlcodes99/cockpit-tools/issues/1727
-const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIResponsesToolChoice | undefined => {
-  if (!toolChoice || !tools || tools.length === 0) return undefined;
+const translateToolChoice = (
+  toolChoice: AnthropicMessagesPayload['tool_choice'],
+  tools: AnthropicMessagesClientTool[] | undefined,
+  searchNames: ReadonlySet<string>,
+): OpenAIResponsesToolChoice | undefined => {
+  if (!toolChoice || ((tools?.length ?? 0) === 0 && searchNames.size === 0)) return undefined;
 
-  const toolNames = new Set(tools.map(tool => tool.name));
+  const toolNames = new Set((tools ?? []).map(tool => tool.name));
 
   switch (toolChoice.type) {
   case 'auto':
@@ -210,6 +287,7 @@ const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice']
   case 'any':
     return 'required';
   case 'tool':
+    if (toolChoice.name && searchNames.has(toolChoice.name)) return { type: 'tool_search' };
     return toolChoice.name && toolNames.has(toolChoice.name) ? { type: 'function', name: toolChoice.name } : undefined;
   case 'none':
     return 'none';
@@ -223,12 +301,19 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   const effort = resolveAnthropicMessagesReasoningEffort(payload);
   const reasoning = effort ? { effort } : undefined;
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
+  const searchTools = payload.tools?.filter(isNativeToolSearch) ?? [];
+  if (searchTools.length > 1) throw new TranslatorInputError('Only one Anthropic tool-search declaration can be translated.');
+  const searchNames = new Set(searchTools.map(tool => tool.name));
   const { instructions, prependItems } = placeAnthropicMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromAnthropicMessagesFormat(payload.output_config?.format);
   const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
   const serviceTier = openAIServiceTierFromAnthropicMessages(payload);
-  const toolChoice = translateToolChoice(payload.tool_choice, clientTools);
+  const toolChoice = translateToolChoice(payload.tool_choice, clientTools, searchNames);
+  const translatedTools: OpenAIResponsesTool[] = [
+    ...(translateTools(clientTools) ?? []),
+    ...searchTools.map(() => ({ type: 'tool_search' as const, execution: 'server' as const })),
+  ];
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
@@ -237,12 +322,12 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
-    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages)],
+    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages, clientTools ?? [], searchNames)],
     ...(instructions !== null ? { instructions } : {}),
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     max_output_tokens: payload.max_tokens,
-    ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
+    ...(payload.tools !== undefined ? { tools: translatedTools.length > 0 ? translatedTools : null } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
     ...(payload.metadata ? { metadata: { ...payload.metadata } } : {}),
     stream: true,
