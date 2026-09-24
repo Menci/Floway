@@ -7,6 +7,7 @@ import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
+import { type ExchangeStream } from './upstream-stream';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
@@ -49,25 +50,26 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   </tbody></table>;
 }
 
-export function RequestDetailPanel({ collected, upstreamCollected, error, record, recordId, retainLastRecord }: {
+export function RequestDetailPanel({ collected, upstreamCollected, exchangeStreams, error, record, recordId, retainLastRecord }: {
   collected: CollectedStream | null;
   upstreamCollected: CollectedStream | null;
+  exchangeStreams: ExchangeStream[];
   error: string | null;
   record: DumpRecord | null;
   recordId: string | null;
   retainLastRecord: boolean;
 }) {
-  const [shown, setShown] = useState({ collected, upstreamCollected, error, record, recordId });
-  const incoming = retainLastRecord && recordId === null ? shown : { collected, upstreamCollected, error, record, recordId };
+  const [shown, setShown] = useState({ collected, upstreamCollected, exchangeStreams, error, record, recordId });
+  const incoming = retainLastRecord && recordId === null ? shown : { collected, upstreamCollected, exchangeStreams, error, record, recordId };
   if (shown.record !== incoming.record || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
   const { t } = useTranslation();
   if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
   if (!shown.record) return null;
-  return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
+  return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} exchangeStreams={shown.exchangeStreams} />;
 }
 
-function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
+function RecordDetail({ record, collected, upstreamCollected, exchangeStreams }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null; exchangeStreams: ExchangeStream[] }) {
   const { t } = useTranslation();
   const [source, setSource] = useState<Source>('response');
   const [view, setView] = useState('collected');
@@ -84,19 +86,26 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
   const endpoint = upstream ? exchange?.request.url : record.request.path;
   const method = upstream ? exchange?.request.method : record.request.method;
   const raw = request ? undefined : upstream ? exchange?.response ?? undefined : record.capture?.response;
-  const result = request ? null : upstream ? (!exchange || index === exchanges.length - 1 ? upstreamCollected : null) : collected;
-  const kind = upstream ? collectKindFromTargetApi(record.meta.targetApi) : detectCollectKind(record.meta.path);
+  const exchangeStream = upstream && exchange ? exchangeStreams[index] ?? null : null;
+  const legacyBodyUsed = !request && (!exchange || index === exchanges.length - 1) && Boolean(legacy);
+  const result = request ? null : upstream ? (legacyBodyUsed ? upstreamCollected : exchangeStream?.collected ?? null) : collected;
+  const kind = upstream
+    ? legacyBodyUsed ? collectKindFromTargetApi(record.meta.targetApi)
+      : exchangeStream?.events ? detectCollectKind(new URL(exchange!.request.url).pathname) : null
+    : detectCollectKind(record.meta.path);
   const body = useMemo<DumpResponseBody>(() => upstream
     ? request ? exchange ? { type: 'bytes', body: exchange.request.body } : { type: 'none' }
-      : (!exchange || index === exchanges.length - 1) && legacy ? legacy.body : raw ? { type: 'bytes', body: raw.body } : { type: 'none' }
-    : request ? { type: 'bytes', body: record.request.body } : record.response.body, [upstream, request, exchange, index, exchanges.length, legacy, raw, record]);
+      : legacyBodyUsed && legacy ? legacy.body
+        : exchangeStream?.events ? { type: 'stream', events: exchangeStream.events }
+          : raw ? { type: 'bytes', body: raw.body } : { type: 'none' }
+    : request ? { type: 'bytes', body: record.request.body } : record.response.body, [upstream, request, exchange, legacyBodyUsed, legacy, exchangeStream, raw, record]);
   const displayed = useMemo(() => {
     if (view === 'raw' && raw) return { text: raw.body.data, isJson: false, decodeError: null };
     if (body.type === 'bytes') return renderBody(body.body, contentTypeOf(headers));
     return { text: result?.result == null ? '' : JSON.stringify(result.result, null, 2), isJson: true, decodeError: null };
   }, [body, headers, raw, result, view]);
   const diagnostics = [...new Set([
-    errorLabel(record.meta.error), exchange?.error, raw?.error, result?.error,
+    errorLabel(record.meta.error), exchange?.error, raw?.error, result?.error, exchangeStream?.error,
     raw && !raw.complete ? t('dashboard.requests.partialCapture') : null,
     result?.truncated && !result.error ? t('dashboard.requests.truncatedStream') : null,
     displayed.decodeError ? t('dashboard.requests.decodeError', { error: displayed.decodeError }) : null,
