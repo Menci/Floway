@@ -65,12 +65,15 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_DISABLE_AGENT_VIEW', shellFlag(claudeCode.disableAgentView)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (agent === 'codex') {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
       ['SETUP_CODEX_REASONING_EFFORT', shellOptional(configuration.codex.reasoningEffort)],
     );
   }
+  // The harness agents (omp, vscode, zed, opencode) carry no per-agent
+  // configuration: their installers fetch the model list and convert it, so
+  // the API key and its label are the only values they need.
   const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
 };
@@ -111,12 +114,15 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeDisableAgentView', powerShellBool(claudeCode.disableAgentView)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (agent === 'codex') {
     assignments.push(
       ['$SetupCodexModel', powerShellOptional(configuration.codex.model)],
       ['$SetupCodexReasoningEffort', powerShellOptional(configuration.codex.reasoningEffort)],
     );
   }
+  // The harness agents (omp, vscode, zed, opencode) carry no per-agent
+  // configuration: their installers fetch the model list and convert it, so
+  // the API key and its label are the only values they need.
   const lines = assignments.map(([name, value]) => `${name} = ${value}`);
   return `Set-PSDebug -Off\n${lines.join('\n')}\n`;
 };
