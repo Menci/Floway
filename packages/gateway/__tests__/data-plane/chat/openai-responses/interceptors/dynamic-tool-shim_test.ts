@@ -96,6 +96,11 @@ test('preserves namespace and freeform custom call identity through history', ()
     { type: 'custom_tool_call_output', call_id: 'call_patch', output: 'applied', status: 'completed' },
   ]));
   expect(prepared.payload.input.map(item => item.type)).toEqual(['message', 'function_call', 'function_call_output']);
+  const announcement = prepared.payload.input[0];
+  if (announcement.type !== 'message' || typeof announcement.content !== 'string') throw new Error('Expected tool announcement');
+  expect(JSON.parse(announcement.content.slice(announcement.content.indexOf('\n\n') + 2)).tools[0]).toMatchObject({
+    namespace: 'editor', namespace_description: 'Editor tools', definition: { type: 'custom', name: 'patch' },
+  });
   const call = prepared.payload.input[1];
   if (call.type !== 'function_call') throw new Error('Expected rewritten call');
   expect(JSON.parse(call.arguments)).toEqual({ handle: 'tool/custom/editor/patch', text: '*** Begin Patch' });
