@@ -852,6 +852,85 @@ test('OpenAI Responses WebSocket store:false keeps session snapshots without dur
   );
 });
 
+test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally and continues from it', async () => {
+  const { apiKey } = await setupAppTest();
+  const upstreamBodies: Record<string, unknown>[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+        return sseOpenAIResponsesResponse({
+          id: 'resp_ws_after_prewarm',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output_text: 'answer',
+          output: [{
+            id: 'assistant_ws_after_prewarm',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'answer', annotations: [] }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const prewarmTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-direct-responses',
+          input: [{ type: 'message', role: 'developer', content: 'Base instructions' }],
+          store: false,
+          generate: false,
+        },
+      }));
+      const prewarmMessages = await prewarmTerminal;
+      const prewarmResponseId = terminalResponseId(prewarmMessages);
+      const prewarmCompleted = prewarmMessages.find(isTerminalResponseEvent) as { type?: unknown; response?: { status?: unknown; output?: Array<{ type: string }> } };
+      assertEquals(prewarmCompleted.type, 'response.completed');
+      assertEquals(prewarmCompleted.response?.status, 'completed');
+      // Nothing was generated; the only item is the affinity carrier every
+      // routed turn states.
+      assertEquals(prewarmCompleted.response?.output?.map(item => item.type), ['reasoning']);
+      assertEquals(upstreamBodies.length, 0);
+
+      const turnTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: prewarmResponseId,
+          input: 'first question',
+          store: false,
+        },
+      }));
+      await turnTerminal;
+
+      assertEquals(upstreamBodies.length, 1);
+      const body = upstreamBodies[0] as { generate?: unknown; previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
+      assertEquals(Object.hasOwn(body, 'generate'), false);
+      assertEquals(body.previous_response_id, undefined);
+      assertEquals(body.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'developer', 'Base instructions'],
+        ['message', 'user', 'first question'],
+      ]);
+    }),
+  );
+});
+
 test('OpenAI Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
