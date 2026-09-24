@@ -68,6 +68,31 @@ export interface PreparedDynamicTools {
 
 export class DynamicToolInputError extends Error {}
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const toolInventory = (value: unknown, label: string): OpenAIResponsesTool[] => {
+  if (!Array.isArray(value)) throw new DynamicToolInputError(`${label} must be an array of tools.`);
+  for (const tool of value) {
+    if (!isRecord(tool) || typeof tool.type !== 'string') {
+      throw new DynamicToolInputError(`${label} contains a tool without a type.`);
+    }
+    if (tool.type === 'namespace') {
+      if (typeof tool.name !== 'string' || !Array.isArray(tool.tools)) {
+        throw new DynamicToolInputError(`${label} namespace must have a name and a tools array.`);
+      }
+      for (const child of tool.tools) {
+        if (!isRecord(child) || (child.type !== 'function' && child.type !== 'custom') || typeof child.name !== 'string') {
+          throw new DynamicToolInputError(`${label} namespace '${tool.name}' must contain named function or custom tools.`);
+        }
+      }
+    } else if ((tool.type === 'function' || tool.type === 'custom') && typeof tool.name !== 'string') {
+      throw new DynamicToolInputError(`${label} ${tool.type} tool must have a name.`);
+    }
+  }
+  return value as OpenAIResponsesTool[];
+};
+
 const identity = (tool: DynamicCallable): string =>
   `${tool.type}:${JSON.stringify([tool.namespace ?? null, tool.name])}`;
 
@@ -196,7 +221,7 @@ const dispatcherArguments = (tool: DynamicCallable, input: Record<string, unknow
     : { handle: tool.handle, arguments: input });
 
 export const activate = (catalog: DynamicToolCatalog, tools: readonly OpenAIResponsesTool[]): DynamicCallable[] => {
-  const added = tools.flatMap(callableLeaves);
+  const added = toolInventory(tools, 'Dynamic tools').flatMap(callableLeaves);
   for (const tool of added) {
     if ((tool.name === DYNAMIC_TOOL_DISPATCHER || tool.name === DYNAMIC_TOOL_SERVER_SEARCH) && tool.namespace === undefined) {
       throw new DynamicToolInputError(`Dynamic tool name '${tool.name}' is reserved by the compatibility shim.`);
@@ -242,18 +267,31 @@ const removeDeferred = (tool: OpenAIResponsesTool, searchable: SearchableTool[])
 const selectedDynamicHandle = (
   selector: Record<string, unknown>,
   catalog: DynamicToolCatalog,
+  topLevelTools: readonly OpenAIResponsesTool[],
 ): string | undefined => {
   if (selector.type === 'tool_search' && catalog.searchDefinition !== undefined) return DYNAMIC_TOOL_SEARCH_HANDLE;
   if (selector.type !== 'function' && selector.type !== 'custom'
     && selector.type !== 'shell' && selector.type !== 'local_shell' && selector.type !== 'apply_patch'
     && selector.type !== 'computer' && selector.type !== 'computer_use_preview') return undefined;
   if ((selector.type === 'function' || selector.type === 'custom') && typeof selector.name !== 'string') return undefined;
-  const matches = [...catalog.activeByHandle.values()].filter(tool =>
-    tool.type === selector.type
-    && ((selector.type !== 'function' && selector.type !== 'custom') || tool.name === selector.name)
-    && (selector.namespace === undefined || tool.namespace === selector.namespace));
-  if (matches.length > 1) throw new DynamicToolInputError(`Tool choice '${selector.name}' is ambiguous without a namespace.`);
-  return matches[0]?.handle;
+  const matches = [...catalog.activeByHandle.values()].filter(tool => tool.type === selector.type);
+  if (selector.type !== 'function' && selector.type !== 'custom') {
+    if (matches.length > 1) throw new DynamicToolInputError(`Tool choice '${selector.type}' is ambiguous.`);
+    return matches[0]?.handle;
+  }
+  const name = selector.name as string;
+  if (selector.namespace !== undefined) {
+    if (typeof selector.namespace !== 'string') throw new DynamicToolInputError('Tool choice namespace must be a string.');
+    return matches.find(tool => tool.namespace === selector.namespace && tool.name === name)?.handle;
+  }
+  if (topLevelTools.some(tool => (tool.type === 'function' || tool.type === 'custom')
+    && tool.type === selector.type && tool.name === name)) return undefined;
+  const flat = matches.find(tool => tool.namespace === undefined && tool.name === name);
+  if (flat !== undefined) return flat.handle;
+  const qualified = matches.filter(tool => tool.namespace !== undefined
+    && (`${tool.namespace}.${tool.name}` === name || `${tool.namespace}__${tool.name}` === name));
+  if (qualified.length > 1) throw new DynamicToolInputError(`Tool choice '${name}' matches more than one namespace tool.`);
+  return qualified[0]?.handle;
 };
 
 const rewriteChoice = (
@@ -263,11 +301,15 @@ const rewriteChoice = (
 ): { choice: OpenAIResponsesToolChoice | null | undefined; allowedHandles?: ReadonlySet<string> } => {
   if (choice === null || choice === undefined || typeof choice === 'string') return { choice };
   if (choice.type === 'allowed_tools') {
+    if (!Array.isArray(choice.tools) || (choice.mode !== 'auto' && choice.mode !== 'required')) {
+      throw new DynamicToolInputError('allowed_tools requires an auto or required mode and a tools array.');
+    }
     const handles = new Set<string>();
     const selectors: Record<string, unknown>[] = [];
     let hasDispatcher = false;
     for (const selector of choice.tools) {
-      const handle = selectedDynamicHandle(selector, catalog);
+      if (!isRecord(selector)) throw new DynamicToolInputError('allowed_tools selectors must be objects.');
+      const handle = selectedDynamicHandle(selector, catalog, topLevelTools);
       if (handle !== undefined) handles.add(handle);
       if (selector.type === 'namespace' && typeof selector.name === 'string') {
         for (const tool of catalog.activeByHandle.values()) {
@@ -286,7 +328,7 @@ const rewriteChoice = (
       allowedHandles: handles,
     };
   }
-  const handle = selectedDynamicHandle(choice, catalog);
+  const handle = selectedDynamicHandle(choice, catalog, topLevelTools);
   if (handle === undefined) return { choice };
   return {
     choice: { type: 'function', name: DYNAMIC_TOOL_DISPATCHER },
@@ -295,6 +337,7 @@ const rewriteChoice = (
 };
 
 export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): PreparedDynamicTools => {
+  if (!Array.isArray(source.input)) throw new DynamicToolInputError('input must be an array of items.');
   const catalog: DynamicToolCatalog = {
     activeByHandle: new Map(),
     activeByIdentity: new Map(),
@@ -306,7 +349,7 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
   const clientTools = source.tools;
   const clientToolChoice = source.tool_choice;
   const tools: OpenAIResponsesTool[] = [];
-  for (const tool of source.tools ?? []) {
+  for (const tool of source.tools == null ? [] : toolInventory(source.tools, 'tools')) {
     if (tool.type === 'function' && (tool.name === DYNAMIC_TOOL_DISPATCHER || tool.name === DYNAMIC_TOOL_SERVER_SEARCH)) {
       throw new DynamicToolInputError(`Tool name '${tool.name}' is reserved by the compatibility shim.`);
     }
@@ -349,6 +392,8 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
   let prefixEnd = 0;
   while (prefixEnd < source.input.length) {
     const item = source.input[prefixEnd];
+    const rawItem: unknown = item;
+    if (!isRecord(rawItem) || typeof rawItem.type !== 'string') throw new DynamicToolInputError('input contains an item without a type.');
     if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
     input.push(item);
     prefixEnd++;
@@ -359,7 +404,10 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
   }
   const calls = new Map<string, DirectClientTool['type'] | 'search'>();
   for (const item of source.input.slice(prefixEnd)) {
+    const rawItem: unknown = item;
+    if (!isRecord(rawItem) || typeof rawItem.type !== 'string') throw new DynamicToolInputError('input contains an item without a type.');
     if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
+      const added = activate(catalog, item.tools);
       if (item.type === 'tool_search_output' && (item.execution === 'client' || (typeof item.call_id === 'string' && calls.get(item.call_id) === 'search'))) {
         if (typeof item.call_id !== 'string' || calls.get(item.call_id) !== 'search') {
           throw new DynamicToolInputError('Client tool_search_output has no matching tool_search_call.');
@@ -371,7 +419,6 @@ export const prepareDynamicTools = (source: CanonicalOpenAIResponsesPayload): Pr
           output: JSON.stringify({ loaded: item.tools.length }),
         });
       }
-      const added = activate(catalog, item.tools);
       if (added.length > 0) input.push(announce(added, item.type));
       continue;
     }

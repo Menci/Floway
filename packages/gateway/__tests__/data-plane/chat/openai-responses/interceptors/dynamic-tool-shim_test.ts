@@ -107,6 +107,31 @@ test('preserves namespace and freeform custom call identity through history', ()
   expect(prepared.payload.input[2]).toMatchObject({ type: 'function_call_output', call_id: 'call_patch', output: 'applied' });
 });
 
+test('does not treat a namespaced client call with the dispatcher name as an internal call', async () => {
+  const prepared = prepareDynamicTools(payload([{
+    type: 'additional_tools', role: 'developer', tools: [{
+      type: 'namespace', name: 'client', description: 'Client tools',
+      tools: [{ type: 'function', name: DYNAMIC_TOOL_DISPATCHER, parameters: { type: 'object' } }],
+    }],
+  }]));
+  const call: OpenAIResponsesOutputFunctionCall = {
+    type: 'function_call', id: 'fc_client', call_id: 'call_client', namespace: 'client',
+    name: DYNAMIC_TOOL_DISPATCHER, arguments: '{"value":"client data"}', status: 'completed',
+  };
+  const response: OpenAIResponsesResult = {
+    id: 'resp_client', object: 'response', model: 'model', status: 'completed', output: [call],
+    error: null, incomplete_details: null,
+  };
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+    yield eventFrame({ type: 'response.completed', response });
+  })();
+  const events: OpenAIResponsesStreamEvent[] = [];
+  for await (const frame of projectDynamicToolEvents(frames, prepared)) if (frame.type === 'event') events.push(frame.event);
+  expect(events[0]).toMatchObject({ item: call });
+  expect(events[1]).toMatchObject({ response: { output: [call] } });
+});
+
 test('rejects a dynamic identity that would make static call history ambiguous', () => {
   expect(() => prepareDynamicTools({
     ...payload([{ type: 'additional_tools', role: 'developer', tools: [customer] }]),
@@ -123,6 +148,60 @@ test('rejects ambiguous deferred search paths before sending a model request', (
       { type: 'namespace', name: 'get_customer', description: 'Conflicting namespace', tools: [{ type: 'function', name: 'other', defer_loading: true }] },
     ],
   })).toThrow("Deferred tool path 'get_customer' is ambiguous.");
+});
+
+test('resolves dynamic allowed tool selectors by full identity and preserves flat name priority', () => {
+  const staticRead: OpenAIResponsesTool = { type: 'function', name: 'read', parameters: { type: 'object' } };
+  const dynamicRead: OpenAIResponsesTool = {
+    type: 'namespace', name: 'client', description: 'Client files',
+    tools: [{ type: 'function', name: 'read', parameters: { type: 'object' } }],
+  };
+  const base = {
+    ...payload([{ type: 'additional_tools' as const, role: 'developer' as const, tools: [dynamicRead] }]),
+    tools: [staticRead],
+  };
+  for (const qualified of ['client.read', 'client__read']) {
+    const selected = prepareDynamicTools({
+      ...base,
+      tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: qualified }] },
+    });
+    expect(selected.payload.tool_choice).toEqual({
+      type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: DYNAMIC_TOOL_DISPATCHER }],
+    });
+    expect([...(selected.allowedHandles ?? [])]).toEqual(['tool/function/client/read']);
+    const forced = prepareDynamicTools({ ...base, tool_choice: { type: 'function', name: qualified } });
+    expect(forced.payload.tool_choice).toEqual({ type: 'function', name: DYNAMIC_TOOL_DISPATCHER });
+    expect([...(forced.allowedHandles ?? [])]).toEqual(['tool/function/client/read']);
+  }
+  const flat = prepareDynamicTools({
+    ...base,
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'read' }] },
+  });
+  expect(flat.payload.tool_choice).toEqual({ type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'read' }] });
+  expect(flat.allowedHandles).toBeUndefined();
+  const explicit = prepareDynamicTools({ ...base, tool_choice: { type: 'function', namespace: 'client', name: 'read' } });
+  expect(explicit.payload.tool_choice).toEqual({ type: 'function', name: DYNAMIC_TOOL_DISPATCHER });
+  expect([...(explicit.allowedHandles ?? [])]).toEqual(['tool/function/client/read']);
+  const forcedFlat = prepareDynamicTools({ ...base, tool_choice: { type: 'function', name: 'read' } });
+  expect(forcedFlat.payload.tool_choice).toEqual({ type: 'function', name: 'read' });
+});
+
+test('malformed namespace children produce a typed client error before upstream dispatch', async () => {
+  const malformed = { type: 'namespace', name: 'broken', description: 'Broken', tools: null } as unknown as OpenAIResponsesTool;
+  for (const malformedPayload of [
+    { ...payload([{ type: 'additional_tools' as const, role: 'developer' as const, tools: [malformed] }]) },
+    { ...payload([{ type: 'message' as const, role: 'user' as const, content: 'Hello' }]), tools: [malformed] },
+    { ...payload([{ type: 'additional_tools' as const, role: 'developer' as const, tools: null as unknown as OpenAIResponsesTool[] }]) },
+  ]) {
+    const invocation: OpenAIResponsesInvocation = {
+      payload: malformedPayload,
+      candidate: stubModelCandidate(), targetApi: 'openaiChatCompletions', headers: new Headers(), action: 'generate',
+    };
+    const result = await withOpenAIResponsesDynamicToolShim(invocation, mockChatGatewayCtx(), async () => {
+      throw new Error('Unexpected upstream dispatch');
+    });
+    expect(result).toMatchObject({ type: 'api-error', source: 'gateway', status: 400 });
+  }
 });
 
 test('exposes server-owned dynamic tools that have no execution adapter', () => {

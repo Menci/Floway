@@ -300,7 +300,7 @@ const projectCall = (
 };
 
 const hasDispatcherCall = (item: OpenAIResponsesOutputItem): item is OpenAIResponsesOutputFunctionCall =>
-  item.type === 'function_call' && item.name === DYNAMIC_TOOL_DISPATCHER;
+  item.type === 'function_call' && item.namespace === undefined && item.name === DYNAMIC_TOOL_DISPATCHER;
 
 const projectResponse = (
   response: OpenAIResponsesResult,
