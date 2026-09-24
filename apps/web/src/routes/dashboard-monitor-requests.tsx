@@ -7,10 +7,12 @@ import type { Route } from './+types/dashboard-monitor-requests';
 import { requireDashboardSession } from './guards';
 import { api, callApi } from '../api/client';
 import type { ApiKey } from '../api/types';
+import { contentTypeOf } from '../components/requests/body-render';
 import { RequestDetailPanel } from '../components/requests/detail';
 import { refreshRequestKeys } from '../components/requests/key-refresh';
 import { RequestListPanel } from '../components/requests/list';
 import { collectKindFromTargetApi, collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
+import { upstreamStreamEvents, type ExchangeStream } from '../components/requests/upstream-stream';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
@@ -37,6 +39,7 @@ const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = f
 interface LoaderData {
   collected: CollectedStream | null;
   upstreamCollected: CollectedStream | null;
+  exchangeStreams: ExchangeStream[];
   error: string | null;
   keys: ApiKey[] | null;
   record: DumpRecord | null;
@@ -57,7 +60,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
   const recordId = url.searchParams.get('record');
   if (!selectedKeyId) {
-    return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
+    return { collected: null, upstreamCollected: null, exchangeStreams: [], error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
     callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q: url.searchParams.get('q') ?? '', failures: url.searchParams.get('failures') === 'true' ? 'true' : 'false' } })),
@@ -73,11 +76,26 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   // target protocol) rather than `meta.path` (the source protocol). Only
   // translated turns carry an upstream body.
   const upstreamCollectKind = record?.meta.targetApi ? collectKindFromTargetApi(record.meta.targetApi) : null;
-  const upstreamStreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
-  const upstreamCollected = upstreamCollectKind && upstreamStreamEvents.length ? await collectStream(upstreamCollectKind, upstreamStreamEvents) : null;
+  const legacyUpstreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
+  const upstreamCollected = upstreamCollectKind && legacyUpstreamEvents.length ? await collectStream(upstreamCollectKind, legacyUpstreamEvents) : null;
+  // Native turns (no `response.upstream`) still have every upstream exchange's
+  // raw SSE bytes captured by `HttpCapture`. Parse each into `DumpStreamEvent[]`
+  // so the dashboard's "Events" / "Collected" tabs surface for native turns too.
+  // The exchange's request URL names the protocol the upstream actually spoke
+  // (for a translated turn that is the target protocol, not the client path).
+  const exchangeStreams: ExchangeStream[] = [];
+  const exchanges = record?.capture?.exchanges ?? [];
+  for (const exchange of exchanges) {
+    if (!exchange.response) { exchangeStreams.push({ events: null, collected: null, error: null }); continue; }
+    const parsed = await upstreamStreamEvents(exchange.response.body, contentTypeOf(exchange.response.headers));
+    const kind = parsed.events?.length ? detectCollectKind(new URL(exchange.request.url).pathname) : null;
+    const collected = kind && parsed.events ? await collectStream(kind, parsed.events) : null;
+    exchangeStreams.push({ events: parsed.events, collected, error: parsed.error });
+  }
   return {
     collected,
     upstreamCollected,
+    exchangeStreams,
     error: keysResult.error?.message ?? null,
     keys,
     record,
@@ -213,14 +231,14 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">
             <div className="h-full min-h-0" inert={selectedRecordId === null}>
-              <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
+              <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} exchangeStreams={loaderData.exchangeStreams} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
             </div>
           </DrawerBody>
         </OverlayDrawer>
       </> : (
         <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
-            <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
+            <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} exchangeStreams={loaderData.exchangeStreams} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
