@@ -22,7 +22,7 @@ export const DYNAMIC_TOOL_SERVER_SEARCH = 'search_additional_tools';
 export const dispatcherTool: OpenAIResponsesFunctionTool = {
   type: 'function',
   name: DYNAMIC_TOOL_DISPATCHER,
-  description: 'Call a tool introduced earlier in this conversation. Use the exact handle in its availability announcement. Send structured function, shell, patch, or computer input in arguments; send freeform custom input in text. Use the tool_search handle only when the announced search tool is available. Do not invent handles or call this dispatcher recursively.',
+  description: 'Call a tool introduced earlier in this conversation. Use the exact handle in its availability announcement. Set exactly one of arguments or text: structured function, search, shell, patch, and computer input goes in arguments; freeform custom input goes in text. Use the tool_search handle only when the announced search tool is available. Do not invent handles or call this dispatcher recursively.',
   parameters: {
     type: 'object',
     properties: {
@@ -110,6 +110,18 @@ const callableLeaves = (tool: OpenAIResponsesTool): DynamicCallable[] => {
   }
 };
 
+const computerActionExamples = [
+  { type: 'click', button: 'left', x: 100, y: 100 },
+  { type: 'double_click', x: 100, y: 100, keys: null },
+  { type: 'drag', path: [{ x: 100, y: 100 }, { x: 200, y: 200 }] },
+  { type: 'keypress', keys: ['CTRL', 'A'] },
+  { type: 'move', x: 100, y: 100 },
+  { type: 'screenshot' },
+  { type: 'scroll', scroll_x: 0, scroll_y: 400, x: 100, y: 100 },
+  { type: 'type', text: 'hello' },
+  { type: 'wait' },
+];
+
 const inputContract = (tool: DynamicCallable): Record<string, unknown> | undefined => {
   if (tool.type === 'shell') return { arguments: { action: { commands: ['<command>'] }, environment: tool.environment } };
   if (tool.type === 'local_shell') return { arguments: { action: { type: 'exec', command: ['<command>'], env: {} } } };
@@ -120,11 +132,11 @@ const inputContract = (tool: DynamicCallable): Record<string, unknown> | undefin
   };
   if (tool.type === 'computer') return {
     arguments: { actions: [{ type: 'screenshot' }] },
-    action_types: ['click', 'double_click', 'drag', 'keypress', 'move', 'screenshot', 'scroll', 'type', 'wait'],
+    action_examples: computerActionExamples,
   };
   if (tool.type === 'computer_use_preview') return {
     arguments: { action: { type: 'screenshot' }, pending_safety_checks: [] },
-    action_types: ['click', 'double_click', 'drag', 'keypress', 'move', 'screenshot', 'scroll', 'type', 'wait'],
+    action_examples: computerActionExamples,
   };
   return undefined;
 };
@@ -155,7 +167,7 @@ const announceSearch = (tool: OpenAIResponsesTool): OpenAIResponsesInputItem => 
 const announceSearchable = (tools: readonly SearchableTool[]): OpenAIResponsesInputItem => ({
   type: 'message',
   role: 'system',
-  content: `Deferred tools can be loaded through the native tool_search tool. Choose exact paths from this catalog; a namespace path loads its deferred children. After search completes, use ${DYNAMIC_TOOL_DISPATCHER} with the newly announced handles.\n\n${JSON.stringify(tools.map(tool => ({
+  content: `Deferred tools can be loaded through the available search function. Choose exact paths from this catalog; a namespace path loads its deferred children. After search completes, use ${DYNAMIC_TOOL_DISPATCHER} with the newly announced handles.\n\n${JSON.stringify(tools.map(tool => ({
     path: tool.name,
     description: tool.description,
     ...(tool.type === 'namespace' ? { tool_names: tool.tools.map(child => child.name) } : {}),
