@@ -956,8 +956,8 @@ async function* runMultiTurnLoop(args: {
       }
       metadata.modelIdentity = nextResult.modelIdentity;
       metadata.performance = nextResult.performance;
-      await accumulateBillableUsage(metadata, nextResult);
       currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active);
+      await accumulateBillableUsage(metadata, nextResult);
       merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     }
   } catch (error) {

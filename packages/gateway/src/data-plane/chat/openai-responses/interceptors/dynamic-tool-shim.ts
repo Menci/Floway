@@ -1,5 +1,6 @@
 import { DynamicToolInputError, prepareDynamicTools } from './dynamic-tools/catalog.ts';
 import { projectDynamicToolEvents } from './dynamic-tools/projection.ts';
+import { bindDynamicToolCatalog, unbindDynamicToolCatalog } from './dynamic-tools/server-search.ts';
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -26,7 +27,13 @@ export const withOpenAIResponsesDynamicToolShim: OpenAIResponsesInterceptor = as
   }
 
   ctx.payload = prepared.payload;
-  const result = await run();
+  bindDynamicToolCatalog(ctx, prepared.catalog);
+  let result;
+  try {
+    result = await run();
+  } finally {
+    unbindDynamicToolCatalog(ctx);
+  }
   if (result.type !== 'events') return result;
   return { ...result, events: projectDynamicToolEvents(result.events, prepared) };
 };

@@ -146,7 +146,17 @@ export interface AnthropicMessagesServerToolUseBlock {
   type: 'server_tool_use';
   id: string;
   name: string;
-  input: { query: string };
+  input: Record<string, unknown>;
+}
+
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool#streaming
+export interface AnthropicMessagesToolSearchResultBlock {
+  type: 'tool_search_tool_result';
+  tool_use_id: string;
+  content: {
+    type: 'tool_search_tool_search_result';
+    tool_references: Array<{ type: 'tool_reference'; tool_name: string }>;
+  } | { type: 'tool_search_tool_result_error'; error_code: string };
 }
 
 export const ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES = ['too_many_requests', 'invalid_tool_input', 'max_uses_exceeded', 'query_too_long', 'request_too_large', 'unavailable'] as const;
@@ -225,6 +235,7 @@ export type AnthropicMessagesAssistantContentBlock =
   | AnthropicMessagesToolUseBlock
   | AnthropicMessagesServerToolUseBlock
   | AnthropicMessagesWebSearchToolResultBlock
+  | AnthropicMessagesToolSearchResultBlock
   | AnthropicMessagesThinkingBlock
   | AnthropicMessagesRedactedThinkingBlock
   | AnthropicMessagesFallbackBlock;
@@ -255,6 +266,7 @@ export interface AnthropicMessagesSystemMessage {
 
 export type AnthropicMessagesMessage = AnthropicMessagesUserMessage | AnthropicMessagesAssistantMessage | AnthropicMessagesSystemMessage;
 
+// https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages#mid-conversation-tool-changes
 export type AnthropicMessagesToolChangeReference =
   | { type: 'tool_reference'; name: string }
   | { type: 'mcp_tool_reference'; server_name: string; name: string }
@@ -295,7 +307,14 @@ export interface AnthropicMessagesNativeWebSearchTool {
   };
 }
 
-export type AnthropicMessagesTool = AnthropicMessagesClientTool | AnthropicMessagesNativeWebSearchTool;
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool#how-tool-search-works
+export interface AnthropicMessagesNativeToolSearchTool {
+  type: 'tool_search_tool_regex_20251119' | 'tool_search_tool_bm25_20251119';
+  name: string;
+  max_uses?: number;
+}
+
+export type AnthropicMessagesTool = AnthropicMessagesClientTool | AnthropicMessagesNativeWebSearchTool | AnthropicMessagesNativeToolSearchTool;
 
 export {
   mergeAnthropicMessagesUsageSnapshot,
@@ -350,6 +369,7 @@ export interface AnthropicMessagesContentBlockStartEvent {
     })
     | AnthropicMessagesServerToolUseBlock
     | AnthropicMessagesWebSearchToolResultBlock
+    | AnthropicMessagesToolSearchResultBlock
     | { type: 'thinking'; thinking: string }
     | { type: 'redacted_thinking'; data: string }
     | AnthropicMessagesFallbackBlock;

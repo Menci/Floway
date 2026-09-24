@@ -3,8 +3,11 @@ import { expect, test } from 'vitest';
 import { withOpenAIResponsesDynamicToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/dynamic-tool-shim.ts';
 import { DYNAMIC_TOOL_DISPATCHER, prepareDynamicTools } from '../../../../../src/data-plane/chat/openai-responses/interceptors/dynamic-tools/catalog.ts';
 import { projectDynamicToolEvents } from '../../../../../src/data-plane/chat/openai-responses/interceptors/dynamic-tools/projection.ts';
+import { dynamicToolSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/dynamic-tools/server-search.ts';
+import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputFunctionCall, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { eventResult } from '@floway-dev/provider';
@@ -97,6 +100,24 @@ test('preserves namespace and freeform custom call identity through history', ()
   if (call.type !== 'function_call') throw new Error('Expected rewritten call');
   expect(JSON.parse(call.arguments)).toEqual({ handle: 'tool/custom/editor/patch', text: '*** Begin Patch' });
   expect(prepared.payload.input[2]).toMatchObject({ type: 'function_call_output', call_id: 'call_patch', output: 'applied' });
+});
+
+test('rejects a dynamic identity that would make static call history ambiguous', () => {
+  expect(() => prepareDynamicTools({
+    ...payload([{ type: 'additional_tools', role: 'developer', tools: [customer] }]),
+    tools: [customer],
+  })).toThrow("Dynamic tool 'get_customer' conflicts with a top-level callable tool.");
+});
+
+test('rejects ambiguous deferred search paths before sending a model request', () => {
+  expect(() => prepareDynamicTools({
+    ...payload([{ type: 'message', role: 'user', content: 'Search.' }]),
+    tools: [
+      { type: 'tool_search' },
+      { ...customer, defer_loading: true },
+      { type: 'namespace', name: 'get_customer', description: 'Conflicting namespace', tools: [{ type: 'function', name: 'other', defer_loading: true }] },
+    ],
+  })).toThrow("Deferred tool path 'get_customer' is ambiguous.");
 });
 
 test('forces a selected dynamic tool through the dispatcher and rejects other handles', async () => {
@@ -193,4 +214,61 @@ test('buffers a dispatcher call until its real client-visible tool and arguments
   expect(completed.response.output[0]).toMatchObject({ type: 'function_call', name: 'get_customer', call_id: 'call_1' });
   expect(completed.response.tools).toEqual([]);
   expect(JSON.stringify(events)).not.toContain(DYNAMIC_TOOL_DISPATCHER);
+});
+
+test('server tool search loads a deferred namespace without adding its functions to upstream tools', async () => {
+  const ctx: OpenAIResponsesInvocation = {
+    payload: {
+      ...payload([{ type: 'message', role: 'user', content: 'Find the customer tool, then use it.' }]),
+      tools: [
+        { type: 'tool_search' },
+        { type: 'namespace', name: 'customers', description: 'Customer records', tools: [{ ...customer, defer_loading: true }] },
+      ],
+    },
+    candidate: stubModelCandidate(),
+    targetApi: 'openaiChatCompletions',
+    headers: new Headers(),
+    action: 'generate',
+  };
+  const upstream: CanonicalOpenAIResponsesPayload[] = [];
+  const searchArgs = '{"paths":["customers"]}';
+  const invokeArgs = '{"handle":"tool/function/customers/get_customer","arguments":{"id":"42"}}';
+  const run = async () => {
+    upstream.push(structuredClone(ctx.payload));
+    const name = upstream.length === 1 ? 'search_additional_tools' : DYNAMIC_TOOL_DISPATCHER;
+    const args = upstream.length === 1 ? searchArgs : invokeArgs;
+    const call: OpenAIResponsesOutputFunctionCall = {
+      type: 'function_call', id: `fc_${upstream.length}`, call_id: `call_${upstream.length}`,
+      name, arguments: args, status: 'completed',
+    };
+    const response: OpenAIResponsesResult = {
+      id: `resp_${upstream.length}`, object: 'response', model: 'model', status: 'completed',
+      output: [call], tools: ctx.payload.tools ?? undefined, tool_choice: 'auto', error: null, incomplete_details: null,
+    };
+    return eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } });
+      yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '', status: 'in_progress' } });
+      yield eventFrame({ type: 'response.function_call_arguments.done', output_index: 0, item_id: call.id!, arguments: args });
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: call });
+      yield eventFrame({ type: 'response.completed', response });
+      yield { type: 'done' };
+    })(), testTelemetryModelIdentity);
+  };
+  const result = await runInterceptors(ctx, mockChatGatewayCtx(), [
+    withOpenAIResponsesDynamicToolShim,
+    withOpenAIResponsesServerToolShim([dynamicToolSearchServerTool]),
+  ], run);
+  if (result.type !== 'events') throw new Error('Expected events');
+  const events: OpenAIResponsesStreamEvent[] = [];
+  for await (const frame of result.events) if (frame.type === 'event') events.push(frame.event);
+  expect(upstream).toHaveLength(2);
+  expect(upstream[0].tools?.map(tool => tool.type === 'function' ? tool.name : tool.type)).toEqual(['search_additional_tools', DYNAMIC_TOOL_DISPATCHER]);
+  expect(upstream[1].tools).toEqual(upstream[0].tools);
+  expect(JSON.stringify(upstream[1].input)).toContain('tool/function/customers/get_customer');
+  expect(events.filter(event => event.type === 'response.output_item.done').map(event => event.item.type)).toEqual([
+    'tool_search_call', 'tool_search_output', 'function_call',
+  ]);
+  const completed = events.find(event => event.type === 'response.completed');
+  if (completed?.type !== 'response.completed') throw new Error('Expected completed response');
+  expect(completed.response.output.at(-1)).toMatchObject({ type: 'function_call', namespace: 'customers', name: 'get_customer' });
 });

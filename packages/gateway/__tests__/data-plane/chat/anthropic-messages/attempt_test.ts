@@ -359,6 +359,55 @@ test('the dynamic tool flag routes a native Anthropic target through the dispatc
   assertEquals(JSON.stringify(upstreamBody.messages).includes('tool_addition'), false);
 });
 
+test('Anthropic hosted tool search loads a deferred tool and continues on a Chat upstream', async () => {
+  installRepo();
+  const upstreamBodies: Array<Record<string, unknown>> = [];
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    upstreamBodies.push(body as Record<string, unknown>);
+    const search = upstreamBodies.length === 1;
+    const toolName = search ? 'search_additional_tools' : 'call_additional_tool';
+    const args = search
+      ? '{"paths":["lookup_customer"]}'
+      : '{"handle":"tool/function//lookup_customer","arguments":{"id":"42"}}';
+    return {
+      ok: true,
+      events: makeProtocolFrames([{
+        id: `chatcmpl_search_${upstreamBodies.length}`, object: 'chat.completion.chunk', created: 1, model: 'test-model',
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: `call_${upstreamBodies.length}`, type: 'function', function: { name: toolName, arguments: args } }] }, finish_reason: 'tool_calls' }],
+      }]),
+      modelKey: 'k', headers: new Headers(),
+    };
+  });
+  const result = await anthropicMessagesAttempt.generate({
+    payload: makePayload({
+      messages: [{ role: 'user', content: 'Find the customer tool and look up customer 42.' }],
+      tools: [
+        { type: 'tool_search_tool_regex_20251119', name: 'tool_search_tool_regex' },
+        {
+          name: 'lookup_customer', description: 'Look up customer by ID.', defer_loading: true, input_schema: {
+            type: 'object', properties: { id: { type: 'string' } }, required: ['id'],
+          },
+        },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } }),
+    headers: new Headers(), anthropicBeta: [],
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  const events = await collectEvents(result.events);
+  assertEquals(upstreamBodies.length, 2);
+  const firstTools = upstreamBodies[0].tools as Array<{ function: { name: string } }>;
+  const secondTools = upstreamBodies[1].tools as Array<{ function: { name: string } }>;
+  assertEquals(firstTools.map(tool => tool.function.name), ['search_additional_tools', 'call_additional_tool']);
+  assertEquals(secondTools, firstTools);
+  const blocks = events.filter(event => event.type === 'content_block_start').map(event => event.content_block);
+  assertEquals(blocks.map(block => block.type), ['server_tool_use', 'tool_search_tool_result', 'tool_use']);
+  const invoked = blocks.at(-1);
+  if (invoked?.type !== 'tool_use') throw new Error('Expected client tool use');
+  assertEquals(invoked.name, 'lookup_customer');
+});
+
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayload, 'model'>[] = [];

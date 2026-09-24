@@ -139,6 +139,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
     case 'text':
     case 'server_tool_use':
     case 'web_search_tool_result':
+    case 'tool_search_tool_result':
       return [];
     case 'fallback':
       state.model = block.to.model;
