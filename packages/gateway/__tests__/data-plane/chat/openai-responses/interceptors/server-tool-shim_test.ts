@@ -3461,6 +3461,37 @@ test('client declaring web_search AND web_search_2 + hosted web_search: shim fal
   assertEquals(names, new Set(['web_search', 'web_search_2', 'web_search_3']));
 });
 
+for (const [source, item] of [
+  ['additional_tools', {
+    type: 'additional_tools', role: 'developer',
+    tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+  }],
+  ['tool_search_output', {
+    type: 'tool_search_output', execution: 'client', call_id: 'call_search',
+    tools: [{ type: 'custom', name: SHIM_TOOL_NAME }],
+  }],
+] as const) {
+  test(`hosted function name avoids a flat client tool from historical ${source}`, async () => {
+    makeStubDeps();
+    const inv = makeInvocation({
+      payload: {
+        tools: [{ type: 'web_search' }],
+        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as OpenAIResponsesInputItem[],
+      },
+    });
+    const script = scriptedRun([fcTurn(0, 'call_client', SHIM_TOOL_NAME, '{"client":true}')]);
+    const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+
+    const injected = inv.payload.tools?.[0];
+    assert(injected?.type === 'function');
+    assertEquals(injected.name, `${SHIM_TOOL_NAME}_2`);
+    assertEquals(outputItemDoneEvents(frames).map(event => event.item), [{
+      type: 'function_call', call_id: 'call_client', name: SHIM_TOOL_NAME,
+      arguments: '{"client":true}', status: 'completed',
+    }]);
+  });
+}
+
 // ── 0-event safety bail ───────────────────────────────────────────────
 
 test('upstream returning no actionable events closes the response cleanly', async () => {
@@ -4793,6 +4824,58 @@ test('consumeTurn forwards a namespaced client call sharing the hosted shim name
   assertEquals(result.summary.dispatched, []);
   assertEquals(result.summary.sawClientToolCall, true);
   assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [call]);
+});
+
+test('consumeTurn uses the completed call namespace before executing a hosted tool', async () => {
+  const completed = {
+    type: 'function_call' as const,
+    id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
+    arguments: '{"client":true}', status: 'completed',
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
+    }),
+    mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
+    mkFunctionCallArgsDone(0, completed.arguments, completed.id),
+    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: completed }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records, []);
+  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.sawClientToolCall, true);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [completed]);
+  assertEquals(eventTypesOf(result.downstreamFrames).filter(type => type.startsWith('response.function_call_arguments.')), [
+    'response.function_call_arguments.delta', 'response.function_call_arguments.done',
+  ]);
+});
+
+test('consumeTurn dispatches a hosted call whose added item carried a namespace', async () => {
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: {
+        type: 'function_call', id: 'fc_search', call_id: 'call_search', namespace: 'client',
+        name: SHIM_TOOL_NAME, arguments: '', status: 'in_progress',
+      },
+    }),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.done', output_index: 0,
+      item: {
+        type: 'function_call', id: 'fc_search', call_id: 'call_search',
+        name: SHIM_TOOL_NAME, arguments: '{"search_query":[]}', status: 'completed',
+      },
+    }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records.map(record => record.intercepted.name), [SHIM_TOOL_NAME]);
+  assertEquals(result.summary.sawClientToolCall, false);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames), []);
 });
 
 test('consumeTurn forwards queued only from the first upstream turn', async () => {
