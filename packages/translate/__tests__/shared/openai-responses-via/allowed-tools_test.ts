@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { buildTargetRequest as buildMessages } from '../../../src/openai-responses-via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChat } from '../../../src/openai-responses-via-openai-chat-completions/request.ts';
 import { TranslatorInputError } from '../../../src/translator-input-error.ts';
-import type { OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputItem, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayload => ({
@@ -38,6 +38,21 @@ for (const target of ['chat', 'messages'] as const) {
     assertEquals(result.target.tools?.length, 1);
     assertEquals(result.customToolNames, new Set(['read']));
   });
+
+  for (const history of ['additional_tools', 'tool_search_output'] as const) {
+    test(`${target} request rejects flat function/custom collisions from ${history} before converting calls`, async () => {
+      const custom: OpenAIResponsesTool = { type: 'custom', name: 'web_search' };
+      const item: OpenAIResponsesInputItem = history === 'additional_tools'
+        ? { type: 'additional_tools', role: 'developer', tools: [custom] }
+        : { type: 'tool_search_output', execution: 'client', tools: [custom] };
+      const payload: OpenAIResponsesRequestPayload = {
+        model: 'model',
+        tools: [{ type: 'function', name: 'web_search', parameters: { type: 'object' } }],
+        input: [item],
+      };
+      await assertRejects(() => build(payload), TranslatorInputError, "distinct callable kinds sharing 'web_search'");
+    });
+  }
 
   test(`${target} request represents an empty auto subset as no tools`, async () => {
     const result = await build(source({ type: 'allowed_tools', mode: 'auto', tools: [] }));

@@ -1,6 +1,19 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
+const validateCallableKinds = (tools: OpenAIResponsesTool[] | null | undefined): void => {
+  const kinds = new Map<string, 'function' | 'custom'>();
+  for (const tool of tools ?? []) {
+    if (tool.type !== 'function' && tool.type !== 'custom') continue;
+    if ('namespace' in tool && tool.namespace !== undefined) continue;
+    const prior = kinds.get(tool.name);
+    if (prior !== undefined && prior !== tool.type) {
+      throw new TranslatorInputError(`Cannot translate distinct callable kinds sharing '${tool.name}'.`);
+    }
+    kinds.set(tool.name, tool.type);
+  }
+};
+
 // OpenAI Chat Completions and Anthropic Messages preserve flat function/custom
 // subsets by filtering declarations and translating the mode separately.
 // Namespace and hosted selectors must arrive already rewritten as flat
@@ -11,7 +24,10 @@ export const restrictAllowedTools = (
   tools: OpenAIResponsesTool[] | null | undefined,
   choice: OpenAIResponsesToolChoice | null | undefined,
 ): { tools: OpenAIResponsesTool[] | null | undefined; choice: OpenAIResponsesToolChoice | null | undefined } => {
-  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') return { tools, choice };
+  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') {
+    validateCallableKinds(tools);
+    return { tools, choice };
+  }
   if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
     throw new TranslatorInputError('Cannot translate malformed allowed_tools mode or tools array.');
   }
@@ -52,8 +68,10 @@ export const restrictAllowedTools = (
   if (selected.size === 0 && choice.mode === 'required') {
     throw new TranslatorInputError('Cannot translate required allowed_tools with an empty callable subset.');
   }
+  const restricted = (tools ?? []).filter(tool => selected.has(tool));
+  validateCallableKinds(restricted);
   return {
-    tools: (tools ?? []).filter(tool => selected.has(tool)),
+    tools: restricted,
     choice: selected.size === 0 ? 'none' : choice.mode,
   };
 };
