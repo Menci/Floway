@@ -3471,7 +3471,7 @@ for (const [source, item] of [
     tools: [{ type: 'custom', name: SHIM_TOOL_NAME }],
   }],
 ] as const) {
-  test(`hosted function name avoids a flat client tool from historical ${source}`, async () => {
+  test(`hosted function rejects an ambiguous flat client tool from historical ${source}`, async () => {
     makeStubDeps();
     const inv = makeInvocation({
       payload: {
@@ -3479,18 +3479,41 @@ for (const [source, item] of [
         input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as OpenAIResponsesInputItem[],
       },
     });
-    const script = scriptedRun([fcTurn(0, 'call_client', SHIM_TOOL_NAME, '{"client":true}')]);
-    const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+    const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+      throw new Error('Ambiguous tool identity reached upstream');
+    });
 
-    const injected = inv.payload.tools?.[0];
-    assert(injected?.type === 'function');
-    assertEquals(injected.name, `${SHIM_TOOL_NAME}_2`);
-    assertEquals(outputItemDoneEvents(frames).map(event => event.item), [{
-      type: 'function_call', call_id: 'call_client', name: SHIM_TOOL_NAME,
-      arguments: '{"client":true}', status: 'completed',
-    }]);
+    assertEquals(result.type, 'api-error');
+    if (result.type !== 'api-error') throw new Error('Expected a client error');
+    assertEquals(result.status, 400);
+    assert(new TextDecoder().decode(result.body).includes(`Historical client callable '${SHIM_TOOL_NAME}' conflicts`));
+    assertEquals(inv.payload.tools, [{ type: 'web_search' }]);
   });
 }
+
+test('a historical namespace child may share the hosted bare function name', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      input: [
+        { type: 'message', role: 'user', content: 'Search.' },
+        {
+          type: 'additional_tools', role: 'developer',
+          tools: [{
+            type: 'namespace', name: 'client', description: 'Client tools',
+            tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+          }],
+        },
+      ],
+    },
+  });
+  const script = scriptedRun([messageTurn('done')]);
+  const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  assertEquals(result.type, 'events');
+  const injected = inv.payload.tools?.[0];
+  assert(injected?.type === 'function');
+  assertEquals(injected.name, SHIM_TOOL_NAME);
+});
 
 // ── 0-event safety bail ───────────────────────────────────────────────
 

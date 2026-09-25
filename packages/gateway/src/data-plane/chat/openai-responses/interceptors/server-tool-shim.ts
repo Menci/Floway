@@ -269,26 +269,9 @@ const restoreEchoedTools = (
   });
 };
 
-export const resolveServerToolName = (
-  baseName: string,
-  tools: readonly OpenAIResponsesTool[],
-  input: readonly OpenAIResponsesInputItem[],
-): string => {
+export const resolveServerToolName = (baseName: string, tools: readonly OpenAIResponsesTool[]): string => {
   const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
-  const taken = new Set<string>();
-  const reserve = (tool: unknown): void => {
-    if (tool === null || typeof tool !== 'object') return;
-    const entry = tool as { type?: unknown; name?: unknown };
-    if ((entry.type === 'function' || entry.type === 'custom') && typeof entry.name === 'string') taken.add(entry.name);
-  };
-  for (const tool of tools) reserve(tool);
-  for (const item of input) {
-    if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
-      if (Array.isArray(item.tools)) for (const tool of item.tools) reserve(tool);
-    } else if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.namespace === undefined) {
-      taken.add(item.name);
-    }
-  }
+  const taken = new Set(tools.flatMap(tool => (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
   if (!taken.has(baseName)) return baseName;
   for (let i = 2; i <= MAX_NAME_RESOLUTION_ATTEMPTS; i++) {
     const candidate = `${baseName}_${i}`;
@@ -296,6 +279,16 @@ export const resolveServerToolName = (
   }
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
+
+const historicalClientCallableUsesName = (name: string, input: readonly OpenAIResponsesInputItem[]): boolean =>
+  input.some(item => {
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
+      return Array.isArray(item.tools) && item.tools.some(tool =>
+        tool != null && (tool.type === 'function' || tool.type === 'custom') && tool.name === name);
+    }
+    return (item.type === 'function_call' || item.type === 'custom_tool_call')
+      && item.namespace === undefined && item.name === name;
+  });
 
 // Azure and Copilot both deduplicate repeated hosted-tool declarations as one
 // family and retain the last complete declaration, including aliases and
@@ -1045,8 +1038,11 @@ export const withOpenAIResponsesServerToolShim = (
       return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
     }
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
-    const toolName = resolveServerToolName(prepared.baseToolName, currentTools, ctx.payload.input);
+    const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { hosted } = prepared;
+    if (hosted !== undefined && historicalClientCallableUsesName(toolName, ctx.payload.input)) {
+      return invalidRequestEnvelope(`Historical client callable '${toolName}' conflicts with the hosted tool function name.`, 'input', undefined);
+    }
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
     if (hosted !== undefined) {
       const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);

@@ -445,12 +445,12 @@ test('prepareToolsForShim passes through with empty filters when no hosted web_s
 });
 
 test('resolveServerToolName returns the first free sequential name', () => {
-  assertEquals(resolveServerToolName(SHIM_TOOL, [], []), SHIM_TOOL);
-  assertEquals(resolveServerToolName(SHIM_TOOL, [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }], []), `${SHIM_TOOL}_2`);
+  assertEquals(resolveServerToolName(SHIM_TOOL, []), SHIM_TOOL);
+  assertEquals(resolveServerToolName(SHIM_TOOL, [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }]), `${SHIM_TOOL}_2`);
   assertEquals(resolveServerToolName(SHIM_TOOL, [
     { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
     { type: 'custom', name: `${SHIM_TOOL}_2` },
-  ], []), `${SHIM_TOOL}_3`);
+  ]), `${SHIM_TOOL}_3`);
 });
 
 test('prepareToolsForShim rejects invalid hosted fields', () => {
