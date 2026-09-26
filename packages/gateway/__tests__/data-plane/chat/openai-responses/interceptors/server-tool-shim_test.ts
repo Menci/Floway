@@ -3461,6 +3461,60 @@ test('client declaring web_search AND web_search_2 + hosted web_search: shim fal
   assertEquals(names, new Set(['web_search', 'web_search_2', 'web_search_3']));
 });
 
+for (const [source, item] of [
+  ['additional_tools', {
+    type: 'additional_tools', role: 'developer',
+    tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+  }],
+  ['tool_search_output', {
+    type: 'tool_search_output', execution: 'client', call_id: 'call_search',
+    tools: [{ type: 'custom', name: SHIM_TOOL_NAME }],
+  }],
+] as const) {
+  test(`hosted function rejects an ambiguous flat client tool from historical ${source}`, async () => {
+    makeStubDeps();
+    const inv = makeInvocation({
+      payload: {
+        tools: [{ type: 'web_search' }],
+        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as OpenAIResponsesInputItem[],
+      },
+    });
+    const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+      throw new Error('Ambiguous tool identity reached upstream');
+    });
+
+    assertEquals(result.type, 'api-error');
+    if (result.type !== 'api-error') throw new Error('Expected a client error');
+    assertEquals(result.status, 400);
+    assert(new TextDecoder().decode(result.body).includes(`Historical client callable '${SHIM_TOOL_NAME}' conflicts`));
+    assertEquals(inv.payload.tools, [{ type: 'web_search' }]);
+  });
+}
+
+test('a historical namespace child may share the hosted bare function name', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      input: [
+        { type: 'message', role: 'user', content: 'Search.' },
+        {
+          type: 'additional_tools', role: 'developer',
+          tools: [{
+            type: 'namespace', name: 'client', description: 'Client tools',
+            tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+          }],
+        },
+      ],
+    },
+  });
+  const script = scriptedRun([messageTurn('done')]);
+  const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  assertEquals(result.type, 'events');
+  const injected = inv.payload.tools?.[0];
+  assert(injected?.type === 'function');
+  assertEquals(injected.name, SHIM_TOOL_NAME);
+});
+
 // ── 0-event safety bail ───────────────────────────────────────────────
 
 test('upstream returning no actionable events closes the response cleanly', async () => {
@@ -4153,6 +4207,33 @@ test('tool_choice "auto" stays "auto" — no demotion when never forced', async 
   assertEquals(seenToolChoices[1], 'auto');
 });
 
+test('forced namespaced client tool choice is not mistaken for the hosted shim function', async () => {
+  makeStubDeps();
+  const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
+  const inv = makeInvocation({
+    payload: {
+      tool_choice: choice,
+      tools: [
+        { type: 'web_search' },
+        {
+          type: 'namespace', name: 'client', description: 'Client tools',
+          tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
+        },
+      ],
+    },
+  });
+  const seenToolChoices: unknown[] = [];
+  const script = scriptedRun([searchCallTurn(0, 'call_search', 'q1'), messageTurn('done')]);
+  const run = async () => {
+    seenToolChoices.push(inv.payload.tool_choice);
+    return await script.run();
+  };
+
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+
+  assertEquals(seenToolChoices, [choice, choice]);
+});
+
 test('cap-exceeded does NOT set tool_choice="none" — the cap snippet alone nudges the model toward other tools', async () => {
   // `'none'` blocks every tool the model can call — including client tools
   // the model needs to make progress on the user's task. The cap intent is
@@ -4744,6 +4825,81 @@ const consumeTurn = async (
     records,
   );
 };
+
+test('consumeTurn forwards a namespaced client call sharing the hosted shim name', async () => {
+  const call = {
+    type: 'function_call' as const,
+    id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
+    arguments: '{"query":"client data"}', status: 'completed',
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: { ...call, arguments: '', status: 'in_progress' },
+    }),
+    mkFunctionCallArgsDone(0, call.arguments, call.id),
+    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: call }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records, []);
+  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.sawClientToolCall, true);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [call]);
+});
+
+test('consumeTurn uses the completed call namespace before executing a hosted tool', async () => {
+  const completed = {
+    type: 'function_call' as const,
+    id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
+    arguments: '{"client":true}', status: 'completed',
+  };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
+    }),
+    mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
+    mkFunctionCallArgsDone(0, completed.arguments, completed.id),
+    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: completed }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records, []);
+  assertEquals(result.summary.dispatched, []);
+  assertEquals(result.summary.sawClientToolCall, true);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames).map(event => event.item), [completed]);
+  assertEquals(eventTypesOf(result.downstreamFrames).filter(type => type.startsWith('response.function_call_arguments.')), [
+    'response.function_call_arguments.delta', 'response.function_call_arguments.done',
+  ]);
+});
+
+test('consumeTurn dispatches a hosted call whose added item carried a namespace', async () => {
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.added', output_index: 0,
+      item: {
+        type: 'function_call', id: 'fc_search', call_id: 'call_search', namespace: 'client',
+        name: SHIM_TOOL_NAME, arguments: '', status: 'in_progress',
+      },
+    }),
+    eventFrame<OpenAIResponsesStreamEvent>({
+      type: 'response.output_item.done', output_index: 0,
+      item: {
+        type: 'function_call', id: 'fc_search', call_id: 'call_search',
+        name: SHIM_TOOL_NAME, arguments: '{"search_query":[]}', status: 'completed',
+      },
+    }),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+
+  assertEquals(result.records.map(record => record.intercepted.name), [SHIM_TOOL_NAME]);
+  assertEquals(result.summary.sawClientToolCall, false);
+  assertEquals(outputItemDoneEvents(result.downstreamFrames), []);
+});
 
 test('consumeTurn forwards queued only from the first upstream turn', async () => {
   const firstState = createMergeState();

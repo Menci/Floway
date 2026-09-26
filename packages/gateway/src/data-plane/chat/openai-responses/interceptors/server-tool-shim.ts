@@ -12,6 +12,7 @@ import {
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputItem,
+  type OpenAIResponsesOutputFunctionCall,
   type OpenAIResponsesOutputItem,
   type OpenAIResponsesResult,
   type OpenAIResponsesStreamEvent,
@@ -279,6 +280,16 @@ export const resolveServerToolName = (baseName: string, tools: readonly OpenAIRe
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
+const historicalClientCallableUsesName = (name: string, input: readonly OpenAIResponsesInputItem[]): boolean =>
+  input.some(item => {
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
+      return Array.isArray(item.tools) && item.tools.some(tool =>
+        tool != null && (tool.type === 'function' || tool.type === 'custom') && tool.name === name);
+    }
+    return (item.type === 'function_call' || item.type === 'custom_tool_call')
+      && item.namespace === undefined && item.name === name;
+  });
+
 // Azure and Copilot both deduplicate repeated hosted-tool declarations as one
 // family and retain the last complete declaration, including aliases and
 // configuration. The replacement occupies the first declaration's array slot
@@ -472,7 +483,13 @@ export const consumeTurnStreaming = async function* (
   // until the closing `.done` parses them into `intercepted.arguments`.
   // Kept on the entry (not on `InterceptedFunctionCall`) because it's
   // streaming state, not part of the dispatcher's input.
-  const interceptedByUpstreamIndex = new Map<number, { intercepted: InterceptedFunctionCall; dispatcher: ServerToolDispatcher; reservedOutputIndex: number; argumentsJson: string }>();
+  const interceptedByUpstreamIndex = new Map<number, {
+    intercepted: InterceptedFunctionCall;
+    addedItem: OpenAIResponsesOutputFunctionCall;
+    reservedOutputIndex: number;
+    argumentsJson: string;
+    bufferedEvents: OpenAIResponsesStreamEvent[];
+  }>();
 
   const ensureModel = (): string => {
     if (merge.lastSeenModel === null) {
@@ -553,8 +570,7 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const item = event.item;
       if (item.type === 'function_call') {
-        const dispatcher = dispatchers.get(item.name);
-        if (dispatcher !== undefined) {
+        if (dispatchers.has(item.name)) {
           // Reserve the downstream index the shim call occupies now, at
           // `.added`; the actual slot count is only known at `.done`,
           // where slot 0 takes this reserved index and any further slots
@@ -562,11 +578,13 @@ export const consumeTurnStreaming = async function* (
           // output items stream sequentially — one item's `.added`…`.done`
           // completes before the next item's `.added`, so nothing
           // allocates a downstream index between this reservation and the
-          // dispatch below.
+          // dispatch below. Buffer a colliding namespaced client call too:
+          // the completed item owns the final dispatch identity.
           interceptedByUpstreamIndex.set(upstreamIndex, {
-            dispatcher,
+            addedItem: item,
             reservedOutputIndex: merge.outputIndex++,
             argumentsJson: '',
+            bufferedEvents: [],
             intercepted: {
               callId: item.call_id,
               name: item.name,
@@ -600,9 +618,35 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const intercepted = interceptedByUpstreamIndex.get(upstreamIndex);
       if (intercepted !== undefined) {
-        if (event.item.type === 'function_call') intercepted.argumentsJson = event.item.arguments;
+        if (event.item.type !== 'function_call' || event.item.call_id !== intercepted.intercepted.callId
+          || (intercepted.addedItem.id !== undefined && event.item.id !== undefined && event.item.id !== intercepted.addedItem.id)) {
+          throw new Error('Server-tool candidate changed its item type, call ID, or item ID before completion.');
+        }
+        const finalDispatcher = event.item.namespace === undefined ? dispatchers.get(event.item.name) : undefined;
+        if (finalDispatcher === undefined) {
+          const downstreamIndex = intercepted.reservedOutputIndex;
+          const itemId = intercepted.addedItem.id ?? event.item.id;
+          const doneItem = itemId === undefined ? event.item : { ...event.item, id: itemId };
+          openItems.set(upstreamIndex, downstreamIndex);
+          if (itemId !== undefined) openItemIds.set(upstreamIndex, itemId);
+          sawClientToolCall = true;
+          yield stamp({
+            type: 'response.output_item.added', output_index: downstreamIndex,
+            item: { ...doneItem, arguments: '', status: 'in_progress' },
+          });
+          for (const buffered of intercepted.bufferedEvents) {
+            const rewritten = rewriteOutputIndex(buffered, openItems, openItemIds, merge);
+            if (rewritten !== null) yield stamp(rewritten);
+          }
+          yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
+          merge.accumulatedOutput.set(downstreamIndex, doneItem);
+          interceptedByUpstreamIndex.delete(upstreamIndex);
+          continue;
+        }
+        intercepted.intercepted.name = event.item.name;
+        intercepted.argumentsJson = event.item.arguments;
         intercepted.intercepted.arguments = parseServerToolArguments(intercepted.argumentsJson);
-        const slots = intercepted.dispatcher({ intercepted: intercepted.intercepted, loopState });
+        const slots = finalDispatcher({ intercepted: intercepted.intercepted, loopState });
         if (loopState.remainingToolCalls !== undefined) loopState.remainingToolCalls -= 1;
         const dispatchedSlots: DispatchedServerToolSlot[] = [];
         for (const [slotIndex, slot] of slots.entries()) {
@@ -630,6 +674,7 @@ export const consumeTurnStreaming = async function* (
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
         intercepted.argumentsJson += event.delta;
+        intercepted.bufferedEvents.push(event);
         continue;
       }
       const rewritten = rewriteOutputIndex(event, openItems, openItemIds, merge);
@@ -641,6 +686,7 @@ export const consumeTurnStreaming = async function* (
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
         intercepted.argumentsJson = event.arguments;
+        intercepted.bufferedEvents.push(event);
         continue;
       }
       const rewritten = rewriteOutputIndex(event, openItems, openItemIds, merge);
@@ -649,7 +695,10 @@ export const consumeTurnStreaming = async function* (
     }
 
     const maybeIndexedForIntercepted = event as OpenAIResponsesStreamEvent & { output_index?: unknown };
-    if (typeof maybeIndexedForIntercepted.output_index === 'number' && interceptedByUpstreamIndex.has(maybeIndexedForIntercepted.output_index)) {
+    const pending = typeof maybeIndexedForIntercepted.output_index === 'number'
+      ? interceptedByUpstreamIndex.get(maybeIndexedForIntercepted.output_index) : undefined;
+    if (pending !== undefined) {
+      pending.bufferedEvents.push(event);
       continue;
     }
 
@@ -991,6 +1040,9 @@ export const withOpenAIResponsesServerToolShim = (
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { hosted } = prepared;
+    if (hosted !== undefined && historicalClientCallableUsesName(toolName, ctx.payload.input)) {
+      return invalidRequestEnvelope(`Historical client callable '${toolName}' conflicts with the hosted tool function name.`, 'input', undefined);
+    }
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
     if (hosted !== undefined) {
       const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
@@ -1034,6 +1086,7 @@ export const withOpenAIResponsesServerToolShim = (
     || (typeof finalToolChoice === 'object'
       && finalToolChoice !== null
       && finalToolChoice.type === 'function'
+      && finalToolChoice.namespace === undefined
       && dispatchers.has(finalToolChoice.name));
 
   const merge = createMergeState();
