@@ -25,6 +25,6 @@ export const translateOpenAIResponsesViaAnthropicMessages: TranslateTrip<
 
   return {
     target,
-    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, ctx.model, customToolNames), namespaceToolNames.targetToSource),
+    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, ctx.model, customToolNames), namespaceToolNames),
   };
 };

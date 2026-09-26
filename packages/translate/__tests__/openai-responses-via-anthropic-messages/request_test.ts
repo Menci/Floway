@@ -622,11 +622,10 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       { type: 'function', name: 'web_run', parameters: { type: 'object' }, strict: false },
       namespaceTool,
     ],
-    tool_choice: { type: 'function', name: 'web.run' },
+    tool_choice: { type: 'function', namespace: 'web', name: 'run' },
   });
 
-  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run' }]]));
+  assertEquals(result.namespaceToolNames.targetToSource.get('web_run_2'), { namespace: 'web', name: 'run', type: 'function_call' });
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
@@ -636,7 +635,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     },
     {
       name: 'web_run_2',
-      description: 'Access the web.',
+      description: 'Web tools.\n\nAccess the web.',
       input_schema: { type: 'object', properties: { search_query: { type: 'array' } } },
       strict: false,
       cache_control: { type: 'ephemeral' },

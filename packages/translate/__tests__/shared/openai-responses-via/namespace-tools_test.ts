@@ -57,7 +57,7 @@ test('history-only namespace calls reserve names without inventing declarations'
   expect(chat.target.tools).toBeUndefined();
   expect(messages.target.tools).toBeUndefined();
   expect(chat.target.messages[0].tool_calls?.[0].function.name).toBe('agents_wait');
-  expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait' });
+  expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait', type: 'function_call' });
 });
 
 test('forced namespace choices use the declaration mapping', async () => {
@@ -78,7 +78,7 @@ test('restores function and custom calls across item events and terminal snapsho
     yield eventFrame({ type: 'response.completed', response: { id: 'r', object: 'response', model: 'm', status: 'completed', error: null, incomplete_details: null, output } });
   })();
   const events: OpenAIResponsesStreamEvent[] = [];
-  for await (const frame of restoreNamespaceEvents(frames, prepared.names.targetToSource)) if (frame.type === 'event') events.push(frame.event);
+  for await (const frame of restoreNamespaceEvents(frames, prepared.names)) if (frame.type === 'event') events.push(frame.event);
   expect(events[0]).toMatchObject({ item: { namespace: 'agents', name: 'spawn', arguments: '{"name":"agents_spawn_2"}' } });
   expect(events[1]).toMatchObject({
     response: {
@@ -89,20 +89,21 @@ test('restores function and custom calls across item events and terminal snapsho
   });
 });
 
-test.each(['.', '__'])('lowers qualified forced selectors with %s', async separator => {
+test.each(['.', '__'])('preserves literal forced selectors containing %s', async separator => {
   const source = payload();
   source.tool_choice = { type: 'function', name: `agents${separator}spawn` };
-  expect(chatRequest(source).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
-  expect((await messagesRequest(source)).target.tool_choice).toEqual({ type: 'tool', name: 'agents_spawn_2' });
+  expect(chatRequest(source).target.tool_choice).toEqual({ type: 'function', function: { name: `agents${separator}spawn` } });
+  expect((await messagesRequest(source)).target.tool_choice).toEqual({ type: 'tool', name: `agents${separator}spawn` });
 });
 
-test('rejects function/custom ambiguity and distinct tuples with the same qualified spelling', () => {
-  for (const tools of [
-    [{ type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] }],
-    [{ type: 'namespace' as const, name: 'x.y', description: '', tools: [{ type: 'function' as const, name: 'f' }] }, { type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'y.f' }] }],
-  ]) {
-    expect(() => chatRequest({ model: 'm', input: [], tools })).toThrow('ambiguous');
-  }
+test('distinct explicit namespace tuples remain independently addressable', () => {
+  const tools: OpenAIResponsesRequestPayload['tools'] = [
+    { type: 'namespace', name: 'x.y', description: '', tools: [{ type: 'function', name: 'f' }] },
+    { type: 'namespace', name: 'x', description: '', tools: [{ type: 'custom', name: 'y.f' }] },
+  ];
+  const request = chatRequest({ model: 'm', input: [], tools });
+  expect(request.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : '')).toEqual(['x_y_f', 'x_y_f_2']);
+  expect(chatRequest({ model: 'm', input: [], tools, tool_choice: { type: 'function', name: 'x.y.f' } }).target.tool_choice).toEqual({ type: 'function', function: { name: 'x.y.f' } });
 });
 
 test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {

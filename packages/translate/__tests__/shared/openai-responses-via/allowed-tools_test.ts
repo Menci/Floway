@@ -37,7 +37,22 @@ for (const target of ['chat', 'messages'] as const) {
     const result = await build(payload);
     assertEquals(result.target.tools?.length, 1);
     assertEquals(result.customToolNames, new Set(['read']));
+    assertEquals(result.namespaceToolNames.targetToSource.size, 0);
   });
+
+  test(`${target} request rejects an allowed subset containing same-name callable kinds`, async () => {
+    const payload = source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }, { type: 'custom', name: 'read' }] });
+    payload.tools!.push({ type: 'custom', name: 'read' });
+    await assertRejects(() => build(payload), TranslatorInputError, "distinct allowed_tools callable kinds sharing 'read'");
+  });
+
+  for (const choice of [undefined, null, 'auto', 'required', 'none', { type: 'function', name: 'read' }, { type: 'custom', name: 'read' }] as const) {
+    test(`${target} request rejects same-name callable kinds without allowed_tools (${JSON.stringify(choice)})`, async () => {
+      const payload = { ...source('auto'), tool_choice: choice };
+      payload.tools!.push({ type: 'custom', name: 'read' });
+      await assertRejects(() => build(payload), TranslatorInputError, "distinct callable kinds sharing 'read'");
+    });
+  }
 
   test(`${target} request represents an empty auto subset as no tools`, async () => {
     const result = await build(source({ type: 'allowed_tools', mode: 'auto', tools: [] }));
@@ -61,7 +76,6 @@ for (const target of ['chat', 'messages'] as const) {
     ['unknown mode', { type: 'allowed_tools', mode: 'future', tools: [{ type: 'function', name: 'read' }] }],
     ['malformed tools array', { type: 'allowed_tools', mode: 'auto', tools: null }],
     ['malformed selector', { type: 'allowed_tools', mode: 'auto', tools: [null] }],
-    ['colliding callable kinds', { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }, { type: 'custom', name: 'read' }] }],
   ] as const) {
     test(`${target} request typed-rejects ${label} instead of widening allowed_tools`, async () => {
       const payload = source(choice as unknown as OpenAIResponsesToolChoice);

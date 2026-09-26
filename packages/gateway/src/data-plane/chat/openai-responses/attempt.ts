@@ -101,8 +101,8 @@ export const openaiResponsesAttempt = {
       targetApi,
       headers,
     };
-    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, async () =>
-      await dispatchOpenAIResponses(invocation, ctx));
+    const chainResult = await runInterceptors(invocation, ctx, openaiResponsesInterceptors, () =>
+      dispatchOpenAIResponses(invocation, ctx));
 
     if (chainResult.type !== 'events') return chainResult;
 
@@ -182,7 +182,8 @@ const dispatchOpenAIResponses = async (
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
       translated => anthropicMessagesAttempt.generate({
-        payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
+        // Isolate provider/rule mutations from canonical replay and translator echoes.
+        payload: klona(translated), ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       }),
       captureFromDump(ctx.dump, targetApi),
     );
@@ -194,7 +195,8 @@ const dispatchOpenAIResponses = async (
       invocation.payload,
       p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id }),
       translated => openaiChatCompletionsAttempt.generate({
-        payload: translated, ctx, candidate, headers: invocation.headers,
+        // Isolate provider/rule mutations from canonical replay and translator echoes.
+        payload: klona(translated), ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );

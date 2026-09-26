@@ -11,7 +11,21 @@ export const restrictAllowedTools = (
   tools: OpenAIResponsesTool[] | null | undefined,
   choice: OpenAIResponsesToolChoice | null | undefined,
 ): { tools: OpenAIResponsesTool[] | null | undefined; choice: OpenAIResponsesToolChoice | null | undefined } => {
-  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') return { tools, choice };
+  if (typeof choice !== 'object' || choice?.type !== 'allowed_tools') {
+    // Both targets collapse function/custom declarations to one callable kind.
+    // Without a subset, a shared name cannot be restored unambiguously.
+    const kinds = new Map<string, 'function' | 'custom'>();
+    for (const tool of tools ?? []) {
+      if (tool.type !== 'function' && tool.type !== 'custom') continue;
+      if ('namespace' in tool && tool.namespace !== undefined) continue;
+      const prior = kinds.get(tool.name);
+      if (prior !== undefined && prior !== tool.type) {
+        throw new TranslatorInputError(`Cannot translate distinct callable kinds sharing '${tool.name}'.`);
+      }
+      kinds.set(tool.name, tool.type);
+    }
+    return { tools, choice };
+  }
   if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
     throw new TranslatorInputError('Cannot translate malformed allowed_tools mode or tools array.');
   }

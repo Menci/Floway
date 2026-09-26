@@ -3,12 +3,15 @@ import { test, vi } from 'vitest';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { openaiResponsesAttempt } from '../../../../src/data-plane/chat/openai-responses/attempt.ts';
+import { openaiResponsesInterceptors } from '../../../../src/data-plane/chat/openai-responses/interceptors/index.ts';
+import type { OpenAIResponsesInterceptor } from '../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import * as outputModule from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../src/repo/types.ts';
+import { encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
@@ -663,4 +666,97 @@ test('generate propagates upstream response headers onto the EventResult so resp
   assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(result.headers?.get('request-id'), 'req_resp_xyz');
   await collectEvents(result.events);
+});
+
+test('native Responses retains namespaces, declaration carriers and selectors at the provider boundary', async () => {
+  installRepo();
+  const namespace = { type: 'namespace' as const, name: 'files', description: 'File policy.', tools: [{ type: 'function' as const, name: 'read' }] };
+  const payload = makePayload({
+    tools: [namespace],
+    input: [
+      { type: 'additional_tools', role: 'developer', tools: [namespace] },
+      { type: 'tool_search_output', tools: [namespace] },
+      { type: 'function_call', namespace: 'files', name: 'read', call_id: 'old', arguments: '{}', status: 'completed' },
+    ],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: 'files' }] },
+  });
+  const original = structuredClone(payload);
+  const call = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    assertEquals(body.tools, payload.tools);
+    assertEquals(body.input, payload.input);
+    assertEquals(body.tool_choice, payload.tool_choice);
+    return { action: 'generate', ok: true, modelKey: 'test-model-key', events: makeProviderEvents([]) };
+  });
+  const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: makeCandidate(call), headers: new Headers() });
+  assert(result.type === 'events');
+  await collectEvents(result.events);
+  assertEquals(call.mock.calls.length, 1);
+  assertEquals(payload, original);
+});
+
+test('namespace wire mapping follows compact expansion and is isolated from outer shims across repeated dispatches', async () => {
+  installRepo();
+  const namespace = { type: 'namespace' as const, name: 'files', description: '', tools: [{ type: 'function' as const, name: 'read', parameters: { type: 'object' } }] };
+  const history = { type: 'function_call' as const, name: 'read', namespace: 'files', call_id: 'past', arguments: '{}', status: 'completed' as const };
+  const payload = makePayload({
+    tools: [{ type: 'function', name: 'files_read' }, namespace],
+    input: [{ type: 'compaction', encrypted_content: encodeBase64UrlJson([history, { type: 'function_call_output', call_id: 'past', output: 'done' }]) }],
+  });
+  const original = structuredClone(payload);
+  const providerBodies: Omit<OpenAIChatCompletionsPayload, 'model'>[] = [];
+  const endpoints = { openaiChatCompletions: {} };
+  const candidate: ModelCandidate = {
+    ...makeCandidate(async () => { throw new Error('native Responses must not be called'); }),
+    model: stubInternalModel({ endpoints, providerModels: { up_test: stubProviderModel({ endpoints }) } }, 'up_test'),
+  };
+  candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
+    providerBodies.push(structuredClone(body));
+    assert(JSON.stringify(body.messages).includes('files_read_2'), 'compact-expanded history must be mapped at dispatch');
+    const tool = body.tools?.[1];
+    assert(tool?.type === 'function' && tool.function.parameters !== undefined);
+    tool.function.parameters.providerOnly = true;
+    return {
+      ok: true, modelKey: 'test-model-key', events: (async function* () {
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'next', type: 'function', function: { name: 'files_read_2', arguments: '{}' } }] }, finish_reason: null }] });
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+        yield doneFrame();
+      })(),
+    };
+  };
+  let observed = 0;
+  const observer: OpenAIResponsesInterceptor = async (invocation, _ctx, run) => {
+    assertEquals(invocation.payload.input[0], history, 'outer reader must observe expanded canonical history');
+    const freeze = (value: unknown): void => {
+      if (typeof value !== 'object' || value === null) return;
+      Object.freeze(value);
+      for (const child of Object.values(value)) freeze(child);
+    };
+    freeze(invocation.payload);
+    const first = await run();
+    assertEquals(invocation.payload.tools?.[1], namespace, 'translation must leave outer declarations canonical');
+    assertEquals(invocation.payload.input[0], history);
+    assert(first.type === 'events');
+    const events = await collectEvents(first.events);
+    const done = events.find(event => event.type === 'response.output_item.done');
+    assert(done?.type === 'response.output_item.done' && done.item.type === 'function_call');
+    assertEquals([done.item.name, done.item.namespace], ['read', 'files']);
+    observed++;
+    return await run();
+  };
+  // Observe the real seam between compact expansion and the outer server-tool
+  // loop. Dispatch twice like that loop does; both invocations must start from
+  // Standard rather than the first call's ephemeral names.
+  const chain = openaiResponsesInterceptors as OpenAIResponsesInterceptor[];
+  chain.splice(1, 0, observer);
+  try {
+    const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers: new Headers() });
+    assert(result.type === 'events');
+    await collectEvents(result.events);
+    assertEquals(observed, 1);
+    assertEquals(providerBodies.length, 2);
+    assertEquals(providerBodies[0], providerBodies[1]);
+    assertEquals(payload, original);
+  } finally {
+    chain.splice(chain.indexOf(observer), 1);
+  }
 });
