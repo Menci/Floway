@@ -1,9 +1,37 @@
+import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import type { DumpRecord } from '@floway-dev/gateway/dump-types';
 
-const serializeRecord = (record: DumpRecord): string => JSON.stringify({ format: 'floway-request-dump', version: 1, record }, null, 2);
+// The dump API serves headers verbatim so the dashboard's reveal affordance
+// keeps working, but an exported file leaves the operator's machine, so every
+// credential header is masked to its redacted form before serialization.
+const redactHeaders = (headers: Array<[string, string]>): Array<[string, string]> =>
+  headers.map(([name, value]) => isSensitiveHeader(name) ? [name, redactHeaderValue(value)] as [string, string] : [name, value]);
+
+const redactRecord = (record: DumpRecord): DumpRecord => {
+  const capture = record.capture === undefined ? undefined : {
+    ...record.capture,
+    exchanges: record.capture.exchanges.map(exchange => ({
+      ...exchange,
+      request: { ...exchange.request, headers: redactHeaders(exchange.request.headers) },
+      response: exchange.response === null ? null : { ...exchange.response, headers: redactHeaders(exchange.response.headers) },
+    })),
+  };
+  return {
+    ...record,
+    request: { ...record.request, headers: redactHeaders(record.request.headers) },
+    response: {
+      ...record.response,
+      headers: redactHeaders(record.response.headers),
+      ...(record.response.upstream !== undefined ? { upstream: { ...record.response.upstream, headers: redactHeaders(record.response.upstream.headers) } } : {}),
+    },
+    ...(capture === undefined ? {} : { capture }),
+  };
+};
+
+const serializeRecord = (record: DumpRecord): string => JSON.stringify({ format: 'floway-request-dump', version: 1, record: redactRecord(record) }, null, 2);
 
 export const exportRecords = (records: DumpRecord[], separate: boolean): Blob => {
-  if (!separate) return new Blob([JSON.stringify({ format: 'floway-request-dump', version: 1, records }, null, 2)], { type: 'application/json' });
+  if (!separate) return new Blob([JSON.stringify({ format: 'floway-request-dump', version: 1, records: records.map(redactRecord) }, null, 2)], { type: 'application/json' });
   // POSIX ustar keeps each UTF-8 JSON record independently readable without a runtime dependency.
   // https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html#tag_20_92_13_06
   const encoder = new TextEncoder();
