@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { stripImageGenerationFromPayload } from '../../../src/interceptors/openai-responses/strip-image-generation.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 test('stripImageGenerationFromPayload removes image_generation tools', () => {
   const payload = {
@@ -178,7 +178,7 @@ test('removes filtered hosted selectors from allowed_tools without dropping clie
   assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }] });
 });
 
-test('drops allowed_tools when its only selector names a removed input hosted tool', () => {
+test('keeps an unsatisfiable required allowed_tools choice explicit', () => {
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',
     input: [{ type: 'tool_search_output', tools: [{ type: 'image_generation' }] }],
@@ -187,7 +187,28 @@ test('drops allowed_tools when its only selector names a removed input hosted to
 
   stripImageGenerationFromPayload(payload);
 
-  assertFalse('tool_choice' in payload);
+  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [] });
+});
+
+test('auto allowed_tools cannot expose tools excluded by the original selector', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'image_generation' }] },
+  };
+
+  stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, 'none');
+  const item = payload.input[0];
+  assert(item.type === 'additional_tools');
+  assertEquals(item.tools, [{ type: 'function', name: 'lookup', parameters: {} }]);
 });
 
 test('leaves unrelated allowed_tools choices unchanged', () => {

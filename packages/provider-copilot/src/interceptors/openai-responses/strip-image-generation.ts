@@ -50,7 +50,7 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
   if (typeof payload.tool_choice === 'object' && payload.tool_choice !== null && payload.tool_choice.type === 'allowed_tools') {
     const allowed = payload.tool_choice.tools.filter(tool => tool.type !== 'image_generation');
     if (allowed.length === payload.tool_choice.tools.length) return;
-    if (allowed.length === 0) delete payload.tool_choice;
+    if (allowed.length === 0 && payload.tool_choice.mode === 'auto') payload.tool_choice = 'none';
     else payload.tool_choice = { ...payload.tool_choice, tools: allowed };
     return;
   }
