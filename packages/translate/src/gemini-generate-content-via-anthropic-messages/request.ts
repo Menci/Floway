@@ -24,6 +24,7 @@ import {
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
+import { klona } from 'klona/json';
 
 const inlineDataToImageBlock = (part: GeminiGenerateContentPart): AnthropicMessagesImageBlock | null => {
   const inlineData = geminiGenerateContentInlineData(part);
@@ -118,7 +119,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
         type: 'tool_use',
         id,
         name: call.name,
-        input: call.args,
+        input: klona(call.args),
       });
       return;
     }
@@ -188,19 +189,19 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
     request.top_k = generationConfig.topK;
   }
   if (generationConfig.stopSequences !== undefined) {
-    request.stop_sequences = generationConfig.stopSequences;
+    request.stop_sequences = klona(generationConfig.stopSequences);
   }
   // Gemini generateContent's `responseSchema` is the bare JSON Schema; Anthropic carries it
   // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
   // application/json` without a schema has no Anthropic equivalent and is
   // dropped — the routing fallback degrades gracefully rather than fails.
   return generationConfig.responseSchema !== undefined
-    ? { format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> } }
+    ? { format: { type: 'json_schema', schema: klona(generationConfig.responseSchema as Record<string, unknown>) } }
     : {};
 };
 
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
-  if (parameters !== undefined) return parameters;
+  if (parameters !== undefined) return klona(parameters);
 
   // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
   // declarations use the smallest object schema rather than dropping the tool.

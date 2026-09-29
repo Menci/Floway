@@ -3,13 +3,14 @@ import { openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReason
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { klona } from 'klona/json';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] | null =>
   tools?.length
     ? tools.map(tool => ({
         type: 'function',
         name: tool.function.name,
-        parameters: tool.function.parameters ?? { type: 'object', properties: {} },
+        parameters: tool.function.parameters == null ? { type: 'object', properties: {} } : klona(tool.function.parameters),
         // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
         // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
         strict: tool.function.strict ?? false,
@@ -133,7 +134,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     });
   }
 
-  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: payload.response_format };
+  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: klona(payload.response_format) };
 
   // OpenAI Chat Completions' `reasoning_effort: 'none'` disables reasoning without an OpenAI Responses
   // equivalent (OpenAI Responses `reasoning.effort` has no 'none' member); drop the
@@ -160,7 +161,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     // Same-purpose OpenAI fields are normal OpenAI Chat Completions/OpenAI Responses adapter surface;
     // provider-specific policy filtering belongs at the target boundary, not in
     // pairwise translation.
-    ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
+    ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     stream: true,
     // Preserve OpenAI Chat Completions' omitted `store` as omitted instead of synthesizing
     // `store: false`. OpenAI's migration guide treats storage as the default

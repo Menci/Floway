@@ -9,6 +9,7 @@ import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import { klona } from 'klona/json';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -174,12 +175,12 @@ const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[])
   tools.map(tool => ({
     name: tool.function.name,
     description: tool.function.description,
-    input_schema: tool.function.parameters ?? { type: 'object', properties: {} },
+    input_schema: tool.function.parameters == null ? { type: 'object', properties: {} } : klona(tool.function.parameters),
     ...(tool.function.strict !== undefined ? { strict: tool.function.strict } : {}),
   }));
 
 const translateOpenAIChatCompletionsToolChoice = (toolChoice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): AnthropicMessagesPayload['tool_choice'] => {
-  if (typeof toolChoice === 'string') return CHAT_TOOL_CHOICES[toolChoice];
+  if (typeof toolChoice === 'string') return klona(CHAT_TOOL_CHOICES[toolChoice]);
 
   return { type: 'tool', name: toolChoice.function.name };
 };
@@ -227,7 +228,7 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
     jsonSchema?.schema && typeof jsonSchema.schema === 'object' && !Array.isArray(jsonSchema.schema) ? (jsonSchema.schema as Record<string, unknown>) : undefined;
   const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {};
   if (reasoningEffort !== undefined) outputConfig.effort = reasoningEffort;
-  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
+  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: klona(formatSchema) };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
   const serviceTierFields = anthropicMessagesServiceTierFieldsFromOpenAI(payload.service_tier);
@@ -243,7 +244,7 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     ...(payload.stop != null
       ? {
-          stop_sequences: Array.isArray(payload.stop) ? payload.stop : [payload.stop],
+          stop_sequences: Array.isArray(payload.stop) ? klona(payload.stop) : [payload.stop],
         }
       : {}),
     stream: true,

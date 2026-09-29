@@ -15,6 +15,7 @@ import {
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import { klona } from 'klona/json';
 
 const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
@@ -138,7 +139,7 @@ const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, generat
         type: 'json_schema',
         json_schema: {
           name: 'gemini_response',
-          schema: generationConfig.responseSchema,
+          schema: klona(generationConfig.responseSchema),
         },
       },
     };
@@ -160,7 +161,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
     type: 'function' as const,
     name: declaration.name,
     ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    parameters: declaration.parameters ?? { type: 'object', properties: {} },
+    parameters: declaration.parameters === undefined ? { type: 'object', properties: {} } : klona(declaration.parameters),
     strict: false,
   }));
 
