@@ -52,6 +52,13 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
     return;
   }
 
+  if (typeof payload.tool_choice === 'object' && payload.tool_choice !== null && payload.tool_choice.type === 'allowed_tools') {
+    const allowed = payload.tool_choice.tools.filter(tool => tool.type !== 'image_generation');
+    if (allowed.length === 0) delete payload.tool_choice;
+    else if (allowed.length !== payload.tool_choice.tools.length) payload.tool_choice = { ...payload.tool_choice, tools: allowed };
+    return;
+  }
+
   // A forced `required` choice with no surviving tools would tell Copilot to
   // invoke a tool that no longer exists; drop the choice along with the tools.
   if (removedTool && payload.tool_choice === 'required' && collectOpenAIResponsesTools(payload).length === 0) {
