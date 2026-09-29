@@ -11,8 +11,8 @@ const available: UpstreamOption[] = [
   { id: 'up_a', name: 'Alpha', kind: 'custom', enabled: true, hue: 210, cachedModelCount: 1 },
 ];
 
-const Control = ({ initialIds }: { initialIds: string[] }) => {
-  const [value, setValue] = useState({ override: true, ids: initialIds });
+const Control = ({ initialIds, initialOverride = true }: { initialIds: string[]; initialOverride?: boolean }) => {
+  const [value, setValue] = useState({ override: initialOverride, ids: initialIds });
   return <UpstreamAccessControl available={available} disabled={false} ids={value.ids} models={[]} onChange={setValue} override={value.override} />;
 };
 
@@ -21,6 +21,20 @@ const click = async (element: HTMLElement) => {
 };
 
 describe('upstream access selection', () => {
+  it('only lets the upstream list expand while the limit is on', async () => {
+    renderInApp(<Control initialIds={[]} initialOverride={false} />);
+    const disclosure = screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') });
+
+    expect((disclosure as HTMLButtonElement).disabled).toBe(true);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    await click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    await click(screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') }));
+    expect((disclosure as HTMLButtonElement).disabled).toBe(false);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('warns immediately for a saved empty selection even while the list is collapsed', async () => {
     renderInApp(<Control initialIds={[]} />);
     const warning = i18n.t('dashboard.upstreamAccess.emptyWarning');
