@@ -42,8 +42,8 @@ export const WEB_SEARCH_HOSTED_TYPES: ReadonlySet<string> = new Set<string>(WEB_
 // uses the underscored form of the model's training-time `web.run`.
 export const SHIM_TOOL_NAME = 'web_search';
 
-// Put each hosted declaration's `user_location` in its replacement function
-// description so the model can use it as the default for local searches.
+// Put the selected hosted declaration's `user_location` in the replacement
+// function description so the model can use it as the default for local searches.
 const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>): string => {
   const parts: string[] = [];
   if (loc.city) parts.push(loc.city);
