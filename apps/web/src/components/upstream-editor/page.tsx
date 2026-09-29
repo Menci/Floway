@@ -200,7 +200,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   };
 
   const submitForm = async (): Promise<UpstreamRecord | null> => {
-    if (oauth && (formState.dirtyFields.config || formState.dirtyFields.state)) {
+    if (oauth && isPersisted(record) && (formState.dirtyFields.config || formState.dirtyFields.state)) {
       setSaveError(t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'));
       return null;
     }
