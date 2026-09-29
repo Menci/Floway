@@ -43,7 +43,8 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
   });
 
   if (isImageGenerationToolChoice(payload.tool_choice)) {
-    delete payload.tool_choice;
+    if (collectOpenAIResponsesTools(payload).length === 0) delete payload.tool_choice;
+    else payload.tool_choice = 'none';
     return;
   }
 

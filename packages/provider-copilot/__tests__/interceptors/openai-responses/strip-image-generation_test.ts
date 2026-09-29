@@ -41,6 +41,27 @@ test('stripImageGenerationFromPayload removes forced image_generation tool_choic
   assertFalse('tool_choice' in payload);
 });
 
+test('forced image generation cannot expose a surviving input-carried client tool', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: { type: 'image_generation' },
+  };
+
+  stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, 'none');
+  const item = payload.input[0];
+  assert(item.type === 'additional_tools');
+  assertEquals(item.tools, [{ type: 'function', name: 'lookup', parameters: {} }]);
+});
+
 test('stripImageGenerationFromPayload removes required tool_choice when no tools remain', () => {
   const payload = {
     model: 'gpt-test',
