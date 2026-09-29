@@ -2,18 +2,13 @@ import type { OpenAIResponsesBoundaryCtx } from './types.ts';
 import { collectOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 /**
- * Copilot's `/responses` endpoint rejects public `image_generation` tool
- * entries, so strip them once the planner has committed to a native OpenAI Responses
- * target on a Copilot upstream. Other OpenAI-Responses-capable upstreams (e.g. OpenAI
- * direct) accept the entry and must continue to see it. Other public hosted
- * and deferred tools (`web_search`, `tool_search`, `namespace`) are left in
- * place: Codex relies on `tool_search` / `namespace` for client-executed
- * deferred tool discovery, and Copilot accepts `web_search`.
+ * A Copilot gateway filters public `image_generation` from Responses requests,
+ * while OpenAI supports it. Apply this provider-specific rule after target
+ * selection to every declaration carrier and selector, retaining unrelated
+ * tools at their original positions.
  *
- * References:
- * - https://platform.openai.com/docs/guides/tools-image-generation
- * - https://github.com/openai/codex/blob/9f42c89c0112771dc29100a6f3fc904049b2655f/codex-rs/tools/src/tool_spec.rs#L17-L27
- * - https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
+ * https://developers.openai.com/api/docs/guides/tools-image-generation
+ * https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
  */
 const isImageGenerationTool = (tool: OpenAIResponsesTool): boolean => tool.type === 'image_generation';
 
