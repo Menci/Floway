@@ -16,6 +16,8 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });
