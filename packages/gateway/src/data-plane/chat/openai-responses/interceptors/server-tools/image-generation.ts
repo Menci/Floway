@@ -318,11 +318,11 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
   return null;
 };
 
-// Validate one hosted `image_generation` entry against the public OpenAI Responses
-// surface and project it into the shim's config. Every hosted entry is
-// validated (not just the last) so an earlier entry's bad field is rejected
-// rather than masked by a later valid one — matching Azure's per-entry
-// strictness with concrete declaration paths.
+// Validate one hosted `image_generation` declaration against the shim's
+// Azure-strict subset of the public fields. The caller validates every
+// declaration before selecting the last config, so an earlier invalid entry
+// fails. toolPath identifies its source carrier in the error.
+// https://github.com/Menci/Floway/pull/24
 const validateHostedImageGenerationEntry = (
   tool: OpenAIResponsesHostedTool,
   toolPath: string,
