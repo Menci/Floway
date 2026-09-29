@@ -36,6 +36,11 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/opus-5-5/overview
   ['claude-opus-5-5', tokenBasePricing({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' })],
+  // GitHub lists Sonnet 5.5 at Anthropic's standard rates, with no separate
+  // Fast lane. The live Copilot catalog already exposes this exact public id.
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],

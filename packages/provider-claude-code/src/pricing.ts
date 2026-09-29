@@ -18,9 +18,9 @@ const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =
 
 const OPUS_RATES = { input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', input_cache_write_1h_tokens: '10', output_tokens: '25' };
 const SONNET_PRICING = tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', input_cache_write_1h_tokens: '6', output_tokens: '15' });
-// Sonnet 5 entered at a rate below the rest of the Sonnet line and kept it
-// past the 2026-08-31 date it was first announced under; Anthropic's card now
-// lists these as its standard rates.
+// Sonnet 5 and 5.5 share Anthropic's published standard rates, including the
+// five-minute and one-hour cache-write prices.
+// https://platform.claude.com/docs/en/models/sonnet-5-5/overview
 const SONNET_5_PRICING = tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', input_cache_write_1h_tokens: '4', output_tokens: '10' });
 const OPUS_PRICING = tokenBasePricing(OPUS_RATES);
 const OPUS_FAST6X_PRICING = fastPricing(OPUS_RATES, { input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', input_cache_write_1h_tokens: '60', output_tokens: '150' });
@@ -40,6 +40,9 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-8': OPUS_FAST2X_PRICING,
   'claude-opus-4-7': OPUS_FAST6X_PRICING,
   'claude-opus-4-6': OPUS_FAST6X_PRICING,
+  // Claude Code accepts the same id returned by Anthropic's model catalog.
+  // https://support.claude.com/en/articles/11940350-claude-code-model-configuration
+  'claude-sonnet-5-5': SONNET_5_PRICING,
   'claude-sonnet-5': SONNET_5_PRICING,
   'claude-sonnet-4-6': SONNET_PRICING,
   // Fable 5.1 keeps Fable 5's base rates while cutting cache reads to 0.025×.
