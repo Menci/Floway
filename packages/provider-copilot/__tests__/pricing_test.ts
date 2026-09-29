@@ -16,6 +16,8 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-sonnet-5-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-fable-5-1'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });
@@ -132,6 +134,21 @@ test('Copilot GPT-6 Astra prices the standard short and long bands its catalog s
     priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates,
     published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
   );
+});
+
+test('Copilot GPT-6.1 Sol prices its API-equivalent Standard and conditional Fast bands', () => {
+  const pricing = pricingForCopilotPublicModelId('gpt-6.1-sol');
+  const cases = [
+    [{ inputTokens: 272000 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }],
+    [{ inputTokens: 272001 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }],
+    [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }],
+    [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }],
+  ] as const;
+
+  for (const [facts, rates] of cases) {
+    assertEquals(priceRequest(pricing, facts).rates, published(rates));
+  }
+  assertEquals(pricingForCopilotPublicModelId('gpt-6.1-sol-fast'), null);
 });
 
 test('Copilot GPT-6 Sol and Luna price Standard and the anticipated Fast mode lanes', () => {

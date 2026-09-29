@@ -13,7 +13,15 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('bundles the GPT-6 models gated behind Codex 0.155.0', () => {
+  it('bundles the current GPT-6.1 Sol catalog entry for offline fallback', () => {
+    const sol = bundled.models.find(model => model.slug === 'gpt-6.1-sol') as Record<string, unknown> | undefined;
+    expect(sol).toMatchObject({
+      display_name: 'GPT-6.1-Sol',
+      context_window: 272000,
+      max_context_window: 872000,
+      default_reasoning_level: 'low',
+      minimal_client_version: '0.153.0',
+    });
     expect(bundled.models.map(model => model.slug)).toEqual(expect.arrayContaining(['gpt-6-sol', 'gpt-6-luna']));
   });
 

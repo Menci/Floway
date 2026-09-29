@@ -34,6 +34,19 @@ export const GPT_IMAGE_2_PRICING = modelPricing(
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
+  // Codex exposes this slug through its own model catalog. Its notional API
+  // rate has a lower cached-input price than GPT-6 Sol, including in the
+  // whole-request long-context band. Fast mode uses the `priority` wire tier.
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  // https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/models-manager/models.json
+  ['gpt-6.1-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // Announced on 2026-09-03 and rolling out first to enterprises in OpenAI's
   // Trusted Access Program; broader API and subscription access is coming in
   // the following days. The public model card already fixes the id, limits and
