@@ -1,6 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
+import { attemptTtftMs } from '../attempt-timing.ts';
 import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
@@ -54,9 +55,10 @@ export const recordPerformance = (
   if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
   const { attempt, backgroundScheduler: scheduler } = ctx;
   const dims: PerformanceDimensions = { ...telemetry, hour: currentHour() };
+  const ttftMs = attemptTtftMs(attempt);
   if (
     telemetry.operation !== 'chat' ||
-    attempt.upstreamCallStartedAt === null ||
+    ttftMs === null ||
     attempt.firstOutputTokenAt === null ||
     (failed && outputTokens === 0)
   ) {
@@ -64,10 +66,6 @@ export const recordPerformance = (
     scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
     return;
   }
-  // Time to first token. Matches the OpenTelemetry GenAI spec
-  // gen_ai.server.time_to_first_token
-  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_to_first_token).
-  const ttftMs = Math.round(attempt.firstOutputTokenAt - attempt.upstreamCallStartedAt);
   const success = !failed;
   if (outputTokens < 2) {
     scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, success }), 'sample'));

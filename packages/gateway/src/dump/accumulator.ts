@@ -18,6 +18,7 @@ import type {
   StoredDumpResponseBody,
 } from './types.ts';
 import { encodeBodyForWire } from './wire.ts';
+import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
@@ -99,11 +100,6 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
   return { id: upstream.id, name: upstream.name, kind: upstream.kind, hue: upstream.hue };
 };
 
-export interface DumpAttemptTiming {
-  readonly upstreamCallStartedAt: number | null;
-  readonly firstOutputTokenAt: number | null;
-}
-
 export class DumpAccumulator {
   readonly http = new HttpCapture();
   private readonly events: DumpStreamEvent[] = [];
@@ -127,7 +123,7 @@ export class DumpAccumulator {
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
     private readonly wantsStream: boolean = false,
-    private readonly attempt?: DumpAttemptTiming,
+    private readonly attempt?: AttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
@@ -289,9 +285,7 @@ export class DumpAccumulator {
         ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
-    const ttftMs = (this.wantsStream && this.attempt?.upstreamCallStartedAt != null && this.attempt?.firstOutputTokenAt != null)
-      ? Math.max(0, Math.round(this.attempt.firstOutputTokenAt - this.attempt.upstreamCallStartedAt))
-      : null;
+    const ttftMs = this.wantsStream ? attemptTtftMs(this.attempt) : null;
 
     const meta: DumpMetadata = {
       id: recordId,
@@ -377,7 +371,7 @@ export const openDumpAccumulator = (
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
   wantsStream: boolean = false,
-  attempt?: DumpAttemptTiming,
+  attempt?: AttemptTiming,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   const requestSnapshot: RequestSnapshot = {

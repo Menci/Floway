@@ -1,3 +1,4 @@
+import type { AttemptTiming } from './attempt-timing.ts';
 import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -5,13 +6,11 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
-// Per-attempt performance state. Reset at the start of every
+// Per-attempt timing and performance attribution. Reset at the start of every
 // iterateCandidates attempt so a candidate that short-circuits cannot inherit
 // the prior attempt's slots. The numeric slots use `null` because a real
 // timestamp of `0` would be ambiguous.
-export interface AttemptState {
-  upstreamCallStartedAt: number | null;
-  firstOutputTokenAt: number | null;
+export interface AttemptState extends AttemptTiming {
   telemetry: PerformanceTelemetryContext | undefined;
 }
 
