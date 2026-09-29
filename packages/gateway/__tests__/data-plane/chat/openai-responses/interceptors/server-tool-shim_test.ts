@@ -1063,7 +1063,7 @@ test('invalid hosted web search in additional_tools reports its input path', asy
       tools: undefined,
       input: [{
         type: 'additional_tools', role: 'developer',
-        tools: [{ type: 'web_search', search_context_size: 'invalid' } as OpenAIResponsesTool],
+        tools: [{ type: 'web_search', search_context_size: 'invalid' } as unknown as OpenAIResponsesTool],
       }],
     },
   });
