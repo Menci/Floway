@@ -131,7 +131,8 @@ export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gat
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  // Only top-level declarations appear in the upstream `tools` echo.
+  // Input-carried declarations keep their items; only top-level replacements
+  // participate in response.tools restoration.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
@@ -365,10 +366,10 @@ const historicalClientCallableUsesName = (name: string, input: readonly OpenAIRe
       && item.namespace === undefined && item.name === name;
   });
 
-// Azure and Copilot both deduplicate repeated hosted-tool declarations as one
-// family and retain the last complete declaration, including aliases and
-// configuration. The replacement occupies the first declaration's array slot
-// so unrelated tools retain their relative order.
+// Within one tools array, use the last matching declaration's configuration
+// at the first matching slot so unrelated tools retain their order. Azure and
+// Copilot probes found last-entry precedence for repeated web_search; Azure
+// also grouped web_search aliases.
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 const rewriteToolsForHostedShim = (
   tools: readonly OpenAIResponsesTool[],
