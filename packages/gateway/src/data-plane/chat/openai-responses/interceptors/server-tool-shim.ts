@@ -288,10 +288,9 @@ const restoreEchoedToolChoice = (
   return toolChoice;
 };
 
-// Inverse of the request-side hosted→function rewrite, applied to the
-// upstream-echoed tools array. Non-injected entries pass through
-// verbatim so upstream-side default enrichment on ordinary client
-// function tools survives.
+// Restore top-level hosted declarations in the response.tools echo.
+// Unmatched entries pass through unchanged, preserving any fields returned
+// by upstream for ordinary client tools.
 const restoreEchoedTools = (
   tools: readonly OpenAIResponsesTool[] | undefined,
   active: readonly ActiveServerTool[],
