@@ -1144,13 +1144,20 @@ export const withOpenAIResponsesServerToolShim = (
   registrations: readonly ServerToolRegistration[],
 ): OpenAIResponsesInterceptor => async (ctx, gatewayCtx, run) => {
   const active: ActiveServerTool[] = [];
+  const preparedTools: Array<Extract<ServerToolPrepareResult, { type: 'active' }>> = [];
 
+  // Validate the original request before any hosted rewrite changes the
+  // tool-array indexes used in error paths.
   for (const prepareServerTool of registrations) {
     const prepared = await prepareServerTool(ctx, gatewayCtx);
     if (prepared.type === 'inactive') continue;
     if (prepared.type === 'invalid-request') {
       return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
     }
+    preparedTools.push(prepared);
+  }
+
+  for (const prepared of preparedTools) {
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools, ctx.payload.input, ctx.payload.tool_choice);
     const { hosted } = prepared;

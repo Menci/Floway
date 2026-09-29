@@ -13,6 +13,7 @@ import {
   type TurnSummary,
   type UpstreamTerminal,
 } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
+import { imageGenerationServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
@@ -1073,6 +1074,34 @@ test('invalid hosted web search in additional_tools reports its input path', asy
   assert(result.type === 'api-error');
   const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[0].search_context_size');
+});
+
+test('later hosted validation keeps original paths before another tool rewrites the carrier', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      tools: undefined,
+      input: [{
+        type: 'additional_tools', role: 'developer',
+        tools: [
+          { type: 'web_search' },
+          { type: 'web_search_preview' },
+          { type: 'image_generation', size: '512x512' },
+        ],
+      }],
+    },
+  });
+  const originalInput = structuredClone(inv.payload.input);
+  const shim = withOpenAIResponsesServerToolShim([webSearchServerTool, imageGenerationServerTool]);
+
+  const result = await shim(inv, makeGatewayCtx(), async () => {
+    throw new Error('Invalid request reached upstream');
+  });
+
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  assertEquals(body.error.param, 'input[0].tools[2].size');
+  assertEquals(inv.payload.input, originalInput);
 });
 
 test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
