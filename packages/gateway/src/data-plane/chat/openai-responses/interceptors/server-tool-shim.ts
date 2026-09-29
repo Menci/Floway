@@ -7,6 +7,7 @@ import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
+  collectOpenAIResponsesTools,
   createRandomOpenAIResponsesItemId,
   type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
@@ -131,7 +132,7 @@ export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gat
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  // Absent only for replay activation; otherwise drives `tools` echo restore.
+  // Only top-level declarations appear in the upstream `tools` echo.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
@@ -320,6 +321,34 @@ const rewriteToolsForHostedShim = (
   }
   rewritten[replacementIndex] = hosted.buildFunctionTool(canonicalHostedTool, toolName);
   return { rewritten, canonicalHostedTool };
+};
+
+const rewriteHostedDeclarations = (
+  payload: CanonicalOpenAIResponsesPayload,
+  hosted: ServerToolHostedDispatch,
+  toolName: string,
+): { payload: CanonicalOpenAIResponsesPayload; canonicalTopLevelHostedTool: OpenAIResponsesHostedTool | undefined } => {
+  let canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
+  const rewrite = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
+    if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
+    const result = rewriteToolsForHostedShim(tools, hosted, toolName);
+    canonicalHostedTool = result.canonicalHostedTool;
+    return result.rewritten;
+  };
+  const tools = Array.isArray(payload.tools) ? rewrite(payload.tools) : undefined;
+  const canonicalTopLevelHostedTool = canonicalHostedTool;
+  const input = payload.input.map(item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const rewritten = rewrite(item.tools);
+    return rewritten === item.tools ? item : { ...item, tools: rewritten };
+  });
+  if (canonicalHostedTool === undefined) {
+    throw new Error('Hosted server-tool registration did not match any request tool');
+  }
+  return {
+    payload: { ...payload, ...(tools === undefined ? {} : { tools }), input },
+    canonicalTopLevelHostedTool,
+  };
 };
 
 export const parseServerToolArguments = (argumentsJson: string): Record<string, unknown> | null => {
@@ -1037,7 +1066,7 @@ export const withOpenAIResponsesServerToolShim = (
     if (prepared.type === 'invalid-request') {
       return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
     }
-    const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
+    const currentTools = collectOpenAIResponsesTools(ctx.payload);
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { hosted } = prepared;
     if (hosted !== undefined && historicalClientCallableUsesName(toolName, ctx.payload.input)) {
@@ -1045,9 +1074,9 @@ export const withOpenAIResponsesServerToolShim = (
     }
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
     if (hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
-      canonicalHostedTool = rewrite.canonicalHostedTool;
-      ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
+      const rewrite = rewriteHostedDeclarations(ctx.payload, hosted, toolName);
+      canonicalHostedTool = rewrite.canonicalTopLevelHostedTool;
+      ctx.payload = rewrite.payload;
     }
     const originalToolChoice = hosted !== undefined
       && typeof ctx.payload.tool_choice === 'object'

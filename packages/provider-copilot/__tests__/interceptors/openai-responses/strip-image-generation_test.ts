@@ -121,3 +121,38 @@ test('stripImageGenerationFromPayload preserves custom Freeform tools for downst
   assertEquals(payload.tools?.[1].type, 'custom');
   assertEquals(payload.tool_choice, { type: 'custom', name: 'freeform_other' });
 });
+
+test('strips image generation from input tool carriers in place', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    tools: [],
+    tool_choice: 'required',
+    input: [
+      { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [{ type: 'image_generation' }] },
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'image_generation' }, { type: 'web_search' }] },
+    ],
+  };
+
+  stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.input, [
+    { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [] },
+    { type: 'message', role: 'user', content: 'hi' },
+    { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'web_search' }] },
+  ]);
+  assertEquals(payload.tool_choice, 'required');
+});
+
+test('drops required tool choice when input only supplied removed image generation', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    input: [{ type: 'additional_tools', role: 'developer', tools: [{ type: 'image_generation' }] }],
+    tool_choice: 'required',
+  };
+
+  stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.input, [{ type: 'additional_tools', role: 'developer', tools: [] }]);
+  assertFalse('tool_choice' in payload);
+});

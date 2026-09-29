@@ -1,4 +1,5 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
+import { collectOpenAIResponsesTools } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in compatibility rewrite for upstreams that reject an active
@@ -7,6 +8,7 @@ import { providerModelOf } from '@floway-dev/provider';
 export const withEmptyToolsToolChoiceNormalized: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('empty-tools-tool-choice-none')) return await run();
   if (!Array.isArray(ctx.payload.tools) || ctx.payload.tools.length !== 0) return await run();
+  if (collectOpenAIResponsesTools(ctx.payload).length !== 0) return await run();
   ctx.payload = { ...ctx.payload, tool_choice: 'none' };
   return await run();
 };

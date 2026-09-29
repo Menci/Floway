@@ -29,7 +29,7 @@ import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search
 import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItem, OpenAIResponsesHostedTool, OpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
-import { createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
@@ -387,12 +387,21 @@ const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareToolsForShim = (
   tools: OpenAIResponsesTool[],
+  paths?: readonly string[],
 ): PrepareToolsResult => {
   let selectedFilters: WebSearchFilters = {};
-  for (const tool of tools) {
+  for (const [index, tool] of tools.entries()) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
-      if (reject !== null) return { ok: false, error: reject };
+      if (reject !== null) {
+        const path = paths?.[index];
+        return {
+          ok: false,
+          error: path?.startsWith('input[')
+            ? { ...reject, param: reject.param === 'tools' ? path : `${path}.search_context_size` }
+            : reject,
+        };
+      }
       selectedFilters = extractFilters(tool);
     }
   }
@@ -706,12 +715,13 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     return { type: 'inactive' };
   }
 
-  const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
+  const declarations = collectOpenAIResponsesToolEntries(invocation.payload);
+  const tools = declarations.map(entry => entry.tool);
   const hasHostedWebSearch = tools.some(isHostedWebSearchTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'web_search_call');
   if (!hasHostedWebSearch && !hasReplayInput) return { type: 'inactive' };
 
-  const prepared = prepareToolsForShim(tools);
+  const prepared = prepareToolsForShim(tools, declarations.map(entry => entry.path));
   if (!prepared.ok) {
     return {
       type: 'invalid-request',

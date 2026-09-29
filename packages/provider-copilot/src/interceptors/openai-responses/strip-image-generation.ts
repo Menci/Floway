@@ -1,5 +1,5 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool
@@ -37,6 +37,16 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
     }
   }
 
+  payload.input = payload.input.map(item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const tools = item.tools.filter(tool => {
+      const drop = isImageGenerationTool(tool);
+      removedTool ||= drop;
+      return !drop;
+    });
+    return tools.length === item.tools.length ? item : { ...item, tools };
+  });
+
   if (isImageGenerationToolChoice(payload.tool_choice)) {
     delete payload.tool_choice;
     return;
@@ -44,7 +54,7 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
 
   // A forced `required` choice with no surviving tools would tell Copilot to
   // invoke a tool that no longer exists; drop the choice along with the tools.
-  if (removedTool && payload.tool_choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+  if (removedTool && payload.tool_choice === 'required' && collectOpenAIResponsesTools(payload).length === 0) {
     delete payload.tool_choice;
   }
 };

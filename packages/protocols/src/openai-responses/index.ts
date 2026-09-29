@@ -825,6 +825,19 @@ export type OpenAIResponsesTool =
   | OpenAIResponsesShellTool
   | OpenAIResponsesApplyPatchTool;
 
+export const collectOpenAIResponsesToolEntries = (
+  payload: CanonicalOpenAIResponsesPayload,
+): Array<{ tool: OpenAIResponsesTool; path: string }> => [
+  ...(payload.tools ?? []).map((tool, index) => ({ tool, path: `tools[${index}]` })),
+  ...payload.input.flatMap((item, inputIndex) =>
+    item.type === 'additional_tools' || item.type === 'tool_search_output'
+      ? item.tools.map((tool, toolIndex) => ({ tool, path: `input[${inputIndex}].tools[${toolIndex}]` }))
+      : []),
+];
+
+export const collectOpenAIResponsesTools = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
+  collectOpenAIResponsesToolEntries(payload).map(entry => entry.tool);
+
 export const mapOpenAIResponsesTools = (
   payload: CanonicalOpenAIResponsesPayload,
   transform: (tool: OpenAIResponsesTool) => OpenAIResponsesTool,
