@@ -331,12 +331,10 @@ const validateDomainListEntry = (
   return { ok: true };
 };
 
-// Validate the parts of a hosted-web-search entry the shim acts on.
-// Anything else (`external_web_access`, `return_token_budget`, etc.)
-// is silently dropped along with the hosted tool itself — the shim
-// replaces the hosted entry with its shim function tool, so any
-// hosted-only field the shim doesn't process never reaches upstream
-// regardless.
+// Validate the hosted web-search fields the shim interprets. The model-bound
+// replacement uses the shim command schema; backend settings such as
+// `external_web_access` are handled separately, while unhandled fields such
+// as `return_token_budget` are omitted from that request.
 const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError | null => {
   const sizeField = (tool as { search_context_size?: unknown }).search_context_size;
   if (sizeField !== undefined && sizeField !== null && !isSearchContextSize(sizeField)) {
