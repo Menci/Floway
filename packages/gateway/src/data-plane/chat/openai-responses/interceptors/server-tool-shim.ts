@@ -131,8 +131,8 @@ export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gat
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  // Input-carried declarations keep their items; only top-level replacements
-  // participate in response.tools restoration.
+  // Hosted entries are rewritten at their input-item positions; only
+  // top-level replacements participate in response.tools restoration.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
