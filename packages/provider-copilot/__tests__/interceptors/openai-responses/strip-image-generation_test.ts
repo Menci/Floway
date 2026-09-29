@@ -185,3 +185,14 @@ test('drops allowed_tools when its only selector names a removed input hosted to
 
   assertFalse('tool_choice' in payload);
 });
+
+test('leaves unrelated allowed_tools choices unchanged', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test', input: [],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [] },
+  };
+
+  stripImageGenerationFromPayload(payload);
+
+  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'auto', tools: [] });
+});
