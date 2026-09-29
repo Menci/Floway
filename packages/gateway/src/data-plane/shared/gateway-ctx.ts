@@ -6,21 +6,13 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
-// Per-attempt timing and performance attribution. Reset at the start of every
-// iterateCandidates attempt so a candidate that short-circuits cannot inherit
-// the prior attempt's slots. The numeric slots use `null` because a real
-// timestamp of `0` would be ambiguous.
-export interface AttemptState extends AttemptTiming {
+// Per-attempt timing and performance attribution. `timing` keeps its identity
+// across candidate resets because the dump accumulator reads the same object.
+// Null timestamps distinguish an unstamped slot from a real timestamp of 0.
+export interface AttemptState {
+  readonly timing: AttemptTiming;
   telemetry: PerformanceTelemetryContext | undefined;
 }
-
-// Stamps at dispatch entry — pre-dial by design. See
-// UpstreamCallOptions.wrapUpstreamCall for what the interval covers.
-export const stampUpstreamCallStart = (attempt: AttemptState) =>
-  <T>(dispatch: () => Promise<T>): Promise<T> => {
-    attempt.upstreamCallStartedAt = performance.now();
-    return dispatch();
-  };
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
@@ -79,8 +71,8 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const attempt: AttemptState = { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined };
-  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt);
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt.timing);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,

@@ -55,11 +55,11 @@ export const recordPerformance = (
   if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
   const { attempt, backgroundScheduler: scheduler } = ctx;
   const dims: PerformanceDimensions = { ...telemetry, hour: currentHour() };
-  const ttftMs = attemptTtftMs(attempt);
+  const ttftMs = attemptTtftMs(attempt.timing);
   if (
     telemetry.operation !== 'chat' ||
     ttftMs === null ||
-    attempt.firstOutputTokenAt === null ||
+    attempt.timing.firstOutputTokenAt === null ||
     (failed && outputTokens === 0)
   ) {
     const settle = failed ? getRepo().performance.recordZeroOutputError(dims) : getRepo().performance.recordNeutral(dims);
@@ -78,7 +78,7 @@ export const recordPerformance = (
   // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
   // and Envoy AI Gateway
   // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
-  const streamDeltaMs = requestFinishedAt - attempt.firstOutputTokenAt;
+  const streamDeltaMs = requestFinishedAt - attempt.timing.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, success }), 'sample'));
 };

@@ -111,7 +111,7 @@ export interface UpstreamCallOptions {
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
   // Providers wrap the dispatch that fires the outbound fetch. The wrap
-  // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
+  // runs synchronously and stamps `attempt.timing.upstreamCallStartedAt` before
   // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
   // (which live inside the returned promise's async body under a proxied
   // fetcher). The interval anchored here therefore includes the gateway's

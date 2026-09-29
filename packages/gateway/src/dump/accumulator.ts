@@ -123,7 +123,7 @@ export class DumpAccumulator {
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
     private readonly wantsStream: boolean = false,
-    private readonly attempt?: AttemptTiming,
+    private readonly timing?: AttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
@@ -285,7 +285,7 @@ export class DumpAccumulator {
         ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
-    const ttftMs = this.wantsStream ? attemptTtftMs(this.attempt) : null;
+    const ttftMs = this.wantsStream ? attemptTtftMs(this.timing) : null;
 
     const meta: DumpMetadata = {
       id: recordId,
@@ -371,7 +371,7 @@ export const openDumpAccumulator = (
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
   wantsStream: boolean = false,
-  attempt?: AttemptTiming,
+  timing?: AttemptTiming,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   const requestSnapshot: RequestSnapshot = {
@@ -381,5 +381,5 @@ export const openDumpAccumulator = (
     bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler, wantsStream, attempt);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler, wantsStream, timing);
 };
