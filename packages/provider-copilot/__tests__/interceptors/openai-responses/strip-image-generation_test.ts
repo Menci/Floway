@@ -160,13 +160,17 @@ test('drops required tool choice when input only supplied removed image generati
 test('removes filtered hosted selectors from allowed_tools without dropping client tools', () => {
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',
-    input: [{ type: 'additional_tools', role: 'developer', tools: [
-      { type: 'image_generation' },
-      { type: 'function', name: 'lookup', parameters: {} },
-    ] }],
-    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [
-      { type: 'image_generation' }, { type: 'function', name: 'lookup' },
-    ] },
+    input: [{
+      type: 'additional_tools', role: 'developer',
+      tools: [
+        { type: 'image_generation' },
+        { type: 'function', name: 'lookup', parameters: {} },
+      ],
+    }],
+    tool_choice: {
+      type: 'allowed_tools', mode: 'required',
+      tools: [{ type: 'image_generation' }, { type: 'function', name: 'lookup' }],
+    },
   };
 
   stripImageGenerationFromPayload(payload);
