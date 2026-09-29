@@ -5,7 +5,7 @@ import { collectOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type
  * A Copilot gateway filters public `image_generation` from Responses requests,
  * while OpenAI supports it. Apply this provider-specific rule after target
  * selection to every declaration carrier and selector, retaining unrelated
- * tools at their original positions.
+ * tools in their declaration containers and relative order.
  *
  * https://developers.openai.com/api/docs/guides/tools-image-generation
  * https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
