@@ -48,7 +48,7 @@ const anthropic: AnthropicMessagesPayload = {
   tools: [{ name: 'f', input_schema: schema }],
   output_config: { format: { type: 'json_schema', schema: formatSchema } },
   stop_sequences: ['END'],
-  metadata: { user_id: 'u' },
+  metadata: { user_id: 'u', extension: { nested: 'retained' } } as AnthropicMessagesPayload['metadata'],
 };
 const gemini: GeminiGenerateContentPayload = {
   contents: [
