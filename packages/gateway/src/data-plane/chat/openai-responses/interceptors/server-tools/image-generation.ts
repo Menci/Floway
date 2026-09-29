@@ -442,8 +442,8 @@ const validateHostedImageGenerationEntry = (
   };
 };
 
-// Validate every hosted `image_generation` entry; the LAST entry's config
-// wins (most-recent declaration).
+// Validate every hosted `image_generation` entry; the last one in the
+// collected declaration order supplies the active config.
 export const prepareImageGenerationConfig = (
   tools: readonly OpenAIResponsesTool[],
   paths: readonly string[] = tools.map((_, index) => `tools[${index}]`),

@@ -381,9 +381,9 @@ const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError
   return null;
 };
 
-// Validation covers every hosted declaration even though only the last one
-// supplies runtime filters. Azure and Copilot both use this dedupe-to-last
-// rule for repeated web-search declarations.
+// Validate every hosted declaration; the last one in collected order supplies
+// runtime filters. Azure and Copilot probes found last-entry precedence for
+// repeated web_search declarations within a tools array.
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareToolsForShim = (
   tools: OpenAIResponsesTool[],
