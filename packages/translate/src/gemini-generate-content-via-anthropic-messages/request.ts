@@ -202,11 +202,9 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
 };
 
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
-  if (parameters !== undefined) return klona(parameters);
-
   // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
   // declarations use the smallest object schema rather than dropping the tool.
-  return { type: 'object', properties: {} };
+  return klona(parameters) ?? { type: 'object', properties: {} };
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesTool[] | undefined => {

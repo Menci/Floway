@@ -162,7 +162,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
     type: 'function' as const,
     name: declaration.name,
     ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    parameters: declaration.parameters === undefined ? { type: 'object', properties: {} } : klona(declaration.parameters),
+    parameters: klona(declaration.parameters) ?? { type: 'object', properties: {} },
     strict: false,
   }));
 

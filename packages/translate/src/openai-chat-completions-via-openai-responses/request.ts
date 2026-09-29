@@ -11,7 +11,7 @@ const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIR
     ? tools.map(tool => ({
         type: 'function',
         name: tool.function.name,
-        parameters: tool.function.parameters == null ? { type: 'object', properties: {} } : klona(tool.function.parameters),
+        parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
         // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
         // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
         strict: tool.function.strict ?? false,

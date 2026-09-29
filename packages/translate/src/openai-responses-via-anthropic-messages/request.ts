@@ -321,7 +321,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: tool.parameters == null ? { type: 'object', properties: {} } : klona(tool.parameters),
+        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;

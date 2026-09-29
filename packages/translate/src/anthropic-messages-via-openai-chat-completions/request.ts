@@ -279,7 +279,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
     messages: translateAnthropicMessagesInput(payload.messages, payload.system),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
-    stop: payload.stop_sequences === undefined ? undefined : klona(payload.stop_sequences),
+    stop: klona(payload.stop_sequences),
     stream: true,
     // Ask the upstream for usage on every streaming chunk, not just the final
     // one. `include_usage` is the OpenAI-standard flag; `continuous_usage_stats`
