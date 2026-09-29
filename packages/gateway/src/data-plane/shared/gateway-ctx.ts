@@ -80,7 +80,8 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
+  const attempt: AttemptState = { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined };
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
@@ -90,7 +91,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
-    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
+    attempt,
     runtimeLocation: getRuntimeLocation(c.req.raw),
     dump,
   };

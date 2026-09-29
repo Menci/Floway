@@ -99,6 +99,11 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
   return { id: upstream.id, name: upstream.name, kind: upstream.kind, hue: upstream.hue };
 };
 
+export interface DumpAttemptTiming {
+  readonly upstreamCallStartedAt: number | null;
+  readonly firstOutputTokenAt: number | null;
+}
+
 export class DumpAccumulator {
   readonly http = new HttpCapture();
   private readonly events: DumpStreamEvent[] = [];
@@ -121,6 +126,8 @@ export class DumpAccumulator {
     requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly wantsStream: boolean = false,
+    private readonly attempt?: DumpAttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
@@ -282,6 +289,10 @@ export class DumpAccumulator {
         ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
+    const ttftMs = (this.wantsStream && this.attempt?.upstreamCallStartedAt != null && this.attempt?.firstOutputTokenAt != null)
+      ? Math.max(0, Math.round(this.attempt.firstOutputTokenAt - this.attempt.upstreamCallStartedAt))
+      : null;
+
     const meta: DumpMetadata = {
       id: recordId,
       startedAt: this.startedAt,
@@ -296,6 +307,7 @@ export class DumpAccumulator {
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
+      ttftMs,
       // Precedence: an explicit error stamp from the respond path wins;
       // otherwise a request-body read failure (operator-side payload didn't
       // arrive intact) outranks a response-body read failure. Both stream-
@@ -364,6 +376,8 @@ export const openDumpAccumulator = (
   apiKey: ApiKey,
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
+  wantsStream: boolean = false,
+  attempt?: DumpAttemptTiming,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   const requestSnapshot: RequestSnapshot = {
@@ -373,5 +387,5 @@ export const openDumpAccumulator = (
     bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler, wantsStream, attempt);
 };
