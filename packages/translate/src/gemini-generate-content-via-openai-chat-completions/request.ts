@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import {
   geminiGenerateContentFunctionCallingIntent,
   geminiGenerateContentFunctionCallPart,
@@ -15,7 +17,6 @@ import {
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import { klona } from 'klona/json';
 
 const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
 

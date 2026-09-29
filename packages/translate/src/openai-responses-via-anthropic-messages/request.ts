@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
@@ -36,7 +38,6 @@ import type {
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { klona } from 'klona/json';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;

@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import {
   geminiGenerateContentFunctionCallingIntent,
   geminiGenerateContentFunctionCallPart,
@@ -24,7 +26,6 @@ import {
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
-import { klona } from 'klona/json';
 
 const inlineDataToImageBlock = (part: GeminiGenerateContentPart): AnthropicMessagesImageBlock | null => {
   const inlineData = geminiGenerateContentInlineData(part);

@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
 import { resolveAnthropicMessagesReasoningEffort } from '../shared/anthropic-messages-via/reasoning-effort.ts';
 import { openAIServiceTierFromAnthropicMessages } from '../shared/anthropic-messages-via/service-tier.ts';
@@ -6,7 +8,6 @@ import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
 import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import { klona } from 'klona/json';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,

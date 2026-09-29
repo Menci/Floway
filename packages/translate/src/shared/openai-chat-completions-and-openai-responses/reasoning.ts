@@ -1,6 +1,7 @@
+import { klona } from 'klona/json';
+
 import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
-import { klona } from 'klona/json';
 
 // OpenAI's Chat Completions spec has no reasoning-text field; upstreams expose
 // the same quantity as `reasoning_content` or `reasoning`. Treat both as

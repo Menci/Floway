@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
@@ -9,7 +11,6 @@ import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '.
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, OpenAIResponsesInputText, OpenAIResponsesPayload, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { klona } from 'klona/json';
 
 interface AssistantAccumulator {
   message: OpenAIChatCompletionsMessage;

@@ -15,8 +15,9 @@
 //
 // Anthropic spec: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
 
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { klona } from 'klona/json';
+
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 export const ANTHROPIC_MESSAGES_OPENAI_JSON_SCHEMA_NAME = 'messages_response';
 
