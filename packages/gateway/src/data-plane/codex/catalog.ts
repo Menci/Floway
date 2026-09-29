@@ -9,7 +9,7 @@
 //      user-agent, GitHub 404 (unreleased version), network error
 //
 // The bundled snapshot is a frozen copy of
-//   https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
+//   https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/models-manager/models.json
 // (Apache-2.0). It is the working fallback for cold starts, clients running
 // unreleased prerelease builds, and operators behind network egress
 // restrictions. Refresh it whenever a newer Codex commit ships material
