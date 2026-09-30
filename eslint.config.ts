@@ -71,7 +71,6 @@ const projectList = [
   './packages/agent-setup/tsconfig.scripts.json',
   './packages/gateway/tsconfig.json',
   './packages/http/tsconfig.json',
-  './packages/interceptor/tsconfig.json',
   './packages/pipeline/tsconfig.json',
   './packages/platform/tsconfig.json',
   './packages/protocols/tsconfig.json',

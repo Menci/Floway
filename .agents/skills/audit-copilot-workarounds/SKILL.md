@@ -16,23 +16,24 @@ Copilot upstream.
 The provider code and the reference URLs beside each workaround are the
 inventory; there is no separate documentation list to reconcile.
 
-1. Start from
-   `packages/provider-copilot/src/interceptors/{openai-chat-completions,anthropic-messages,openai-responses}/index.ts`
-   and `packages/provider-copilot/src/defaults.ts`. Follow every registered
-   interceptor and default-enabled shim to its implementation and tests.
+1. Start from `packages/provider-copilot/src/pipelines.ts`,
+   `chat-pipelines.ts`, and `defaults.ts`. Follow every registered stage and
+   default-enabled shim to its implementation under `src/stages/` and its
+   mirrored tests under `__tests__/stages/`.
 2. Sweep the rest of `packages/provider-copilot/src` for non-pricing reference
    URLs and for vendor constants, thresholds, timeouts, retries, and pinned wire
    values that require a reference but may be missing one. Pricing citations
    belong to `fetching-models-pricing`; everything else remains in this audit.
-3. Include provider-level request/result shaping and catalog shaping even when
-   they are not interceptors. In particular, inspect `provider.ts`,
+3. Include request/result shaping and catalog shaping. Inspect `provider.ts`,
    `fetch-models.ts`, `known-models.ts`, `model-selection.ts`, and
-   `merge-claude-variants.ts` together with their imports and tests.
-4. Include the authentication fingerprint and management/data-plane behavior in
-   `auth.ts`, plus OpenAI Responses item identity and replay handling rooted at
-   `interceptors/openai-responses/item-id-membrane.ts`. Follow adjacent carrier and
-   compaction modules rather than assuming the interceptor registry contains the
-   whole workaround.
+   `merge-claude-variants.ts` together with their imports and tests. Exercise
+   data-plane behavior through the provider's operation pipelines rather than
+   its catalog-only instance.
+4. Include the authentication fingerprint and control/data-plane behavior in
+   `auth.ts` and `control-http.ts`, plus OpenAI Responses item identity and replay
+   handling rooted at `stages/openai-responses/item-id-membrane.ts` and
+   `opaque-item-id.ts`. Follow adjacent carrier and compaction modules; the
+   operation assemblies are entrypoints, not a complete workaround inventory.
 5. Record each item's owning module, reference URLs, affected source and target
    APIs, models, account scope, default flag state, tests, and exit condition:
    delete an obsolete workaround, refresh pinned mimicry, or retain it with

@@ -72,7 +72,7 @@ test('aborts and emits an error event + done when whitespace exceeds the thresho
   const wsDelta = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE + 1);
   const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
     eventFrame(argsDelta(0, wsDelta)),
-    // Should not be observed: interceptor aborts on the first offending delta.
+    // The stage aborts before the second delta can reach the client.
     eventFrame(argsDelta(0, '\n\n\n')),
     doneFrame(),
   ];

@@ -11,8 +11,8 @@
  * attempt JSON parsing — Claude Code never combines the two formats, and
  * skipping the parse avoids a thrown `SyntaxError` allocation on the hot path.
  *
- * Used by withClaudeAgentHeadersSet (needs BOTH halves to fire) and by
- * withInteractionIdHeaderSet (needs only sessionId).
+ * The Claude agent header stage needs BOTH halves to fire; the interaction ID
+ * stage needs only sessionId.
  *
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/main/src/lib/utils.ts#L151

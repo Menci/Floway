@@ -51,7 +51,7 @@ const runExpectingThrow = async (frames: ProtocolFrame<OpenAIChatCompletionsStre
     assert(err instanceof Error, 'expected an Error');
     return err;
   }
-  throw new Error('expected the interceptor to throw');
+  throw new Error('expected the stage to throw');
 };
 
 test('passes a normal stream through unchanged', async () => {

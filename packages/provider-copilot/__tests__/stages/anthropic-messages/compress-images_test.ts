@@ -195,7 +195,7 @@ test('high-res Opus clamps the long edge to 2576 on very wide images', async () 
   assertEquals(await capTargetFor('claude-opus-4.7', { width: 8000, height: 1000 }), { width: 2576, height: 322 });
 });
 
-// Drives the interceptor end-to-end with a header-only PNG of the requested
+// Drives the stage end-to-end with a header-only PNG of the requested
 // dimensions and reads back the target the per-model cap resolved to. The
 // PNG carries no pixel payload — image-size reads dimensions from IHDR and
 // does not validate the rest of the file.

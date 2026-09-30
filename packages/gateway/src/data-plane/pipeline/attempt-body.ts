@@ -1,21 +1,6 @@
-// What a provider is handed when a stage dials it.
-//
-// The record's own children travel, by identity. One object is built here, and only because
-// this is where the addressed model is stamped and then dropped; everything under it is the
-// record's, frozen — a fact that could be edited after the event is not a fact — and a provider
-// shapes the body it sends by rebuilding rather than by writing into what it was given. So both
-// sides of this boundary agree and there is nothing to defend against.
-//
-// It was not always so, and the shape of the failure is worth keeping: three Copilot rules
-// wrote one level down, into a message or a content block, which against a frozen record threw
-// `Cannot add property …, object is not extensible` — as a 502, from the point in the stack
-// least able to explain it. A deep copy here absorbed that, at the cost of one pass over every
-// payload on every dial, and at the larger cost of making immutability something the gateway
-// worked around. The three rules rebuild now, and so does every alias overlay: an overlay that
-// wrote in place would be safe only for as long as this function happened to have rebuilt the
-// level it writes to, which is the same trap one level up.
-//
-// So what is left is only the three things every wire was otherwise writing by hand.
+// Alias rules apply to the addressed candidate. Providers receive model-free
+// request content and stamp their own wire model; unchanged descendants retain
+// their identity through the immutable handoff.
 
 import type { ModelCandidate } from '@floway-dev/provider';
 

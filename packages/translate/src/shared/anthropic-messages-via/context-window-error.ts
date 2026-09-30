@@ -19,7 +19,7 @@ import { buildPromptTooLongBody } from '@floway-dev/protocols/anthropic-messages
 // - Copilot `/v1/messages` (Anthropic-shaped body carrying a Copilot-specific
 //   message string):
 //     {"type":"error","error":{"type":"invalid_request_error","message":"Request body is too large for model context window ..."}}
-//   The provider-copilot Anthropic Messages interceptor handles this at the provider
+//   The provider-copilot Anthropic Messages error-rewrite stage handles this at the provider
 //   layer; the substring is listed here so an Anthropic-Messages-via-OpenAI-Responses trip that
 //   ever encounters the same phrasing behaves consistently.
 

@@ -153,7 +153,7 @@ const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessag
       // was hoisted earlier). Anthropic upstreams diverge on inline
       // role:'system' here (Bedrock accepts it under placement rules;
       // Vertex rejects it outright), so the gateway's
-      // `rewrite-mid-conv-system-to-user` interceptor flag is the safety
+      // `rewrite-mid-conv-system-to-user` role-compatibility flag is the safety
       // net for any inline system that would otherwise reach an upstream
       // that does not accept it.
       const blocks = convertSystemContent(message.content);

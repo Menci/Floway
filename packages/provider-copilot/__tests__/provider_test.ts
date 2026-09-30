@@ -611,8 +611,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   const provider = instance.instance;
   const visionHeaders: (string | null)[] = [];
 
-  // The vision-detection interceptor runs inside `provider.callAnthropicMessages`, so
-  // it must walk into nested `tool_result.content` to find the image.
   const driveAnthropicMessages = async (providerModel: Awaited<ReturnType<typeof instance.instance.getProvidedModels>>[number], body: Omit<AnthropicMessagesPayload, 'model'>): Promise<void> => {
     await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, body, undefined, noopAnthropicMessagesUpstreamCallOptions());
   };
@@ -689,12 +687,8 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
 });
 
 test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat Completions wire (translated path)', async () => {
-  // Boundary isolation: each provider call method runs only its own protocol
-  // boundary chain. The Anthropic-Messages-only `withClaudeAgentHeadersSet` interceptor
-  // would set x-interaction-type to 'messages-proxy' for Claude Code SDK
-  // metadata, but it MUST NOT run when the translated path calls Copilot's
-  // openai-chat-completions wire — that path runs `COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY`,
-  // which has no Anthropic-Messages-source headers in it.
+  // The operation chain selects wire-specific stages. Claude Code metadata must
+  // not install Anthropic Messages headers on a Chat Completions request.
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
   const provider = instance.instance;
@@ -719,9 +713,6 @@ test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      // Even with a Claude-Code-shaped metadata blob, the openai-chat-completions
-      // boundary chain has no Anthropic-Messages-source interceptor, so the
-      // messages-proxy intent must not appear on the wire.
       await collectChatProviderPipeline(instance, 'openaiChatCompletions', providerModel, {
         messages: [{ role: 'user', content: 'hi' }],
         metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' }) },
@@ -729,11 +720,8 @@ test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat
     },
   );
 
-  // The openai-chat-completions wire defaults to `conversation-agent` (set by
-  // `copilotAuthedFetch` in `packages/provider-copilot/src/auth.ts`). The
-  // Anthropic-Messages-boundary `withClaudeAgentHeadersSet` would overwrite it to
-  // `messages-proxy` if it had run — its absence is the
-  // proof that the Anthropic Messages boundary chain did NOT fire on this wire.
+  // Authentication sets conversation-agent; the Anthropic-only header stage
+  // would overwrite it to messages-proxy if it ran on this operation.
   assertEquals(observedInteractionType, ['conversation-agent']);
 });
 
