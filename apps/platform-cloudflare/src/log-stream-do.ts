@@ -1,15 +1,12 @@
 import { DurableObject } from 'cloudflare:workers';
 
-import type { LogStreamAppendResult } from './log-stream-contract.ts';
+import type { LogStreamAppendResult, LogStreamReadResult } from './log-stream-contract.ts';
 import { LOG_STREAM_IDLE_MS } from '@floway-dev/platform';
 
 const SEGMENT_BYTES = 64 * 1024;
 interface StreamState { length: number; ended: number; last_activity: number }
-interface ReaderState { offset: number }
 
 export class LogStreamDO extends DurableObject {
-  constructor(ctx: DurableObjectState, env: unknown) { super(ctx, env); }
-
   private sql(): SqlStorage { return this.ctx.storage.sql; }
 
   private state(): StreamState | null {
@@ -55,7 +52,7 @@ export class LogStreamDO extends DurableObject {
       length += segment.byteLength;
     }
     this.sql().exec('UPDATE stream_state SET length = ?, last_activity = ? WHERE id = 0', length, Date.now());
-    for (const socket of this.ctx.getWebSockets()) this.pump(socket);
+    for (const socket of this.ctx.getWebSockets()) socket.send('changed');
     return { kind: 'appended' };
   }
 
@@ -63,7 +60,6 @@ export class LogStreamDO extends DurableObject {
     if (this.state() === null) return 'expired';
     this.sql().exec('UPDATE stream_state SET ended = 1, last_activity = ? WHERE id = 0', Date.now());
     for (const socket of this.ctx.getWebSockets()) {
-      this.pump(socket);
       socket.close(1000, 'ended');
     }
     return 'ended';
@@ -77,26 +73,19 @@ export class LogStreamDO extends DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ offset: fromOffset } satisfies ReaderState);
-    this.pump(server);
     if (this.state()!.ended === 1) server.close(1000, 'ended');
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private pump(socket: WebSocket): void {
-    const reader = socket.deserializeAttachment() as ReaderState;
-    const state = this.state()!;
-    let offset = reader.offset;
-    while (offset < state.length) {
-      const segment = this.sql().exec<{ start_offset: number; bytes: ArrayBuffer }>(
-        'SELECT start_offset, bytes FROM segments WHERE start_offset <= ? ORDER BY start_offset DESC LIMIT 1', offset,
-      ).one();
-      const bytes = new Uint8Array(segment.bytes).subarray(offset - segment.start_offset);
-      socket.send(bytes);
-      offset += bytes.byteLength;
-    }
-    socket.serializeAttachment({ offset } satisfies ReaderState);
+  async readChunk(fromOffset: number): Promise<LogStreamReadResult> {
+    const state = this.state();
+    if (state === null) return { kind: 'expired' };
     this.sql().exec('UPDATE stream_state SET last_activity = ? WHERE id = 0', Date.now());
+    if (fromOffset >= state.length) return { kind: 'tail', ended: state.ended === 1 };
+    const segment = this.sql().exec<{ start_offset: number; bytes: ArrayBuffer }>(
+      'SELECT start_offset, bytes FROM segments WHERE start_offset <= ? ORDER BY start_offset DESC LIMIT 1', fromOffset,
+    ).one();
+    return { kind: 'chunk', bytes: new Uint8Array(segment.bytes).slice(fromOffset - segment.start_offset).buffer };
   }
 
   private async armAlarm(at: number): Promise<void> {
@@ -126,5 +115,8 @@ export class LogStreamDO extends DurableObject {
   }
 
   async webSocketClose(socket: WebSocket, code: number, reason: string, _wasClean: boolean): Promise<void> { socket.close(code, reason); }
-  async webSocketError(_socket: WebSocket, _error: unknown): Promise<void> {}
+  async webSocketError(socket: WebSocket, error: unknown): Promise<void> {
+    socket.close(1011, 'interrupted');
+    throw error;
+  }
 }

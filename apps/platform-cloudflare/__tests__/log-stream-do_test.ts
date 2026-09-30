@@ -74,3 +74,50 @@ test('expiration interrupts an attached reader instead of signaling clean comple
   await actor.alarm();
   await rejected;
 });
+
+test('a paused reader fetches one segment and queues no backlog on the WebSocket hop', async () => {
+  const { store, actor, state } = setup();
+  const stream = await store.open('backpressure');
+  const reads = vi.spyOn(actor, 'readChunk');
+  const reader = stream.read(0, new AbortController().signal)[Symbol.asyncIterator]();
+  const first = reader.next();
+  await Promise.resolve();
+  await stream.append(0, new Uint8Array(4 * 1024 * 1024));
+  expect((await first).value?.byteLength).toBe(64 * 1024);
+  const fetched = reads.mock.calls.length;
+  await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+  expect(reads).toHaveBeenCalledTimes(fetched);
+  expect(state.sockets.flatMap(socket => socket.sent)).toEqual(['changed']);
+  expect((await reader.next()).value?.byteLength).toBe(64 * 1024);
+  expect(reads).toHaveBeenCalledTimes(fetched + 1);
+  await reader.return?.();
+});
+
+test('actual pull progress keeps a finished backlog alive across idle intervals', async () => {
+  vi.useFakeTimers();
+  const { store, actor } = setup();
+  const stream = await store.open('finished');
+  await stream.append(0, new Uint8Array(3 * 64 * 1024));
+  await stream.end();
+  const reader = stream.read(0, new AbortController().signal)[Symbol.asyncIterator]();
+  for (let index = 0; index < 3; index++) {
+    await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS / 2);
+    expect((await reader.next()).value?.byteLength).toBe(64 * 1024);
+    await actor.alarm();
+    expect(await store.get('finished')).not.toBeNull();
+  }
+  expect((await reader.next()).done).toBe(true);
+  await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS);
+  await actor.alarm();
+  expect(await store.get('finished')).toBeNull();
+});
+
+test('a server WebSocket error interrupts the reader and retains its original exception', async () => {
+  const { store, actor, state } = setup();
+  const stream = await store.open('failed-reader');
+  const pending = stream.read(0, new AbortController().signal)[Symbol.asyncIterator]().next();
+  await Promise.resolve();
+  const error = new Error('socket failed');
+  await expect(actor.webSocketError(state.getWebSockets()[0]!, error)).rejects.toBe(error);
+  await expect(pending).rejects.toThrow('interrupted');
+});

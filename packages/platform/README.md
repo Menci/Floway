@@ -28,7 +28,9 @@ artifact is a separate writer-owned path.
 
 Node stores append-only segments in its process boundary and copies only new
 bytes. Cloudflare uses one SQLite-backed Durable Object per stream, with
-hibernatable WebSockets for the internal reader hop and alarms for reclamation.
+hibernatable WebSockets for tail notifications and alarms for reclamation.
+Readers fetch one SQL segment per pull, so a paused consumer holds no backlog
+in the Worker isolate. Actual consumption renews the reader lease.
 Known RPC outcomes are data so the client reconstructs the same portable errors
 without relying on remote custom Error prototypes.
 

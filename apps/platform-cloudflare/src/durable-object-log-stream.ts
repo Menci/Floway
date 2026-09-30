@@ -55,16 +55,19 @@ class DurableObjectLogStream implements LogStream {
         const socket = response.webSocket;
         if (!socket) throw new Error('LogStream read did not upgrade to a WebSocket');
         socket.accept();
-        const queue: Uint8Array[] = [];
+        let revision = 0;
         let wake: (() => void) | null = null;
         let outcome: 'open' | 'ended' | 'interrupted' | 'expired' = 'open';
+        const currentOutcome = (): typeof outcome => outcome;
         const settle = (next: 'ended' | 'interrupted' | 'expired') => {
           if (outcome === 'open') outcome = next;
           wake?.();
         };
         const interrupt = () => { settle('interrupted'); };
-        socket.addEventListener('message', event => {
-          queue.push(new Uint8Array(event.data as ArrayBuffer));
+        // Workerd delivers WebSocket messages while an async iterator is paused.
+        // Only tail notifications cross that hop; each pull fetches one SQL segment.
+        socket.addEventListener('message', () => {
+          revision++;
           wake?.();
         });
         socket.addEventListener('close', event => {
@@ -76,13 +79,23 @@ class DurableObjectLogStream implements LogStream {
         try {
           for (;;) {
             signal.throwIfAborted();
-            while (queue.length > 0) { signal.throwIfAborted(); yield queue.shift()!; }
-            if (outcome !== 'open') break;
+            if (currentOutcome() === 'expired') throw new LogStreamExpiredError();
+            if (currentOutcome() === 'interrupted') throw new Error('LogStream read was interrupted');
+            const observed = revision;
+            const result = await stream.stub().readChunk(fromOffset);
+            signal.throwIfAborted();
+            if (result.kind === 'expired') throw new LogStreamExpiredError();
+            if (result.kind === 'chunk') {
+              const bytes = new Uint8Array(result.bytes);
+              fromOffset += bytes.byteLength;
+              yield bytes;
+              continue;
+            }
+            if (result.ended) return;
+            if (revision !== observed || outcome !== 'open') continue;
             await new Promise<void>(resolve => { wake = resolve; });
             wake = null;
           }
-          if (outcome === 'expired') throw new LogStreamExpiredError();
-          if (outcome === 'interrupted') throw new Error('LogStream read was interrupted');
         } finally {
           signal.removeEventListener('abort', interrupt);
           socket.close();

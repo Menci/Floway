@@ -26,7 +26,7 @@ export class LogStreamStorage {
 }
 
 export class LogStreamSocket extends EventTarget {
-  readonly sent: Uint8Array[] = [];
+  readonly sent: (string | Uint8Array)[] = [];
   closed: { code: number; reason: string } | null = null;
   private attachment: unknown;
   private accepted = false;
@@ -36,10 +36,10 @@ export class LogStreamSocket extends EventTarget {
   serializeAttachment(value: unknown): void { this.attachment = value; }
   deserializeAttachment(): unknown { return this.attachment; }
   accept(): void { this.accepted = true; this.flush(); }
-  send(value: ArrayBufferView): void {
-    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
-    this.sent.push(bytes);
-    this.peer?.receive(new MessageEvent('message', { data: bytes.buffer }));
+  send(value: string | ArrayBufferView): void {
+    const data = typeof value === 'string' ? value : new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
+    this.sent.push(data);
+    this.peer?.receive(new MessageEvent('message', { data: typeof data === 'string' ? data : data.buffer }));
   }
   close(code = 1000, reason = ''): void {
     if (this.closed !== null) return;
