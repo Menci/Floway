@@ -28,6 +28,7 @@ import {
   type CodexResponsesBody,
   type CodexResponsesLiteRequest,
 } from './responses-lite.ts';
+import { restoreCodexResponsesOutput } from './responses-output.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -713,11 +714,12 @@ const performStreamingOpenAIResponsesCall = async (
   const lite = prepared.lite;
   const result = await streamingProviderCall(
     upstreamFetch,
-    lite === undefined
-      ? parseOpenAIResponsesStream
-      : (stream, parserOpts) => restoreCodexResponsesFrames(
-          parseOpenAIResponsesStream(stream, parserOpts), lite.callableIdentities, lite.requestEchoes,
-        ),
+    (stream, parserOpts) => {
+      const frames = parseOpenAIResponsesStream(stream, parserOpts);
+      return restoreCodexResponsesOutput(lite === undefined
+        ? frames
+        : restoreCodexResponsesFrames(frames, lite.callableIdentities, lite.requestEchoes));
+    },
     opts.model.id,
     opts.signal,
   );

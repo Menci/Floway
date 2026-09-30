@@ -1,10 +1,12 @@
-import { describe, expect, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
+import { wrapOpenAIResponsesStatefulOutput } from '../../../../../src/data-plane/chat/openai-responses/client-output.ts';
 import { openaiResponsesItemId } from '../../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { wrapOpenAIResponsesClientOutput, wrapOpenAIResponsesObservedOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
+import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputReasoning, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
@@ -45,53 +47,23 @@ const responseFor = (output: OpenAIResponsesResult['output']): OpenAIResponsesRe
   incomplete_details: null,
 });
 
-describe('terminal output authority', () => {
-  const reasoningItem = { type: 'reasoning' as const, id: 'rs_1', summary: [] };
-  const messageItem = {
-    type: 'message' as const,
-    id: 'msg_1',
-    role: 'assistant' as const,
-    status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: 'hi', annotations: [] }],
+test('stateless client egress retains terminal-only output without applying a provider-specific recovery policy', async () => {
+  const terminalOnly = {
+    type: 'message' as const, id: 'msg_terminal', status: 'completed', role: 'assistant' as const,
+    content: [{ type: 'output_text' as const, text: 'terminal message', annotations: [] }],
   };
-
-  const terminalOutputOf = async (source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<string[]> => {
-    const seen: OpenAIResponsesStreamEvent[] = [];
-    for await (const frame of wrapOpenAIResponsesObservedOutput(source)) {
-      if (frame.type === 'event') seen.push(frame.event);
-    }
-    const terminal = seen.at(-1);
-    if (terminal?.type !== 'response.completed') throw new Error('expected a completed terminal');
-    return terminal.response.output.map(item => item.type);
+  const response = responseFor([completedReasoningItem, terminalOnly]);
+  const events = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: completedReasoningItem });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
+    yield eventFrame({ type: 'response.completed', response });
   };
-
-  test('states the items the turn closed, not the output the envelope stated', async () => {
-    const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoningItem });
-      yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: messageItem });
-      yield eventFrame({ type: 'response.completed', response: { ...responseFor([reasoningItem]), output: [messageItem] } });
-    };
-
-    expect(await terminalOutputOf(source())).toEqual(['reasoning', 'message']);
-  });
-
-  test('orders the stated items by output_index, not by the order they closed', async () => {
-    const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: messageItem });
-      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoningItem });
-      yield eventFrame({ type: 'response.completed', response: responseFor([]) });
-    };
-
-    expect(await terminalOutputOf(source())).toEqual(['reasoning', 'message']);
-  });
-
-  test('leaves a terminal reached without a closed item exactly as it arrived', async () => {
-    const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.completed', response: responseFor([messageItem]) });
-    };
-
-    expect(await terminalOutputOf(source())).toEqual(['message']);
-  });
+  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  for await (const frame of wrapOpenAIResponsesStatefulOutput(events(), mockChatGatewayCtx())) frames.push(frame);
+  const terminal = frames.at(-1);
+  if (terminal?.type !== 'event' || terminal.event.type !== 'response.completed') throw new Error('expected completed response');
+  expect(terminal.event.response.output).toHaveLength(2);
+  expect(terminal.event.response.output[1]).toEqual(terminalOnly);
 });
 
 test('client output rewrites only the response id inside queued envelopes', async () => {

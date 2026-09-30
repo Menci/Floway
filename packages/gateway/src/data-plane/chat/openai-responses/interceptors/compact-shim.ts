@@ -251,9 +251,6 @@ const resultMetadata = async (
     ...(result.performance !== undefined ? { performance: result.performance } : {}),
   });
 
-// The reassembler takes `output` from the closed items, since a Codex upstream
-// states a terminal `output` that omits the assistant message it just closed.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
 const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string => {
   const parts: string[] = [];
   for (const item of items) {

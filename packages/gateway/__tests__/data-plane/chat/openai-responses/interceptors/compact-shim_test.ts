@@ -27,9 +27,6 @@ const makeInvocation = (
   };
 };
 
-// Build a fake upstream `run()` that emits a single completed response whose
-// output contains one assistant message with the given text. Used to model
-// the inner summarization turn the shim drives.
 const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
   const response: OpenAIResponsesResult = {
     id: 'resp_fake_upstream',
@@ -49,7 +46,9 @@ const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<Proto
   };
   return () => Promise.resolve(eventResult(
     (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+      yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: response.output[0] });
+      yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: response.output[0] });
+      yield eventFrame({ type: 'response.completed', sequence_number: 2, response });
       yield doneFrame();
     })(),
     testTelemetryModelIdentity,
@@ -588,7 +587,7 @@ test('compact decrypt: preserves a generate response envelope for the compaction
   assertEquals(collected.output[0]?.type, 'compaction');
 });
 
-test('compact decrypt: succeeds when native compaction stream has empty terminal output and intermediate compacting events', async () => {
+test('compact decrypt: decrypts provider-restored native compaction output with intermediate compacting events', async () => {
   const inv = makeInvocation(
     {
       input: [
@@ -622,7 +621,7 @@ test('compact decrypt: succeeds when native compaction stream has empty terminal
     object: 'response',
     model: 'test-upstream-model',
     status: 'completed',
-    output: [], // Empty terminal output, matching Codex upstream
+    output: [nativeCompactionItem],
     error: null,
     incomplete_details: null,
     usage: { input_tokens: 150, output_tokens: 50, total_tokens: 200 },
@@ -896,42 +895,13 @@ test('round-trip: outbound synthesis then inbound expansion recovers the summary
   assertEquals(items[0].content[0].text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
 });
 
-const upstreamRunStatingNoOutput = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-  const message = {
-    type: 'message' as const,
-    id: 'msg_1',
-    role: 'assistant' as const,
-    status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: summaryText, annotations: [] }],
-  };
-  const response: OpenAIResponsesResult = {
-    id: 'resp_fake_upstream',
-    object: 'response',
-    model: 'test-upstream-model',
-    status: 'completed',
-    output: [],
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
-  };
-  return () => Promise.resolve(eventResult(
-    (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: message });
-      yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: message });
-      yield eventFrame({ type: 'response.completed', sequence_number: 2, response });
-      yield doneFrame();
-    })(),
-    testTelemetryModelIdentity,
-  ));
-};
-
-test('compact + flag on: the summary is the item the turn closed, not the output its terminal stated', async () => {
+test('compact + flag on: reads the summary from the provider-restored terminal snapshot', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
     { action: 'compact' },
   );
 
-  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, upstreamRunStatingNoOutput('CONDENSED SUMMARY'));
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, fakeUpstreamRun('CONDENSED SUMMARY'));
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);

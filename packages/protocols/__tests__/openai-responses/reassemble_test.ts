@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
 import { reassembleOpenAIResponsesEvents } from '../../src/openai-responses/reassemble.ts';
@@ -114,81 +114,28 @@ test('reassembleOpenAIResponsesEvents throws when stream ends without terminal e
   await assertRejects(() => reassembleOpenAIResponsesEvents(body), Error, 'terminal');
 });
 
-test('reassembleOpenAIResponsesEvents reconstructs output in index order when terminal output is empty', async () => {
-  const item0: OpenAIResponsesOutputItem = {
-    type: 'message',
-    id: 'msg_0',
-    status: 'completed',
-    role: 'assistant',
-    content: [{ type: 'output_text', text: 'First item', annotations: [] }],
+test.each([
+  ['response.completed', 'completed'],
+  ['response.incomplete', 'incomplete'],
+  ['response.failed', 'failed'],
+] as const)('reassembleOpenAIResponsesEvents preserves the %s snapshot despite different closed items', async (type, status) => {
+  const closed: OpenAIResponsesOutputItem = { type: 'reasoning', id: 'rs_closed', summary: [] };
+  const snapshotOnly: OpenAIResponsesOutputItem = {
+    type: 'message', id: 'msg_snapshot', status: status === 'completed' ? 'completed' : 'incomplete', role: 'assistant',
+    content: [{ type: 'output_text', text: 'Snapshot content', annotations: [] }],
   };
-  const item1: OpenAIResponsesOutputItem = {
-    type: 'compaction',
-    id: 'cmp_1',
-    encrypted_content: 'BLOB_1',
-  };
-
-  const body = makeEvents([
-    {
-      event: 'response.created',
-      data: {
-        type: 'response.created',
-        response: { id: 'resp_empty_term', object: 'response', model: 'gpt-test', status: 'in_progress', output: [], error: null, incomplete_details: null },
-      },
-    },
-    // Emit out of order to verify sorting by output_index
-    {
-      event: 'response.output_item.done',
-      data: { type: 'response.output_item.done', output_index: 1, item: item1 },
-    },
-    {
-      event: 'response.output_item.done',
-      data: { type: 'response.output_item.done', output_index: 0, item: item0 },
-    },
-    {
-      event: 'response.completed',
-      data: {
-        type: 'response.completed',
-        response: { id: 'resp_empty_term', object: 'response', model: 'gpt-test', status: 'completed', output: [], error: null, incomplete_details: null },
-      },
-    },
-  ]);
-
-  const result = await reassembleOpenAIResponsesEvents(body);
-  assertEquals(result.output, [item0, item1]);
-});
-
-test('reassembleOpenAIResponsesEvents prefers closed items over a terminal that omits one', async () => {
-  const reasoning: OpenAIResponsesOutputItem = { type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: 'BLOB_0' };
-  const message: OpenAIResponsesOutputItem = {
-    type: 'message',
-    id: 'msg_1',
-    status: 'completed',
-    role: 'assistant',
-    content: [{ type: 'output_text', text: 'Closed but unstated', annotations: [] }],
-  };
-
-  // A Codex upstream states a terminal `output` that omits the message it just closed.
-  const body = makeEvents([
-    {
-      event: 'response.output_item.done',
-      data: { type: 'response.output_item.done', output_index: 0, item: reasoning },
-    },
-    {
-      event: 'response.output_item.done',
-      data: { type: 'response.output_item.done', output_index: 1, item: message },
-    },
-    {
-      event: 'response.completed',
-      data: {
-        type: 'response.completed',
-        response: { id: 'resp_partial', object: 'response', model: 'gpt-test', status: 'completed', output: [reasoning], error: null, incomplete_details: null },
-      },
-    },
-  ]);
-
-  const result = await reassembleOpenAIResponsesEvents(body);
-  assertEquals(result.output, [reasoning, message]);
+  for (const output of [[], [closed, snapshotOnly]]) {
+    const terminal: OpenAIResponsesResult = {
+      id: 'resp_snapshot', object: 'response', model: 'test-model', status,
+      output, error: null, incomplete_details: null,
+    };
+    const result = await reassembleOpenAIResponsesEvents(makeEvents([
+      { data: { type: 'response.output_item.done', output_index: 0, item: closed } },
+      { data: { type, response: terminal } },
+    ]));
+    expect(result).toBe(terminal);
+    expect(result.output).toEqual(output);
+  }
 });
 
 test('reassembleOpenAIResponsesEvents preserves terminal snapshot when no closed items observed', async () => {
