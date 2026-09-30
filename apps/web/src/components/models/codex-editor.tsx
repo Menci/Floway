@@ -54,7 +54,7 @@ export function CodexEditor({ error, maxContextWindowTokens, onChange, readOnly,
   const { instructions_template: _template, ...otherMessages } = profile.model_messages ?? {};
   const numbers = ['default_context_window_tokens', 'auto_compact_token_limit', 'effective_context_window_percent'] as const;
   return <>
-    <SettingsExpander header={t('dashboard.upstreamEditor.models.codex.title')} revealOn={error !== undefined}>
+    <SettingsExpander deferContent header={t('dashboard.upstreamEditor.models.codex.title')} revealOn={error !== undefined}>
       <div className="grid gap-4 min-w-0">
         {error !== undefined && <Field validationState="error" validationMessage={error} />}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">

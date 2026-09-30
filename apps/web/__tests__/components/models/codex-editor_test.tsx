@@ -31,6 +31,8 @@ test('starts collapsed and mounts the main text box only after enabling custom i
 test('Auto values remain readable but cannot modify the profile', async () => {
   const onChange = vi.fn();
   renderInApp(<CodexEditor readOnly value={{ default_context_window_tokens: 272000, model_messages: { instructions_template: 'Read only.' }, use_responses_lite: true }} onChange={onChange} />);
+  expect(screen.queryByRole('spinbutton', { name: 'Default context window' })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: 'Model instructions' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
   await settle();
   const windowInput = screen.getByRole('spinbutton', { name: 'Default context window' }) as HTMLInputElement;
@@ -38,6 +40,12 @@ test('Auto values remain readable but cannot modify the profile', async () => {
   fireEvent.change(windowInput, { target: { value: '100000' } });
   fireEvent.click(screen.getByRole('switch', { name: 'Custom model instructions' }));
   expect(onChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
+  await settle();
+  expect(windowInput.isConnected).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
+  await settle();
+  expect(screen.getByRole('spinbutton', { name: 'Default context window' })).toBe(windowInput);
 });
 
 test('invalid advanced JSON cannot be applied and does not mutate metadata', async () => {
