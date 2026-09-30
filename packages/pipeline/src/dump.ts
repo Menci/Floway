@@ -119,6 +119,9 @@ export type Stored =
   | { readonly $readableStream: true }
   | { readonly $deferred: true }
   | { readonly $error: { readonly [key: string]: Stored } }
+  | { readonly $map: Stored }
+  | { readonly $set: Stored }
+  | { readonly $date: Stored }
   | { readonly $secret: StoredSecret }
   | { readonly $bytes: string }
   | { readonly $undefined: true }
@@ -177,6 +180,7 @@ const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => 
   const shareStringsFrom = options.shareStringsFrom ?? 1024;
   const objectIds = new Map<object, number>();
   const stringIds = new Map<string, number>();
+  const byteIds = new Map<string, number>();
   let nextObjectId = 1;
 
   const encodeFacts = (facts: Readonly<Record<string, unknown>>, emit: (event: DumpEvent) => void): Record<string, Stored> => {
@@ -198,6 +202,19 @@ const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => 
       if (isStreamFact(value)) return { $stream: value[STREAM] };
       const known = objectIds.get(value);
       if (known !== undefined) return { $: known };
+      if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+        const bytes = base64.encode(bytesOf(value));
+        const shared = byteIds.get(bytes);
+        if (shared !== undefined) {
+          objectIds.set(value, shared);
+          return { $: shared };
+        }
+        const id = nextObjectId++;
+        objectIds.set(value, id);
+        byteIds.set(bytes, id);
+        nodes[id - fromObjectId] = { $bytes: bytes };
+        return { $: id };
+      }
       const id = nextObjectId++;
       objectIds.set(value, id);
       nodes[id - fromObjectId] = body(value);
@@ -215,7 +232,9 @@ const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => 
         const keys = new Set(['name', 'message', ...Object.getOwnPropertyNames(value)]);
         return { $error: Object.fromEntries([...keys].map(key => [encodeKey(key), write((value as unknown as Record<string, unknown>)[key])])) };
       }
-      if (ArrayBuffer.isView(value)) return { $bytes: base64.encode(bytesOf(value)) };
+      if (value instanceof Map) return { $map: write([...value]) };
+      if (value instanceof Set) return { $set: write([...value]) };
+      if (value instanceof Date) return { $date: write(value.getTime()) };
       if (Array.isArray(value)) return value.map(write);
       return Object.fromEntries(Object.entries(value).map(([key, child]) => [encodeKey(key), write(child)]));
     };
@@ -228,8 +247,8 @@ const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => 
   return { encodeFacts };
 };
 
-const bytesOf = (view: ArrayBufferView): Uint8Array =>
-  new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+const bytesOf = (value: ArrayBuffer | ArrayBufferView): Uint8Array =>
+  value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 
 /**
  * One event in, its encoding out — so a run can be written down as it happens rather than

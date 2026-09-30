@@ -119,6 +119,29 @@ describe('the dump encoding', () => {
     expect(() => encodeFacts(move({ upload: new File(['ABC'], 'voice.wav') }))).toThrow('bytes and metadata');
   });
 
+  it('shares complete byte values across buffer and view identities', () => {
+    const original = new Uint8Array([1, 2, 3]);
+    const buffer = original.slice().buffer;
+    const view = new DataView(buffer);
+    const events = encodeFacts(move({ original, buffer, view }));
+    expect(events.filter(event => event.type === 'object').flatMap(event => event.nodes)).toEqual([{ $bytes: 'AQID' }]);
+    const facts = events.find(event => event.type === 'stage.entered')!.facts!;
+    expect(facts['original']).toEqual(facts['buffer']);
+    expect(facts['buffer']).toEqual(facts['view']);
+  });
+
+  it('preserves collection and date content with explicit tags', () => {
+    const key = { id: 3 };
+    const events = encodeFacts(move({ map: new Map([[key, 'value']]), set: new Set([key]), date: new Date(1234) }));
+    const nodes = events.filter(event => event.type === 'object').flatMap(event => event.nodes);
+    expect(nodes).toContainEqual({ $date: 1234 });
+    expect(nodes.some(node => typeof node === 'object' && node !== null && '$map' in node)).toBe(true);
+    expect(nodes.some(node => typeof node === 'object' && node !== null && '$set' in node)).toBe(true);
+    expect(nodes.filter(node => JSON.stringify(node) === '{"id":3}')).toHaveLength(1);
+    expect(JSON.stringify(events)).toContain('value');
+    expect(Object.isFrozen(key)).toBe(true);
+  });
+
   it('distinguishes a native body from a recorded protocol stream', () => {
     const body = new ReadableStream<Uint8Array>({ start: controller => controller.close() });
     const events = encodeFacts(move({ body, frames: streamFact(7) }));

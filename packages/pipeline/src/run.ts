@@ -211,6 +211,7 @@ export const walk = async (
           : `${stage.name}: returned without calling next, and declares no 'return'`);
       }
       const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
+      current = answer;
       scope.emit({ type: 'stage.leaved', stageId, facts: answer });
       return answer;
     }
@@ -233,6 +234,7 @@ export const walk = async (
     }
 
     const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
+    current = handedUp;
 
     // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
     // consumes is one it took ownership of, so what it received there and did not hand on is
