@@ -88,9 +88,6 @@ export const isStreamFact = (value: unknown): value is StreamFact =>
  * the same key across two events, so a diff reports no change where none happened;
  * `length` and `redacted` are what it renders. All three are produced here, because a
  * reader has nothing to compute them from — that is the point.
- *
- * How much of a secret the redacted form shows at each length is deliberately one
- * function, because the policy is not settled.
  */
 export const storedSecret = (value: Secret<unknown>): StoredSecret => {
   const rendered = value[RENDERED];
@@ -174,9 +171,8 @@ const tagged = (value: unknown): Stored | undefined => {
  * earlier event or at one inside this event, never forward into an event that has not
  * arrived. That is what makes the stream emittable as it happens.
  *
- * Bytes and large strings are shared by value, which is the only handle left when a stage
- * deep-clones a payload: every object below the clone is new, and an embedded image is
- * still the same bytes.
+ * Bytes and large strings are shared by complete value. Separately allocated payload
+ * graphs can still refer to the same encoded byte or string node.
  */
 const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => {
   const shareStringsFrom = options.shareStringsFrom ?? 1024;

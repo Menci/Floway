@@ -11,15 +11,13 @@ export const observeCopilotQuota = (upstreamId: string) => {
       request: { needs: ['request.http.callId'], consumes: [], provides: [] },
       response: { needs: ['response.http.exchange'], consumes: [], provides: ['response.copilot.quota'] },
     },
-    execute: async (facts, next, use) => {
+    execute: async (facts, next) => {
       const back = await next(move({ ...facts }));
       const exchange = back['response.http.exchange'];
       const pending: Promise<unknown>[] = [];
       if (exchange.type === 'response') {
         const snapshot = parseCopilotQuotaHeaders(new Headers(exchange.headers.map(([name, value]): [string, string] => [name, value])), new Date());
-        if (snapshot !== null) pending.push(putCopilotQuota(upstreamId, snapshot).catch(async error => {
-          await use.log.warn('Copilot quota snapshot persistence failed', { upstreamId, error });
-        }));
+        if (snapshot !== null) pending.push(putCopilotQuota(upstreamId, snapshot));
       }
       return move({ ...back, 'response.copilot.quota': defer(Promise.all(pending)) });
     },

@@ -262,11 +262,9 @@ export const walk = async (
     const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
     current = handedUp;
 
-    // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
-    // consumes is one it took ownership of, so what it received there and did not hand on is
-    // released now — whether it descended once or many times, since ownership is a
-    // declaration and not an arity. The test is over *values*, not keys, so a releasable that
-    // came back under one key and rides up under another survives.
+    // Consuming a response key takes ownership of every value received there.
+    // Release values absent from the returned record across all branches;
+    // ownership follows identity even when a resource changes keys.
     const kept = new Set(Object.values(handedUp).filter(isOwned));
     for (const branch of branches) {
       for (const key of pass!.response.consumes) {
@@ -328,13 +326,13 @@ const requireFacts = (facts: Facts, keys: readonly string[], who: string): void 
 const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: string): void =>
   requireFacts(handed, target.entryNeeds.map(String), `${who}: ${target.name}`);
 
-/** Each stage gets its own logger — the one capability the framework specializes by
- *  position. With a dump open its lines land in that stage's record as well as going to
+/** Each stage receives a logger tied to its execution position. With a dump open its lines land in that stage's record as well as going to
  *  the global sink, which is why `stage.log` is one of the dump's events.
  *
- *  The fields are snapshotted where the line is written, because a stored line must be a
- *  state that existed: the caller keeps its own object and the record must not drift with
- *  it. This is the same reason the record itself is frozen at handover. */
+ *  The top-level field record is copied and frozen; descendants remain shared
+ *  immutable values supplied by the producer, as with facts. Awaiting the global
+ *  logger before the run sink preserves each line's output order.
+ */
 const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): import('./stage.ts').Use<object>['log'] => {
   const sink = (services as RunServices).log;
   const line = (level: LogLevel) =>
