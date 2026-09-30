@@ -23,3 +23,12 @@ export interface FlowayOpenAIChatCompletionsReasoningCarrier {
 
 export const flowayReasoningFields = (reasoning: string, reasoningOpaque: string): FlowayOpenAIChatCompletionsReasoningCarrier =>
   reasoning === '' && reasoningOpaque === '' ? {} : { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning, reasoning_opaque: reasoningOpaque }) };
+
+export interface ChatCompletionsReasoningWireFields {
+  reasoning?: string | null;
+  reasoning_text?: string | null;
+  reasoning_content?: string | null;
+  reasoning_opaque?: string | null;
+  reasoning_details?: Record<string, unknown>[] | null;
+  thinking_blocks?: Record<string, unknown>[] | null;
+}
