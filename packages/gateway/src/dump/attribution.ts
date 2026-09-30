@@ -1,34 +1,7 @@
-// What a turn's record says about the turn, and what fills it.
-//
-// `DumpMetadata` is common to both record shapes — the dashboard lists a run
-// and a pair of edges in the same list, and a turn's model, upstream and token
-// counts do not depend on which mechanism served it — so the hooks that stamp
-// attribution and the assembly that turns it into metadata are one thing rather
-// than one per shape.
-//
-// Four independent slots the mid-flight hooks fill: `model` and `upstreamId`
-// identify what the turn was about, `inputTokens` / `outputTokens` quantify
-// what the upstream reported. They're independent because different outcomes
-// set different subsets:
-//
-//   • Every protocol handler calls `requestedModel(model)` immediately after
-//     parsing the payload, so `model` is set regardless of outcome.
-//   • `success(identity, usage)` fills all four; the upstream-resolved model
-//     id may overwrite what `requestedModel` had.
-//   • `error(kind, upstream?)` records a categorized api-error envelope
-//     (`kind` matches `ApiErrorResult.source`). Real upstream non-2xx pass
-//     `upstream` so a 4xx/5xx row in the dashboard names the upstream that
-//     rejected the call; the gateway arm may also pass it when a candidate
-//     was already chosen (item-not-found rewrite, hosted-tool input
-//     rejection).
-//   • `failed(reason)` records an uncategorized terminal failure: a thrown
-//     exception, a source-emitted error frame, a downstream cancel, or a
-//     writer error. Caller passes a string or Error; this one-line-formats it
-//     (`.message` only — never the stack, which lives in the response body's
-//     debug envelope).
-//
-// `requestedModel`-set model survives across both error variants so even an
-// outright-failed turn carries model attribution.
+// Listing metadata summarizes the run's observed model, upstream and quantities.
+// The requested model survives failures before resolution; successful observations
+// replace its identity and add only quantities that were actually reported.
+// Explicit protocol or stage failures outrank transport and settlement fallbacks.
 
 import type { DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from './types.ts';
 import { getRepo } from '../repo/index.ts';
@@ -58,7 +31,7 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 };
 
 // What only the recording side knows: identity, timing and the measured sizes
-// of the two edges. Everything else on the metadata comes from the hooks.
+// of the request and response. Attribution hooks provide the remaining fields.
 export interface DumpTurnOutcome {
   readonly id: string;
   readonly startedAt: number;
@@ -70,7 +43,7 @@ export interface DumpTurnOutcome {
   readonly responseBytes: number;
   readonly ttftMs: number | null;
   // Applied only when no hook stamped an error, so an explicit stamp from the
-  // respond path always outranks a transport-level read failure.
+  // pipeline or transport edge outranks a transport-level read failure.
   readonly fallbackError: DumpErrorMeta | null;
 }
 

@@ -36,7 +36,7 @@ interface DumpRow {
   response_body_descriptor: string | null;
 }
 
-// A null `upstream_id` means no upstream was identified at capture time
+// A null `upstream_id` means no upstream was identified for the run
 // (auth/validation reject, no candidate matched); a non-null id with a null
 // joined `upstream_name` means the referenced upstream was since deleted.
 // `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
@@ -72,11 +72,8 @@ const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Prom
   return await gunzipBytes(gz);
 };
 
-// A run record has no edge halves at row level — its request and response are
-// events inside the stream — and `request_headers_json` is NOT NULL. The empty
-// list is how the row spells "this shape has none"; nothing reads it back,
-// because `get` dispatches on the body descriptor first.
-const NO_EDGE_HEADERS = '[]';
+// The SQL row requires request_headers_json; headers themselves live in run facts.
+const EMPTY_HEADERS_JSON = '[]';
 
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
@@ -114,7 +111,7 @@ export class FileDumpStore implements DumpStore {
          VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)`,
       ).bind(
         keyId, meta.id, meta.completedAt, meta.upstream?.id ?? null,
-        encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`), NO_EDGE_HEADERS,
+        encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`), EMPTY_HEADERS_JSON,
         encodeDumpBodyDescriptor({ key: fileKey, type: 'run' }, `dump record ${meta.id} run descriptor`),
       ).run();
     } finally { stopRenewing(); }
@@ -173,9 +170,6 @@ export class FileDumpStore implements DumpStore {
     const responseDescriptor = row.response_body_descriptor === null
       ? null
       : decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} response body descriptor`);
-    // A record is one NDJSON stream, carried by the response descriptor and saying so. Anything
-    // else is a row from before the shape that produced it was deleted, which the migration that
-    // deleted them leaves none of — so it is corruption rather than a second shape.
     if (responseDescriptor?.type !== 'run') {
       throw new Error(`dump record ${recordId} has no run stream to read`);
     }

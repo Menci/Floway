@@ -206,8 +206,9 @@ transport errors take precedence over the settlement's generic failure marker.
 
 Run dumps write through the streaming `DumpStore.putRun` contract with durable storage
 backpressure while appending the same encoded NDJSON bytes to a temporary LogStream.
-Cold detail reads rehydrate the complete event artifact through `DumpStore.get`. Live writes
-retry at the same byte offset; persistent
+Cold detail reads rehydrate the complete event artifact through `DumpStore.get`. The Collected
+view selects the recorded client stream and uses its `stream.end` event to establish recording
+completion. Live writes retry at the same byte offset; persistent
 live failure leaves durable recording active. Quiet runs renew their temporary stream and
 staged-file leases. Closing waits for owned readers and deferred outcomes before publishing
 completed metadata. Run IDs are assigned at entry; listing remains ordered by completion time

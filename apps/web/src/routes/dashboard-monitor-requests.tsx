@@ -10,7 +10,7 @@ import type { ApiKey } from '../api/types';
 import { RequestDetailPanel } from '../components/requests/detail';
 import { refreshRequestKeys } from '../components/requests/key-refresh';
 import { RequestListPanel } from '../components/requests/list';
-import { streamEventsOf } from '../components/requests/run-stream';
+import { clientStreamOf } from '../components/requests/run-stream';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -67,10 +67,8 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   ]);
   const record = recordResult?.data ?? null;
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  // The frames the client was served are in the run's own stream, so the collected view is
-  // assembled from the record rather than from a second capture beside it.
-  const streamEvents = record ? streamEventsOf(record.events) : [];
-  const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
+  const stream = record ? clientStreamOf(record.events) : null;
+  const collected = collectKind && stream ? await collectStream(collectKind, stream) : null;
   return {
     collected,
     error: keysResult.error?.message ?? null,

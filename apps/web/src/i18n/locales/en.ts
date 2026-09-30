@@ -1069,6 +1069,7 @@ const en = {
         streamView: 'Response body view',
         noMatches: 'No requests match these filters',
         collected: 'Collected',
+        incompleteRecording: 'The recorded client stream is incomplete. The collected response may be partial.',
         streamEvent: 'Event',
         eventParseError: 'Invalid JSON',
         findEvents: 'Search events',

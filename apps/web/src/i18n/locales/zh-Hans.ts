@@ -1021,6 +1021,7 @@ const zhHansCN = {
         streamView: '响应体视图',
         noMatches: '没有符合筛选条件的请求',
         collected: '聚合结果',
+        incompleteRecording: '记录的客户端流不完整，聚合结果可能只包含部分响应。',
         streamEvent: '事件',
         eventParseError: 'JSON 解析失败',
         findEvents: '搜索事件',

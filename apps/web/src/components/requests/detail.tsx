@@ -79,6 +79,7 @@ function RunRecordDetail({ record, collected }: { record: DumpRecord; collected:
       <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
+    {collected?.truncated && <OutcomeMessageBar intent="warning">{t('dashboard.requests.incompleteRecording')}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
       {view === 'stages' ? <RunStages ndjson={redacted} /> : view === 'events'
         ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
