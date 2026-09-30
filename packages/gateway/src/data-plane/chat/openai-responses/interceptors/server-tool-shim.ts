@@ -1019,8 +1019,8 @@ const accumulateBillableUsage = async (
   metadata.billableUsage = sumBillableUsage(metadata.billableUsage, turn);
 };
 
-// Billing metadata settles when the upstream event generator closes. Await it
-// after consumption or cancellation so failed turns retain observed costs.
+// Stream-backed billing metadata can depend on draining the events. Await it
+// in finally to retain costs observed before a stream failure.
 async function* consumeBilledTurn(
   events: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
   result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
