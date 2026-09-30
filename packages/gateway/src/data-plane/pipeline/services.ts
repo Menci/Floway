@@ -8,10 +8,11 @@
 
 import type { AttemptSelector } from './facts.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { HttpServices } from '@floway-dev/http/pipeline';
 import type { Event, Logger } from '@floway-dev/pipeline';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-export interface GatewayServices {
+export interface GatewayServices extends HttpServices {
   /** The global sink. Every stage's lines reach it, tagged with the stage's name. */
   readonly log?: Logger;
   /** Present only when this request is being dumped, which is what keeps recording

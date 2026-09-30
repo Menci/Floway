@@ -58,7 +58,6 @@ const serveOpenAIImages = async (
       const answer = facts['response.openaiImages.rendered'];
       return isFrames(answer) ? { frames: answer } : { body: JSON.stringify(answer), contentType: 'application/json' };
     },
-    facts => facts['response.openaiImages.streamedUsage'],
   );
 };
 

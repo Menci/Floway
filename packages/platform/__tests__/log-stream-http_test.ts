@@ -37,6 +37,27 @@ test('a completed read round-trips its chunks', async () => {
   assertEquals(await collect(response), [bytes(1, 2, 3), bytes(4)]);
 });
 
+test('framing pulls only the chunk requested by the HTTP reader', async () => {
+  let pulled = 0;
+  const stream: LogStream = {
+    append: async () => {}, end: async () => {},
+    read: () => ({
+      async *[Symbol.asyncIterator]() {
+        for (let index = 0; index < 100; index++) { pulled++; yield bytes(index); }
+      },
+    }),
+  };
+  const response = serveLogStream(stream, 0, new AbortController().signal);
+  await Promise.resolve();
+  expect(pulled).toBe(0);
+  const reader = response.body!.getReader();
+  expect((await reader.read()).value).toEqual(bytes(0, 0, 0, 1));
+  expect(pulled).toBe(1);
+  expect((await reader.read()).value).toEqual(bytes(0));
+  expect(pulled).toBe(1);
+  await reader.cancel();
+});
+
 test('an interrupted read ends the body without its terminator, and the reader says so', async () => {
   const response = serveLogStream(streamOf([bytes(1, 2, 3)], 1), 0, new AbortController().signal);
 

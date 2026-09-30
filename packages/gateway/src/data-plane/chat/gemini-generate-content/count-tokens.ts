@@ -16,12 +16,12 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 
 export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
   compose('geminiGenerateContentCountTokens', [
-    emitGeminiGenerateContentTokenCount,
     // A measurement goes through settlement like every other run. It provides an empty
     // billed set because nothing here is billable today, not because the operation is
     // exempt — an upstream that began charging for it would provide a non-empty one and
     // nothing else would change.
-    writeSettlement(handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent'])),
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400),
+    emitGeminiGenerateContentTokenCount,
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),

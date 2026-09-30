@@ -110,7 +110,6 @@ const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string,
       if (isFrames(rendered)) return { frames: rendered };
       return { body: JSON.stringify(rendered), contentType: 'application/json' };
     },
-    facts => facts['response.chat.geminiGenerateContent.streamedUsage'],
   );
 };
 

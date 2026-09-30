@@ -85,7 +85,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: stubProvider(),
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },

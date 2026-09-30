@@ -34,8 +34,10 @@ export const move = <T>(value: T): T => {
   const walk = (v: unknown): void => {
     if (v === null || typeof v !== 'object' || handedOver.has(v)) return;
     handedOver.add(v);
-    if (ArrayBuffer.isView(v) || v instanceof ReadableStream || v instanceof Blob) return;
+    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v) || v instanceof ReadableStream || v instanceof Blob) return;
     Object.freeze(v);
+    if (v instanceof Map) for (const [key, child] of v) { walk(key); walk(child); }
+    if (v instanceof Set) for (const child of v) walk(child);
     for (const name of Object.getOwnPropertyNames(v)) walk((v as Record<string, unknown>)[name]);
   };
   walk(value);

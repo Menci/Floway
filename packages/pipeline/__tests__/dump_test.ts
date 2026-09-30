@@ -4,8 +4,10 @@ import { attemptPipeline, makeProvider, servePipeline } from './fixtures.ts';
 import { compose, createRunEncoder, defer, defineStage, encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
 import type { DumpEvent, Event, Stored } from '../src/index.ts';
 
-/** The dump only records when the prologue resolved a sink, so these runs bring one. */
-const RECORDING = { dump: () => {} };
+const recording = () => {
+  const events: Event[] = [];
+  return { events, services: { dump: (event: Event) => { events.push(event); } } };
+};
 
 const refsIn = (value: Stored, out: number[] = []): number[] => {
   if (typeof value !== 'object' || value === null) return out;
@@ -48,7 +50,8 @@ describe('the dump encoding', () => {
   // that has not arrived. That is what makes the stream emittable as it happens.
   it('never refers forward past the event it is in', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b c' }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': 'a b c' }), services);
     let highest = 0;
     for (const event of encodeRun(events)) {
       if (event.type === 'object') {
@@ -119,6 +122,29 @@ describe('the dump encoding', () => {
     expect(() => encodeFacts(move({ upload: new File(['ABC'], 'voice.wav') }))).toThrow('bytes and metadata');
   });
 
+  it('shares complete byte values across buffer and view identities', () => {
+    const original = new Uint8Array([1, 2, 3]);
+    const buffer = original.slice().buffer;
+    const view = new DataView(buffer);
+    const events = encodeFacts(move({ original, buffer, view }));
+    expect(events.filter(event => event.type === 'object').flatMap(event => event.nodes)).toEqual([{ $bytes: 'AQID' }]);
+    const facts = events.find(event => event.type === 'stage.entered')!.facts!;
+    expect(facts['original']).toEqual(facts['buffer']);
+    expect(facts['buffer']).toEqual(facts['view']);
+  });
+
+  it('preserves collection and date content with explicit tags', () => {
+    const key = { id: 3 };
+    const events = encodeFacts(move({ map: new Map([[key, 'value']]), set: new Set([key]), date: new Date(1234) }));
+    const nodes = events.filter(event => event.type === 'object').flatMap(event => event.nodes);
+    expect(nodes).toContainEqual({ $date: 1234 });
+    expect(nodes.some(node => typeof node === 'object' && node !== null && '$map' in node)).toBe(true);
+    expect(nodes.some(node => typeof node === 'object' && node !== null && '$set' in node)).toBe(true);
+    expect(nodes.filter(node => JSON.stringify(node) === '{"id":3}')).toHaveLength(1);
+    expect(JSON.stringify(events)).toContain('value');
+    expect(Object.isFrozen(key)).toBe(true);
+  });
+
   it('distinguishes a native body from a recorded protocol stream', () => {
     const body = new ReadableStream<Uint8Array>({ start: controller => controller.close() });
     const events = encodeFacts(move({ body, frames: streamFact(7) }));
@@ -167,7 +193,8 @@ describe('the dump encoding', () => {
   // `parentStageId` — but it carries `facts` only when they differ from its parent's.
   it('folds an entry that carries nothing of its own, and drops an exit that does', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b' }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': 'a b' }), services);
     const encoded = encodeRun(events);
     const entries = encoded.filter(e => e.type === 'stage.entered');
     const rawEntries = events.filter(e => e.type === 'stage.entered');
@@ -247,7 +274,8 @@ describe('the dump encoding', () => {
   it('costs a fraction of writing every state independently', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
     const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
-    const { events } = await run(serve, move({ 'in.text': words }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': words }), services);
     const independent = events.reduce((n, e) => n + ('facts' in e ? JSON.stringify(e.facts).length : 0), 0);
     const deduplicated = toNdjson(encodeRun(events)).length;
     expect(deduplicated).toBeLessThan(independent / 2);

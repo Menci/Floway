@@ -17,15 +17,13 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 
 export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload): Pipeline<AnthropicMessagesServeEntry, AnthropicMessagesServeExit> =>
   compose('anthropicMessagesServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitAnthropicMessages,
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
-      handedUp => (handedUp as { 'response.chat.anthropicMessages.streamedUsage'?: unknown })['response.chat.anthropicMessages.streamedUsage'] !== null,
-    ),
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
       owns: [],
+      pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.anthropicMessages'),
     answerClaudeCodeProbe,

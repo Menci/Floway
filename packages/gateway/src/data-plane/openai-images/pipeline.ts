@@ -10,18 +10,18 @@ import { compose, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIImagesRequest } from '@floway-dev/protocols/openai-images';
 
 export const openaiImagesServePipeline = (request: CanonicalOpenAIImagesRequest): Pipeline<OpenAIImagesServeEntry, OpenAIImagesServeExit> =>
-  compose('openaiImagesServe', [emitOpenAIImages, ...openaiImagesModelStages(request)]);
+  compose('openaiImagesServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, 'response.openaiImages.streamedUsage'),
+    emitOpenAIImages,
+    ...openaiImagesModelStages(request),
+  ]);
 
 export const openaiImagesModelStages = (request: Pick<CanonicalOpenAIImagesRequest, 'operation'>, dispatchStages: readonly Stage[] = [callOpenAIImagesUpstream]): readonly Stage[] => [
-  writeSettlement(
-    handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
-    handedUp => (handedUp as { 'response.openaiImages.streamedUsage'?: unknown })['response.openaiImages.streamedUsage'] !== null,
-  ),
   resolveCandidates(narrowing(request)),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
     owns: ['response.http.body'],
-    streamedUsage: 'response.openaiImages.streamedUsage',
+    pendingUsage: 'response.openaiImages.streamedUsage',
   }),
   ...dispatchStages,
 ];

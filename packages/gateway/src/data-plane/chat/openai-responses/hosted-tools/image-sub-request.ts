@@ -1,9 +1,7 @@
 import { imageGenerationSubRequestPipeline } from './image-sub-request/pipeline.ts';
 import type { ImageGenerationRequest } from './image-sub-request/request.ts';
 import type { HostedToolLifecycleEvent, HostedToolTerminal } from './types.ts';
-import { consoleLogSink } from '../../../../runtime/log.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
-import { settleBillable } from '../../../pipeline/settlement.ts';
 import type { GatewayCtx, AttemptState } from '../../../shared/gateway-ctx.ts';
 import { run, move } from '@floway-dev/pipeline';
 
@@ -51,11 +49,6 @@ export const runImageGenerationSubRequest = async (
           dump?.failed(error);
           throw error;
         } finally {
-          const reading = facts['response.openaiImages.streamedUsage'];
-          if (reading !== null) {
-            const outcome = await reading;
-            settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
-          }
           dump?.finalize(facts['response.http.status'], 0);
         }
       },

@@ -19,15 +19,13 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 
 export const geminiGenerateContentServePipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentServeEntry, GeminiGenerateContentServeExit> =>
   compose('geminiGenerateContentServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitGeminiGenerateContent,
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
-      handedUp => (handedUp as { 'response.chat.geminiGenerateContent.streamedUsage'?: unknown })['response.chat.geminiGenerateContent.streamedUsage'] !== null,
-    ),
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
       owns: [],
+      pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),
     stripUnsupportedPartFieldsFromGeminiGenerateContent,

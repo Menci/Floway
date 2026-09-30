@@ -33,7 +33,6 @@ export type { Deferred, Owned, RunResult } from './run.ts';
 
 export {
   createRunEncoder,
-  createRunReader,
   decodeKey,
   encodeKey,
   encodeRun,
@@ -45,3 +44,6 @@ export {
   toNdjson,
 } from './dump.ts';
 export type { DumpEvent, Event, Ref, Secret, Stored, StoredSecret, StreamFact } from './dump.ts';
+
+export { createRunReader } from './read.ts';
+export type { ReadEvent, RunReader } from './read.ts';

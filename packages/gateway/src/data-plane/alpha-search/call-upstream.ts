@@ -1,12 +1,15 @@
 import type { PinnedSearchUpstream, Fields } from './facts.ts';
 import { parseAlphaSearchResponse } from './protocol.ts';
+import { providerEntry } from '../pipeline/provider-entry.ts';
+import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { filterInboundHeadersForProvider } from '../shared/inbound-headers.ts';
 import { telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { providerModelOf, identityWrapUpstreamCall, type ModelCandidate } from '@floway-dev/provider';
+import { type ModelCandidate, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
 
 /**
  * A misconfigured pin is the operator's to see with its stack, the way the gateway surfaces
@@ -62,41 +65,40 @@ const asJson = (raw: string): unknown => {
  */
 export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
   Fields<'request.search.alphaSearch' | 'ingress.http.headers'>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  ProviderRequest<ProviderOperationPayloads['alphaSearch']>,
+  ProviderResponse,
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status' | 'response.http.body'>,
   GatewayServices
 >({
   name: 'callSearchUpstream',
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
-  execute: async (facts, use) => {
+  into: {
+    request: { needs: ['request.search.alphaSearch', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
+  },
+  execute: async (facts, next, use) => {
     const candidate = await resolvePinnedUpstream(pinned, use.gateway);
     // The caller's model is dropped: this endpoint is pinned to the operator's model, and the
     // provider stamps that one on the way out.
     // TODO: pin SearchRequest.id to one provider account when Codex upstreams support account
     // pools. The current Codex provider has one active account.
     const { model: _named, ...request } = facts['request.search.alphaSearch'];
-    const result = await candidate.provider.instance.callAlphaSearch(
-      providerModelOf(candidate),
-      request,
-      use.gateway.abortSignal,
-      {
-        fetcher: candidate.fetcher,
-        waitUntil: use.gateway.backgroundScheduler,
-        // The client's own headers reach the upstream from the record, not from a live
-        // request object: what a provider is allowed to forward is filtered per provider,
-        // and the dump shows what was there to filter.
-        headers: filterInboundHeadersForProvider(turnMetadataHeaders(facts['ingress.http.headers']), candidate.provider),
-        // No `PerformanceOperation` names search, so there is no performance row for a
-        // stamping wrapper's interval to land on.
-        wrapUpstreamCall: identityWrapUpstreamCall,
-      },
-    );
+    const selector = use.rememberCandidates([candidate])[0]!;
+    const pipeline = candidate.provider.pipelines.alphaSearch;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no Alpha Search pipeline`);
+    const back = await next(providerEntry({ ...facts, 'route.attempt': selector }, candidate, request, [...turnMetadataHeaders(facts['ingress.http.headers'])]), pipeline);
+    const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    if (exchange.type === 'transportFailure') {
+      return move({ ...rest, 'response.search.alphaSearch': dialFailure(exchange.error), 'response.usage.billable': providerUsage(candidate, back, []), 'response.http.headers': [], 'response.http.status': 502 });
+    }
+    const result = { response: exchangeResponse(exchange), modelKey };
     // The alpha-search protocol reports no usage at all, so the entity is present with no
     // quantities — the upstream was called and reported nothing, which is a different
     // situation from reporting zero.
-    const billable = [{ identity: telemetryModelIdentity(candidate, result.modelKey), quantities: {} }];
+    const billable = wasCalled ? [{ identity: telemetryModelIdentity(candidate, result.modelKey), quantities: {} }] : [];
 
     // Every protocol the gateway carries is one it fully understands: the body is read here
     // and serialized again at the edge, an error body included.
+    spentBody(exchange.body);
     const raw = await result.response.text();
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
@@ -105,14 +107,15 @@ export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
       // something the edge can serialize back out.
       const body = asJson(raw);
       return move({
-        ...facts,
+        ...rest,
         'response.search.alphaSearch': {
           status: result.response.status,
           message: raw,
           ...(body === undefined ? {} : { body }),
         },
-        'response.usage.billable': billable,
+        'response.usage.billable': providerUsage(candidate, back, billable),
         'response.http.headers': [...result.response.headers],
+        'response.http.status': result.response.status,
       });
     }
 
@@ -121,21 +124,23 @@ export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
       // A protocol that requires JSON and receives something else synthesizes its own error,
       // which is also why the raw text rides along: a dump reader is owed what came back.
       return move({
-        ...facts,
+        ...rest,
         'response.search.alphaSearch': {
           status: 502,
           message: `The search upstream answered ${result.response.status} but not in the search protocol: ${verdict.reason}.`,
           body: raw,
         },
-        'response.usage.billable': billable,
+        'response.usage.billable': providerUsage(candidate, back, billable),
         'response.http.headers': [...result.response.headers],
+        'response.http.status': result.response.status,
       });
     }
     return move({
-      ...facts,
+      ...rest,
       'response.search.alphaSearch': verdict.response,
-      'response.usage.billable': billable,
+      'response.usage.billable': providerUsage(candidate, back, billable),
       'response.http.headers': [...result.response.headers],
+      'response.http.status': result.response.status,
     });
   },
 });

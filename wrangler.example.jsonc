@@ -120,6 +120,10 @@
       {
         "name": "EXECUTION_DO",
         "class_name": "ExecutionDO"
+      },
+      {
+        "name": "LOG_STREAM_DO",
+        "class_name": "LogStreamDO"
       }
     ]
   },
@@ -146,6 +150,10 @@
           "to": "ExecutionDO"
         }
       ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["LogStreamDO"]
     }
   ]
 }

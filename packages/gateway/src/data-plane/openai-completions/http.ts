@@ -50,6 +50,5 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
         ? { frames: rendered }
         : { body: JSON.stringify(rendered), contentType: 'application/json' };
     },
-    facts => facts['response.openaiCompletions.streamedUsage'],
   );
 };

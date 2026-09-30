@@ -42,6 +42,8 @@ resources belong to the run until `drain()`.
 `setRelease(resource, release)` changes how that same resource is released
 before disposal starts. An HTTP body can initially be cancellable, then acquire
 the decoder's drain action without a second ownership claim.
+It returns the prior release callback so a later layer can compose its own
+settlement around that callback without recursively invoking the disposer.
 
 `defer(promise)` marks work the run must finish. Initial facts and all later
 handovers register owned and deferred values. `drain()` waits for their
@@ -59,7 +61,14 @@ and retains every cleanup error. Cleanup still attempts the other resources.
 Recording is enabled by a `dump` sink in the run's services. Events carry stage
 boundaries, stage logs, protocol frames and deferred settlement. Encoding
 assigns object IDs, retains shared references and interns large equal strings.
-Each encoded event is one NDJSON line.
+Each encoded event is one NDJSON line. The runner delivers events directly
+to the sink and returns only facts and the drain operation; it retains no
+parallel event backlog. A caller that needs an in-memory collection can collect
+from that sink explicitly. Stage boundaries and deferred settlement await the
+sink, so storage backpressure reaches execution. Scoped `use.log` methods also
+return promises and must be awaited. The external global logger may stay
+synchronous; the scoped logger awaits both its output and the dump write.
+The encoder remains synchronous for one event at a time.
 
 Special values remain distinguishable from ordinary data:
 
@@ -70,10 +79,20 @@ Special values remain distinguishable from ordinary data:
 - Deferred values use `$deferred` handles. A `deferred.settled` event names the
   same reference and carries a fulfilled value or rejected error.
 - Errors use `$error` with name, message, stack, cause and other own properties.
-- Buffer views use `$bytes`; unsupported JSON scalars have explicit tags.
+- Array buffers and their views use `$bytes`, shared by their complete byte
+  value. Maps, sets and dates use `$map`, `$set` and `$date` tags; their content
+  retains shared references. Unsupported JSON scalars have explicit tags.
 - `Secret` values retain length and a stable hash while masking their complete
   rendered value. Other strings are stored verbatim.
 
 Native Blob/File values cannot be read synchronously by the encoder and are
 rejected rather than recorded as empty objects. Their portable bytes and
 metadata representation records losslessly through the ordinary value codec.
+
+`createRunReader()` accepts each stored event and resolves its facts, frames or
+deferred outcome in the same object space. Cycles and shared descendants retain
+their decoded identities. `read.node(id)` exposes the stored node for structural
+inspection; `read.decode(value)` uses that same cache, and
+`read.settlement(id)` returns a deferred handle's observed outcome. Bytes,
+collections, errors and platform handles decode to content descriptions so
+reading a dump does not recreate live resources.

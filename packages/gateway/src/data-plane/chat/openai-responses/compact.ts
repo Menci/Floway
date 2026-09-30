@@ -26,17 +26,14 @@ export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponses
   // narrowing at assembly, before any fact exists.
   let prepared = payload;
   return compose('openaiResponsesCompact', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
     emitOpenAIResponsesCompaction,
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
-      handedUp => (handedUp as { 'response.chat.openaiResponses.streamedUsage'?: unknown })['response.chat.openaiResponses.streamedUsage'] !== null,
-    ),
     hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
     resolveChatCandidates(openaiResponsesNarrowing(() => prepared)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       owns: [],
-      streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE,
+      pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),
     beginStoredAttempt,

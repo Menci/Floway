@@ -43,7 +43,8 @@ test('a usage write that fails leaves the answer alone and still reports', async
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAIEmbeddingsUpstream(repo);
 
-  repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
+  const failure = new Error('simulated SQL write failure');
+  repo.usage.record = () => Promise.reject(failure);
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
@@ -71,7 +72,7 @@ test('a usage write that fails leaves the answer alone and still reports', async
       },
     );
 
-    assertEquals(errorSpy.mock.calls.some(call => String(call[0]).includes('usage')), true);
+    assertEquals(errorSpy.mock.calls.some(call => call[1] === failure), true);
   } finally {
     errorSpy.mockRestore();
   }

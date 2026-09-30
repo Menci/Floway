@@ -5,6 +5,7 @@ import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../../../repo/upstreams.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { stubProviderPipeline } from '../../../../test-utils/provider-pipeline.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -48,6 +49,20 @@ const defaultCandidates = vi.hoisted(() => () => [{
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
+    pipelines: {
+      openaiImagesGenerations: stubProviderPipeline('openaiImagesGenerations', async (_model, body) => {
+        stub.generationsCalls.push(body);
+        const response = stub.nextGenerations.shift();
+        if (response === undefined) throw new Error('test did not enqueue a generations response');
+        return { response, modelKey: 'gpt-image-2' };
+      }),
+      openaiImagesEdits: stubProviderPipeline('openaiImagesEdits', async (_model, request) => {
+        stub.editsRequests.push(request);
+        const response = stub.nextEdits.shift();
+        if (response === undefined) throw new Error('test did not enqueue an edits response');
+        return { response, modelKey: 'gpt-image-2' };
+      }),
+    },
     instance: {
       callOpenAIImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
@@ -364,7 +379,7 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   assertEquals(request.images.length, 1);
   const image = request.images[0];
   assert(image.type === 'upload');
-  const bytes = await image.file.text();
+  const bytes = new TextDecoder().decode(image.file.bytes);
   assertEquals(bytes, 'AAAA');
 });
 
@@ -404,7 +419,7 @@ test('a prefetched remote edit source remains visible to orchestration and is re
   const request = stub.editsRequests[0];
   const image = request.images[0];
   assert(image.type === 'upload');
-  assertEquals(new Uint8Array(await image.file.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+  assertEquals(new Uint8Array(image.file.bytes), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 });
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
@@ -434,8 +449,8 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assert(mask?.type === 'upload');
   assertEquals(image.file.type, 'image/webp');
   assertEquals(mask.file.type, 'image/webp');
-  assertEquals(await image.file.text(), 'WEBP');
-  assertEquals(await mask.file.text(), 'WEBP');
+  assertEquals(new TextDecoder().decode(image.file.bytes), 'WEBP');
+  assertEquals(new TextDecoder().decode(mask.file.bytes), 'WEBP');
 });
 
 test('identical GIF source and mask share one transcode', async () => {
@@ -464,8 +479,8 @@ test('identical GIF source and mask share one transcode', async () => {
   const image = request.images[0];
   assert(image.type === 'upload');
   assert(request.mask?.type === 'upload');
-  assertEquals(await image.file.text(), 'WEBP');
-  assertEquals(await request.mask.file.text(), 'WEBP');
+  assertEquals(new TextDecoder().decode(image.file.bytes), 'WEBP');
+  assertEquals(new TextDecoder().decode(request.mask.file.bytes), 'WEBP');
 });
 
 test('image transcoding failure becomes a terminal image tool failure', async () => {

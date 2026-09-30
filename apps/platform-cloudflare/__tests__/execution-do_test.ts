@@ -45,6 +45,7 @@ class FakeWebSocket implements WebSocket {
 }
 
 class FakeState {
+  async blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> { return await callback(); }
   readonly sockets: FakeWebSocket[] = [];
   readonly storage = null as unknown as DurableObjectStorage;
   readonly exports = {

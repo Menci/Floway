@@ -68,7 +68,6 @@ export const openaiChatCompletionsHttp = {
         if (isFrames(rendered)) return { frames: rendered };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.openaiChatCompletions.streamedUsage'],
     );
   },
 };

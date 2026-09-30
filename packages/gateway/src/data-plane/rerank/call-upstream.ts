@@ -1,14 +1,17 @@
 import type { Fields } from './facts.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
+import { providerEntry } from '../pipeline/provider-entry.ts';
+import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure, readUpstreamBody, unreadableBody } from '../pipeline/upstream-body.ts';
+import { dialFailure, readUpstreamBody, unreadableBody, spentBody } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
-import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { upstreamErrorMessage, parseDecimalString } from '@floway-dev/protocols/common';
 import { parseRerankUsage, parseRerankResponse, type CanonicalRerankResponse } from '@floway-dev/protocols/rerank';
 import { providerModelOf } from '@floway-dev/provider';
+import type { ProviderRequest, ProviderOperationPayloads, ProviderRerankResponse } from '@floway-dev/provider';
 
 /**
  * The ending. It dials, reads the upstream's body, and provides the canonical answer and
@@ -17,14 +20,17 @@ import { providerModelOf } from '@floway-dev/provider';
  */
 export const callRerankUpstream = defineStage<
   Fields<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers' | 'ingress.rerank.sourceProtocol'>,
-  Fields<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
+  ProviderRequest<ProviderOperationPayloads['rerank']>,
+  ProviderRerankResponse,
+  Fields<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'callRerankUpstream',
-  return: {
-    provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.status', 'response.http.headers', 'response.usage.billable'],
+  into: {
+    request: { needs: ['request.rerank.canonical', 'route.attempt', 'ingress.http.headers', 'ingress.rerank.sourceProtocol'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body', 'response.provider.rerankTarget'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.provider.previousCalls', 'response.provider.rerankTarget'], provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.status', 'response.http.headers', 'response.http.body', 'response.usage.billable'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.rerank.canonical'];
     const model = providerModelOf(candidate);
@@ -39,40 +45,32 @@ export const callRerankUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'rerank');
 
-    let result;
-    try {
-      result = await candidate.provider.instance.callRerank(
-        model,
-        request,
-        use.gateway.abortSignal,
-        // The client's own headers reach the upstream from the record, not from a live
-        // request object: what a provider is allowed to forward is filtered per provider,
-        // and the dump shows what was there to filter.
-        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]))),
-      );
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so nothing was billed and there are
-      // no headers to carry. What it leaves behind is the performance row settlement writes.
+    const pipeline = candidate.provider.pipelines.rerank;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no rerank pipeline`);
+    const back = await next(providerEntry(facts, candidate, request), pipeline);
+    const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, 'response.provider.rerankTarget': target, ...rest } = back;
+    if (exchange.type === 'transportFailure') {
       return move({
-        ...facts,
-        'response.rerank.canonical': dialFailure(error),
+        ...rest,
+        'response.rerank.canonical': dialFailure(exchange.error),
         'response.rerank.targetProtocol': configuredTarget.protocol,
         'response.http.status': 502,
         'response.http.headers': [],
-        'response.usage.billable': [],
+        'response.usage.billable': providerUsage(candidate, back, []),
       });
     }
+    const result = { response: exchangeResponse(exchange), modelKey, target };
 
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     // What came back, unfiltered: the edge is where a client's view of it is decided.
     const headers = [...result.response.headers];
+    spentBody(exchange.body);
     const body = await readUpstreamBody(result.response);
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
       return move({
-        ...facts,
+        ...rest,
         'response.rerank.canonical': {
           status: result.response.status,
           message: upstreamErrorMessage(body.json) ?? body.text,
@@ -83,18 +81,18 @@ export const callRerankUpstream = defineStage<
         'response.http.headers': headers,
         // The upstream was called and reported nothing, which is a different situation
         // from reporting zero — so the entity is present with no quantities.
-        'response.usage.billable': [{ identity, quantities: {} }],
+        'response.usage.billable': providerUsage(candidate, back, wasCalled ? [{ identity, quantities: {} }] : []),
       });
     }
 
     if (!('json' in body)) {
       return move({
-        ...facts,
+        ...rest,
         'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
         'response.rerank.targetProtocol': result.target.protocol,
         'response.http.status': result.response.status,
         'response.http.headers': headers,
-        'response.usage.billable': [{ identity, quantities: {} }],
+        'response.usage.billable': providerUsage(candidate, back, wasCalled ? [{ identity, quantities: {} }] : []),
       });
     }
 
@@ -129,12 +127,12 @@ export const callRerankUpstream = defineStage<
       if (translating) {
         use.log.warn('upstream answered with results the rerank protocol cannot read', { error: String(error) });
         return move({
-          ...facts,
+          ...rest,
           'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
           'response.rerank.targetProtocol': result.target.protocol,
           'response.http.status': result.response.status,
           'response.http.headers': headers,
-          'response.usage.billable': metered,
+          'response.usage.billable': providerUsage(candidate, back, wasCalled ? metered : []),
         });
       }
       use.log.debug('same-protocol answer carries results this gateway does not model', { error: String(error) });
@@ -142,12 +140,12 @@ export const callRerankUpstream = defineStage<
     }
 
     return move({
-      ...facts,
+      ...rest,
       'response.rerank.canonical': canonical,
       'response.rerank.targetProtocol': result.target.protocol,
       'response.http.status': result.response.status,
       'response.http.headers': headers,
-      'response.usage.billable': metered,
+      'response.usage.billable': providerUsage(candidate, back, wasCalled ? metered : []),
     });
   },
 });

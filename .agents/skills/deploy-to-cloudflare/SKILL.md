@@ -27,7 +27,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
 4. Run `pnpm jiti scripts/require-wrangler-config.ts`.
 5. Run `pnpm wrangler deployments status --json`. Continue only when Wrangler explicitly reports that the configured Worker does not exist. Stop when it reports an existing deployment or any authentication, network, account, or ambiguous failure.
 6. Run `pnpm run build:web`, because the shared Wrangler configuration includes `apps/web/dist/client` as its Static Assets directory.
-7. Publish the bootstrap probe through a reviewed command file, retaining the final Worker name, bindings, Durable Object migration, assets, cron, and routes. This first version installs the configured `new_sqlite_classes` migration:
+7. Publish the bootstrap probe through a reviewed command file, retaining the final Worker name, bindings, Durable Object migration, assets, cron, and routes. This first version installs the configured Durable Object class migrations:
 
    ```bash
    pnpm wrangler deploy .agents/skills/deploy-to-cloudflare/assets/binding-probe.js \
@@ -52,7 +52,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
      <DEPLOYED_ORIGIN>/api/deployment-probe
    ```
 
-10. Require HTTP 200, the exact body `Hello World`, and `x-floway-binding-probe: DB,FILES,IMAGES,KV,BROADCAST_DO`. The probe performs a D1 query, an R2 read, a KV read, an Images inspection, and a Durable Object request. Stop before migrations when any check fails.
+10. Require HTTP 200, the exact body `Hello World`, and `x-floway-binding-probe: DB,FILES,IMAGES,KV,EXECUTION_DO,LOG_STREAM_DO`. The probe performs a D1 query, an R2 read, a KV read, an Images inspection, an execution-cell request, and a SQLite-backed log-stream request. Stop before migrations when any check fails.
 11. Set `ADMIN_KEY` with `pnpm wrangler secret put ADMIN_KEY`; accept the value only through Wrangler's secret prompt or redirected secure input. Confirm its name in `pnpm wrangler secret list`.
 12. Continue with the deployment-state collection below. Treat the probe deployment as the current code version and omit the historical Floway `CHANGELOG.md` diff because no previous Floway deployment exists at this Worker name.
 

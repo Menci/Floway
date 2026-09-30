@@ -15,15 +15,13 @@ import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-
 
 export const openaiChatCompletionsServePipeline = (payload: OpenAIChatCompletionsPayload): Pipeline<OpenAIChatCompletionsServeEntry, OpenAIChatCompletionsServeExit> =>
   compose('openaiChatCompletionsServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitOpenAIChatCompletions,
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
-      handedUp => (handedUp as { 'response.chat.openaiChatCompletions.streamedUsage'?: unknown })['response.chat.openaiChatCompletions.streamedUsage'] !== null,
-    ),
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
       owns: [],
+      pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiChatCompletions'),
     normalizeEmptyToolsForOpenAIChatCompletions,

@@ -2,14 +2,16 @@ import type { Fields, OpenAIAudioTranscriptionEvents, OpenAIAudioTranscriptionSt
 import { recordStream } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure } from '../pipeline/facts.ts';
+import { providerEntry } from '../pipeline/provider-entry.ts';
+import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure } from '../pipeline/upstream-body.ts';
+import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
-import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
-import { defineStage, move, own, defer, type Owned, type Logger, type Deferred } from '@floway-dev/pipeline';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
+import { defineStage, move, setRelease, defer, type Owned, type Logger, type Deferred } from '@floway-dev/pipeline';
 import { isEventStreamMediaType, eventFrame, parseSSEStream, parseDecimalString } from '@floway-dev/protocols/common';
 import { parseOpenAIAudioTranscription, parseOpenAIAudioTranscriptionUsage, isOpenAIAudioTranscriptionDoneEvent, parseOpenAIAudioTranscriptionStreamUsage, type OpenAIAudioTranscriptionResponseFormat, type CanonicalOpenAIAudioTranscription, type OpenAIAudioTranscriptionUsage } from '@floway-dev/protocols/openai-audio';
-import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ProviderRequest, ProviderOperationPayloads, ProviderResponse, TelemetryModelIdentity } from '@floway-dev/provider';
 
 const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => events });
 
@@ -23,60 +25,43 @@ const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.as
  */
 export const callOpenAIAudioTranscriptionUpstream = defineStage<
   Fields<'ingress.openaiAudioTranscription.responseFormat' | 'request.openaiAudioTranscription.form' | 'route.attempt' | 'ingress.http.headers'>,
+  ProviderRequest<ProviderOperationPayloads['openaiAudioTranscriptions']>,
+  ProviderResponse,
   Fields<'response.openaiAudioTranscription.canonical' | 'response.openaiAudioTranscription.mediaType' | 'response.openaiAudioTranscription.streamedOutcome'>
     & { 'response.usage.billable': readonly BillableEntity[]; 'response.http.status': number;
       'response.http.headers': readonly (readonly [string, string])[];
-      'response.http.body': ReadableStream<Uint8Array> & Owned; },
+      'response.http.body': (ReadableStream<Uint8Array> & Owned) | null; },
   GatewayServices
 >({
   name: 'callOpenAIAudioTranscriptionUpstream',
-  return: {
-    provides: [
-      'response.openaiAudioTranscription.canonical',
-      'response.openaiAudioTranscription.mediaType',
-      'response.openaiAudioTranscription.streamedOutcome',
-      'response.usage.billable',
-      'response.http.status',
-      'response.http.headers',
-      'response.http.body',
-    ],
+  into: {
+    request: { needs: ['ingress.openaiAudioTranscription.responseFormat', 'request.openaiAudioTranscription.form', 'route.attempt', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.openaiAudioTranscription.canonical', 'response.openaiAudioTranscription.mediaType', 'response.openaiAudioTranscription.streamedOutcome', 'response.usage.billable', 'response.http.status', 'response.http.headers', 'response.http.body'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     // Attribution is set before the dial, so an attempt that never completes still names the
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'audio_transcription');
 
-    let result;
-    try {
-      result = await candidate.provider.instance.callOpenAIAudioTranscriptions(
-        providerModelOf(candidate),
-        {
-          entries: facts['request.openaiAudioTranscription.form'].map(({ name, value }) => ({
-            name, value: typeof value === 'string' ? value : new File([value.bytes], value.name, { type: value.type, lastModified: value.lastModified }),
-          })),
-        },
-        use.gateway.abortSignal,
-        // The client's own headers reach the upstream from the record, not from a live request
-        // object: what a provider is allowed to forward is filtered per provider, and the dump
-        // shows what was there to filter.
-        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]))),
-      );
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so nothing was billed and there are
-      // no headers to carry. What it leaves behind is the performance row settlement writes.
+    const pipeline = candidate.provider.pipelines.openaiAudioTranscriptions;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no openaiAudioTranscriptions pipeline`);
+    const back = await next(providerEntry(facts, candidate, { entries: facts['request.openaiAudioTranscription.form'] }), pipeline);
+    const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    if (exchange.type === 'transportFailure') {
       return move({
-        ...facts,
-        'response.openaiAudioTranscription.canonical': dialFailure(error),
+        ...rest,
+        'response.openaiAudioTranscription.canonical': dialFailure(exchange.error),
         'response.openaiAudioTranscription.mediaType': null,
         'response.openaiAudioTranscription.streamedOutcome': null,
-        'response.usage.billable': [],
+        'response.usage.billable': providerUsage(candidate, back, []),
         'response.http.status': 502,
         'response.http.headers': [],
         'response.http.body': spentBody(null),
       });
     }
+    const result = { response: exchangeResponse(exchange), modelKey };
+
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     const format = facts['ingress.openaiAudioTranscription.responseFormat'];
     const status = result.response.status;
@@ -84,21 +69,22 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     const headers = move([...result.response.headers] as readonly (readonly [string, string])[]);
     // An upstream that was called and reported nothing is a different situation from one
     // that reported zero, so the entity is present with no quantities.
-    const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
+    const called: readonly BillableEntity[] = wasCalled ? [{ identity, quantities: {} }] : [];
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status });
+      spentBody(exchange.body);
       // An upstream error body is JSON like any other body, and reading it here is also what
       // leaves a losing attempt with nothing open behind it.
       return move({
-        ...facts,
+        ...rest,
         'response.openaiAudioTranscription.canonical': await refusal(status, result.response),
         'response.openaiAudioTranscription.mediaType': mediaType,
         'response.openaiAudioTranscription.streamedOutcome': null,
-        'response.usage.billable': called,
+        'response.usage.billable': providerUsage(candidate, back, called),
         'response.http.status': status,
         'response.http.headers': headers,
-        'response.http.body': spentBody(result.response.body),
+        'response.http.body': spentBody(exchange.body),
       });
     }
 
@@ -109,11 +95,11 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     if (isEventStreamMediaType(mediaType)) {
       if (result.response.body === null) {
         return move({
-          ...facts,
+          ...rest,
           'response.openaiAudioTranscription.canonical': { status: 502, message: 'Upstream returned a streaming response with no body.' },
           'response.openaiAudioTranscription.mediaType': mediaType,
           'response.openaiAudioTranscription.streamedOutcome': null,
-          'response.usage.billable': called,
+          'response.usage.billable': providerUsage(candidate, back, called),
           'response.http.status': status,
           'response.http.headers': headers,
           'response.http.body': spentBody(null),
@@ -123,18 +109,19 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
       // here — closest to the upstream and on the protocol it spoke — by folding the events
       // as they pass, so the reading costs one pass and the client's own stream drives it.
       const metered = meterEvents(result.response.body, identity, use.gateway.abortSignal, use.log);
+      setRelease(exchange.body!, async () => { for await (const _event of metered.events) { /* drain */ } });
       return move({
-        ...facts,
+        ...rest,
         // SSE labels and data remain upstream-owned; parsing below only observes billing and completion.
         'response.openaiAudioTranscription.canonical': recordStream(metered.events, use.gateway.dump, eventFrame),
         'response.openaiAudioTranscription.mediaType': mediaType,
-        'response.openaiAudioTranscription.streamedOutcome': metered.outcome,
-        'response.usage.billable': called,
+        'response.openaiAudioTranscription.streamedOutcome': defer(metered.outcome.then(outcome => ({ ...outcome, billable: providerUsage(candidate, back, outcome.billable) }))),
+        'response.usage.billable': providerUsage(candidate, back, called),
         'response.http.status': status,
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over
         // one connection, and a second reader is not something a `ReadableStream` allows.
-        'response.http.body': own(result.response.body, async (): Promise<void> => { for await (const _event of metered.events) { /* to end of stream */ } }),
+        'response.http.body': exchange.body,
       });
     }
 
@@ -142,25 +129,20 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     // client is sent is the document that arrived and not something serialized from a parse.
     // So there is nothing here to fail over from: the reading feeds the record and the usage
     // row, and the bytes travel either way.
+    spentBody(exchange.body);
     const read = readTranscription(format, new Uint8Array(await result.response.arrayBuffer()), use.log);
     return move({
-      ...facts,
+      ...rest,
       'response.openaiAudioTranscription.canonical': read.canonical,
       'response.openaiAudioTranscription.mediaType': mediaType,
       'response.openaiAudioTranscription.streamedOutcome': null,
-      'response.usage.billable': [{ identity, quantities: billed(read.usage) }],
+      'response.usage.billable': providerUsage(candidate, back, wasCalled ? [{ identity, quantities: billed(read.usage) }] : []),
       'response.http.status': status,
       'response.http.headers': headers,
-      'response.http.body': spentBody(result.response.body),
+      'response.http.body': spentBody(exchange.body),
     });
   },
 });
-
-/** A body this stage has already read to the end, or one the upstream never sent. The record
- *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
- *  one up; what says an answer was unusable is the failure at the canonical key, not this. */
-const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & Owned =>
-  own(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), (): Promise<void> => Promise.resolve());
 
 const refusal = async (status: number, response: Response): Promise<Failure> => {
   const text = await response.text();

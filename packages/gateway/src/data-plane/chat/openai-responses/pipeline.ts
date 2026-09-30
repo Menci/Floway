@@ -35,17 +35,14 @@ export const openaiResponsesServePipeline = (
   // is the whole of what is known about the turn.
   let prepared = payload;
   return compose('openaiResponsesServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
     emitOpenAIResponses(payload, framing),
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
-      handedUp => (handedUp as { 'response.chat.openaiResponses.streamedUsage'?: unknown })['response.chat.openaiResponses.streamedUsage'] !== null,
-    ),
     hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
     resolveChatCandidates(openaiResponsesNarrowing(() => prepared)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       owns: [],
-      streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE,
+      pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),
     beginStoredAttempt,

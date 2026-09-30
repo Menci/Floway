@@ -52,6 +52,7 @@ const candidate = (upstream: string, callOpenAIChatCompletions: CallOpenAIChatCo
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+      pipelines: {},
       instance: stubProvider({ callOpenAIChatCompletions: callOpenAIChatCompletions as never }),
     },
     model: stubInternalModel({ id: 'gemini-2.5-pro', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'gemini-2.5-pro', endpoints }) } }, upstream),

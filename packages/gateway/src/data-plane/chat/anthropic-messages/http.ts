@@ -95,7 +95,6 @@ export const anthropicMessagesHttp = {
         if (isFrames(rendered)) return { frames: rendered, keepAlive: anthropicMessagesKeepAlive };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.anthropicMessages.streamedUsage'],
     );
   },
 

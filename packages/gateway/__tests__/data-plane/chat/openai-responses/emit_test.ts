@@ -58,7 +58,7 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
         };
       }
       if (failureAt === 'render') {
-        yield { type: 'event', event: { type: 'response.in_progress', response: { id: 'upstream-response', object: 'response', model: 'model', status: 'in_progress', output: [], error: null, incomplete_details: null, impossibleJson: 1n } } };
+        yield { type: 'event', event: { type: 'response.in_progress', response: { id: 'upstream-response', object: 'response', model: 'model', status: 'in_progress', output: [], error: null, incomplete_details: null, ...{ impossibleJson: 1n } } } };
         return;
       }
       if (failureAt === 'snapshot') {

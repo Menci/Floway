@@ -11,10 +11,9 @@
 // putting the target at another key; coming up, a fork taking ownership of every branch's
 // releasable and handing one of them onward.
 
-import type { Event } from './dump.ts';
 import type { Facts } from './facts.ts';
 import { assertHandedOver, move } from './facts.ts';
-import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
+import type { Descend, ErasedSide, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
 
 /** Ownership is claimed, never sniffed.
  *
@@ -62,10 +61,12 @@ export const own = <T extends object>(value: T, release: () => Promise<void>): T
   return resource;
 };
 
-export const setRelease = (value: Owned, release: () => Promise<void>): void => {
+export const setRelease = (value: Owned, release: () => Promise<void>): (() => Promise<void>) => {
   const state = ownership.get(value)!;
   if (state.disposal !== undefined) throw new Error('Cannot change a resource release action after disposal has started');
+  const previous = state.release;
   state.release = release;
+  return previous;
 };
 
 export const isOwned = (value: unknown): value is Owned =>
@@ -122,11 +123,21 @@ const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'u
 const registerFact = (value: unknown, facts: Facts, scope: RunScope): void => {
   if (isOwned(value)) scope.outstanding.add(value);
   if (isDeferred(value) && !scope.deferred.has(value)) {
-    const settled = value.then(result => {
-      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
-    }, error => {
+    const settled = value.then(async result => {
+      try {
+        await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
+      } catch (error) { captureFailure(error, facts, scope); throw error; }
+    }, async error => {
       captureFailure(error, facts, scope);
-      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
+      try {
+        await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
+      } catch (recordingError) {
+        if (recordingError !== error) {
+          const combined = new AggregateError([error, recordingError], 'Deferred fact failed and recording also failed', { cause: error });
+          captureFailure(combined, facts, scope);
+          throw combined;
+        }
+      }
       throw error;
     });
     scope.deferred.set(value, settled);
@@ -169,7 +180,7 @@ export const walk = async (
   // Once, on the way in: what this stage initially saw. A fork is not this event
   // repeating — it is several *children* naming this stage as their parent, each entered
   // by its own descent, so the shape of a run is in the ids.
-    scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
+    await scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
     if (pass !== undefined) requireFacts(facts, pass.request.needs, `${stage.name} entering:`);
 
     const descend: Descend = async (produced, target) => {
@@ -209,7 +220,8 @@ export const walk = async (
           : `${stage.name}: returned without calling next, and declares no 'return'`);
       }
       const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
-      scope.emit({ type: 'stage.leaved', stageId, facts: answer });
+      current = answer;
+      await scope.emit({ type: 'stage.leaved', stageId, facts: answer });
       return answer;
     }
 
@@ -231,6 +243,7 @@ export const walk = async (
     }
 
     const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
+    current = handedUp;
 
     // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
     // consumes is one it took ownership of, so what it received there and did not hand on is
@@ -245,7 +258,7 @@ export const walk = async (
       }
     }
 
-    scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
+    await scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
     return handedUp;
   } catch (error) {
     captureFailure(error, current, scope);
@@ -297,31 +310,29 @@ const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: stri
  *  The fields are snapshotted where the line is written, because a stored line must be a
  *  state that existed: the caller keeps its own object and the record must not drift with
  *  it. This is the same reason the record itself is frozen at handover. */
-const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): Logger => {
+const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): import('./stage.ts').Use<object>['log'] => {
   const sink = (services as RunServices).log;
   const line = (level: LogLevel) =>
-    (message: string, fields?: Readonly<Record<string, unknown>>): void => {
+    async (message: string, fields?: Readonly<Record<string, unknown>>): Promise<void> => {
       // The global sink is handed the stage as an ordinary field, because a `Logger` has
       // nowhere else to put it; the record gets it as `context`, which is where a logg
       // entry carries the same thing.
-      sink?.[level](message, { stage: name, ...fields });
-      scope.emit({
+      const entry = {
         type: 'stage.log',
         stageId,
         level,
         context: name,
         message,
         ...(fields === undefined ? {} : { fields: Object.freeze({ ...fields }) }),
-      });
+      } as const;
+      await sink?.[level](message, { stage: name, ...fields });
+      await scope.emit(entry);
     };
   return { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 };
 
 export interface RunResult<Exit> {
   readonly facts: Exit;
-  /** Empty unless the prologue resolved a dump sink. Recording is conditional, and this
-   *  is the same list the sink was given, event by event, as they happened. */
-  readonly events: readonly Event[];
   /**
    * What the run still owns. Release is not cancel — this drains to end-of-stream, because
    * an aborted connection cannot be reused and leaves its billing unsettled — so the
@@ -342,28 +353,16 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   initial: Entry,
   services: S,
 ): Promise<RunResult<Exit>> => {
-  for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
-  requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
-
   // With no dump sink resolved in the prologue, none of the recording happens.
   const sink = services.dump;
-  const events: Event[] = [];
   const scope: RunScope = {
-    emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
+    emit: async event => { await sink?.(event); },
     outstanding: new Set<Owned>(),
     deferred: new Map<Promise<unknown>, Promise<void>>(),
     failures: new WeakSet<object>(),
     parentStageId: null,
     nextStageId: 1,
   };
-  // The first state the record is in is the one the prologue built, and it is frozen here
-  // so it cannot be rewritten after the run has recorded it.
-  Object.freeze(initial);
-
-  for (const value of Object.values(initial)) {
-    registerFact(value, initial as Facts, scope);
-  }
-
   let draining: Promise<void> | undefined;
   const drain = (): Promise<void> => {
     if (draining !== undefined) return draining;
@@ -380,9 +379,14 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   };
 
   try {
+    Object.freeze(initial);
+    for (const value of Object.values(initial)) registerFact(value, initial as Facts, scope);
+    for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
+    requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
-    return { facts, events, drain };
+    return { facts, drain };
   } catch (error) {
+    captureFailure(error, initial as Facts, scope);
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.

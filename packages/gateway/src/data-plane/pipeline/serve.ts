@@ -11,18 +11,18 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { createCandidateRegistry } from './candidates.ts';
-import type { BillableEntity, GatewayFacts } from './facts.ts';
+import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
-import { settleBillable } from './settlement.ts';
 import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
+import { stampUpstreamCallStart } from '../shared/attempt-timing.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
-import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
+import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
@@ -102,6 +102,7 @@ export const runDumpOf = (options: CreateGatewayCtxOptions): RunDump | null =>
 
 /** The services every run is given, over whichever context it was opened with. */
 export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunDump | null = null): Prologue => {
+  const candidates = createCandidateRegistry();
 
   return {
     gateway,
@@ -110,7 +111,16 @@ export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunD
       gateway,
       log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
-      ...createCandidateRegistry(),
+      ...candidates,
+      httpCall: callId => {
+        const candidate = candidates.resolveCandidate(callId);
+        return {
+          fetcher: candidate.fetcher,
+          signal: candidate.model.kind === 'image' ? undefined : gateway.abortSignal,
+          waitUntil: gateway.backgroundScheduler,
+          wrapUpstreamCall: stampUpstreamCallStart(gateway.attempt.timing),
+        };
+      },
       // Absent when this key has no retention configured, which is what keeps recording
       // conditional: the runner does none of it rather than doing it and discarding.
       ...(runDump === null ? {} : { dump: runDump.sink }),
@@ -153,14 +163,6 @@ export interface StreamOutcome {
   readonly failed: boolean;
 }
 
-/** What a streaming family will have been billed, and whether it got there. A stream's usage
- *  arrives with its last chunk, which is after the run has answered — so the run hands up a
- *  reading it has started and not finished, and settlement of it belongs here, after the answer
- *  is on its way. It is `Deferred` because that is what it is: the runner sees it in the record
- *  and waits for it at teardown, so a family that hands up a reading that never settles is
- *  reported rather than silently never billed. */
-export type DeferredUsage<Exit> = (facts: Exit) => Deferred<StreamOutcome> | null;
-
 /**
  * Runs a family's pipeline and turns what it answered with into a response.
  *
@@ -184,13 +186,17 @@ export const serveThrough = async <
   pipeline: Pipeline<Entry, Exit>,
   entry: Entry,
   render: (facts: Exit) => Rendered,
-  deferredUsage?: DeferredUsage<Exit>,
 ): Promise<Response> => {
   try {
-    return await serveRun(c, prologue, pipeline, entry, render, deferredUsage);
+    return await serveRun(c, prologue, pipeline, entry, render);
   } catch (error) {
     // `run` drains what it opened before it rethrows, so there is nothing left outstanding to
     // release here — only the record to close, and the reason to put on it.
+    const failureFacts = getFailureFacts(error);
+    if (failureFacts !== undefined && 'route.attempt' in failureFacts) {
+      const attempt = failureFacts['route.attempt'] as AttemptSelector;
+      prologue.gateway.dump?.error('gateway', attempt.upstreamId);
+    }
     prologue.gateway.dump?.failed(error);
     return finalizeGatewayResponse(prologue.gateway, internalErrorResponse(asError(error), c));
   }
@@ -210,21 +216,9 @@ const serveRun = async <
   pipeline: Pipeline<Entry, Exit>,
   entry: Entry,
   render: (facts: Exit) => Rendered,
-  deferredUsage?: DeferredUsage<Exit>,
 ): Promise<Response> => {
   const { facts, drain } = await run(pipeline, entry, prologue.services as never);
   const answer = render(facts);
-
-  const pending = deferredUsage?.(facts) ?? null;
-  // Registered while the request is still live, so the platform binds the write to it — and
-  // resolved only when the stream ends, which is the one moment both what it billed and
-  // whether it finished are known. A turn that stopped short is not recorded as one that
-  // produced what it said it would.
-  if (pending !== null) {
-    prologue.services.background(pending.then(outcome => {
-      settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
-    }));
-  }
 
   const status = facts['response.http.status'] as ContentfulStatusCode;
   if ('frames' in answer) {
@@ -242,6 +236,9 @@ const serveRun = async <
             ? {}
             : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
         });
+      } catch (error) {
+        prologue.gateway.dump?.failed(error);
+        throw error;
       } finally {
         // Reading the frames to the client *is* releasing the body they came from, so the
         // drain waits for that to finish. Draining alongside it would take frames out of the

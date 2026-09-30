@@ -12,12 +12,12 @@ export const openaiEmbeddingsServePipeline: Pipeline<
   Fields<'ingress.http.headers' | 'ingress.openaiEmbeddings.encodingFormat' | 'request.openaiEmbeddings.canonical' | 'serve.model'>,
   Fields<'response.openaiEmbeddings.rendered' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > = compose('openaiEmbeddingsServe', [
+  writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400),
   emitOpenAIEmbeddings,
-  writeSettlement(handedUp => isFailure((handedUp as { 'response.openaiEmbeddings.canonical'?: unknown })['response.openaiEmbeddings.canonical'])),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.openaiEmbeddings.canonical'?: unknown })['response.openaiEmbeddings.canonical']),
-    owns: [],
+    owns: ['response.http.body'],
   }),
   callOpenAIEmbeddingsUpstream,
 ]);

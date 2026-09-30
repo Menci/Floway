@@ -130,7 +130,7 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
   await flushAsyncWork();
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
-  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, output: 1 });
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, input_cache_read: 0, input_cache_write: 0, output: 1 });
 });
 
 test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
@@ -195,7 +195,7 @@ test('/v1/completions streaming strips usage chunk when client did not request i
   await flushAsyncWork();
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
-  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 4, output: 2 });
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 4, input_cache_read: 0, input_cache_write: 0, output: 2 });
 });
 
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
@@ -343,7 +343,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0]?.model, 'davinci-002');
-  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 7, output: 2 });
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 7, input_cache_read: 0, input_cache_write: 0, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
@@ -415,7 +415,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
-  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 4, output: 2 });
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 4, input_cache_read: 0, input_cache_write: 0, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);

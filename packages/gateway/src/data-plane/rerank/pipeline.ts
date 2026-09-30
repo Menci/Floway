@@ -13,12 +13,12 @@ export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
   Fields<'ingress.http.headers' | 'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'serve.model'>,
   Fields<'response.rerank.rendered' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > => compose('rerankServe', [
+  writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400),
   emitRerank,
-  writeSettlement(handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical'])),
   resolveCandidates(narrowing(request)),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical']),
-    owns: [],
+    owns: ['response.http.body'],
   }),
   callRerankUpstream,
 ]);

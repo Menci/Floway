@@ -14,7 +14,7 @@ import type { ApiKey } from '../../../src/repo/types.ts';
 import { eventsOf, installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { compose, createRunReader, defineStage, move, defer, type Deferred, type DumpEvent } from '@floway-dev/pipeline';
+import { compose, createRunReader, defineStage, move, defer, type DumpEvent } from '@floway-dev/pipeline';
 import { eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -67,8 +67,7 @@ for (const fixture of fixtures) for (const failureAt of ['read', 'render'] as co
     const app = new Hono();
     app.post('/v1/chat', c => serveThrough(c, prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }, dump), pipeline,
       move({ [`ingress.chat.${fixture.protocol}.wantsStream`]: true, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': false }),
-      facts => ({ frames: facts[`${responseKey}.rendered`] as AsyncIterable<SseFrame> }),
-      facts => facts[usageKey] as Deferred<{ billable: readonly never[]; failed: boolean }>));
+      facts => ({ frames: facts[`${responseKey}.rendered`] as AsyncIterable<SseFrame> })));
     const response = await app.request('/v1/chat', { method: 'POST' });
     const body = await response.text();
     await Promise.all(pending);

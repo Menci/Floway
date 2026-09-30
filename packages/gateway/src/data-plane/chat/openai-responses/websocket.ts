@@ -18,13 +18,10 @@ import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { consoleLogSink } from '../../../runtime/log.ts';
 import { prologueFor, type Ingress } from '../../pipeline/serve.ts';
-import { settleBillable } from '../../pipeline/settlement.ts';
 import type { AttemptState } from '../../shared/gateway-ctx.ts';
 import { takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
-import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import type { ChatPrologue } from '../prologue.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState } from '../shared/source-stream-state.ts';
@@ -396,10 +393,6 @@ const handleClientMessage = async (
     }
     turnFailure.fail(500, serverErrorEnvelope(error));
     if (ctx !== undefined) {
-      // A throw that escapes the run never reached the settlement stage, so the sample that
-      // stage would have written is written here instead — attributed to the last upstream
-      // the chain stamped, which is the one that was being dialled when it threw.
-      recordFailedRequest(ctx, ctx.attempt.telemetry);
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, 0);
     }
@@ -628,14 +621,6 @@ const respondOpenAIResponsesWebSocket = async (input: {
     // waits for that to finish. A client that stopped reading still gets here, which is what
     // leaves nothing open behind it.
     await drain();
-    // What the turn billed, as the chain read it off the upstream's own events while they
-    // passed. The answer is already on the socket by now, so it is settled here rather than
-    // handed to the background the way an entry that returns a response has to.
-    const streamedUsage = facts['response.chat.openaiResponses.streamedUsage'];
-    if (streamedUsage !== null) {
-      const outcome = await streamedUsage;
-      settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
-    }
     const failed = state.failedAfter(completion);
     if (failed) {
       // `fail` cannot carry the eviction for every failed turn: one that streamed an `error`

@@ -11,6 +11,7 @@ import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidate
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
+import { stubProviderPipeline } from '../test-utils/provider-pipeline.ts';
 import { isOwned, move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type ModelCandidate, type ProviderCallResult } from '@floway-dev/provider';
@@ -30,6 +31,7 @@ const candidate = (callOpenAIAudioTranscriptions: () => Promise<ProviderCallResu
       upstreamId: 'up_a', kind: 'custom', name: 'up_a', inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
       instance: stubProvider({ callOpenAIAudioTranscriptions }),
+      pipelines: { openaiAudioTranscriptions: stubProviderPipeline('openaiAudioTranscriptions', callOpenAIAudioTranscriptions) },
     },
     model: stubInternalModel(
       { id: 'whisper-1', kind: 'transcription', endpoints, providerModels: { up_a: stubProviderModel({ id: 'whisper-1', endpoints }) } },
@@ -70,6 +72,7 @@ const serve = async (responseFormat = 'json') => await run(
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);
@@ -78,24 +81,11 @@ beforeEach(() => {
 describe('the OpenAI Audio Transcriptions pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
     expect([...openaiAudioTranscriptionServePipeline.entryNeeds].sort()).toEqual([
+      'ingress.http.headers',
       'ingress.openaiAudioTranscription.responseFormat',
+      'request.openaiAudioTranscription.form',
       'serve.model',
     ]);
-  });
-
-  // The ending stage reads `request.openaiAudioTranscription.form` and `ingress.http.headers`,
-  // and the entry contract mentions neither. That is not this family's defect: a stage whose
-  // only trait is `return` declares no request side at all, by ruling — "when it
-  // short-circuits, only `provides`" — so assembly cannot see what an ending stage reads.
-  //
-  // It bites harder here than it does for a family whose edge needs the request payload to
-  // render: this family's edge does not, so the payload the whole endpoint exists to send is
-  // among the keys assembly cannot ask for. A caller who omits it reaches the deepest stage
-  // before failing. The type layer still catches it at the definition site, which is why this
-  // is a gap and not a break.
-  it('cannot see the request payload, because only a return-only stage reads it', () => {
-    expect(openaiAudioTranscriptionServePipeline.entryNeeds).not.toContain('request.openaiAudioTranscription.form');
-    expect(openaiAudioTranscriptionServePipeline.entryNeeds).not.toContain('ingress.http.headers');
   });
 
   it('names the entry key a caller did not bring, before any stage runs', async () => {

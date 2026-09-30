@@ -97,7 +97,6 @@ export const openaiResponsesHttp = {
         if (isFrames(rendered)) return { frames: rendered };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.openaiResponses.streamedUsage'],
     );
   },
 
@@ -126,7 +125,6 @@ export const openaiResponsesHttp = {
       // A compaction is one resource however the turn went, so there is never a stream to
       // write: the frames it came as were read into that resource before the run answered.
       facts => ({ body: JSON.stringify(facts['response.chat.openaiResponses.rendered']), contentType: 'application/json' }),
-      facts => facts['response.chat.openaiResponses.streamedUsage'],
     );
   },
 };
