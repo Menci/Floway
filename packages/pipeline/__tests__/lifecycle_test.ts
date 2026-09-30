@@ -133,6 +133,24 @@ describe('run lifetime', () => {
     expect(getFailureFacts(error)).toEqual({ position: 42 });
   });
 
+  it('captures returned response facts for an error above the upstream call', async () => {
+    const error = new Error('response rewrite failed');
+    const ending = defineStage<Record<string, never>, { upstream: string; response: string }>({
+      name: 'upstream', return: { provides: ['upstream', 'response'] },
+      execute: async facts => move({ ...facts, upstream: 'provider-a', response: 'answer' }),
+    });
+    const rewrite = defineStage<Record<string, never>, Record<string, never>, { response: string }, Record<string, never>>({
+      name: 'rewrite',
+      through: {
+        request: { needs: [], consumes: [], provides: [] },
+        response: { needs: ['response'], consumes: [], provides: [] },
+      },
+      execute: async (facts, next) => { await next(facts); throw error; },
+    });
+    await expect(run(compose('responseFault', [rewrite, ending]), move({}), {})).rejects.toBe(error);
+    expect(getFailureFacts(error)).toEqual({ upstream: 'provider-a', response: 'answer' });
+  });
+
   it('checks declared needs after a stage drops an undeclared fact', async () => {
     const drop = defineStage<{ input: string }, Record<string, never>, Record<string, never>, Record<string, never>>({
       name: 'drop',
