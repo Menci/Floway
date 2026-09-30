@@ -2,6 +2,7 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { driveServerToolStage } from './drive.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { imageGenerationServerTool } from '../../../../../src/data-plane/chat/openai-responses/server-tools/image-generation.ts';
 import {
   consumeTurnStreaming,
   createMergeState,
@@ -1021,6 +1022,53 @@ test('invalid request registration preserves an upstream error type and null cod
     param: 'input',
     code: null,
   });
+});
+
+test('invalid hosted web search in additional_tools reports its input path', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      tools: undefined,
+      input: [{
+        type: 'additional_tools', role: 'developer',
+        tools: [{ type: 'web_search', search_context_size: 'invalid' } as unknown as OpenAIResponsesTool],
+      }],
+    },
+  });
+  const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+    throw new Error('Invalid request reached upstream');
+  });
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  assertEquals(body.error.param, 'input[0].tools[0].search_context_size');
+});
+
+test('later hosted validation keeps original paths before another tool rewrites the carrier', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      tools: undefined,
+      input: [{
+        type: 'additional_tools', role: 'developer',
+        tools: [
+          { type: 'web_search' },
+          { type: 'web_search_preview' },
+          { type: 'image_generation', size: '512x512' },
+        ],
+      }],
+    },
+  });
+  const originalInput = structuredClone(inv.payload.input);
+  const shim = driveServerToolStage([webSearchServerTool, imageGenerationServerTool]);
+
+  const result = await shim(inv, makeGatewayCtx(), async () => {
+    throw new Error('Invalid request reached upstream');
+  });
+
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  assertEquals(body.error.param, 'input[0].tools[2].size');
+  assertEquals(inv.payload.input, originalInput);
 });
 
 test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
@@ -6439,29 +6487,42 @@ test('the shim carries the upstream turn cost onto the reading settlement writes
   }]);
 });
 
-test('the shim drains continuation streams before awaiting billable metadata', async () => {
-  const { backend } = makeStubDeps();
-  const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
-  let runCalls = 0;
-  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), async () => {
-    const frames = turns[runCalls++];
-    const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
-    let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
-    const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
-    return eventResult((async function* () {
-      for (const frame of frames) yield frame;
-      resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
-    })(), testTelemetryModelIdentity, { finalMetadata });
-  });
+for (const carrier of ['tools', 'additional_tools', 'tool_search_output'] as const) {
+  test(`the shim drains ${carrier} continuation streams before awaiting billable metadata`, async () => {
+    const { backend } = makeStubDeps();
+    const tools: OpenAIResponsesTool[] = [{ type: 'web_search' }];
+    const inv = makeInvocation({
+      payload: carrier === 'tools'
+        ? { tools }
+        : {
+            tools: undefined,
+            input: [carrier === 'additional_tools'
+              ? { type: carrier, role: 'developer', tools }
+              : { type: carrier, execution: 'client', call_id: 'discovery', tools }],
+          },
+    });
+    const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
+    let runCalls = 0;
+    const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+      const frames = turns[runCalls++];
+      const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
+      let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
+      const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
+      return eventResult((async function* () {
+        for (const frame of frames) yield frame;
+        resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
+      })(), testTelemetryModelIdentity, { finalMetadata });
+    });
 
-  assert(result.type === 'events');
-  const frames = await collectFrames(result.events);
-  assertEquals(findResponseCompleted(frames).response.status, 'completed');
-  assertEquals(runCalls, 3);
-  assertEquals(backend.calls.length, 2);
-  assert(result.reading !== null);
-  assertEquals((await result.reading).billable.map(entity => entity.quantities), [1, 2, 3].map(tokens => ({ input_tokens: String(tokens), output_tokens: String(tokens) })));
-}, 1_000);
+    assert(result.type === 'events');
+    const frames = await collectFrames(result.events);
+    assertEquals(findResponseCompleted(frames).response.status, 'completed');
+    assertEquals(runCalls, 3);
+    assertEquals(backend.calls.length, 2);
+    assert(result.reading !== null);
+    assertEquals((await result.reading).billable.map(entity => entity.quantities), [1, 2, 3].map(tokens => ({ input_tokens: String(tokens), output_tokens: String(tokens) })));
+  }, 1_000);
+}
 
 for (const failedTurn of [1, 2]) {
   test(`the shim retains observed billing when turn ${failedTurn} throws after its usage`, async () => {

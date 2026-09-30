@@ -1,3 +1,4 @@
+import { answerOpenAIResponsesWebSocketWarmup } from './answer-websocket-warmup.ts';
 // OpenAI Responses as a pipeline, on the chain OpenAI Chat Completions established.
 //
 //   emitOpenAIResponses    the edge: writes the answer in the shape the client asked for
@@ -971,6 +972,7 @@ export const openaiResponsesServePipeline = (
     }),
     materializeAttempt('request.chat.openaiResponses'),
     beginStoredAttempt,
+    ...framing === 'events' ? [answerOpenAIResponsesWebSocketWarmup] : [],
     expandShimCompactions,
     projectOpenAIResponsesCollaboration,
     summarizeForCompaction(asksForCompaction),

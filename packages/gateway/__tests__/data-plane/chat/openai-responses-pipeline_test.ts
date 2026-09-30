@@ -754,3 +754,19 @@ describe('the responses chain', () => {
     expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'THE EARLIER HISTORY' }] }] });
   });
 });
+
+it('HTTP generate:false reaches the upstream without the WebSocket-local warmup', async () => {
+  let seen: Record<string, unknown> | undefined;
+  resolves([candidate({
+    callOpenAIResponses: async (_model, body) => {
+      seen = body as Record<string, unknown>;
+      return stream(completed('HTTP answer'));
+    },
+  })]);
+  const request = { ...payload, generate: false };
+  affinityPayload = request;
+  const outcome = await serve(false, request);
+  expect(seen?.generate).toBe(false);
+  expect(outcome.facts['response.http.status']).toBe(200);
+  await outcome.drain();
+});

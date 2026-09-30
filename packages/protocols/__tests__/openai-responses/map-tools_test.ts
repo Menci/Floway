@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { mapOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool } from '../../src/openai-responses/index.ts';
+import { collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool } from '../../src/openai-responses/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const functionTool = {
@@ -51,4 +51,20 @@ test('maps tools in every OpenAI Responses request container without mutating th
 test('preserves nullable top-level tools', () => {
   const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', tools: null, input: [] };
   assertEquals(mapOpenAIResponsesTools(payload, tool => tool), payload);
+});
+
+test('collects declarations in top-level and input carrier order', () => {
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'gpt-test',
+    tools: [{ type: 'web_search' }],
+    input: [
+      { type: 'additional_tools', role: 'developer', tools: [functionTool] },
+      { type: 'tool_search_output', tools: [{ type: 'image_generation' }] },
+    ],
+  };
+
+  assertEquals(collectOpenAIResponsesTools(payload).map(tool => tool.type), ['web_search', 'function', 'image_generation']);
+  assertEquals(collectOpenAIResponsesToolEntries(payload).map(entry => entry.path), [
+    'tools[0]', 'input[0].tools[0]', 'input[1].tools[0]',
+  ]);
 });

@@ -1,58 +1,68 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 /**
- * Copilot's `/responses` endpoint rejects public `image_generation` tool
- * entries, so strip them once the planner has committed to a native OpenAI Responses
- * target on a Copilot upstream. Other OpenAI-Responses-capable upstreams (e.g. OpenAI
- * direct) accept the entry and must continue to see it. Other public hosted
- * and deferred tools (`web_search`, `tool_search`, `namespace`) are left in
- * place: Codex relies on `tool_search` / `namespace` for client-executed
- * deferred tool discovery, and Copilot accepts `web_search`.
+ * A Copilot gateway filters public `image_generation` from Responses requests,
+ * while OpenAI supports it. Apply this provider-specific rule after target
+ * selection to every declaration carrier and selector, retaining unrelated
+ * tools in their declaration containers and relative order.
  *
- * References:
- * - https://platform.openai.com/docs/guides/tools-image-generation
- * - https://github.com/openai/codex/blob/9f42c89c0112771dc29100a6f3fc904049b2655f/codex-rs/tools/src/tool_spec.rs#L17-L27
- * - https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
+ * https://developers.openai.com/api/docs/guides/tools-image-generation
+ * https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
  */
 const isImageGenerationTool = (tool: OpenAIResponsesTool): boolean => tool.type === 'image_generation';
 
 const isImageGenerationToolChoice = (choice: OpenAIResponsesToolChoice | null | undefined): boolean =>
   typeof choice === 'object' && choice !== null && choice.type === 'image_generation';
 
-export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponsesPayload): void => {
-  let removedTool = false;
+const withoutToolChoice = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
+  const { tool_choice: _choice, ...rest } = payload;
+  return rest;
+};
 
-  if (Array.isArray(payload.tools)) {
-    const tools = payload.tools.filter(tool => {
+export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
+  let removedTool = false;
+  const filter = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
+    const filtered = tools.filter(tool => {
       const drop = isImageGenerationTool(tool);
       removedTool ||= drop;
       return !drop;
     });
-
+    return filtered.length === tools.length ? tools : filtered;
+  };
+  let rewritten = payload;
+  if (Array.isArray(payload.tools)) {
+    const tools = filter(payload.tools);
     if (tools.length === 0) {
-      delete payload.tools;
-    } else {
-      payload.tools = tools;
-    }
+      const { tools: _tools, ...rest } = rewritten;
+      rewritten = rest;
+    } else if (tools !== payload.tools) rewritten = { ...rewritten, tools };
   }
-
-  if (isImageGenerationToolChoice(payload.tool_choice)) {
-    delete payload.tool_choice;
-    return;
+  const input = payload.input.map(item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const tools = filter(item.tools);
+    return tools === item.tools ? item : { ...item, tools };
+  });
+  if (input.some((item, index) => item !== payload.input[index])) rewritten = { ...rewritten, input };
+  const choice = rewritten.tool_choice;
+  if (isImageGenerationToolChoice(choice)) {
+    return collectOpenAIResponsesTools(rewritten).length === 0
+      ? withoutToolChoice(rewritten) : { ...rewritten, tool_choice: 'none' };
   }
-
-  // A forced `required` choice with no surviving tools would tell Copilot to
-  // invoke a tool that no longer exists; drop the choice along with the tools.
-  if (removedTool && payload.tool_choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
-    delete payload.tool_choice;
+  if (typeof choice === 'object' && choice !== null && choice.type === 'allowed_tools') {
+    const allowed = choice.tools.filter(tool => tool.type !== 'image_generation');
+    if (allowed.length === choice.tools.length) return rewritten;
+    return { ...rewritten, tool_choice: allowed.length === 0 && choice.mode === 'auto' ? 'none' : { ...choice, tools: allowed } };
   }
+  // Filtering a required choice must not expose tools outside its declared subset.
+  if (removedTool && choice === 'required' && collectOpenAIResponsesTools(rewritten).length === 0) return withoutToolChoice(rewritten);
+  return rewritten;
 };
 
 export const withImageGenerationStripped = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  stripImageGenerationFromPayload(ctx.payload);
+  ctx.payload = stripImageGenerationFromPayload(ctx.payload);
   return await run();
 };
