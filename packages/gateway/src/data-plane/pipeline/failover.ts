@@ -32,7 +32,7 @@ export const failover = ({ failed, owns, pendingUsage }: Forking) => defineStage
   Slice<'serve.candidates' | 'serve.usage.prior'>,
   Slice<'serve.candidates' | 'route.attempt' | 'serve.usage.prior'>,
   Slice<'response.usage.billable'>,
-  Slice<'response.usage.billable'>,
+  Slice<'response.usage.billable' | 'serve.usage.prior'>,
   GatewayServices
 >({
   name: 'failover',
@@ -43,7 +43,7 @@ export const failover = ({ failed, owns, pendingUsage }: Forking) => defineStage
       // Owned on the way up and handed onward: every attempt's is this stage's to release,
       // and the one it adopts rides up with ownership going with it.
       consumes: owns as never,
-      provides: [...owns, 'response.usage.billable', ...(pendingUsage === undefined ? [] : [pendingUsage])] as never,
+      provides: [...owns, 'response.usage.billable', 'serve.usage.prior', ...(pendingUsage === undefined ? [] : [pendingUsage])] as never,
     },
   },
   execute: async (facts, next, use) => {
