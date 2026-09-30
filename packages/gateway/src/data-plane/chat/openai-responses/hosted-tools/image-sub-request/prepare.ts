@@ -7,9 +7,9 @@ import { openaiImagesRequestWantsStream } from '@floway-dev/protocols/openai-ima
 export const prepareHostedImageGeneration = defineStage<
   Fields<'request.imageGeneration.canonical'>,
   Fields<'request.imageGeneration.canonical' | 'request.openaiImages.canonical' | 'serve.model' | 'ingress.openaiImages.wantsStream'>,
-  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
-  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
-  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
+  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable'>,
+  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable'>,
+  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'prepareHostedImageGeneration',
@@ -17,7 +17,7 @@ export const prepareHostedImageGeneration = defineStage<
     request: { needs: ['request.imageGeneration.canonical'], consumes: [], provides: ['request.openaiImages.canonical', 'serve.model', 'ingress.openaiImages.wantsStream'] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.openaiImages.canonical', 'response.openaiImages.streamedUsage', 'response.http.status', 'response.http.headers', 'response.usage.billable'] },
+  return: { provides: ['response.openaiImages.canonical', 'response.openaiImages.streamedUsage', 'response.http.status', 'response.http.headers', 'response.http.body', 'response.usage.billable'] },
   execute: async (facts, next, use) => {
     let request;
     try {

@@ -7,8 +7,8 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult } from '@fl
 import { providerModelOf } from '@floway-dev/provider';
 
 type Request = Pick<OpenAIResponsesFacts, 'request.chat.openaiResponses' | 'route.attempt'>;
-type Response = Pick<OpenAIResponsesFacts, 'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers'>;
-const provides = ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers'] as const;
+type Response = Pick<OpenAIResponsesFacts, 'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>;
+const provides = ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.body'] as const;
 
 // Codex continues from the response id of its WebSocket prewarm. The source chain has
 // already staged its input; normal client egress commits that snapshot without inference.
