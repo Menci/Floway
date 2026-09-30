@@ -114,7 +114,7 @@ export interface UpstreamCallOptions {
   // first output, the wrapper records its start synchronously ahead of dial,
   // TLS, and CONNECT. Further dispatches after output preserve the measured
   // first-token interval, including internal server-tool continuations.
-  // This interval includes egress work and excludes routing, translation,
+  // This interval includes data-plane egress and excludes model routing, translation,
   // and interceptor preparation before dispatch. Candidate iteration clears
   // both timing anchors on failover, so the recorded interval can be shorter
   // than the latency the client observed.
