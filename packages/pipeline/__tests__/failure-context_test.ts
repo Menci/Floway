@@ -76,3 +76,17 @@ test('a failed-stage recording rejection preserves the primary exception and its
   expect((caught as AggregateError).cause).toBe(primary);
   expect(getFailureFacts(caught)).toBe(facts);
 });
+
+test('late resource failures stay associated with the run whose drain observed them', async () => {
+  const shared = new Error('shared cancellation');
+  const answer = defineStage<{ candidate: string }, { candidate: string }>({ name: 'answer', return: { provides: ['candidate'] }, execute: async facts => facts });
+  const pipeline = compose('drainContext', [answer]);
+  const first = await run(pipeline, move({ candidate: 'A', body: own({}, async () => { throw shared; }) }), {});
+  const second = await run(pipeline, move({ candidate: 'B', body: own({}, async () => { throw shared; }) }), {});
+  const errorA: unknown = await first.drain().catch((error: unknown) => error);
+  const errorB: unknown = await second.drain().catch((error: unknown) => error);
+  expect(errorA).toBe(shared);
+  expect((errorB as Error).cause).toBe(shared);
+  expect(getFailureFacts(errorA)).toBe(first.facts);
+  expect(getFailureFacts(errorB)).toBe(second.facts);
+});

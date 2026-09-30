@@ -389,15 +389,16 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     nextStageId: 1,
   };
   scopeOwners.set(scope, {});
+  let current = initial as Facts;
   let draining: Promise<void> | undefined;
   const drain = (): Promise<void> => {
     if (draining !== undefined) return draining;
     draining = (async () => {
       const errors: unknown[] = [];
       for (const value of scope.outstanding) {
-        try { await release(value, scope); } catch (error) { errors.push(error); }
+        try { await release(value, scope); } catch (error) { errors.push(captureFailure(error, current, scope)); }
       }
-      try { await settleDeferred(scope); } catch (error) { errors.push(error); }
+      try { await settleDeferred(scope); } catch (error) { errors.push(captureFailure(error, current, scope)); }
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, 'Pipeline resource cleanup failed');
     })();
@@ -410,9 +411,11 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
     requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
+    current = facts as Facts;
     return { facts, drain };
   } catch (error) {
     const failure = captureFailure(error, initial as Facts, scope);
+    current = getFailureFacts(failure) ?? initial as Facts;
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.
