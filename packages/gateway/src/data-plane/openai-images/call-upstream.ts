@@ -6,7 +6,7 @@ import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure, readUpstreamBody, spentBody } from '../pipeline/upstream-body.ts';
+import { dialFailure, readUpstreamBody, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease, defer, type Deferred } from '@floway-dev/pipeline';
@@ -18,7 +18,6 @@ import { isBase64ImageDataUrl, type ProviderRequest, type ProviderResponse, type
  *  generator itself. What the wrapper says is where the resource is: the one resource in an
  *  OpenAI Images run is the upstream's body at `response.http.body`, claimed with `own()`, and
  *  this keeps a frame view from reading as another. */
-const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
 
 const PERFORMANCE_OPERATION = {
   generations: 'image_generation',
@@ -86,7 +85,7 @@ export const callOpenAIImagesUpstream = defineStage<
     });
 
     if (!result.response.ok) {
-      use.log.warn('upstream refused', { status: result.response.status });
+      await use.log.warn('upstream refused', { status: result.response.status });
       // An upstream error body is JSON like any other body. Reading it here is also what
       // leaves a losing attempt with nothing open behind it.
       spentBody(exchange.body);
@@ -134,7 +133,7 @@ export const callOpenAIImagesUpstream = defineStage<
       // Every protocol the gateway carries is one it fully understands, so a body it cannot
       // read is not handed on unread.
       const essence = mediaTypeEssence(mediaType) ?? 'no media type';
-      use.log.warn('upstream answered with a body that is not JSON', { status: result.response.status, mediaType: essence });
+      await use.log.warn('upstream answered with a body that is not JSON', { status: result.response.status, mediaType: essence });
       return read({
         status: 502,
         message: `The upstream answered ${result.response.status} with ${essence}, and the OpenAI Images protocol is JSON.`,
@@ -147,7 +146,7 @@ export const callOpenAIImagesUpstream = defineStage<
       canonical = parseOpenAIImagesResponse(body.json);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      use.log.warn('upstream answered with a body the OpenAI Images protocol cannot read', { message });
+      await use.log.warn('upstream answered with a body the OpenAI Images protocol cannot read', { message });
       return read({ status: 502, message, body: body.json }, called);
     }
     return read(canonical, wasCalled ? [{ identity, quantities: billed(canonical.usage) }] : []);
@@ -171,7 +170,7 @@ const meterFrames = (
   // Running out without the completed event is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
-  const frames = view((async function* () {
+  const frames = retainReader((async function* () {
     let usage: CanonicalOpenAIImagesUsage | undefined;
     try {
       for await (const event of parseOpenAIImagesStream(body, { signal })) {

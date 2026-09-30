@@ -2,13 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
 import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
 import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from '../../src/repo/spilled-files-policy.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
 import { encodeRun, toNdjson, type Facts } from '@floway-dev/pipeline';
@@ -364,4 +365,51 @@ test('FileDumpStore filters all retained history before applying the page limit'
   expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
   expect(await store.list('key_x', { q: "' OR 1=1 --", limit: 1 })).toEqual([]);
   expect(await store.list('other-key', { q: 'needle', limit: 1 })).toEqual([]);
+});
+
+test('FileDumpStore writes streaming run bytes before publishing its metadata row', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const metadata = Promise.withResolvers<StoredDumpRecord['meta']>();
+  const pipe = new TransformStream<Uint8Array>();
+  const writer = pipe.writable.getWriter();
+  const id = 'streamed-run';
+  const startedAt = Date.now();
+  const writing = store.putRun('key_x', { id, startedAt, events: pipe.readable, metadata: metadata.promise });
+  const bytes = new TextEncoder().encode('{"type":"stage.entered","facts":{"text":"中"}}\n');
+  await writer.write(bytes);
+  expect(await store.get('key_x', id)).toBeNull();
+  await writer.close();
+  metadata.resolve({ ...runRecord(id, Date.now()).meta, startedAt });
+  await writing;
+  const stored = await store.get('key_x', id);
+  expect(stored!.meta.id).toBe(id);
+  expect(stored!.events).toEqual(bytes);
+});
+
+test('a long active run keeps its staged file out of orphan collection', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  initRepo(new SqlRepo(db));
+  initFileStore(files);
+  const store = new FileDumpStore(db, files);
+  const metadata = Promise.withResolvers<StoredDumpRecord['meta']>();
+  const pipe = new TransformStream<Uint8Array>();
+  const writer = pipe.writable.getWriter();
+  const id = 'long-active-run';
+  const startedAt = Date.now();
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  try {
+    const writing = store.putRun('key_x', { id, startedAt, events: pipe.readable, metadata: metadata.promise });
+    await writer.write(new TextEncoder().encode('{"type":"stage.entered"}\n'));
+    await vi.advanceTimersByTimeAsync(SPILLED_FILE_STAGE_GRACE_MS * 2 + 1);
+    await collectSpilledFiles(Date.now());
+    await writer.close();
+    metadata.resolve({ ...runRecord(id, Date.now()).meta, startedAt });
+    await writing;
+    const stored = await store.get('key_x', id);
+    expect(stored!.meta.id).toBe(id);
+    expect(new TextDecoder().decode(stored!.events)).toBe('{"type":"stage.entered"}\n');
+  } finally { vi.useRealTimers(); }
 });

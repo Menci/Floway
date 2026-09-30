@@ -68,6 +68,10 @@ export const installDumpStubs = (
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
+    async putRun(keyId, run) {
+      const bytes = new Uint8Array(await new Response(run.events).arrayBuffer());
+      await store.put(keyId, { meta: await run.metadata, events: bytes });
+    },
     async put(keyId, record) {
       if (throws.put) throw throws.put;
       // A record is already stored-shaped: its stream is encoded once the run is over, so there

@@ -1,12 +1,14 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import { openRunDump } from '../../src/dump/run-sink.ts';
+import { openRunDump, runStreamId } from '../../src/dump/run-sink.ts';
 import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
-import { compose, defineStage, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { testLogStreamStore } from '../test-utils/log-stream.ts';
+import { compose, defineStage, defer, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { getLogStreamStore, initLogStreamStore, LOG_STREAM_IDLE_MS } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
@@ -46,7 +48,7 @@ const shout = defineStage<Pick<Facts, 'in.text'>, Pick<Facts, 'in.text'>, Pick<F
     response: { needs: ['out.result'], consumes: [], provides: [] },
   },
   execute: async (facts, next, use) => {
-    use.log.info('shouting', { length: facts['in.text'].length });
+    await use.log.info('shouting', { length: facts['in.text'].length });
     return await next(move({ ...facts, 'in.text': `${facts['in.text']}!` }));
   },
 });
@@ -182,4 +184,148 @@ test('a run reads the stable timing state at completion alongside its stage hist
   assertEquals(record.meta.ttftMs, 125);
   assertEquals('capture' in record, false);
   assertEquals(lines(record).some(event => event.type === 'stage.entered'), true);
+});
+
+test('live bytes are visible before completion and equal the durable NDJSON artifact', async () => {
+  initLogStreamStore(testLogStreamStore());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'open', parentStageId: null, facts: move({ input: '中' }) });
+  const live = await getLogStreamStore().get(runStreamId(apiKey(3600).id, dump.id));
+  const reader = live!.read(0, new AbortController().signal)[Symbol.asyncIterator]();
+  const first = await reader.next();
+  expect(new TextDecoder().decode(first.value)).toContain('stage.entered');
+  expect(stubs.stored).toHaveLength(0);
+  dump.finalize(200, 0);
+  await flushBackground();
+  const rest: Uint8Array[] = [first.value!];
+  for (;;) { const item = await reader.next(); if (item.done) break; rest.push(item.value); }
+  expect(rest.map(bytes => new TextDecoder().decode(bytes)).join('')).toBe(ndjson(runRecordOf(stubs.stored[0])));
+  expect(stubs.stored[0]!.record.meta.id).toBe(dump.id);
+});
+
+test('retries a lost live acknowledgement at the same offset without duplicating bytes', async () => {
+  const underlying = testLogStreamStore();
+  const positions: number[] = [];
+  initLogStreamStore({
+    get: id => underlying.get(id),
+    open: async id => {
+      const stream = await underlying.open(id);
+      return {
+        ...stream, append: async (offset, bytes) => {
+          positions.push(offset);
+          await stream.append(offset, bytes);
+          if (positions.length === 1) throw new Error('lost acknowledgement');
+        },
+      };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'retry', parentStageId: null, facts: move({ input: 'x' }) });
+  dump.finalize(200, 0);
+  await flushBackground();
+  expect(positions).toEqual([0, 0]);
+  const stream = await underlying.get(runStreamId(apiKey(3600).id, dump.id));
+  const text: string[] = [];
+  for await (const bytes of stream!.read(0, new AbortController().signal)) text.push(new TextDecoder().decode(bytes));
+  expect(text.join('')).toBe(ndjson(runRecordOf(stubs.stored[0])));
+});
+
+test('a repeatedly failed live stream still stores the complete durable artifact', async () => {
+  const original = new Error('live transport unavailable');
+  const append = vi.fn(async () => { throw original; });
+  initLogStreamStore({
+    open: async () => ({ append, end: async () => {}, read: () => (async function* () {})() }),
+    get: async () => null,
+  });
+  const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  try {
+    const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    const { drain } = await run(pipeline, move({ 'in.text': 'hello' }), { dump: dump.sink });
+    dump.afterRun(drain);
+    dump.finalize(200, 0);
+    await flushBackground();
+    expect(append).toHaveBeenCalledTimes(3);
+    expect(lines(runRecordOf(stubs.stored[0])).filter(event => event.type === 'stage.entered')).toHaveLength(2);
+    expect(reported.mock.calls.some(call => call[1] === original)).toBe(true);
+  } finally { reported.mockRestore(); initLogStreamStore(testLogStreamStore()); }
+});
+
+test('durable backpressure blocks a producer before it can enqueue another event', async () => {
+  initLogStreamStore(testLogStreamStore());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const gate = Promise.withResolvers<void>();
+  initDumpStore({
+    ...stubs.store, putRun: async (keyId, writing) => {
+      await gate.promise;
+      await stubs.store.putRun(keyId, writing);
+    },
+  });
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  let wrote = false;
+  const write = dump.sink({ type: 'stage.entered', stageId: 1, name: 'blocked', parentStageId: null, facts: move({}) }).then(() => { wrote = true; });
+  await Promise.resolve(); await Promise.resolve();
+  expect(wrote).toBe(false);
+  gate.resolve();
+  await write;
+  dump.finalize(200, 0);
+  await flushBackground();
+  expect(wrote).toBe(true);
+});
+
+test('closing waits for deferred outcomes and persists their settlement event', async () => {
+  initLogStreamStore(testLogStreamStore());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const result = Promise.withResolvers<string>();
+  const deferred = defer(result.promise);
+  const terminal = defineStage<Record<string, never>, { pending: typeof deferred }>({
+    name: 'pending', return: { provides: ['pending'] }, execute: async () => move({ pending: deferred }),
+  });
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  const { drain } = await run(compose('deferred', [terminal]), move({}), { dump: dump.sink });
+  dump.afterRun(drain);
+  dump.finalize(200, 0);
+  await Promise.resolve();
+  expect(stubs.stored).toHaveLength(0);
+  result.resolve('late value');
+  await flushBackground();
+  expect(lines(runRecordOf(stubs.stored[0])).some(event => event.type === 'deferred.settled')).toBe(true);
+  expect(ndjson(runRecordOf(stubs.stored[0]))).toContain('late value');
+});
+
+test('heartbeat append waits for the in-flight event and uses its resulting byte offset', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const underlying = testLogStreamStore();
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const positions: { offset: number; length: number }[] = [];
+  initLogStreamStore({
+    get: id => underlying.get(id),
+    open: async id => {
+      const stream = await underlying.open(id);
+      return {
+        ...stream, append: async (offset, bytes) => {
+          positions.push({ offset, length: bytes.byteLength });
+          if (positions.length === 1) { entered.resolve(); await release.promise; }
+          await stream.append(offset, bytes);
+        },
+      };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  try {
+    const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    const event = dump.sink({ type: 'stage.entered', stageId: 1, name: 'slow append', parentStageId: null, facts: move({}) });
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS / 2);
+    expect(positions).toHaveLength(1);
+    release.resolve();
+    await event;
+    dump.finalize(200, 0);
+    await flushBackground();
+    expect(positions).toEqual([{ offset: 0, length: positions[0]!.length }, { offset: positions[0]!.length, length: 0 }]);
+    expect(stubs.stored).toHaveLength(1);
+  } finally { release.resolve(); vi.useRealTimers(); initLogStreamStore(testLogStreamStore()); }
 });

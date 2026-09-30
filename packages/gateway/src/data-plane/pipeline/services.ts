@@ -10,14 +10,16 @@ import type { AttemptSelector } from './facts.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { HttpServices } from '@floway-dev/http/pipeline';
 import type { Event, Logger } from '@floway-dev/pipeline';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface GatewayServices extends HttpServices {
+  readonly recordProtocolFrames: <T extends ProtocolFrame<unknown>>(frames: AsyncIterable<T>) => AsyncIterable<T>;
   /** The global sink. Every stage's lines reach it, tagged with the stage's name. */
   readonly log?: Logger;
   /** Present only when this request is being dumped, which is what keeps recording
    *  conditional: with no sink resolved here, the runner does none of it. */
-  readonly dump?: (event: Event) => void;
+  readonly dump?: (event: Event) => void | Promise<void>;
 
   /** The request-scoped context the settlement and telemetry stages read. It is a service
    *  and not a fact because it holds live handles — the scheduler, the abort signal. */

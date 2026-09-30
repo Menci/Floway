@@ -78,10 +78,10 @@ const recordLifecycle = (source: AsyncGenerator<HostedToolLifecycleEvent, Hosted
     try {
       for (;;) {
         const step = await source.next();
-        recording.frame(eventFrame(step.value));
+        await recording.frame(eventFrame(step.value));
         if (step.done) {
           completed = true;
-          recording.end();
+          await recording.end();
           return step.value;
         }
         yield step.value;

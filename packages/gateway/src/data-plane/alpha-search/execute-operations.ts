@@ -34,7 +34,7 @@ export const executeSearchOperations = defineStage<
     const ops = [...facts['request.search.operations']];
     const batch = await startBatchFetch({ kind: 'ops', ops }, session);
     const blocks = await Promise.all(ops.map(op => executeOperationToText(op, session, batch)));
-    use.log.debug('ran the search operations', { operations: ops.length });
+    await use.log.debug('ran the search operations', { operations: ops.length });
 
     return move({
       ...facts,

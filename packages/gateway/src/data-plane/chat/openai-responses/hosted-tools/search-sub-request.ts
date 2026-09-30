@@ -34,6 +34,7 @@ export const runWebSearchSubRequest = async (
       move({ 'request.webSearch.canonical': request }),
       { ...prologue.services, webSearch },
     );
+    prologue.runDump?.afterRun(drain);
     await drain();
     dump?.finalize(200, 0);
     return facts['response.webSearch.ir'];

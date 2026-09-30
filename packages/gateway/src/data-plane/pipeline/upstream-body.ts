@@ -57,3 +57,8 @@ export const spentBody = (body: (ReadableStream<Uint8Array> & Owned) | null): ty
   if (body !== null) setRelease(body, async () => {});
   return body;
 };
+
+/** Consumer return closes its projection; the owned body still finishes this reader at drain. */
+export const retainReader = <T>(reader: AsyncGenerator<T>): AsyncIterable<T> => ({
+  [Symbol.asyncIterator]: () => ({ next: () => reader.next() }),
+});

@@ -6,6 +6,7 @@ import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { redactRunHeaders } from './run-redact';
 import { renderRunEvents } from './run-render';
+import { RunStages } from './run-stages';
 import type { CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -58,16 +59,19 @@ function RecordTiming({ meta }: { meta: DumpMetadata }) {
 
 function RunRecordDetail({ record, collected }: { record: DumpRecord; collected: CollectedStream | null }) {
   const { t } = useTranslation();
+  const [view, setView] = useState('stages');
   const redacted = useMemo(() => redactRunHeaders(record.events), [record.events]);
-  const events = useMemo(() => renderRunEvents(redacted).map(event => ({
+  const count = useMemo(() => redacted.split('\n').filter(Boolean).length, [redacted]);
+  const events = useMemo(() => view === 'events' ? renderRunEvents(redacted).map(event => ({
     event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
-  })), [redacted]);
+  })) : [], [redacted, view]);
   const failure = errorLabel(record.meta.error) ?? collected?.error;
-  const [view, setView] = useState('run');
+  const label = view === 'stages' ? t('dashboard.requests.stages') : view === 'events' ? t('dashboard.requests.events', { count }) : t('dashboard.requests.collected');
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
-      <Dropdown className="flex-1" size="small" aria-label={t('dashboard.requests.streamView')} value={view === 'run' ? t('dashboard.requests.run') : t('dashboard.requests.collected')} selectedOptions={[view]} onOptionSelect={(_, data) => { if (data.optionValue) setView(data.optionValue); }}>
-        <Option value="run">{t('dashboard.requests.run')}</Option>
+      <Dropdown clearable={false} size="small" className="flex-1" aria-label={t('dashboard.requests.streamView')} selectedOptions={[view]} value={label} onOptionSelect={(_, data) => setView(data.optionValue!)}>
+        <Option value="stages">{t('dashboard.requests.stages')}</Option>
+        <Option value="events">{t('dashboard.requests.events', { count })}</Option>
         {collected?.result != null && <Option value="collected">{t('dashboard.requests.collected')}</Option>}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
@@ -76,7 +80,8 @@ function RunRecordDetail({ record, collected }: { record: DumpRecord; collected:
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
-      {view === 'run' ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
+      {view === 'stages' ? <RunStages ndjson={redacted} /> : view === 'events'
+        ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
         : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(collected!.result, null, 2)} json label={t('dashboard.requests.collected')} /></Suspense>}
     </div>
   </div>;

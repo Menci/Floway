@@ -101,7 +101,7 @@ export const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
     spentBody(exchange.body);
     const raw = await result.response.text();
     if (!result.response.ok) {
-      use.log.warn('upstream refused', { status: result.response.status });
+      await use.log.warn('upstream refused', { status: result.response.status });
       // The message is what came back as text and the body is the same thing parsed: a dump
       // reader gets the upstream's own words either way, and only the parsed form is
       // something the edge can serialize back out.

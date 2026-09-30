@@ -6,6 +6,7 @@ export interface ReadEvent {
   readonly frames?: readonly unknown[];
   readonly deferred?: unknown;
   readonly outcome?: PromiseSettledResult<unknown>;
+  readonly error?: unknown;
 }
 
 export interface RunReader {
@@ -77,6 +78,7 @@ export const createRunReader = (): RunReader => {
       return null;
     }
     if (event.type === 'stream.frame') return { frames: event.frames.map(value => decode(value)) };
+    if (event.type === 'stage.failed') return { error: decode(event.error) };
     if (event.type === 'stage.entered' || event.type === 'stage.leaved') {
       return event.facts === undefined ? {} : { facts: fields(event.facts, {}) };
     }

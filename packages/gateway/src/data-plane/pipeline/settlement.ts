@@ -49,6 +49,7 @@ export const settleBillable = (
 export const writeSettlement = (
   failed: (handedUp: Record<string, unknown>) => boolean,
   pendingUsage?: string,
+  recoverCalls = true,
 ) => defineStage<
   Record<string, never>,
   Slice<'serve.usage.prior'>,
@@ -68,10 +69,10 @@ export const writeSettlement = (
       back = await next(entry);
     } catch (error) {
       const atFailure = getFailureFacts(error) ?? entry;
-      settleExit(use, atFailure, true, pendingUsage);
+      settleExit(use, atFailure, true, pendingUsage, true, recoverCalls);
       throw error;
     }
-    settleExit(use, back, failed(back as Facts), pendingUsage);
+    settleExit(use, back, failed(back as Facts), pendingUsage, false, recoverCalls);
     const { 'serve.usage.prior': _prior, ...rest } = back as Slice<'response.usage.billable' | 'serve.usage.prior'>;
     return rest;
   },
@@ -82,21 +83,27 @@ const settleExit = (
   facts: Facts,
   failed: boolean,
   pendingUsage: string | undefined,
+  exceptional: boolean,
+  recoverCalls: boolean,
 ): void => {
+  const prior = exceptional ? facts['serve.usage.prior'] as readonly BillableEntity[] : [];
   const pending = pendingUsage === undefined || !(pendingUsage in facts)
     ? null : facts[pendingUsage] as Deferred<StreamOutcome> | null;
   if (pending !== null) {
     use.background(pending.then(outcome => {
-      settleBillable(use, outcome.billable, failed || outcome.failed);
+      settleBillable(use, [...prior, ...outcome.billable], failed || outcome.failed);
+    }, error => {
+      use.gateway.dump?.failed(error);
+      settleBillable(use, [...prior, ...facts['response.usage.billable'] as readonly BillableEntity[]], true);
+      throw error;
     }));
     return;
   }
   if ('response.usage.billable' in facts) {
-    settleBillable(use, facts['response.usage.billable'] as readonly BillableEntity[], failed);
+    settleBillable(use, [...prior, ...facts['response.usage.billable'] as readonly BillableEntity[]], failed);
     return;
   }
-  const prior = facts['serve.usage.prior'] as readonly BillableEntity[];
-  if (!('response.provider.called' in facts)) {
+  if (!recoverCalls || !('response.provider.called' in facts)) {
     settleBillable(use, prior, failed);
     return;
   }

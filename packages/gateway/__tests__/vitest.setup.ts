@@ -1,4 +1,5 @@
 import { trackBackground } from './test-utils/background-tracker.ts';
+import { testLogStreamStore } from './test-utils/log-stream.ts';
 import type { DumpBroker } from '../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
 import type { DumpStore } from '../src/dump/store-contract.ts';
@@ -7,7 +8,7 @@ import { handleExecutionRequest } from '../src/execution/handler.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { initExecutionCellNamespace } from '../src/runtime/execution.ts';
 import { isReplayableBody } from '@floway-dev/http';
-import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace } from '@floway-dev/platform';
+import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace, initLogStreamStore } from '@floway-dev/platform';
 
 // Production always initializes the environment getter at boot. Mirror that
 // here with a neutral default; tests needing real values (RUNTIME_LOCATION,
@@ -16,6 +17,7 @@ initEnv(() => '');
 // Tests run as 'node' by default. The few tests that exercise CF-specific
 // runtime behaviour re-init this with 'cloudflare'.
 initRuntimeKind('node');
+initLogStreamStore(testLogStreamStore());
 initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
 initFetch((url, init) => {
   const body = init.body;
@@ -33,6 +35,7 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRe
 // independent of that subsystem. Dump-specific tests install real or recording
 // implementations.
 const noopStore: DumpStore = {
+  async putRun(_keyId, run) { await new Response(run.events).arrayBuffer(); await run.metadata; },
   async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },

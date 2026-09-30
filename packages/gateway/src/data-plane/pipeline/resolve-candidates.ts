@@ -86,11 +86,11 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
     });
     // The live half stays with the resolver; only selectors travel.
     if (viable.length === 0) {
-      use.log.debug('no viable candidate', { model, refused: [...refused] });
+      await use.log.debug('no viable candidate', { model, refused: [...refused] });
       return refuse(400, appendFailedUpstreams(narrowing.unsupported(model, [...refused]), failedUpstreams));
     }
 
-    use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
+    await use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
     return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(viable)) });
   },
 });

@@ -68,7 +68,7 @@ export const callOpenAIEmbeddingsUpstream = defineStage<
     const reportedNothing: UsageQuantities = {};
 
     if (!result.response.ok) {
-      use.log.warn('upstream refused', { status: result.response.status });
+      await use.log.warn('upstream refused', { status: result.response.status });
       return answered({
         status: result.response.status,
         message: upstreamErrorMessage(body.json) ?? body.text,
@@ -85,7 +85,7 @@ export const callOpenAIEmbeddingsUpstream = defineStage<
     try {
       canonical = parseOpenAIEmbeddingsResponse(body.json, facts['serve.model']);
     } catch (error) {
-      use.log.warn('upstream answered with a body the OpenAI Embeddings protocol cannot read', { error: String(error) });
+      await use.log.warn('upstream answered with a body the OpenAI Embeddings protocol cannot read', { error: String(error) });
       return answered(unreadableBody(result.response, body, 'the OpenAI Embeddings protocol'), reportedNothing);
     }
     return answered(canonical, billed(canonical.usage));

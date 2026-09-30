@@ -145,7 +145,7 @@ describe('what the run owns', () => {
     });
     const pipeline = compose<Core<'in.words'>, Core<'out.result'>>('lost', [thrower]);
     await expect(run(pipeline, move({ 'in.words': ['a'] }), services)).rejects.toThrow('a bug');
-    expect(seen.map(e => e.type)).toEqual(['stage.entered']);
+    expect(seen.map(e => e.type)).toEqual(['stage.entered', 'stage.failed']);
   });
 
   // A key the stage declared it consumes is one it took ownership of. Ownership is a

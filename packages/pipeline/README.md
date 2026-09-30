@@ -52,14 +52,17 @@ cancellation semantics; the runner imposes no wall-clock deadline on declared
 work. Concurrent callers share the same drain promise.
 
 A programming exception keeps its original error object. `getFailureFacts(error)`
-returns the deepest accepted facts associated with that failure. If cleanup
+returns the deepest accepted facts associated with that failure in its run.
+When several runs receive one shared rejection object, later runs use their
+own cause wrapper; the source error's name and message stay intact, and each
+run's diagnostic context remains stable. If cleanup
 also fails, an `AggregateError` preserves the original exception as its cause
 and retains every cleanup error. Cleanup still attempts the other resources.
 
 ## Run recording
 
 Recording is enabled by a `dump` sink in the run's services. Events carry stage
-boundaries, stage logs, protocol frames and deferred settlement. Encoding
+boundaries, stage failures, stage logs, protocol frames and deferred settlement. Encoding
 assigns object IDs, retains shared references and interns large equal strings.
 Each encoded event is one NDJSON line. The runner delivers events directly
 to the sink and returns only facts and the drain operation; it retains no
@@ -69,6 +72,16 @@ sink, so storage backpressure reaches execution. Scoped `use.log` methods also
 return promises and must be awaited. The external global logger may stay
 synchronous; the scoped logger awaits both its output and the dump write.
 The encoder remains synchronous for one event at a time.
+
+The encoder keeps folding state for active stages. Once a stage returns or
+fails, its original fact graph leaves that bookkeeping; object identity lookup
+uses weak references. Full byte and large-string value sharing retains the
+complete encoded values needed for later equality checks.
+
+A `stage.failed` event carries the stage ID and original source error. An
+unchanged successful exit may still fold away; a thrown stage cannot be mistaken
+for that folded return. Failure recording retains the original error chain when
+its sink also rejects.
 
 Special values remain distinguishable from ordinary data:
 

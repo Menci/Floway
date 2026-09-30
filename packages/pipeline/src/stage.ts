@@ -107,7 +107,7 @@ export interface RunScope {
   readonly emit: (event: import('./dump.ts').Event) => Promise<void>;
   /** Every owned value accepted at entry or handover and not yet released. */
   readonly outstanding: Set<import('./run.ts').Owned>;
-  readonly failures: WeakSet<object>;
+  readonly failures: WeakMap<object, object>;
   parentStageId: number | null;
   nextStageId: number;
 }

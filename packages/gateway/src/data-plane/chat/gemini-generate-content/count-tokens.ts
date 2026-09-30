@@ -20,7 +20,7 @@ export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerate
     // billed set because nothing here is billable today, not because the operation is
     // exempt — an upstream that began charging for it would provide a non-empty one and
     // nothing else would change.
-    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400),
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, undefined, false),
     emitGeminiGenerateContentTokenCount,
     resolveChatCandidates(narrowing(payload)),
     failover({

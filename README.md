@@ -99,7 +99,10 @@ the upstream HTTP status.
 
 Billing records each actual upstream usage observation independently, including
 multiple model calls within one hosted-tool turn. Pricing uses each observation's
-model identity and pricing facts. Request diagnostics sum the observed token
+model identity and pricing facts. The request inspector shows the stage tree, both fact
+directions, changes at each descent and return, and stage logs. Repeated objects retain
+shared identities, while deferred outcomes and native content descriptions remain visible.
+Request diagnostics sum the observed token
 quantities; performance uses the observed output count for TPOT and partial
 output failures.
 
@@ -200,6 +203,14 @@ retry observations and failed-over attempts join the same billable collection. S
 wraps rendering and writes each observed call once, including calls completed before a later
 stage throws. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
+
+Run dumps stream their encoded NDJSON into durable storage with backpressure while appending
+the same bytes to a temporary LogStream. Live writes retry at the same byte offset; persistent
+live failure leaves durable recording active. Quiet runs renew their temporary stream and
+staged-file leases. Closing waits for owned readers and deferred outcomes before publishing
+completed metadata. Run IDs are assigned at entry; listing remains ordered by completion time
+and ID. The authenticated `GET /api/dump/keys/:keyId/records/:recordId/live?offset=0` endpoint
+attaches only to an existing per-key stream and uses the platform's framed byte protocol.
 
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same

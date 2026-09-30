@@ -38,6 +38,7 @@ export const runImageGenerationSubRequest = async (
       move({ 'request.imageGeneration.canonical': request, 'ingress.http.headers': [] }),
       { ...prologue.services },
     );
+    prologue.runDump?.afterRun(drain);
     return {
       lifecycle: facts['response.imageGeneration.lifecycle'],
       drain: async () => {

@@ -1,8 +1,8 @@
 import type { DumpMetadata, DumpRecordId, DumpWriteRecord, StoredDumpRecord } from './types.ts';
 
-// Per-API-key request dump storage contract: metadata in SQL, bodies in the
-// FileStore. Request bytes are prepared before the terminal write; reads
-// always rehydrate raw bytes for the control plane.
+// Per-API-key run storage: metadata in SQL and compressed NDJSON in the
+// FileStore. Streaming writes stage their file before publishing the row;
+// detail reads rehydrate the event bytes for the control plane.
 
 export interface DumpListOptions {
   before?: DumpRecordId;
@@ -11,7 +11,15 @@ export interface DumpListOptions {
   limit: number;
 }
 
+export interface DumpRunWrite {
+  readonly id: string;
+  readonly startedAt: number;
+  readonly events: ReadableStream<Uint8Array>;
+  readonly metadata: Promise<DumpMetadata>;
+}
+
 export interface DumpStore {
+  putRun(keyId: string, run: DumpRunWrite): Promise<void>;
 
   // Write body files BEFORE the metadata row so a partial failure leaves
   // orphan files (sweep-collectable), not orphan rows (broken records).

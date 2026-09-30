@@ -13,7 +13,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createCandidateRegistry } from './candidates.ts';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
-import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
+import { openRunDump, recordStream, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -48,6 +48,7 @@ export const readIngress = async (c: Context): Promise<Ingress> => ({
 });
 
 export interface Prologue {
+  readonly runDump: RunDump | null;
   readonly services: GatewayServices;
   readonly gateway: GatewayCtx;
   readonly headers: readonly (readonly [string, string])[];
@@ -105,6 +106,7 @@ export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunD
   const candidates = createCandidateRegistry();
 
   return {
+    runDump,
     gateway,
     headers: ingress.headers,
     services: {
@@ -112,6 +114,7 @@ export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunD
       log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
       ...candidates,
+      recordProtocolFrames: frames => recordStream(frames, runDump),
       httpCall: callId => {
         const candidate = candidates.resolveCandidate(callId);
         return {
@@ -218,7 +221,9 @@ const serveRun = async <
   render: (facts: Exit) => Rendered,
 ): Promise<Response> => {
   const { facts, drain } = await run(pipeline, entry, prologue.services as never);
-  const answer = render(facts);
+  prologue.runDump?.afterRun(drain);
+  let answer: Rendered;
+  try { answer = render(facts); } catch (error) { await drain(); throw error; }
 
   const status = facts['response.http.status'] as ContentfulStatusCode;
   if ('frames' in answer) {

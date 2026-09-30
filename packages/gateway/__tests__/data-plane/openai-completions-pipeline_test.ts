@@ -47,7 +47,7 @@ const candidate = (
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callOpenAICompletions }),
+      instance: stubProvider(),
       pipelines: { openaiCompletions: stubProviderPipeline('openaiCompletions', callOpenAICompletions) },
     },
     model: stubInternalModel({ id: 'text-model', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'text-model', endpoints }) } }, upstream),
@@ -282,6 +282,37 @@ describe('the OpenAI Completions pipeline', () => {
         pricingFacts: { inputTokens: 0, serviceTier: 'flex' },
       });
     }
+  });
+
+  it('finishes metering after an early consumer return', async () => {
+    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
+    const { facts, drain } = await serve(entryFacts());
+    const reader = (facts['response.openaiCompletions.rendered'] as AsyncIterable<SseFrame>)[Symbol.asyncIterator]();
+    expect((await reader.next()).done).toBe(false);
+    await reader.return!();
+    await drain();
+    expect((await facts['response.openaiCompletions.streamedUsage'])!.billable[0]!.quantities).toMatchObject({ input_tokens: '5', output_tokens: '7' });
+    expect(recorded.usage).toHaveLength(1);
+  });
+
+  it('invalid streamed usage rejects its deferred reading and settles the proven call', async () => {
+    const invalidUsage = JSON.stringify({
+      id: 'cmpl_1', choices: [], usage: {
+        prompt_tokens: 4, completion_tokens: 1, total_tokens: 5,
+        prompt_tokens_details: { cached_tokens: 8 },
+      },
+    });
+    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), invalidUsage, '[DONE]'), modelKey: 'k' }))]);
+    const work: Promise<unknown>[] = [];
+    const { facts, drain } = await run(openaiCompletionsServePipeline, move(entryFacts()), {
+      gateway: mockGatewayCtx({ wantsStream: true }),
+      background: (promise: Promise<unknown>) => { work.push(promise); void promise.catch(() => {}); },
+      ...createCandidateRegistry(), resolveAttempt,
+    });
+    await expect(collect(facts['response.openaiCompletions.rendered'])).rejects.toBeInstanceOf(RangeError);
+    await expect(drain()).rejects.toBeInstanceOf(RangeError);
+    await Promise.allSettled(work);
+    expect(recorded.usage).toMatchObject([{ modelKey: 'k', requests: 1, metrics: [] }]);
   });
 
   it('settles completed attempts when a later refusal body throws, preserving the original exception', async () => {

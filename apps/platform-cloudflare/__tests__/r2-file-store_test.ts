@@ -76,7 +76,9 @@ test('unknown-length streaming writes keep parts bounded and publish exact bytes
   finish();
   await writing;
   expect(bucket.parts.map(part => part.byteLength)).toEqual([size, 3]);
-  expect(await store.get('stream')).toEqual(new Uint8Array(size + 3).fill(7));
+  const stored = (await store.get('stream'))!;
+  expect(stored.byteLength).toBe(size + 3);
+  expect(stored.every(byte => byte === 7)).toBe(true);
   expect(bucket.aborted).toBe(false);
 });
 

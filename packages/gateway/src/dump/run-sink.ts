@@ -1,18 +1,3 @@
-// The pipeline's half of the dump: the record of a **whole run**.
-//
-// A run emits events — every stage, both directions — and this is where they
-// go. What the runner hands `services.dump` is `sink`; what it accumulates is
-// the encoded stream, folded event by event by `createRunEncoder` so a run is
-// written down as it happens rather than re-walked at the end. At the terminal
-// point the stream becomes NDJSON and one record goes through `DumpStore.put`,
-// which is the same contract the edge record is written under: the stream is
-// one more gzipped body file, retained and swept by the same row.
-//
-// Recording is conditional and that is structural: with no retention configured
-// there is no sink to hand to `run`, so `services.dump` is absent and the
-// runner does none of the recording — not a no-op that accumulates and throws
-// the result away.
-
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type { DumpMetadata } from './types.ts';
@@ -20,12 +5,11 @@ import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createRunEncoder, isStreamFact, streamFact, toNdjson, type DumpEvent, type Event, type StreamFact } from '@floway-dev/pipeline';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import { createRunEncoder, isStreamFact, streamFact, toNdjson, type Event, type StreamFact } from '@floway-dev/pipeline';
+import { getLogStreamStore, LOG_STREAM_IDLE_MS, type BackgroundScheduler, type LogStream } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-// Only metadata is snapshotted here; request contents are facts recorded by the run.
 interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
@@ -33,10 +17,25 @@ interface RequestSnapshot {
   readonly streamError: string | null;
 }
 
+const LIVE_APPEND_ATTEMPTS = 3;
+const CHUNK_BYTES = 64 * 1024;
+
+export const runStreamId = (keyId: string, runId: string): string => `${keyId}/${runId}`;
+
 export class RunDump {
+  readonly id: string;
   private readonly attribution = new DumpAttribution();
   private readonly encode = createRunEncoder();
-  private readonly events: DumpEvent[] = [];
+  private readonly metadata = Promise.withResolvers<DumpMetadata>();
+  private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
+  private readonly liveReady: Promise<LogStream | null>;
+  private live: LogStream | null = null;
+  private offset = 0;
+  private heartbeat: ReturnType<typeof setTimeout> | undefined;
+  private heartbeatWrite: Promise<void> = Promise.resolve();
+  private closing = false;
+  private tail: Promise<void> = Promise.resolve();
+  private runDrain: (() => Promise<void>) | null = null;
   private sentPayloadBytes = 0;
   private streams = 0;
   private answerStream: StreamRecording | undefined;
@@ -48,60 +47,96 @@ export class RunDump {
     private readonly backgroundScheduler: BackgroundScheduler,
     private readonly wantsStream: boolean,
     private readonly timing: AttemptTiming,
-  ) {}
+  ) {
+    const id = ulid(startedAt);
+    this.id = id;
+    const bytes = new TransformStream<Uint8Array, Uint8Array>();
+    this.writer = bytes.writable.getWriter();
+    // The metadata wait can reject before the storage reader reaches it; storage owns reporting.
+    void this.metadata.promise.catch(() => {});
+    this.backgroundScheduler((async () => {
+      await getDumpStore().putRun(apiKey.id, {
+        id, startedAt, events: bytes.readable, metadata: this.metadata.promise,
+      });
+      await getDumpBroker().publish(apiKey.id, await this.metadata.promise);
+    })().catch(async error => {
+      this.metadata.reject(error);
+      await this.writer.abort(error);
+      throw error;
+    }));
+    this.liveReady = getLogStreamStore().open(runStreamId(apiKey.id, id)).then(stream => {
+      this.live = stream;
+      this.scheduleHeartbeat();
+      return stream;
+    }).catch(error => {
+      console.error('[dump] live stream open failed', error);
+      return null;
+    });
+  }
 
-  /** What the prologue hands to `run` as `services.dump`. Bound to this
-   *  recording, so it travels as a value. */
-  readonly sink = (event: Event): void => {
-    for (const encoded of this.encode(event)) this.events.push(encoded);
+  afterRun(drain: () => Promise<void>): void {
+    this.runDrain = drain;
+  }
+
+  // One event owns its entire object batch; concurrent deferred outcomes cannot overtake it.
+  readonly sink = (event: Event): Promise<void> => {
+    const write = this.tail.then(async () => {
+      const bytes = new TextEncoder().encode(toNdjson(this.encode(event)));
+      await this.liveReady;
+      for (let offset = 0; offset < bytes.byteLength; offset += CHUNK_BYTES) {
+        const chunk = bytes.subarray(offset, offset + CHUNK_BYTES);
+        await this.writer.write(chunk);
+        await this.appendLive(chunk);
+      }
+    });
+    this.tail = write;
+    return write;
   };
 
-  // --- mid-flight hooks, the same ones the edge record is stamped with ---
-
-  requestedModel(model: string): void {
-    this.attribution.requestedModel(model);
+  private async appendLive(bytes: Uint8Array): Promise<void> {
+    const stream = this.live;
+    if (stream === null) return;
+    const atOffset = this.offset;
+    for (let attempt = 0; attempt < LIVE_APPEND_ATTEMPTS; attempt += 1) {
+      try {
+        await stream.append(atOffset, bytes);
+        this.offset += bytes.byteLength;
+        return;
+      } catch (error) {
+        if (attempt + 1 === LIVE_APPEND_ATTEMPTS) {
+          this.live = null;
+          console.error('[dump] live stream unavailable; durable recording continues', error);
+        }
+      }
+    }
   }
 
-  error(kind: 'upstream' | 'gateway', upstream?: string): void {
-    this.attribution.error(kind, upstream);
+  private scheduleHeartbeat(): void {
+    if (this.closing || this.live === null) return;
+    this.heartbeat = setTimeout(() => {
+      const heartbeat = this.tail.then(() => this.appendLive(new Uint8Array()));
+      this.tail = heartbeat;
+      this.heartbeatWrite = heartbeat.then(() => { this.scheduleHeartbeat(); });
+    }, LOG_STREAM_IDLE_MS / 2);
   }
 
-  failed(reason: unknown, options?: { readonly fallback: boolean }): void {
-    this.attribution.failed(reason, options);
-  }
+  requestedModel(model: string): void { this.attribution.requestedModel(model); }
+  error(kind: 'upstream' | 'gateway', upstream?: string): void { this.attribution.error(kind, upstream); }
+  failed(reason: unknown, options?: { readonly fallback: boolean }): void { this.attribution.failed(reason, options); }
+  success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void { this.attribution.success(identity, usage); }
 
-  /**
-   * A frame the client was sent, as the event the format names for one.
-   *
-   * The edge dump kept a frame log of its own; here a frame is content about a stream, so it
-   * is `stream.frame` and it folds through the same encoder as everything else. A frame pushed
-   * without opening a stream first belongs to the run's first one, which is what a transport
-   * writing single synthesized frames alongside its answer is doing.
-   */
-  frame(frame: ProtocolFrame<unknown>): void {
+  async frame(frame: ProtocolFrame<unknown>): Promise<void> {
     this.answerStream ??= this.openStream();
-    this.answerStream.frame(frame);
+    await this.answerStream.frame(frame);
   }
 
-  /**
-   * Begins recording one stream, under an id of its own.
-   *
-   * The id is what makes the frames resolvable: the fact holding the stream carries
-   * `{"$stream": n}` and every frame event names the same `n`, so a run that opened two — a
-   * sub-request's stream beside the answer's — keeps them apart. `end` says the record of that
-   * stream is complete, and a client that stopped reading never reaches it.
-   */
   openStream(): StreamRecording {
     const streamId = ++this.streams;
     return {
-      frame: frame => { this.sink({ type: 'stream.frame', streamId, frames: [frame] }); },
-      end: () => { this.sink({ type: 'stream.end', streamId }); },
+      frame: frame => this.sink({ type: 'stream.frame', streamId, frames: [frame] }),
+      end: () => this.sink({ type: 'stream.end', streamId }),
       fact: streamFact(streamId),
     };
-  }
-
-  success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
-    this.attribution.success(identity, usage);
   }
 
   openSubRequest(turn: { readonly method: string; readonly path: string }, wantsStream: boolean, timing: AttemptTiming): RunDump {
@@ -115,40 +150,17 @@ export class RunDump {
     );
   }
 
-  // --- terminal point ---
-
-  // Two transport-owned completion shapes:
-  //
-  //   • `(status, responseBytes)` — the caller already knows what it wrote.
-  //   • `(response)` — tees the answer so the client gets bytes flowing while a
-  //     background reader measures the other half. Protocol contents live in the run events.
-  //
-  // The drain → encode → store put → broker publish runs on the runtime's
-  // BackgroundScheduler so a dump write failure cannot turn a served answer
-  // into a 502.
-  /** A transport that writes its own frames counts what it sent, because nothing downstream
-   *  of it can. The run's own bytes are its events; this is the answer's. */
-  recordSentPayloadBytes(byteLength: number): void {
-    this.sentPayloadBytes += byteLength;
-  }
+  recordSentPayloadBytes(byteLength: number): void { this.sentPayloadBytes += byteLength; }
 
   finalize(status: number | null, responseBytes: number): void;
   finalize(response: Response): Response;
   finalize(...args: [number | null, number] | [Response]): void | Response {
     if (args.length === 2) {
-      const [status, responseBytes] = args;
-      // A transport that wrote its own frames counted them as it went; what it passes here
-      // is whatever else it sent alongside them.
-      this.backgroundScheduler(this.write(status, responseBytes + this.sentPayloadBytes, null));
+      this.backgroundScheduler(this.write(args[0], args[1] + this.sentPayloadBytes, null));
       return;
     }
-
     const [response] = args;
-    if (response.body === null) {
-      this.finalize(response.status, 0);
-      return response;
-    }
-
+    if (response.body === null) { this.finalize(response.status, 0); return response; }
     const [forClient, forMeasure] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forMeasure.getReader();
@@ -160,96 +172,64 @@ export class RunDump {
           if (done) break;
           payloadBytes += value.byteLength;
         }
-      } catch (err) {
-        streamError = oneLineError(err);
+      } catch (error) {
+        streamError = oneLineError(error);
       } finally {
         reader.releaseLock();
       }
       await this.write(response.status, payloadBytes, streamError);
     })());
-
-    return new Response(forClient, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    return new Response(forClient, { status: response.status, statusText: response.statusText, headers: response.headers });
   }
 
   private async write(status: number | null, responseBytes: number, responseStreamError: string | null): Promise<void> {
-    // ULID-from-completedAt keeps ids increasing with row creation time; the
-    // random tail provides the deterministic tie-breaker for one millisecond.
-    const completedAt = Date.now();
-    const recordId = ulid(completedAt);
-    const meta: DumpMetadata = await this.attribution.metadata({
-      id: recordId,
-      startedAt: this.startedAt,
-      completedAt,
-      method: this.requestSnapshot.method,
-      path: this.requestSnapshot.path,
-      status,
-      requestBytes: this.requestSnapshot.bodyByteLength,
-      responseBytes,
-      ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
-      fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
-    });
-
-    // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
-      await getDumpStore().put(this.apiKey.id, {
-        meta,
-        events: new TextEncoder().encode(toNdjson(this.events)),
+      if (this.runDrain !== null) {
+        try { await this.runDrain(); } catch (error) { this.failed(error); }
+      }
+      await this.tail;
+      const completedAt = Date.now();
+      const meta = await this.attribution.metadata({
+        id: this.id, startedAt: this.startedAt, completedAt,
+        method: this.requestSnapshot.method, path: this.requestSnapshot.path, status,
+        requestBytes: this.requestSnapshot.bodyByteLength, responseBytes,
+        ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
+        fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
       });
-      await getDumpBroker().publish(this.apiKey.id, meta);
-    } catch (err) {
-      console.error(`[dump] run write failed for key=${this.apiKey.id} record=${recordId}`, oneLineError(err));
+      this.metadata.resolve(meta);
+      await this.writer.close();
+      await this.liveReady;
+      this.closing = true;
+      clearTimeout(this.heartbeat);
+      await this.heartbeatWrite;
+      if (this.live !== null) {
+        try { await this.live.end(); } catch (error) { console.error('[dump] live stream end failed', error); }
+      }
+    } catch (error) {
+      this.metadata.reject(error);
+      throw error;
+    } finally {
+      this.closing = true;
+      clearTimeout(this.heartbeat);
     }
   }
 }
 
-/**
- * Returns null when the api key opts out of dumps, and the absence is the
- * mechanism: the prologue has nothing to put in `services.dump`, so the run
- * emits nothing and accumulates nothing.
- *
- * `method` and `path` are passed rather than read off a request so a transport
- * that carries several turns over one connection can name each one as what it
- * is.
- */
 export const openRunDump = (
   apiKey: ApiKey,
   turn: { readonly method: string; readonly path: string; readonly body: RequestBody },
   backgroundScheduler: BackgroundScheduler,
   wantsStream: boolean,
   timing: AttemptTiming,
-): RunDump | null => {
-  if (apiKey.dumpRetentionSeconds === null) return null;
-  return new RunDump(
-    apiKey,
-    {
-      method: turn.method,
-      path: turn.path,
-      bodyByteLength: turn.body.bytes.byteLength,
-      streamError: turn.body.streamError,
-    },
-    Date.now(),
-    backgroundScheduler,
-    wantsStream,
-    timing,
-  );
-};
+): RunDump | null => apiKey.dumpRetentionSeconds === null ? null : new RunDump(
+  apiKey,
+  { method: turn.method, path: turn.path, bodyByteLength: turn.body.bytes.byteLength, streamError: turn.body.streamError },
+  Date.now(), backgroundScheduler, wantsStream, timing,
+);
 
-/**
- * One stream, as the recording knows it.
- *
- * A record identifies its streams, because their content arrives over time and after the fact
- * that holds them: the fact carries `{"$stream": n}` and the frames arrive afterwards naming
- * that id. `end` is what says the record of this stream is complete — a client that stopped
- * reading leaves it short, and the absence of the terminator is how a reader tells a stream that
- * ended from one that was cut off.
- */
 export interface StreamRecording {
-  frame(frame: ProtocolFrame<unknown>): void;
-  end(): void;
+  frame(frame: ProtocolFrame<unknown>): Promise<void>;
+  end(): Promise<void>;
   readonly fact: StreamFact;
 }
 
@@ -291,12 +271,12 @@ export function recordStream<T>(
     ...recording.fact,
     [Symbol.asyncIterator]: () => (async function* () {
       for await (const value of stream) {
-        recording.frame(asFrame(value));
+        await recording.frame(asFrame(value));
         yield value;
       }
       // Reached only where the source ran out on its own, which is what makes the record of
       // this stream complete. A reader that stopped early never gets here.
-      recording.end();
+      await recording.end();
     })(),
   };
 }

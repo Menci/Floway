@@ -7,7 +7,7 @@ import {
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
-import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
+import type { DumpListOptions, DumpStore, DumpRunWrite } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
   DumpRecordId,
@@ -15,7 +15,7 @@ import type {
   DumpWriteRecord,
   StoredDumpRecord,
 } from '../dump/types.ts';
-import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
+import { gunzipBytes, gzipBytes, gzipStream } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{run}.gz`.
@@ -93,9 +93,47 @@ const NO_EDGE_HEADERS = '[]';
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
-  // A run's NDJSON is one body file, staged in the registry, written, and only
-  // then pointed at by a row — the contract that leaves retention, the sweep and
-  // the files-before-row ordering saying what they always said.
+  async putRun(keyId: string, run: DumpRunWrite): Promise<void> {
+    const fileKey = bodyPath(keyId, hourBucket(run.startedAt), run.id, 'run');
+    await this.db.prepare(
+      `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+       VALUES (?, 'dump-response', ?, 'staged', ?)`,
+    ).bind(fileKey, JSON.stringify([keyId, run.id]), Date.now() + SPILLED_FILE_STAGE_GRACE_MS).run();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let finished = false;
+    let renewal: Promise<void> = Promise.resolve();
+    const stopRenewing = () => { finished = true; clearTimeout(timer); };
+    const scheduleRenewal = () => {
+      timer = setTimeout(() => {
+        renewal = this.db.prepare(
+          "UPDATE spilled_files SET collect_after = ? WHERE file_key = ? AND state = 'staged'",
+        ).bind(Date.now() + SPILLED_FILE_STAGE_GRACE_MS, fileKey).run().then(() => {
+          if (!finished) scheduleRenewal();
+        });
+        // Awaited before publication even if the lease write failed while upstream was quiet.
+        void renewal.catch(() => {});
+      }, SPILLED_FILE_STAGE_GRACE_MS / 2);
+    };
+    scheduleRenewal();
+    try {
+      await this.files.put(fileKey, gzipStream(run.events));
+      const meta = await run.metadata;
+      stopRenewing();
+      await renewal;
+      await this.db.prepare(
+        `INSERT INTO dump_records
+         (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor, response_upstream_body_descriptor)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)`,
+      ).bind(
+        keyId, meta.id, meta.completedAt, meta.upstream?.id ?? null,
+        encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`), NO_EDGE_HEADERS,
+        encodeDumpBodyDescriptor({ key: fileKey, type: 'run' }, `dump record ${meta.id} run descriptor`),
+      ).run();
+    } finally { stopRenewing(); }
+  }
+
+  // Files are staged before writing; rows publish only after the complete run
+  // artifact exists, so a failed write leaves a collectible orphan file.
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
     const responseFileKey = bodyPath(keyId, bucket, record.meta.id, 'run');
