@@ -124,7 +124,7 @@ describe('Codex reset cards', () => {
       .mockReturnValueOnce('00000000-0000-4000-8000-000000000002');
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    let dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
