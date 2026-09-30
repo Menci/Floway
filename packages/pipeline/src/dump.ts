@@ -292,6 +292,8 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
         emit({ type: 'stage.leaved', stageId: event.stageId, facts: encoder.encodeFacts(event.facts, emit) });
       }
       if (seen?.parent != null) lastChildLeft.set(seen.parent, event.facts);
+      entered.delete(event.stageId);
+      lastChildLeft.delete(event.stageId);
       return out;
     }
 
@@ -317,6 +319,8 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
     if (event.type === 'stage.failed') {
       const fields = encoder.encodeFacts({ error: event.error }, emit);
       emit({ type: 'stage.failed', stageId: event.stageId, error: fields['error']! });
+      entered.delete(event.stageId);
+      lastChildLeft.delete(event.stageId);
       return out;
     }
 

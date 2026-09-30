@@ -73,6 +73,11 @@ return promises and must be awaited. The external global logger may stay
 synchronous; the scoped logger awaits both its output and the dump write.
 The encoder remains synchronous for one event at a time.
 
+The encoder keeps folding state for active stages. Once a stage returns or
+fails, its original fact graph leaves that bookkeeping; object identity lookup
+uses weak references. Full byte and large-string value sharing retains the
+complete encoded values needed for later equality checks.
+
 A `stage.failed` event carries the stage ID and original source error. An
 unchanged successful exit may still fold away; a thrown stage cannot be mistaken
 for that folded return. Failure recording retains the original error chain when
