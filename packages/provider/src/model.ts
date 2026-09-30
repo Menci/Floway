@@ -101,9 +101,9 @@ export interface UpstreamRecord {
   hue: number;
 }
 
-// Public identity + capability surface shared by `InternalModel` (the merged,
+// Internal identity and native capability surface shared by `InternalModel` (the merged,
 // gateway-facing view) and `ProviderModel` (a single upstream's emission).
-// The two shapes carry the same metadata verbatim; the merge step OR-unions
+// Public projection substitutes downstreamEndpoints; the merge step OR-unions
 // `endpoints` and recomputes `kind`. Kept internal so callers can only touch
 // the wrapper types — this base has no meaning on its own.
 //

@@ -949,6 +949,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const stored = toUpstreamRecord(storedRow);
     const comparable = (record: StoredUpstreamRecord): StoredUpstreamRecord => ({
       ...record,
+      chatCompletionsReasoningOverrides: { ...record.chatCompletionsReasoningOverrides },
       modelsCache: null,
       state: replaceState ? record.state : null,
     });

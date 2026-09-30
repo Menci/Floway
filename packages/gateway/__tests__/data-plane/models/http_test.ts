@@ -327,7 +327,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             kind: 'chat',
             opaqueBlobCompatibilityScope: { bindToUpstream: true },
             chat: { image_detail_original: false },
-            endpoints: { anthropicMessages: {} },
+            endpoints: { anthropicMessages: {}, openaiResponses: {}, openaiChatCompletions: { reasoning: { text: 'reasoning', data: 'reasoning-opaque' } } },
             pricing: {
               entries: [
                 { rates: { input_tokens: '0.000005', output_tokens: '0.000025', input_cache_read_tokens: '0.0000005', input_cache_write_tokens: '0.00000625' } },

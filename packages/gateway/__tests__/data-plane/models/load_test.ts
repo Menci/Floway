@@ -24,8 +24,8 @@ describe('toPublicModel', () => {
     expect(toPublicModel({ ...base, chat }).chat).toEqual(chat);
   });
 
-  test('stamps the upstream endpoint map onto the wire entry verbatim', () => {
-    expect(toPublicModel(base).endpoints).toEqual({ openaiChatCompletions: {} });
+  test('projects the client endpoint map with the fixed reasoning format', () => {
+    expect(toPublicModel(base).endpoints).toEqual({ openaiChatCompletions: { reasoning: { text: 'reasoning', data: 'reasoning-opaque' } }, openaiResponses: {}, anthropicMessages: {} });
   });
 });
 

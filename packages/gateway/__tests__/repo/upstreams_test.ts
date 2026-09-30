@@ -17,6 +17,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   config: { nested: { value: overrides.id }, endpoints: { openaiChatCompletions: {} } },
   state: null,
   flagOverrides: {},
+  chatCompletionsReasoningOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,

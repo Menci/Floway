@@ -28,7 +28,6 @@ export type OpenAIChatCompletionsReasoningSourceItem = Extract<OpenAIResponsesIn
 export interface OpenAIChatCompletionsReasoningProjection {
   items: OpenAIChatCompletionsReasoningItem[];
   text?: string;
-  opaque?: string;
 }
 
 export const createOpenAIChatCompletionsReasoningProjection = (): OpenAIChatCompletionsReasoningProjection => ({
@@ -36,19 +35,22 @@ export const createOpenAIChatCompletionsReasoningProjection = (): OpenAIChatComp
 });
 
 export const addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection = (projection: OpenAIChatCompletionsReasoningProjection, item: OpenAIChatCompletionsReasoningSourceItem): void => {
-  const encrypted = 'encrypted_content' in item ? item.encrypted_content : undefined;
-  const bridge = typeof encrypted === 'string' ? decodeReasoningData(encrypted) : undefined;
-  if (bridge?.type === 'chat-completions-reasoning') {
-    if (typeof bridge.value !== 'string') throw new TypeError('Malformed Floway Chat Completions reasoning bridge');
-    projection.opaque = bridge.value;
-  } else projection.items.push(klona(item));
+  projection.items.push(klona(item));
 
   const text = item.summary.map(part => part.text).join('');
   if (projection.text === undefined && text) projection.text = text;
 };
 
-export const openaiChatCompletionsReasoningProjectionFields = (projection: OpenAIChatCompletionsReasoningProjection) =>
-  flowayReasoningFields(projection.text ?? '', projection.opaque ?? (projection.items.length > 0 ? encodeReasoningData('openai-responses-reasoning-items', projection.items) : ''));
+export const openaiChatCompletionsReasoningProjectionFields = (projection: OpenAIChatCompletionsReasoningProjection) => {
+  const [item] = projection.items;
+  const encrypted = item !== undefined && 'encrypted_content' in item ? item.encrypted_content : undefined;
+  const bridge = typeof encrypted === 'string' ? decodeReasoningData(encrypted) : undefined;
+  if (projection.items.length === 1 && bridge?.type === 'chat-completions-reasoning') {
+    if (typeof bridge.value !== 'string') throw new TypeError('Malformed Floway Chat Completions reasoning bridge');
+    return flowayReasoningFields(projection.text ?? '', bridge.value);
+  }
+  return flowayReasoningFields(projection.text ?? '', projection.items.length > 0 ? encodeReasoningData('openai-responses-reasoning-items', projection.items) : '');
+};
 
 export const toOpenAIResponsesReasoningItem = <T extends OpenAIResponsesReasoningItem>(item: OpenAIChatCompletionsReasoningItem): T =>
   ({

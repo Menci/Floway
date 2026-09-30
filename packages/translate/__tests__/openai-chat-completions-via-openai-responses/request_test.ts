@@ -287,3 +287,8 @@ test("buildTargetRequest drops reasoning_effort='none' since OpenAI Responses ha
 
   assertEquals(result.reasoning, undefined);
 });
+
+test('native Responses replay forwards the original opaque blob', () => {
+  const result = buildTargetRequest({ model: 'm', messages: [{ role: 'assistant', content: null, ...flowayReasoningFields('plan', 'native-ciphertext') }] });
+  expect(result.input[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'native-ciphertext' });
+});

@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { openAIChatCompletionsReasoningItems, openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -81,7 +80,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
       if (reasoningItems) {
         input.push(...reasoningItems);
       } else if (scalarReasoning || opaque !== undefined) {
-        input.push({ ...(scalarReasoning ?? { type: 'reasoning' as const, id: createRandomOpenAIResponsesItemId('reasoning'), summary: [] }), ...(opaque !== undefined ? { encrypted_content: encodeReasoningData('chat-completions-reasoning', opaque) } : {}) });
+        input.push({ ...(scalarReasoning ?? { type: 'reasoning' as const, id: createRandomOpenAIResponsesItemId('reasoning'), summary: [] }), ...(opaque !== undefined ? { encrypted_content: opaque } : {}) });
       }
 
       if (message.tool_calls?.length) {

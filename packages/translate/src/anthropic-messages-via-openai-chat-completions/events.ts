@@ -1,7 +1,6 @@
-import { anthropicMessagesBlocksFromChatCompletionsReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { decodeReasoningData, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const toAnthropicMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -300,15 +299,18 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
     });
   }
 
-  const wireOpaque = openAIChatCompletionsReasoningOpaque(delta);
-  const block = anthropicMessagesBlocksFromChatCompletionsReasoning(reasoningText, wireOpaque)[0];
-  const reasoningOpaque = block?.type === 'thinking' ? block.signature : block?.data;
+  const reasoningOpaque = openAIChatCompletionsReasoningOpaque(delta);
   if (reasoningOpaque === undefined) {
     return;
   }
 
+  const envelope = decodeReasoningData(reasoningOpaque);
+  const structured = envelope?.type === 'litellm-thinking-blocks' || envelope?.type === 'openrouter-reasoning-details';
   if (state.openBlock === 'thinking') {
     state.pendingThinkingSignature = reasoningOpaque;
+    // Structured opaque values are cumulative choice snapshots. Keep the
+    // thinking gate open until finish so replay carries the complete array.
+    if (structured) return;
     emitPendingReasoningAndDeferred(state, events);
     return;
   }

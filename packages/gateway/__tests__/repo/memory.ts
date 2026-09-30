@@ -760,7 +760,8 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const { previous, upstream } = input;
     const modelConfigChanged = previous.kind !== upstream.kind
       || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
-      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides)
+      || serializeStoredConfig(previous.chatCompletionsReasoningOverrides ?? {}) !== serializeStoredConfig(upstream.chatCompletionsReasoningOverrides ?? {});
     const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
     const refreshInputsChanged = modelConfigChanged || transportChanged;
     const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
@@ -768,7 +769,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     if (existing === undefined) return Promise.resolve(null);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
     const comparableExisting = { ...existing, modelsCache: null, state: replaceState ? existing.state : null };
-    const comparablePrevious = { ...previous, modelsCache: null, state: replaceState ? previous.state : null };
+    const comparablePrevious = { ...previous, chatCompletionsReasoningOverrides: { ...previous.chatCompletionsReasoningOverrides }, modelsCache: null, state: replaceState ? previous.state : null };
     if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(null);
     const next = cloneUpstreamRecord({
       ...upstream,
@@ -833,6 +834,7 @@ const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamReco
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
   modelsCache: structuredClone(upstream.modelsCache),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
+  chatCompletionsReasoningOverrides: { ...upstream.chatCompletionsReasoningOverrides },
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
   modelPrefix: structuredClone(upstream.modelPrefix),

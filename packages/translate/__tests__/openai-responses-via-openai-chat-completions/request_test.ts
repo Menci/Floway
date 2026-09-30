@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-responses-via-openai-chat-completions/request.ts';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
-import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
+import { decodeReasoningData, encodeReasoningData } from '@floway-dev/protocols/common';
+import { FlowayOpenAIChatCompletionsReasoning, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
@@ -920,4 +920,13 @@ test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no
 
   assertEquals(result.target.reasoning_effort, 'medium');
   assertEquals('reasoning_summary' in result.target, false);
+});
+
+test('preserves mixed native reasoning items and Floway bridge items in source order', () => {
+  const items = [
+    { type: 'reasoning' as const, id: 'rs_native', summary: [{ type: 'summary_text' as const, text: 'native summary' }], encrypted_content: 'native-ciphertext' },
+    { type: 'reasoning' as const, id: 'rs_bridge', summary: [], encrypted_content: encodeReasoningData('chat-completions-reasoning', 'chat-signature') },
+  ];
+  const result = buildTargetRequest({ model: 'm', input: items });
+  assertEquals(decodeReasoningData(result.target.messages[0][FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, items);
 });
