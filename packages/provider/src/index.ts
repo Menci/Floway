@@ -7,8 +7,11 @@ export type {
   OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
-export type { ProviderCallResponse, ProviderModelFacts, ProviderOperation, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderPipelines, ProviderRequest, ProviderResponse, ProviderRerankResponse, ProviderServices } from './pipeline.ts';
+export type { AnthropicMessagesCountTokensBody, ChatProviderOperation, NonChatProviderOperation, ProviderCallResponse, ProviderChatResponse, ProviderChatServices, ProviderModelFacts, ProviderOperation, ProviderOperationOutputs, ProviderOperationPayloads, ProviderOperationRequest, ProviderOperationResponse, ProviderPipeline, ProviderPipelines, ProviderProtocolFailure, ProviderRequest, ProviderResponse, ProviderRerankResponse, ProviderServices, ProviderStreamOutput, ProviderValueOutput } from './pipeline.ts';
 export { providerModelFacts } from './pipeline.ts';
+export { decodeProviderResponse } from './stages/decode-response.ts';
+export { selectProviderResponsesAction } from './stages/select-responses-action.ts';
+export { observeProviderCall } from './stages/observe-call.ts';
 export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';

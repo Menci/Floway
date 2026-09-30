@@ -1,13 +1,13 @@
 import { noopUpstreamCallOptions } from './stubs.ts';
 import { exchangeResponse, type HttpServices } from '@floway-dev/http/pipeline';
 import { move, run, setRelease } from '@floway-dev/pipeline';
-import type { Provider, ProviderCallResult, ProviderModel, ProviderOperation, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderRerankCallResult, ProviderRequest, UpstreamCallOptions } from '@floway-dev/provider';
+import type { NonChatProviderOperation, Provider, ProviderCallResult, ProviderModel, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderRerankCallResult, ProviderOperationRequest, UpstreamCallOptions } from '@floway-dev/provider';
 import { providerModelFacts } from '@floway-dev/provider';
 
-type CallResult<O extends ProviderOperation> =
+type CallResult<O extends NonChatProviderOperation> =
   (O extends 'rerank' ? ProviderRerankCallResult : ProviderCallResult) & { readonly called: boolean; readonly previousCalls: readonly { readonly modelKey: string }[] };
 
-export const callProviderPipeline = async <O extends ProviderOperation>(
+export const callProviderPipeline = async <O extends NonChatProviderOperation>(
   provider: Provider,
   operation: O,
   model: ProviderModel,
@@ -17,14 +17,14 @@ export const callProviderPipeline = async <O extends ProviderOperation>(
 ): Promise<CallResult<O>> => {
   const pipeline = provider.pipelines[operation];
   if (pipeline === undefined) throw new Error(`${provider.kind} has no ${operation} pipeline`);
-  const entry: ProviderRequest<ProviderOperationPayloads[O]> = move({
+  const entry = move({
     'request.provider.model': providerModelFacts(model),
     'request.provider.payload': payload,
     'request.http.callId': 0,
     'request.http.headers': [...options.headers],
-  });
+  }) as ProviderOperationRequest<O>;
   const services: HttpServices = { httpCall: () => ({ ...options, signal }) };
-  const executed = await run<ProviderRequest<ProviderOperationPayloads[O]>, ProviderOperationResponse<O>, HttpServices>(pipeline as ProviderPipeline<O>, entry, services);
+  const executed = await run<ProviderOperationRequest<O>, ProviderOperationResponse<O>, HttpServices>(pipeline as ProviderPipeline<O>, entry, services);
   const facts = executed.facts;
   const exchange = facts['response.http.exchange'];
   if (exchange.type === 'transportFailure') {
