@@ -6513,6 +6513,42 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
 });
 
+for (const carrier of ['tools', 'additional_tools', 'tool_search_output'] as const) {
+  test(`the shim drains ${carrier} continuation streams before awaiting billable metadata`, async () => {
+    const { backend } = makeStubDeps();
+    const tools: OpenAIResponsesTool[] = [{ type: 'web_search' }];
+    const inv = makeInvocation({
+      payload: carrier === 'tools'
+        ? { tools }
+        : {
+          tools: undefined,
+          input: [carrier === 'additional_tools'
+            ? { type: carrier, role: 'developer', tools }
+            : { type: carrier, execution: 'client', call_id: 'discovery', tools }],
+        },
+    });
+    const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
+    let runCalls = 0;
+    const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+      const frames = turns[runCalls++];
+      const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
+      let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
+      const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
+      return eventResult((async function* () {
+        for (const frame of frames) yield frame;
+        resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
+      })(), testTelemetryModelIdentity, { finalMetadata });
+    });
+
+    assert(result.type === 'events');
+    const frames = await collectFrames(result.events);
+    assertEquals(findResponseCompleted(frames).response.status, 'completed');
+    assertEquals(runCalls, 3);
+    assertEquals(backend.calls.length, 2);
+    assertEquals((await result.finalMetadata!).billableUsage, { input: 6, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 6 });
+  }, 1_000);
+}
+
 test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
   const unrecognized = eventFrame({
     type: 'response.some_future_event',
