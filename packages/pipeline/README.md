@@ -61,7 +61,10 @@ and retains every cleanup error. Cleanup still attempts the other resources.
 Recording is enabled by a `dump` sink in the run's services. Events carry stage
 boundaries, stage logs, protocol frames and deferred settlement. Encoding
 assigns object IDs, retains shared references and interns large equal strings.
-Each encoded event is one NDJSON line.
+Each encoded event is one NDJSON line. The runner delivers events directly
+to the sink and returns only facts and the drain operation; it retains no
+parallel event backlog. A caller that needs an in-memory collection can collect
+from that sink explicitly.
 
 Special values remain distinguishable from ordinary data:
 

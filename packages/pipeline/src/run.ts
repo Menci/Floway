@@ -11,7 +11,6 @@
 // putting the target at another key; coming up, a fork taking ownership of every branch's
 // releasable and handing one of them onward.
 
-import type { Event } from './dump.ts';
 import type { Facts } from './facts.ts';
 import { assertHandedOver, move } from './facts.ts';
 import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
@@ -323,9 +322,6 @@ const loggerFor = (services: object, name: string, stageId: number, scope: RunSc
 
 export interface RunResult<Exit> {
   readonly facts: Exit;
-  /** Empty unless the prologue resolved a dump sink. Recording is conditional, and this
-   *  is the same list the sink was given, event by event, as they happened. */
-  readonly events: readonly Event[];
   /**
    * What the run still owns. Release is not cancel — this drains to end-of-stream, because
    * an aborted connection cannot be reused and leaves its billing unsettled — so the
@@ -348,9 +344,8 @@ export const run = async <Entry extends object, Exit extends object, S extends R
 ): Promise<RunResult<Exit>> => {
   // With no dump sink resolved in the prologue, none of the recording happens.
   const sink = services.dump;
-  const events: Event[] = [];
   const scope: RunScope = {
-    emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
+    emit: sink ?? (() => {}),
     outstanding: new Set<Owned>(),
     deferred: new Map<Promise<unknown>, Promise<void>>(),
     failures: new WeakSet<object>(),
@@ -378,7 +373,7 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
     requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
-    return { facts, events, drain };
+    return { facts, drain };
   } catch (error) {
     captureFailure(error, initial as Facts, scope);
     // A run that threw has nothing left to hand back, so there is nothing to defer for:

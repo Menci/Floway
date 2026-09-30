@@ -4,8 +4,10 @@ import { attemptPipeline, makeProvider, servePipeline } from './fixtures.ts';
 import { compose, createRunEncoder, defer, defineStage, encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
 import type { DumpEvent, Event, Stored } from '../src/index.ts';
 
-/** The dump only records when the prologue resolved a sink, so these runs bring one. */
-const RECORDING = { dump: () => {} };
+const recording = () => {
+  const events: Event[] = [];
+  return { events, services: { dump: (event: Event) => { events.push(event); } } };
+};
 
 const refsIn = (value: Stored, out: number[] = []): number[] => {
   if (typeof value !== 'object' || value === null) return out;
@@ -48,7 +50,8 @@ describe('the dump encoding', () => {
   // that has not arrived. That is what makes the stream emittable as it happens.
   it('never refers forward past the event it is in', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b c' }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': 'a b c' }), services);
     let highest = 0;
     for (const event of encodeRun(events)) {
       if (event.type === 'object') {
@@ -190,7 +193,8 @@ describe('the dump encoding', () => {
   // `parentStageId` — but it carries `facts` only when they differ from its parent's.
   it('folds an entry that carries nothing of its own, and drops an exit that does', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b' }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': 'a b' }), services);
     const encoded = encodeRun(events);
     const entries = encoded.filter(e => e.type === 'stage.entered');
     const rawEntries = events.filter(e => e.type === 'stage.entered');
@@ -270,7 +274,8 @@ describe('the dump encoding', () => {
   it('costs a fraction of writing every state independently', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
     const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
-    const { events } = await run(serve, move({ 'in.text': words }), RECORDING);
+    const { events, services } = recording();
+    await run(serve, move({ 'in.text': words }), services);
     const independent = events.reduce((n, e) => n + ('facts' in e ? JSON.stringify(e.facts).length : 0), 0);
     const deduplicated = toNdjson(encodeRun(events)).length;
     expect(deduplicated).toBeLessThan(independent / 2);
