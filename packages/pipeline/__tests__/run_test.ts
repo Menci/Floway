@@ -467,7 +467,7 @@ describe('what a stage is given', () => {
       name: 'talkative',
       return: { provides: ['out.result'] },
       execute: async (facts, use) => {
-        use.log.info('answering', { words: 1 });
+        await use.log.info('answering', { words: 1 });
         return move({ ...facts, 'out.result': { ok: 'said' } });
       },
     });
@@ -487,7 +487,7 @@ describe('what a stage is given', () => {
       name: 'talkative',
       return: { provides: ['out.result'] },
       execute: async (facts, use) => {
-        use.log.info('answering');
+        await use.log.info('answering');
         return move({ ...facts, 'out.result': { ok: 'said' } });
       },
     });
@@ -508,9 +508,9 @@ describe('what a stage is given', () => {
         response: { needs: ['out.result'], consumes: [], provides: [] },
       },
       execute: async (facts, next, use) => {
-        use.log.info('on the way down');
+        await use.log.info('on the way down');
         const back = await next(facts);
-        use.log.info('on the way back');
+        await use.log.info('on the way back');
         return back;
       },
     });
@@ -518,7 +518,7 @@ describe('what a stage is given', () => {
       name: 'answers',
       return: { provides: ['out.result'] },
       execute: async (facts, use) => {
-        use.log.info('answering');
+        await use.log.info('answering');
         return move({ ...facts, 'out.result': { ok: 'said' } });
       },
     });
@@ -542,7 +542,7 @@ describe('what a stage is given', () => {
       name: 'talkative',
       return: { provides: ['out.result'] },
       execute: async (facts, use) => {
-        use.log.warn('slow', fields);
+        await use.log.warn('slow', fields);
         fields['attempt'] = 2;
         return move({ ...facts, 'out.result': { ok: 'said' } });
       },

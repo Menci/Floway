@@ -13,7 +13,7 @@
 
 import type { Facts } from './facts.ts';
 import { assertHandedOver, move } from './facts.ts';
-import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
+import type { Descend, ErasedSide, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
 
 /** Ownership is claimed, never sniffed.
  *
@@ -123,11 +123,21 @@ const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'u
 const registerFact = (value: unknown, facts: Facts, scope: RunScope): void => {
   if (isOwned(value)) scope.outstanding.add(value);
   if (isDeferred(value) && !scope.deferred.has(value)) {
-    const settled = value.then(result => {
-      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
-    }, error => {
+    const settled = value.then(async result => {
+      try {
+        await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
+      } catch (error) { captureFailure(error, facts, scope); throw error; }
+    }, async error => {
       captureFailure(error, facts, scope);
-      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
+      try {
+        await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
+      } catch (recordingError) {
+        if (recordingError !== error) {
+          const combined = new AggregateError([error, recordingError], 'Deferred fact failed and recording also failed', { cause: error });
+          captureFailure(combined, facts, scope);
+          throw combined;
+        }
+      }
       throw error;
     });
     scope.deferred.set(value, settled);
@@ -170,7 +180,7 @@ export const walk = async (
   // Once, on the way in: what this stage initially saw. A fork is not this event
   // repeating — it is several *children* naming this stage as their parent, each entered
   // by its own descent, so the shape of a run is in the ids.
-    scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
+    await scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
     if (pass !== undefined) requireFacts(facts, pass.request.needs, `${stage.name} entering:`);
 
     const descend: Descend = async (produced, target) => {
@@ -211,7 +221,7 @@ export const walk = async (
       }
       const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
       current = answer;
-      scope.emit({ type: 'stage.leaved', stageId, facts: answer });
+      await scope.emit({ type: 'stage.leaved', stageId, facts: answer });
       return answer;
     }
 
@@ -248,7 +258,7 @@ export const walk = async (
       }
     }
 
-    scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
+    await scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
     return handedUp;
   } catch (error) {
     captureFailure(error, current, scope);
@@ -300,22 +310,23 @@ const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: stri
  *  The fields are snapshotted where the line is written, because a stored line must be a
  *  state that existed: the caller keeps its own object and the record must not drift with
  *  it. This is the same reason the record itself is frozen at handover. */
-const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): Logger => {
+const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): import('./stage.ts').Use<object>['log'] => {
   const sink = (services as RunServices).log;
   const line = (level: LogLevel) =>
-    (message: string, fields?: Readonly<Record<string, unknown>>): void => {
+    async (message: string, fields?: Readonly<Record<string, unknown>>): Promise<void> => {
       // The global sink is handed the stage as an ordinary field, because a `Logger` has
       // nowhere else to put it; the record gets it as `context`, which is where a logg
       // entry carries the same thing.
-      sink?.[level](message, { stage: name, ...fields });
-      scope.emit({
+      const entry = {
         type: 'stage.log',
         stageId,
         level,
         context: name,
         message,
         ...(fields === undefined ? {} : { fields: Object.freeze({ ...fields }) }),
-      });
+      } as const;
+      await sink?.[level](message, { stage: name, ...fields });
+      await scope.emit(entry);
     };
   return { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 };
@@ -345,7 +356,7 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   // With no dump sink resolved in the prologue, none of the recording happens.
   const sink = services.dump;
   const scope: RunScope = {
-    emit: sink ?? (() => {}),
+    emit: async event => { await sink?.(event); },
     outstanding: new Set<Owned>(),
     deferred: new Map<Promise<unknown>, Promise<void>>(),
     failures: new WeakSet<object>(),
