@@ -1,4 +1,4 @@
-import { detectTerminalSentinel, persistQuotaSnapshot, persistTerminalAccountState } from '../fetch.ts';
+import { detectTerminalSentinel, persistQuotaSnapshot, persistTerminalAccountState } from '../backend.ts';
 import type { ClaudeCodeHttpRequest } from '../pipeline-facts.ts';
 import { parseClaudeCodeQuotaHeaders } from '../quota.ts';
 import { exchangeResponse, takeHttpResponse } from '@floway-dev/http/pipeline';

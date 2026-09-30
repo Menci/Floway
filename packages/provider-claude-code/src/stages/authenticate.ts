@@ -1,6 +1,6 @@
 import { ensureClaudeCodeAccessToken } from '../access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from '../auth/oauth.ts';
-import { isRateLimitedNow, synthetic429, synthetic503 } from '../fetch.ts';
+import { isRateLimitedNow, synthetic429, synthetic503 } from '../backend.ts';
 import type { ClaudeCodeAuthenticatedRequest, ClaudeCodePreparedRequest } from '../pipeline-facts.ts';
 import { readClaudeCodeUpstreamState } from '../state.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';

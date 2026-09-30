@@ -1,17 +1,21 @@
 import { test } from 'vitest';
 
-import { CLAUDE_CLI_VERSION } from '../../../src/headers.ts';
-import { injectBillingBlock } from '../../../src/interceptors/anthropic-messages/inject-billing-block.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { CLAUDE_CLI_VERSION } from '../../src/headers.ts';
+import { injectBillingBlock } from '../../src/stages/inject-billing-block.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): ClaudeCodeStageProbe => ({
   payload,
+  headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
   upstreamId: 'up_test',
 });
@@ -23,7 +27,7 @@ test('drops a single billing block as system[0] with the pinned CLI version and 
     messages: [{ role: 'user', content: 'hello world' }],
   });
 
-  await injectBillingBlock(ctx, okEvents);
+  await applyProviderStage(injectBillingBlock, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   const system = ctx.payload.system;
   if (!Array.isArray(system)) throw new Error('expected system to be an array');
@@ -46,7 +50,7 @@ test('overwrites any pre-existing system array (hoist already ran)', async () =>
     system: [{ type: 'text', text: 'stale leftover' } satisfies AnthropicMessagesTextBlock],
   });
 
-  await injectBillingBlock(ctx, okEvents);
+  await applyProviderStage(injectBillingBlock, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   const system = ctx.payload.system;
   if (!Array.isArray(system)) throw new Error('expected system to be an array');

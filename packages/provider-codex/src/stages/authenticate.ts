@@ -1,5 +1,5 @@
 import { codexPlanObservation } from '../access-token.ts';
-import { prepareCodexCall } from '../fetch.ts';
+import { prepareCodexCall } from '../backend.ts';
 import { codexPlanSupportsImages } from '../models.ts';
 import { codexCall, tokenFacts, type CodexAccountFacts, type CodexAuthenticatedFacts, type CodexOperation, type CodexPipelineConfig } from '../pipeline-facts.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';

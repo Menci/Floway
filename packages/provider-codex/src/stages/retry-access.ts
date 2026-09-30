@@ -1,5 +1,5 @@
 import { codexPlanObservation } from '../access-token.ts';
-import { refreshAccessTokenForRetry } from '../fetch.ts';
+import { refreshAccessTokenForRetry } from '../backend.ts';
 import { codexPlanSupportsImages } from '../models.ts';
 import { codexCall, tokenFacts, type CodexHttpFacts, type CodexOperation, type CodexPipelineConfig } from '../pipeline-facts.ts';
 import { takeHttpResponse, type HttpResponseFacts } from '@floway-dev/http/pipeline';

@@ -5,7 +5,7 @@ import {
   computeCcVersionFingerprint,
   DEFAULT_TEMPLATE_BLOCK,
   IDENTITY_BLOCK,
-} from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
+} from '../src/system-blocks.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 const minimalBody = (firstUserText: string): AnthropicMessagesPayload => ({

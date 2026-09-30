@@ -1,5 +1,5 @@
 import type { CodexPlanObservation } from './access-token.ts';
-import type { CodexCallEffects, CodexBackendCallBase } from './fetch.ts';
+import type { CodexCallEffects, CodexBackendCallBase } from './backend.ts';
 import type { CodexAccountCredential, CodexAccessTokenEntry } from './state.ts';
 import type { HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { secret, type Secret } from '@floway-dev/pipeline';

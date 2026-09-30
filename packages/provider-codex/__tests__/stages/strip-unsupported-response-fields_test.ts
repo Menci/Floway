@@ -1,15 +1,14 @@
 import { test } from 'vitest';
 
-import { stripUnsupportedFields } from '../../../src/interceptors/openai-responses/strip-unsupported-fields.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { stripCodexUnsupportedFields } from '../../src/stages/strip-unsupported-response-fields.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIResponsesProbe, assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', headers: new Headers() });
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
@@ -19,7 +18,7 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
 test('drops every field Codex rejects with Unsupported parameter', async () => {
   // The fields enumerated below are the full set Codex's ChatGPT-subscription
   // path rejects; keeping the assertion exhaustive guards against silent
-  // drift if the constant inside the interceptor is edited without updating
+  // drift if the constant inside the stage is edited without updating
   // its rationale. Several entries (frequency_penalty, presence_penalty,
   // user, stream_options) are not on the canonical payload and reach Codex only
   // through a permissive caller. `prompt_cache_retention` is modeled but
@@ -40,7 +39,7 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
     stream_options: { include_usage: true },
   } as unknown as CanonicalOpenAIResponsesPayload);
 
-  await stripUnsupportedFields(ctx, okEvents);
+  await applyProviderStage(stripCodexUnsupportedFields, ctx, okEvents);
 
   assertFalse('max_output_tokens' in ctx.payload);
   assertFalse('temperature' in ctx.payload);
@@ -65,7 +64,7 @@ test('leaves supported fields intact', async () => {
     temperature: 0.7,
   });
 
-  await stripUnsupportedFields(ctx, okEvents);
+  await applyProviderStage(stripCodexUnsupportedFields, ctx, okEvents);
 
   assertEquals(ctx.payload.model, 'gpt-test');
   assertEquals(ctx.payload.input, [{ type: 'message', role: 'user', content: 'hello' }]);
@@ -80,7 +79,7 @@ test('payload without any unsupported fields is preserved as-is', async () => {
   const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] };
   const ctx = invocation(payload);
 
-  await stripUnsupportedFields(ctx, okEvents);
+  await applyProviderStage(stripCodexUnsupportedFields, ctx, okEvents);
 
   assertEquals(ctx.payload, { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
 });

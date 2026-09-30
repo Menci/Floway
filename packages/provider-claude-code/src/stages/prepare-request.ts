@@ -1,4 +1,4 @@
-import { ANTHROPIC_MESSAGES_ENDPOINT } from '../fetch.ts';
+import { ANTHROPIC_MESSAGES_ENDPOINT } from '../backend.ts';
 import { pickClaudeCodeHeaders } from '../headers.ts';
 import type { ClaudeCodeAuthenticatedRequest, ClaudeCodeHttpRequest } from '../pipeline-facts.ts';
 import { defineStage, isSecret, move, secret } from '@floway-dev/pipeline';

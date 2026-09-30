@@ -1,16 +1,20 @@
 import { test } from 'vitest';
 
-import { hoistUserSystemToMessages } from '../../../src/interceptors/anthropic-messages/hoist-user-system-to-messages.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { hoistUserSystemToMessages } from '../../src/stages/hoist-user-system-to-messages.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): ClaudeCodeStageProbe => ({
   payload,
+  headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
   upstreamId: 'up_test',
 });
@@ -23,7 +27,7 @@ test('captures a string system into a synthetic user/assistant pair and drops `s
     system: 'You are a pirate.',
   });
 
-  await hoistUserSystemToMessages(ctx, okEvents);
+  await applyProviderStage(hoistUserSystemToMessages, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages, [
@@ -44,7 +48,7 @@ test('joins multi-block system into one synthetic turn with blank-line separator
     ],
   });
 
-  await hoistUserSystemToMessages(ctx, okEvents);
+  await applyProviderStage(hoistUserSystemToMessages, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages[0], { role: 'user', content: [{ type: 'text', text: '[System Instructions]\nfirst rule\n\nsecond rule' }] });
@@ -57,7 +61,7 @@ test('drops system entirely when caller did not send one and leaves messages unt
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await hoistUserSystemToMessages(ctx, okEvents);
+  await applyProviderStage(hoistUserSystemToMessages, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages.length, 1);
@@ -72,7 +76,7 @@ test('drops system but does not inject a synthetic turn when system text is empt
     system: [{ type: 'text', text: '' }],
   });
 
-  await hoistUserSystemToMessages(ctx, okEvents);
+  await applyProviderStage(hoistUserSystemToMessages, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages.length, 1);

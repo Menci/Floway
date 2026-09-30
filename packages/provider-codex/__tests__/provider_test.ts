@@ -6,7 +6,7 @@ import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { move, run, setRelease, type Event } from '@floway-dev/pipeline';
-import { directFetcher, initProviderRepo, providerModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, providerModelFacts, type ProviderOperationPayloads, type UpstreamRecord } from '@floway-dev/provider';
 import { callProviderPipeline, collectChatProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
@@ -358,7 +358,7 @@ describe('createCodexProvider', () => {
   test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callOpenAIResponses(
+    const result = await collectChatProviderPipeline(instance, 'openaiResponses',
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       {
         input: [
@@ -368,12 +368,10 @@ describe('createCodexProvider', () => {
         ],
         stream: true,
       },
-      'generate',
       undefined,
-      noopUpstreamCallOptions(),
-    );
-    expect(result.ok).toBe(true);
-    expect(result.action).toBe('generate');
+      noopUpstreamCallOptions());
+    expect(result.output).not.toBeNull();
+    expect(result.facts['response.provider.responsesAction']).toBe('generate');
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     if (init === undefined) throw new Error('expected a Codex upstream request');
     const body = await readJsonRequest(init) as Record<string, unknown>;
@@ -385,7 +383,7 @@ describe('createCodexProvider', () => {
     ]);
   });
 
-  test.each(['generate', 'compact'] as const)('%s retains the full Standard body through interceptors before private Lite encoding', async action => {
+  test.each(['generate', 'compact'] as const)('%s retains the full Standard body through stages before private Lite encoding', async action => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
       ? sseResponse()
       : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
@@ -399,14 +397,14 @@ describe('createCodexProvider', () => {
     ];
     const options = noopUpstreamCallOptions();
     options.headers.set(CODEX_RESPONSES_LITE_HEADER, 'true');
-    const result = await provider.instance.callOpenAIResponses(model, {
+    const result = await collectChatProviderPipeline(provider, action === 'generate' ? 'openaiResponses' : 'openaiResponsesCompact', model, {
       input,
       tools: [{ type: 'custom', name: 'patch' }],
       text: { verbosity: 'low' },
       client_metadata: { [CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
-    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], action, undefined, options);
-    expect(result.ok).toBe(true);
-    expect(result.action).toBe(action);
+    } as ProviderOperationPayloads['openaiResponses'], undefined, options);
+    expect(result.output).not.toBeNull();
+    expect(result.facts['response.provider.responsesAction']).toBe(action);
     const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
     expect(wire).not.toHaveProperty('instructions');
     expect(wire).not.toHaveProperty('tools');
@@ -430,15 +428,13 @@ describe('createCodexProvider', () => {
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
     repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callOpenAIResponses(
+    const result = await collectChatProviderPipeline(instance, 'openaiResponses',
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       { input: [], stream: true },
-      'generate',
       undefined,
-      noopUpstreamCallOptions(),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+      noopUpstreamCallOptions());
+    expect(result.output).toBeNull();
+    expect(result.response!.status).toBe(503);
   });
 
   test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
@@ -516,21 +512,7 @@ describe('createCodexProvider', () => {
     });
   });
 
-  test.each([
-    'callOpenAIEmbeddings',
-    'callOpenAIAudioTranscriptions',
-    'callOpenAIChatCompletions',
-    'callAnthropicMessagesCountTokens',
-    'callAnthropicMessages',
-  ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
-    const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
-    // @ts-expect-error: each method has a different body type; we only assert
-    // the synthetic 405 envelope is what comes back.
-    const result = await instance.instance[method](model, undefined, noopUpstreamCallOptions()) as { response: Response };
-    expect(result.response.status).toBe(405);
-    const body = await result.response.json() as { error: { type: string; message: string } };
-    expect(body.error.type).toBe('method_not_allowed');
-    expect(body.error.message).toMatch(/codex/i);
+  test.each(['openaiEmbeddings', 'openaiAudioTranscriptions', 'openaiChatCompletions', 'anthropicMessagesCountTokens', 'anthropicMessages'] as const)('%s has no Codex dispatch pipeline', operation => {
+    expect(createCodexProvider(baseRecord).pipelines[operation]).toBeUndefined();
   });
 });

@@ -1,16 +1,20 @@
 import { test } from 'vitest';
 
-import { backfillRequiredFields } from '../../../src/interceptors/anthropic-messages/backfill-required-fields.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { backfillRequiredFields } from '../../src/stages/backfill-required-fields.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { anthropicMessages: {} } })): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { anthropicMessages: {} } })): ClaudeCodeStageProbe => ({
   payload,
+  headers: new Headers(),
+  anthropicBeta: [],
   model,
   upstreamId: 'up_test',
 });
@@ -26,7 +30,7 @@ test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both
     temperature: 0.5,
   } as Partial<AnthropicMessagesPayload> as AnthropicMessagesPayload);
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
 });
@@ -42,7 +46,7 @@ test('prefers model.limits.max_output_tokens over the gateway fallback when set'
     model,
   );
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.max_tokens, 64000);
 });
@@ -59,7 +63,7 @@ test('preserves caller-supplied max_tokens', async () => {
     model,
   );
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.max_tokens, 100);
 });
@@ -74,7 +78,7 @@ test('backfills temperature to 1 when missing', async () => {
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.temperature, 1);
 });
@@ -87,7 +91,7 @@ test('preserves caller-supplied temperature', async () => {
     temperature: 0.7,
   });
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.temperature, 0.7);
 });
@@ -102,7 +106,7 @@ test('preserves caller-supplied temperature: 0', async () => {
     temperature: 0,
   });
 
-  await backfillRequiredFields(ctx, okEvents);
+  await applyProviderStage(backfillRequiredFields, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.temperature, 0);
 });

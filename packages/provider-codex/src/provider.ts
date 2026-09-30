@@ -1,15 +1,12 @@
 import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
+import type { CodexCallEffects } from './backend.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
-import { callCodexAlphaSearch, callCodexOpenAIImagesEdits, callCodexOpenAIImagesGenerations, callCodexOpenAIResponses, callCodexOpenAIResponsesCompact, type CodexCallEffects } from './fetch.ts';
-import { CODEX_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
-import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { createCodexPipelines } from './pipelines.ts';
 import { assertCodexUpstreamState, findCodexAccountIndex, persistCodexRefreshTokenRotation, persistCodexTerminalState } from './state.ts';
-import { runInterceptors } from '@floway-dev/interceptor';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
@@ -38,7 +35,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
 
   // Computed once per provider instance: only the upstream layer applies
   // (no per-model override layer). Threaded into every ProviderModel emitted
-  // by getProvidedModels so interceptors can read the effective flag set
+  // by getProvidedModels so stages can read the effective flag set
   // without re-resolving.
   const enabledFlags = resolveEffectiveFlags([CODEX_DEFAULT_FLAGS, record.flagOverrides]);
 
@@ -100,66 +97,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       if (codexPlanSupportsImages(access.planType ?? accountIdentity.planType ?? undefined)) models.push(codexImageProviderModel(enabledFlags));
       return models;
     },
-
-    callAlphaSearch: async (model, body, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callCodexAlphaSearch({
-        upstreamId: record.id,
-        account,
-        model,
-        headers: new Headers(opts.headers),
-        signal,
-        effects,
-        call: opts,
-        body,
-      });
-    },
-
-    callOpenAIResponses: async (model, body, action, signal, opts) => {
-      const ctx: OpenAIResponsesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-        action,
-      };
-      return await runInterceptors<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult>(
-        ctx, CODEX_OPENAI_RESPONSES_BOUNDARY, async () => {
-          const { account } = await readActiveAccount();
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };
-          switch (ctx.action) {
-          case 'compact':
-            // The fetch boundary selects the private wire format before compact
-            // projection so interceptor-provided tools and instructions survive.
-            return { action: 'compact', ...(await callCodexOpenAIResponsesCompact({ ...backendCallBase, body: wireBody })) };
-          case 'generate':
-            return { action: 'generate', ...(await callCodexOpenAIResponses({ ...backendCallBase, body: wireBody })) };
-          default:
-            ctx.action satisfies never;
-            throw new Error(`Unhandled OpenAIResponsesAction: ${ctx.action as string}`);
-          }
-        },
-      );
-    },
-
-    // Codex exposes OpenAI Responses and its provider-owned image endpoints. The
-    // remaining surfaces are unreachable through the advertised catalog, but
-    // a stray dispatch must still surface as a structured 405.
-    callAnthropicMessages: () => unsupportedStreamResult(),
-    callAnthropicMessagesCountTokens: () => unsupportedCallResult(),
-    callOpenAICompletions: () => unsupportedCallResult(),
-    callOpenAIChatCompletions: () => unsupportedStreamResult(),
-    callOpenAIEmbeddings: () => unsupportedCallResult(),
-    callOpenAIImagesGenerations: async (model, body, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callCodexOpenAIImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType ?? undefined });
-    },
-    callOpenAIImagesEdits: async (model, request, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callCodexOpenAIImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType ?? undefined });
-    },
-    callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
-    callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
   };
 
   return {
@@ -174,14 +111,3 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     instance,
   };
 };
-
-const synthetic405 = (): Response => new Response(
-  JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by codex provider' } }),
-  { status: 405, headers: { 'content-type': 'application/json' } },
-);
-
-const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
-  Promise.resolve({ ok: false, modelKey: '', response: synthetic405() });
-
-const unsupportedCallResult = (): Promise<ProviderCallResult> =>
-  Promise.resolve({ modelKey: '', response: synthetic405() });

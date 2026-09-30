@@ -1,17 +1,21 @@
 import { test } from 'vitest';
 
-import { injectDefaultTemplate } from '../../../src/interceptors/anthropic-messages/inject-default-template.ts';
-import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { injectDefaultTemplate } from '../../src/stages/inject-default-template.ts';
+import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../src/system-blocks.ts';
 import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): ClaudeCodeStageProbe => ({
   payload,
+  headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
   upstreamId: 'up_test',
 });
@@ -26,7 +30,7 @@ test('appends DEFAULT_TEMPLATE_BLOCK as system[2] with ephemeral cache_control i
     system: [billingBlock, IDENTITY_BLOCK],
   });
 
-  await injectDefaultTemplate(ctx, okEvents);
+  await applyProviderStage(injectDefaultTemplate, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, [billingBlock, IDENTITY_BLOCK, DEFAULT_TEMPLATE_BLOCK]);
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
@@ -57,7 +61,7 @@ test('preserves ephemeral cache_control when caller already holds 3 breakpoints 
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, okEvents);
+  await applyProviderStage(injectDefaultTemplate, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   assertEquals(ctx.payload.system.length, 4);
@@ -94,7 +98,7 @@ test('demotes our cache_control when caller already holds 4 breakpoints (would b
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, okEvents);
+  await applyProviderStage(injectDefaultTemplate, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   assertEquals(ctx.payload.system.length, 4);
@@ -124,7 +128,7 @@ test('demotes our cache_control when caller already exceeds the cap', async () =
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, okEvents);
+  await applyProviderStage(injectDefaultTemplate, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   const injected = ctx.payload.system.at(-1)!;

@@ -1,42 +1,30 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
-import { createUpstreamStateRepoStub } from '../../upstream-state-repo.ts';
-import type { Interceptor } from '@floway-dev/interceptor';
-import { initProviderRepo, type ProviderOpenAIResponsesResult, type UpstreamRecord } from '@floway-dev/provider';
+import { createUpstreamStateRepoStub } from '../upstream-state-repo.ts';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, readJsonRequest } from '@floway-dev/test-utils';
 
-// Codex's terminal handler in provider.ts switches on `ctx.action` (the
-// post-chain value), so an interceptor that flips it mid-chain reroutes
-// dispatch. Drive the contract by swapping CODEX_OPENAI_RESPONSES_BOUNDARY for one
-// that ends in a pivot interceptor (generate → compact), then call with
-// action='generate' and a generate-shaped body. The wire request seen at
-// the upstream MUST hit /codex/responses/compact AND the body MUST NOT
-// carry generate-only fields (tools/reasoning/temperature/...) — the
-// per-action narrowing through `toCompactPayloadShape` is what closes that
-// gap.
-const pivotGenerateToCompact: Interceptor<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult> = async (ctx, run) => {
-  ctx.action = 'compact';
-  ctx.payload = {
-    ...ctx.payload,
-    instructions: 'Late instructions',
-    tools: [...ctx.payload.tools ?? [], { type: 'custom', name: 'late_tool' }],
-  };
-  return await run();
-};
-
-vi.mock('../../../src/interceptors/openai-responses/index.ts', async () => {
-  const original = await vi.importActual<typeof import('../../../src/interceptors/openai-responses/index.ts')>('../../../src/interceptors/openai-responses/index.ts');
-  return {
-    ...original,
-    CODEX_OPENAI_RESPONSES_BOUNDARY: [...original.CODEX_OPENAI_RESPONSES_BOUNDARY, pivotGenerateToCompact],
-  };
+// A provider stage can pivot an initially selected generate operation before private
+// wire preparation. Both Standard and Lite compaction projection must see its new content.
+vi.mock('../../src/stages/inject-default-instructions.ts', async () => {
+  const original = await vi.importActual<typeof import('../../src/stages/inject-default-instructions.ts')>('../../src/stages/inject-default-instructions.ts');
+  const { defineStage, move } = await import('@floway-dev/pipeline');
+  const pivot = defineStage<Record<string, unknown>, Record<string, unknown>, Record<string, unknown>, Record<string, unknown>>({
+    name: 'pivotCodexResponsesToCompact',
+    through: { request: { needs: ['request.provider.payload'], consumes: ['request.provider.payload', 'request.provider.responsesAction'], provides: ['request.provider.payload', 'request.provider.responsesAction'] }, response: { needs: [], consumes: [], provides: [] } },
+    execute: async (facts, next) => {
+      const payload = facts['request.provider.payload'] as CanonicalOpenAIResponsesPayload;
+      return move({ ...await next(move({ ...facts, 'request.provider.responsesAction': 'compact', 'request.provider.payload': { ...payload, instructions: 'Late instructions', tools: [...payload.tools ?? [], { type: 'custom', name: 'late_tool' }] } })) });
+    },
+  });
+  return { ...original, injectCodexDefaultInstructions: pivot };
 });
 
 // Imports below MUST follow the vi.mock so the provider module resolves
 // against the mocked chain on first import.
-const { createCodexProvider } = await import('../../../src/provider.ts');
-const { noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
+const { createCodexProvider } = await import('../../src/provider.ts');
+const { collectChatProviderPipeline, noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -93,7 +81,7 @@ test.each([true, false])('Codex projects a post-chain compact pivot after catalo
   });
 
   const instance = createCodexProvider(baseRecord);
-  const result = await instance.instance.callOpenAIResponses(
+  const result = await collectChatProviderPipeline(instance, 'openaiResponses',
     stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -104,13 +92,11 @@ test.each([true, false])('Codex projects a post-chain compact pivot after catalo
       stream: true,
       parallel_tool_calls: false,
     },
-    'generate',
     undefined,
-    noopUpstreamCallOptions(),
-  );
+    noopUpstreamCallOptions());
 
-  if (!result.ok) throw new Error('expected ok result');
-  if (result.action !== 'compact') throw new Error(`expected compact variant after pivot, got ${result.action}`);
+  expect(result.output).toMatchObject({ kind: 'value' });
+  expect(result.facts['response.provider.responsesAction']).toBe('compact');
 
   if (compactUrl === undefined) throw new Error('expected /codex/responses/compact to be hit');
   if (compactBody === undefined) throw new Error('expected compact body capture');

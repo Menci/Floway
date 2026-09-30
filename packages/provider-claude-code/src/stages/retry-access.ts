@@ -1,6 +1,6 @@
 import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken } from '../access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from '../auth/oauth.ts';
-import { synthetic503 } from '../fetch.ts';
+import { synthetic503 } from '../backend.ts';
 import type { ClaudeCodeHttpRequest } from '../pipeline-facts.ts';
 import { takeHttpResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, secret } from '@floway-dev/pipeline';

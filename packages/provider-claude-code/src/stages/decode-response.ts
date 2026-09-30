@@ -1,4 +1,4 @@
-import { observedClaudeCodeMessagesStream, STREAM_DIAGNOSTIC_FRAME_DATA_CHARS, STREAM_DIAGNOSTIC_FRAME_LIMIT, type StreamDiagnosticFrame } from '../fetch.ts';
+import { observedClaudeCodeMessagesStream, STREAM_DIAGNOSTIC_FRAME_DATA_CHARS, STREAM_DIAGNOSTIC_FRAME_LIMIT, type StreamDiagnosticFrame } from '../backend.ts';
 import type { ClaudeCodeHttpRequest } from '../pipeline-facts.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease } from '@floway-dev/pipeline';

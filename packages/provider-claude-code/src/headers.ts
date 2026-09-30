@@ -29,7 +29,7 @@ const STAINLESS_PACKAGE_VERSION = '0.94.0';
 //
 // `X-Stainless-Helper-Method: stream` is always set: every /v1/messages
 // call we make to Anthropic is a streaming call (see `wireBody.stream =
-// true` in fetch.ts), so this matches real CC's wire output captured in
+// true` in backend.ts), so this matches real CC's wire output captured in
 // `@anthropic-ai/claude-code@2.1.10` cli.js and sub2api's pinned set
 // (gateway_service.go:7427-7429 / allowedHeaders list at :432).
 const STAINLESS_BASE = {

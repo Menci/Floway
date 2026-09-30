@@ -1,17 +1,21 @@
 import { test } from 'vitest';
 
-import { injectIdentityBlock } from '../../../src/interceptors/anthropic-messages/inject-identity-block.ts';
-import { IDENTITY_BLOCK } from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { injectIdentityBlock } from '../../src/stages/inject-identity-block.ts';
+import { IDENTITY_BLOCK } from '../../src/system-blocks.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };
 
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): ClaudeCodeStageProbe => ({
   payload,
+  headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
   upstreamId: 'up_test',
 });
@@ -25,7 +29,7 @@ test('appends IDENTITY_BLOCK after an existing system[0] block', async () => {
     system: [billing],
   });
 
-  await injectIdentityBlock(ctx, okEvents);
+  await applyProviderStage(injectIdentityBlock, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, [billing, IDENTITY_BLOCK]);
 });
@@ -39,7 +43,7 @@ test('appends IDENTITY_BLOCK onto a one-block system array regardless of block c
     system: [existing],
   });
 
-  await injectIdentityBlock(ctx, okEvents);
+  await applyProviderStage(injectIdentityBlock, ctx, okEvents, { 'request.claudeCode.shaped': false });
 
   assertEquals(ctx.payload.system, [existing, IDENTITY_BLOCK]);
 });

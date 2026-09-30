@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { callClaudeCodeAnthropicMessages } from '../src/fetch.ts';
+import { callClaudeCodeAnthropicMessages } from './test-utils/call.ts';
 import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from '../src/headers.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
@@ -84,8 +84,6 @@ const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
   currentState().accounts[0]!.quotaSnapshot;
 
-// Yield to the queue so the .catch chain from fireAndForgetPersist completes
-// before assertions inspect the persisted state.
 const flushAsyncQueue = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
@@ -304,7 +302,7 @@ describe('callClaudeCodeAnthropicMessages — wire body', () => {
 describe('callClaudeCodeAnthropicMessages — incomplete stream diagnostics', () => {
   test('logs upstream trace headers and last raw SSE frames when message_stop is absent', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.fn();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
       new ReadableStream({
         start(controller) {
@@ -324,22 +322,18 @@ describe('callClaudeCodeAnthropicMessages — incomplete stream diagnostics', ()
     ));
 
     const result = await callClaudeCodeAnthropicMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(), observers: { log: { debug: () => {}, info: () => {}, warn, error: () => {} } },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     await drain(result.events);
 
     expect(warn).toHaveBeenCalledTimes(1);
-    const line = warn.mock.calls[0]![0] as string;
-    expect(line).toContain('claude_code_messages_stream_incomplete');
-    expect(line).toContain('upstream_id=up_cc');
-    expect(line).toContain('request_id=req_trace');
-    expect(line).toContain('cf_ray=ray_trace');
-    expect(line).toContain('trace_response=trace_response');
-    expect(line).toContain('raw_sse_frames=2');
-    expect(line).toContain('terminal_event=null');
-    expect(line).toContain('message_delta');
+    expect(warn.mock.calls[0]![0]).toBe('claude_code_messages_stream_incomplete');
+    const fields = warn.mock.calls[0]![1] as Record<string, unknown>;
+    expect(fields).toMatchObject({ upstream_id: upstreamId, request_id: 'req_trace', cf_ray: 'ray_trace', trace_response: 'trace_response', raw_sse_frames: 2, terminal_event: null });
+    expect(fields.last_sse_frames).toContain('message_delta');
+
   });
 
   test('does not log a complete Messages stream', async () => {
@@ -444,12 +438,7 @@ describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
     expect(data.status).toBe('rejected');
   });
 
-  test('2xx → registers persist promise via opts.call.waitUntil exactly once', async () => {
-    // On Cloudflare Workers the runtime cancels orphan promises the moment
-    // the response is sent. The gateway threads `waitUntil` through
-    // UpstreamCallOptions so the persist can extend the worker's lifetime;
-    // assert we hand the persist promise to it exactly once and that the
-    // promise actually mutates state when awaited.
+  test('2xx quota write completes through the run deferred lifecycle', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
@@ -458,10 +447,7 @@ describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
     expect(result.ok).toBe(true);
-    expect(waitUntil).toHaveBeenCalledTimes(1);
-    const handed = waitUntil.mock.calls[0]![0];
-    expect(handed).toBeInstanceOf(Promise);
-    await expect(handed).resolves.toBeUndefined();
+    expect(waitUntil).not.toHaveBeenCalled();
     const stored = readQuotaEntry();
     expect(stored).not.toBeNull();
   });
