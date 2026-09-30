@@ -6,7 +6,7 @@ import { isFailure, renderFailure, mintedAs } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
@@ -82,7 +82,7 @@ export const emitAnthropicMessages = defineStage<
         'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(
-          await collectAnthropicMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+          await collectClientFrames(frames, collectAnthropicMessagesProtocolEventsToResult) as unknown as Record<string, unknown>,
         ),
         'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };

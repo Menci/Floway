@@ -5,7 +5,7 @@ import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
-import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';
@@ -105,7 +105,7 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
           'response.chat.clientFrames': move(frames),
           'response.http.headers': forClient,
           'response.chat.openaiResponses.rendered': move(
-            await collectOpenAIResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+            await collectClientFrames(frames, collectOpenAIResponsesProtocolEventsToResult) as unknown as Record<string, unknown>,
           ),
           'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
         };

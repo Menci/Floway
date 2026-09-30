@@ -5,6 +5,7 @@ import { isFailure, renderFailure, mintedErrorEnvelope } from '../../../pipeline
 import type { StreamOutcome } from '../../../pipeline/serve.ts';
 import { isForwardableUpstreamHeader } from '../../../shared/upstream-response.ts';
 import type { ChatServices } from '../../services.ts';
+import { collectClientFrames } from '../../shared/client-stream.ts';
 import { wrapOpenAIResponsesStatefulOutput, openaiResponsesCreatedAt } from '../client-output.ts';
 import { completeOpenAIResponsesCompaction } from '../compaction-resource.ts';
 import { internalErrorEnvelope } from '../errors.ts';
@@ -73,7 +74,7 @@ export const emitOpenAIResponsesCompaction = defineStage<
         wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, use.gateway),
         use.gateway.dump,
       );
-      const persisted = await collectOpenAIResponsesProtocolEventsToResult(frames);
+      const persisted = await collectClientFrames(frames, collectOpenAIResponsesProtocolEventsToResult);
       return {
         ...rest,
         'response.chat.clientFrames': move(frames),

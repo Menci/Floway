@@ -3,6 +3,18 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { defer, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 
+// Collectors stop at the protocol terminal. Keep that stop local to the fold so the same
+// recorded cursor can still prove source exhaustion and publish its stream.end marker.
+export const collectClientFrames = async <Frame, Result>(
+  frames: AsyncIterable<Frame>,
+  collect: (frames: AsyncIterable<Frame>) => Promise<Result>,
+): Promise<Result> => {
+  const cursor = frames[Symbol.asyncIterator]();
+  const result = await collect({ [Symbol.asyncIterator]: () => ({ next: () => cursor.next() }) });
+  while (!(await cursor.next()).done) continue;
+  return result;
+};
+
 export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
   source: AsyncIterable<Frame>,
   render: (frame: Frame) => SseFrame,

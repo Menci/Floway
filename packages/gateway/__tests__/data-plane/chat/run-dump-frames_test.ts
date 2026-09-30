@@ -16,6 +16,7 @@ import { test, vi } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import { copilotModels, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 /** A Copilot seat, as far as a turn can see it: the editor version probe, the token exchange,
@@ -78,7 +79,17 @@ const framesRecordedBy = async (turn: (apiKey: string) => Promise<Response>): Pr
   await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
   const stored = dumps.stored[0];
   assertExists(stored);
-  return resolveFrames(eventsOf(runRecordOf(stored.record)));
+  const events = eventsOf(runRecordOf(stored.record));
+  const read = createRunReader();
+  let clientStream: number | undefined;
+  for (const event of events) {
+    const decoded = read(event as unknown as DumpEvent);
+    const frames = decoded?.facts?.['response.chat.clientFrames'];
+    if (typeof frames === 'object' && frames !== null && 'stream' in frames) clientStream = frames.stream as number;
+  }
+  assertExists(clientStream);
+  assertEquals(events.some(event => event.type === 'stream.end' && event.streamId === clientStream), true);
+  return resolveFrames(events);
 };
 
 /** The content is the point, not the count: a record holding frames with nothing in them is
