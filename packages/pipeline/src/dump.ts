@@ -28,6 +28,7 @@ import type { LogEntry, LogLevel } from './stage.ts';
 export type Event =
   | { readonly type: 'stage.entered'; readonly stageId: number; readonly name: string; readonly parentStageId: number | null; readonly facts: Facts }
   | { readonly type: 'stage.leaved'; readonly stageId: number; readonly facts: Facts }
+  | { readonly type: 'stage.failed'; readonly stageId: number; readonly error: unknown }
   /** What that stage's own logger wrote. A log line is content about a stage, like the
    *  rest, and it has to be somewhere: every stage gets a logger and with a dump open its
    *  lines are stored into that stage's record as well as going to the global sink. */
@@ -133,6 +134,7 @@ export type Stored =
 export type DumpEvent =
   | { readonly type: 'stage.entered'; readonly stageId: number; readonly name: string; readonly parentStageId: number | null; readonly facts?: Record<string, Stored> }
   | { readonly type: 'stage.leaved'; readonly stageId: number; readonly facts: Record<string, Stored> }
+  | { readonly type: 'stage.failed'; readonly stageId: number; readonly error: Stored }
   | { readonly type: 'stage.log'; readonly stageId: number; readonly level: LogLevel; readonly context: string; readonly message: string; readonly fields?: Record<string, Stored> }
   | { readonly type: 'object'; readonly fromObjectId: number; readonly nodes: readonly Stored[] }
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly Stored[] }
@@ -290,6 +292,8 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
         emit({ type: 'stage.leaved', stageId: event.stageId, facts: encoder.encodeFacts(event.facts, emit) });
       }
       if (seen?.parent != null) lastChildLeft.set(seen.parent, event.facts);
+      entered.delete(event.stageId);
+      lastChildLeft.delete(event.stageId);
       return out;
     }
 
@@ -309,6 +313,14 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
     if (event.type === 'stream.frame') {
       const frames = event.frames.map(frame => encoder.encodeFacts({ frame }, emit)['frame']!);
       emit({ type: 'stream.frame', streamId: event.streamId, frames });
+      return out;
+    }
+
+    if (event.type === 'stage.failed') {
+      const fields = encoder.encodeFacts({ error: event.error }, emit);
+      emit({ type: 'stage.failed', stageId: event.stageId, error: fields['error']! });
+      entered.delete(event.stageId);
+      lastChildLeft.delete(event.stageId);
       return out;
     }
 

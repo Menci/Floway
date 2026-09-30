@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { attemptPipeline, makeProvider, servePipeline } from './fixtures.ts';
@@ -280,4 +284,12 @@ describe('the dump encoding', () => {
     const deduplicated = toNdjson(encodeRun(events)).length;
     expect(deduplicated).toBeLessThan(independent / 2);
   });
+});
+
+it('a live encoder releases original fact graphs when stages return or fail', async () => {
+  const child = spawn(process.execPath, ['--expose-gc', '--import', import.meta.resolve('jiti/register'), fileURLToPath(new URL('./fixtures/encoder-retention.ts', import.meta.url))], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += String(chunk); });
+  const [code] = await once(child, 'exit');
+  expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
 });

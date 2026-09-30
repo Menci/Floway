@@ -126,19 +126,18 @@ const registerFact = (value: unknown, facts: Facts, scope: RunScope): void => {
     const settled = value.then(async result => {
       try {
         await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
-      } catch (error) { captureFailure(error, facts, scope); throw error; }
+      } catch (error) { throw captureFailure(error, facts, scope); }
     }, async error => {
-      captureFailure(error, facts, scope);
+      const failure = captureFailure(error, facts, scope);
       try {
         await scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
       } catch (recordingError) {
         if (recordingError !== error) {
           const combined = new AggregateError([error, recordingError], 'Deferred fact failed and recording also failed', { cause: error });
-          captureFailure(combined, facts, scope);
-          throw combined;
+          throw captureFailure(combined, facts, scope);
         }
       }
-      throw error;
+      throw failure;
     });
     scope.deferred.set(value, settled);
     // Teardown observes the original rejection; marking it handled now prevents
@@ -149,16 +148,34 @@ const registerFact = (value: unknown, facts: Facts, scope: RunScope): void => {
 
 const NONE: readonly string[] = [];
 
-const failureFacts = new WeakMap<object, Facts>();
+interface FailureContext { readonly owner: object; readonly facts: Facts; readonly source: unknown }
+const failureFacts = new WeakMap<object, FailureContext>();
+const scopeOwners = new WeakMap<RunScope, object>();
 
 export const getFailureFacts = (error: unknown): Facts | undefined =>
-  typeof error === 'object' && error !== null ? failureFacts.get(error) : undefined;
+  typeof error === 'object' && error !== null ? failureFacts.get(error)?.facts : undefined;
 
-const captureFailure = (error: unknown, facts: Facts, scope: RunScope): void => {
-  if (typeof error !== 'object' || error === null || scope.failures.has(error)) return;
-  scope.failures.add(error);
-  failureFacts.set(error, facts);
+const captureFailure = (error: unknown, facts: Facts, scope: RunScope): unknown => {
+  if (typeof error !== 'object' || error === null) return error;
+  const known = scope.failures.get(error);
+  if (known !== undefined) return known;
+  const owner = scopeOwners.get(scope)!;
+  const previous = failureFacts.get(error);
+  // A shared refresh promise may reject several runs with the same Error.
+  // Each foreign association needs its own cause wrapper; neither the source
+  // exception nor a completed run's diagnostic context is overwritten.
+  const caught = previous !== undefined && previous.owner !== owner
+    ? new Error(error instanceof Error ? error.message : 'Pipeline execution failed', { cause: error })
+    : error;
+  if (caught !== error && caught instanceof Error && error instanceof Error) caught.name = error.name;
+  scope.failures.set(error, caught);
+  scope.failures.set(caught, caught);
+  failureFacts.set(caught, { owner, facts, source: previous === undefined ? error : previous.source });
+  return caught;
 };
+
+const failureSource = (error: unknown): unknown =>
+  typeof error === 'object' && error !== null ? failureFacts.get(error)?.source ?? error : error;
 
 export const walk = async (
   pipeline: string,
@@ -261,8 +278,16 @@ export const walk = async (
     await scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
     return handedUp;
   } catch (error) {
-    captureFailure(error, current, scope);
-    throw error;
+    const failure = captureFailure(error, current, scope);
+    try {
+      await scope.emit({ type: 'stage.failed', stageId, error: failureSource(failure) });
+    } catch (recordingError) {
+      if (recordingError !== error && recordingError !== failure) {
+        const combined = new AggregateError([failure, recordingError], 'Pipeline stage failed and recording also failed', { cause: failure });
+        throw captureFailure(combined, getFailureFacts(failure) ?? current, scope);
+      }
+    }
+    throw failure;
   }
 };
 
@@ -359,19 +384,21 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     emit: async event => { await sink?.(event); },
     outstanding: new Set<Owned>(),
     deferred: new Map<Promise<unknown>, Promise<void>>(),
-    failures: new WeakSet<object>(),
+    failures: new WeakMap<object, object>(),
     parentStageId: null,
     nextStageId: 1,
   };
+  scopeOwners.set(scope, {});
+  let current = initial as Facts;
   let draining: Promise<void> | undefined;
   const drain = (): Promise<void> => {
     if (draining !== undefined) return draining;
     draining = (async () => {
       const errors: unknown[] = [];
       for (const value of scope.outstanding) {
-        try { await release(value, scope); } catch (error) { errors.push(error); }
+        try { await release(value, scope); } catch (error) { errors.push(captureFailure(error, current, scope)); }
       }
-      try { await settleDeferred(scope); } catch (error) { errors.push(error); }
+      try { await settleDeferred(scope); } catch (error) { errors.push(captureFailure(error, current, scope)); }
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, 'Pipeline resource cleanup failed');
     })();
@@ -384,20 +411,21 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
     requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
+    current = facts as Facts;
     return { facts, drain };
   } catch (error) {
-    captureFailure(error, initial as Facts, scope);
+    const failure = captureFailure(error, initial as Facts, scope);
+    current = getFailureFacts(failure) ?? initial as Facts;
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.
     try {
       await drain();
     } catch (cleanupError) {
-      if (cleanupError === error) throw error;
-      const combined = new AggregateError([error, cleanupError], 'Pipeline failed and resource cleanup also failed', { cause: error });
-      failureFacts.set(combined, getFailureFacts(error) ?? initial as Facts);
-      throw combined;
+      if (cleanupError === failure) throw failure;
+      const combined = new AggregateError([failure, cleanupError], 'Pipeline failed and resource cleanup also failed', { cause: failure });
+      throw captureFailure(combined, getFailureFacts(failure) ?? initial as Facts, scope);
     }
-    throw error;
+    throw failure;
   }
 };

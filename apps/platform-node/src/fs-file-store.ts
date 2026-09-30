@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import type { FileBody, FileStore } from '@floway-dev/platform';
+
+const STAGING_SEGMENT = '.floway-staging';
 
 // Keys use POSIX separators so filesystem and object-storage deployments agree.
 // The operator's umask, mount permissions and service account own confidentiality;
@@ -24,7 +26,9 @@ export class FsFileStore implements FileStore {
     try {
       const path = this.pathFor(key);
       await mkdir(dirname(path), { recursive: true });
-      staging = `${path}.${randomUUID()}.tmp`;
+      const stagingDirectory = this.stagingFor(path);
+      await mkdir(stagingDirectory, { recursive: true });
+      staging = join(stagingDirectory, randomUUID());
       {
         await using file = await open(staging, 'wx');
         if (body instanceof Uint8Array) await file.writeFile(body);
@@ -60,7 +64,18 @@ export class FsFileStore implements FileStore {
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {
-    await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
+    await Promise.all(keys.map(async key => {
+      const path = this.pathFor(key);
+      const staging = this.stagingFor(path);
+      await Promise.all([rm(path, { force: true }), rm(staging, { recursive: true, force: true })]);
+    }));
+  }
+
+  // Staging lives on the target's filesystem, including separately mounted key
+  // prefixes. Its reserved namespace lets key-based orphan cleanup collect a
+  // killed writer without interpreting another public key as a temporary file.
+  private stagingFor(path: string): string {
+    return join(dirname(path), STAGING_SEGMENT, createHash('sha256').update(basename(path)).digest('hex'));
   }
 
   // Resolve a key against `root` and reject paths that escape it. Even though
@@ -68,6 +83,7 @@ export class FsFileStore implements FileStore {
   // to scrub user-controlled segments and a `..`-laden key would otherwise
   // walk to arbitrary host paths under R2 it would simply be a strange key.
   private pathFor(key: string): string {
+    if (key.split('/').includes(STAGING_SEGMENT)) throw new Error(`FsFileStore: reserved staging segment (${key})`);
     if (isAbsolute(key)) throw new Error(`FsFileStore: absolute keys are not supported (${key})`);
     const path = resolve(this.root, ...key.split('/'));
     if (path !== this.root && !path.startsWith(this.root + sep)) {
