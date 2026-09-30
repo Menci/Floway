@@ -18,7 +18,6 @@ import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCa
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
-import { codexModelContextWindow } from '@floway-dev/provider-codex';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -32,6 +31,7 @@ export const assembleCodexCatalog = (
   const catalogBySlug = new Map<string, CatalogModel>();
   for (const model of catalog.models) catalogBySlug.set(model.slug.toLowerCase(), model);
   const catalogServiceTiers: CodexServiceTier[] = catalog.models.flatMap(model => model.service_tiers ?? []);
+  const catalogReasoningLevels = catalog.models.flatMap(model => model.supported_reasoning_levels ?? []);
 
   // Match against the client catalog by walking segments from the trailing leaf back
   // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
@@ -55,17 +55,7 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    // Limits follow the registry's first-provider metadata policy. Only that
-    // provider can supply Codex's private default; a same-named model from a
-    // different provider must use its own advertised input budget.
-    const primaryUpstream = entry.upstreams[0];
-    let codexContextWindow;
-    if (primaryUpstream?.kind === 'codex') {
-      const providerModel = entry.model.providerModels?.[primaryUpstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no primary provider model`);
-      codexContextWindow = codexModelContextWindow(providerModel);
-    }
-    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, codexContextWindow));
+    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, catalogReasoningLevels));
   }
   return { models };
 };

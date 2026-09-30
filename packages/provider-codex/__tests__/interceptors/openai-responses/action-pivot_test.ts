@@ -87,7 +87,7 @@ test.each([true, false])('Codex projects a post-chain compact pivot after catalo
 
   const instance = createCodexProvider(baseRecord);
   const result = await instance.instance.callOpenAIResponses(
-    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite } }),
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, chat: { codex: { use_responses_lite: useResponsesLite } } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],

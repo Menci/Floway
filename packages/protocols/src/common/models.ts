@@ -25,6 +25,33 @@ export interface RerankTarget {
 
 export type Modality = 'text' | 'image';
 
+export interface CodexModelMessages {
+  instructions_template?: string | null;
+  [section: string]: unknown;
+}
+
+export interface CodexChatModelInfo {
+  default_context_window_tokens?: number;
+  auto_compact_token_limit?: number | null;
+  effective_context_window_percent?: number;
+  truncation_policy?: { mode: 'tokens' | 'bytes'; limit: number };
+  model_messages?: CodexModelMessages;
+  shell_type?: string;
+  apply_patch_tool_type?: string | null;
+  default_verbosity?: string | null;
+  default_reasoning_summary?: string;
+  use_responses_lite?: boolean;
+  supports_reasoning_effort_updates?: boolean;
+  supports_search_tool?: boolean;
+  web_search_tool_type?: string;
+  tool_mode?: string | null;
+  multi_agent_version?: string | null;
+  multi_agent_reasoning_effort?: string | null;
+  include_skills_usage_instructions?: boolean;
+  include_plugin_usage_instructions?: boolean;
+  include_apps_usage_instructions?: boolean;
+}
+
 // Chat capability metadata for one model. Providers that can read it off the
 // raw upstream catalog fill it themselves; elsewhere it comes from the
 // operator's model config. Lives in protocols because it flows verbatim onto
@@ -32,6 +59,8 @@ export type Modality = 'text' | 'image';
 // @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
 // definition serves both surfaces.
 export interface ChatModelInfo {
+  verbosity?: { supported: boolean };
+  codex?: CodexChatModelInfo;
   modalities?: {
     input: readonly Modality[];
     output: readonly Modality[];

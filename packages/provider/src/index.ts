@@ -116,3 +116,4 @@ export {
   isBase64ImageDataUrl,
   parseBase64ImageDataUrl,
 } from './image-helpers.ts';
+export { codexChatField } from './codex-model-config.ts';

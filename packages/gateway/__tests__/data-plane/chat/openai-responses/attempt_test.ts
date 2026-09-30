@@ -21,6 +21,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER } from '@floway-dev/provider-codex';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -112,6 +113,31 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredOpe
   await repo.openaiResponsesItems.insertMany([row], 0);
   return row;
 };
+
+test.each(['http', 'websocket', 'standard'] as const)('native Custom Responses consumes %s Lite markers and preserves unmarked positional tools', async transport => {
+  installRepo();
+  const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
+  const carrier = { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] };
+  const payload = makePayload({ input: [carrier, { type: 'message', role: 'user', content: 'hello' }], reasoning: { context: 'all_turns' } });
+  if (transport === 'websocket') payload.client_metadata = { [CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true', other: 'retained' };
+  const original = structuredClone(payload);
+  const callOpenAIResponses = vi.fn<ModelCandidate['provider']['instance']['callOpenAIResponses']>(async (_model, body, _action, _signal, opts): Promise<ProviderOpenAIResponsesResult> => {
+    assertEquals(body.input, transport === 'standard' ? payload.input : [payload.input[1]]);
+    assertEquals(body.tools, transport === 'standard' ? undefined : [tool]);
+    assertEquals(body.reasoning, { context: 'all_turns' });
+    assertEquals(opts.headers.has(CODEX_RESPONSES_LITE_HEADER), false);
+    if (transport === 'websocket') assertEquals(body.client_metadata, { other: 'retained' });
+    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model' };
+  });
+  const headers = new Headers(transport === 'http' ? { [CODEX_RESPONSES_LITE_HEADER]: 'true' } : {});
+  const candidate = makeCandidate(callOpenAIResponses);
+  candidate.provider.inboundHeaderAllowlist = [CODEX_RESPONSES_LITE_HEADER];
+  const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers });
+  assertEquals(result.type, 'events');
+  assertEquals(callOpenAIResponses.mock.calls.length, 1);
+  assertEquals(payload, original);
+  assertEquals(headers.has(CODEX_RESPONSES_LITE_HEADER), transport === 'http');
+});
 
 test('generate native success leaves source-edge state ownership to the caller', async () => {
   installRepo();

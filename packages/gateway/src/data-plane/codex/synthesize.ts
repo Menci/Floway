@@ -1,13 +1,11 @@
 // Matched client-catalog entries retain their model-specific instructions and
 // opaque fields. Registry metadata controls the public identity, priced tiers,
-// modalities, reasoning and limits. Codex providers additionally supply their
-// private default window; other providers expose a single input budget.
+// modalities, reasoning, limits and the operator's Codex client profile.
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
-import type { CodexContextWindow } from '@floway-dev/provider-codex';
 
 // Keep the established 128K compaction policy for synthesized models whose
 // provider has no published limit. Operators can replace it with a model limit.
@@ -69,9 +67,15 @@ const deriveServiceTiers = (
   const modelTierById = new Map(modelTiers.map(tier => [tier.id, tier]));
   const catalogTierById = new Map<string, CodexServiceTier>();
   for (const tier of catalogTiers) {
-    if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+    const existing = catalogTierById.get(tier.id);
+    if (existing === undefined || (existing.description.length === 0 && tier.description.length > 0)) catalogTierById.set(tier.id, tier);
   }
-  return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
+  return [...ids].map(id => {
+    const local = modelTierById.get(id);
+    const catalog = catalogTierById.get(id);
+    const tier = local ?? catalog ?? { id, name: id, description: '' };
+    return tier.description.length > 0 ? tier : { ...tier, description: catalog?.description ?? '' };
+  });
 };
 
 export const synthesizeCatalogEntry = (
@@ -79,9 +83,10 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  codexContextWindow?: CodexContextWindow,
+  catalogReasoningLevels: readonly CodexReasoningLevel[] = [],
 ): CatalogModel => {
   const source: CatalogModel = base ?? BASELINE;
+  const profile = model.chat?.codex;
 
   const inputModalities = (model.chat?.modalities?.input
     ?? source.input_modalities
@@ -108,10 +113,16 @@ export const synthesizeCatalogEntry = (
   // Anthropic `thinking.budget_tokens`).
   const registryEffort = model.chat?.reasoning?.effort;
   const supportedReasoning: CodexReasoningLevel[] = registryEffort !== undefined
-    ? registryEffort.supported.map(effort => ({ effort, description: '' }))
+    ? registryEffort.supported.map(effort => ({
+        effort,
+        description: source.supported_reasoning_levels?.find(level => level.effort === effort && level.description.length > 0)?.description
+        ?? catalogReasoningLevels.find(level => level.effort === effort && level.description.length > 0)?.description
+        ?? '',
+      }))
     : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
   const ultraReasoningLevel = capabilities.ultraReasoningLevel;
   const advertisedReasoning = ultraReasoningLevel !== undefined
+    && (profile?.multi_agent_version === undefined || profile.multi_agent_version === 'v2')
     && supportedReasoning.some(level => level.effort === 'max')
     && !supportedReasoning.some(level => level.effort === 'ultra')
     ? [...supportedReasoning, ultraReasoningLevel]
@@ -123,20 +134,25 @@ export const synthesizeCatalogEntry = (
   const providerWindow = providerLimits.length > 0
     ? Math.min(...providerLimits)
     : source.context_window ?? BASELINE.context_window;
-  const contextWindow = codexContextWindow?.context_window ?? providerWindow;
-  const maxContextWindow = codexContextWindow === undefined
+  const contextWindow = profile?.default_context_window_tokens ?? providerWindow;
+  const maxContextWindow = profile?.default_context_window_tokens === undefined
     ? providerWindow
-    : codexContextWindow.max_context_window;
+    : providerLimits.length > 0 ? Math.min(...providerLimits) : undefined;
+  const { default_context_window_tokens: _defaultWindow, ...profileFields } = profile ?? {};
 
   const entry: CatalogModel = {
     ...source,
+    ...profileFields,
     slug: model.id,
     display_name: model.display_name ?? source.display_name ?? model.id,
     input_modalities: [...inputModalities],
     supports_image_detail_original: imageDetailOriginal,
-    web_search_tool_type: hasImage ? 'text_and_image' : 'text',
+    web_search_tool_type: profile?.web_search_tool_type ?? (hasImage ? 'text_and_image' : 'text'),
     supported_reasoning_levels: advertisedReasoning,
     service_tiers: deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
+    support_verbosity: model.chat?.verbosity?.supported ?? false,
+    use_responses_lite: profile?.use_responses_lite ?? false,
+    supports_reasoning_effort_updates: profile?.supports_reasoning_effort_updates ?? false,
     context_window: contextWindow,
     max_context_window: maxContextWindow,
   };
@@ -154,10 +170,15 @@ export const synthesizeCatalogEntry = (
     entry.default_reasoning_level = registryEffort.default;
   }
 
-  if (base === undefined) {
+  if (profile?.model_messages !== undefined) {
+    entry.model_messages = { ...source.model_messages, ...profile.model_messages };
+  }
+  if ((base === undefined && profile?.model_messages?.instructions_template == null) || entry.model_messages?.instructions_template === null) {
     const instructions = synthesizedBaseInstructions(model.id, model.display_name ?? model.id);
-    entry.model_messages = { instructions_template: instructions };
-    entry.base_instructions = instructions;
+    entry.model_messages = { ...entry.model_messages, instructions_template: instructions };
+  }
+  if (entry.model_messages?.instructions_template !== undefined && entry.model_messages.instructions_template !== null) {
+    entry.base_instructions = entry.model_messages.instructions_template;
   }
 
   return entry;

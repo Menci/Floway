@@ -72,6 +72,31 @@ const authed = (adminSession: string, body?: unknown): RequestInit => ({
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
+test('Custom metadata survives control-plane validation, stored config and serialized reads', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  const chat = {
+    verbosity: { supported: false }, codex: {
+      default_context_window_tokens: 272000, auto_compact_token_limit: null, effective_context_window_percent: 95,
+      use_responses_lite: true, shell_type: 'future_shell', tool_mode: null,
+      model_messages: { instructions_template: '', future_section: { instructions: 'Preserve this section.' } },
+    },
+  };
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      ...customConfig,
+      models: [{ upstreamModelId: 'custom-codex', kind: 'chat', endpoints: { openaiResponses: {} }, limits: { max_context_window_tokens: 872000 }, chat }],
+    },
+  })));
+  assertEquals(resp.status, 201);
+  const created = await resp.json() as JsonObject;
+  assertEquals(created.config.models[0].chat, chat);
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals((stored?.config as JsonObject).models[0].chat, chat);
+  const read = await requestApp(`/api/upstreams/${created.id}`, authed(adminSession));
+  assertEquals(read.status, 200);
+  assertEquals((await read.json() as JsonObject).config.models[0].chat, chat);
+});
+
 test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();

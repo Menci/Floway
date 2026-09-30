@@ -38,14 +38,44 @@ const ultraCapabilities: CodexCatalogCapabilities = {
 };
 
 describe('assembleCodexCatalog', () => {
+  test('overlays the public Codex profile while keeping the default and maximum distinct', () => {
+    const codex = {
+      default_context_window_tokens: 272000, auto_compact_token_limit: null, effective_context_window_percent: 90,
+      truncation_policy: { mode: 'bytes' as const, limit: 20000 }, shell_type: 'disabled', apply_patch_tool_type: null,
+      default_verbosity: 'high', default_reasoning_summary: 'none', use_responses_lite: true,
+      supports_reasoning_effort_updates: true, supports_search_tool: true, web_search_tool_type: 'text',
+      tool_mode: null, multi_agent_version: 'disabled', multi_agent_reasoning_effort: null,
+      include_skills_usage_instructions: true, include_plugin_usage_instructions: false, include_apps_usage_instructions: false,
+      model_messages: { instructions_template: '', future: { instructions: 'Preserve.' } },
+    };
+    const model = { ...chat('gpt-5.5', undefined, 872000), chat: { codex, verbosity: { supported: true }, modalities: { input: ['text', 'image'] as const, output: ['text'] as const } } };
+    const result = assembleCodexCatalog(bundled, entries(model)).models[0];
+    const { default_context_window_tokens: _default, ...wire } = codex;
+    expect(result).toMatchObject({ ...wire, context_window: 272000, max_context_window: 872000, support_verbosity: true, base_instructions: '' });
+    expect(result).not.toHaveProperty('default_context_window_tokens');
+  });
+
+  test('matches reasoning descriptions by effort in the same client catalog', () => {
+    const catalog = {
+      models: [
+        { slug: 'custom', supported_reasoning_levels: [{ effort: 'high', description: 'Local high' }, { effort: 'xhigh', description: '' }] },
+        { slug: 'other', supported_reasoning_levels: [{ effort: 'high', description: 'Global high' }, { effort: 'xhigh', description: 'Global xhigh' }] },
+      ],
+    };
+    const model = { ...chat('custom'), chat: { reasoning: { effort: { supported: ['high', 'xhigh', 'future'], default: 'high' } } } };
+    expect(assembleCodexCatalog(catalog, entries(model)).models[0].supported_reasoning_levels).toEqual([
+      { effort: 'high', description: 'Local high' }, { effort: 'xhigh', description: 'Global xhigh' }, { effort: 'future', description: '' },
+    ]);
+  });
   test('uses the primary Codex provider default for a prefixed model without a matching client entry', () => {
     const provider = { ...stubModelCandidate().provider, kind: 'codex' as const };
     const model = {
       ...chat('codex/future-model', 'Future', 600000),
+      chat: { codex: { default_context_window_tokens: 80000 } },
       providerModels: {
         [provider.upstreamId]: stubProviderModel({
           limits: { max_context_window_tokens: 600000 },
-          providerData: { contextWindow: 80000, useResponsesLite: false },
+          chat: { codex: { default_context_window_tokens: 80000, use_responses_lite: false } },
         }),
       },
     };
@@ -62,7 +92,7 @@ describe('assembleCodexCatalog', () => {
         [primary.upstreamId]: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }),
         [secondary.upstreamId]: stubProviderModel({
           limits: { max_context_window_tokens: 872000 },
-          providerData: { contextWindow: 272000, useResponsesLite: false },
+          chat: { codex: { default_context_window_tokens: 272000, use_responses_lite: false } },
         }),
       },
     };

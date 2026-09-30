@@ -1,65 +1,17 @@
 import type { ControlPlaneModel } from '../../api/types';
 import type { CatalogIndex } from '../models/catalog-index';
-import type {
-  AliasTarget,
-  AnnouncedMetadata,
-  ChatAliasRules,
-  ChatModelInfo,
-  ModelKind,
-  PublicModelLimits,
+import {
+  chatMetadataWithRules,
+  intersectChatMetadata,
+  type AliasTarget,
+  type AnnouncedMetadata,
+  type ChatModelInfo,
+  type ModelKind,
+  type PublicModelLimits,
 } from '@floway-dev/protocols/common';
 
-const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
-  if (!arrays.length) return [];
-  return arrays[0]!.filter(value => arrays.slice(1).every(array => array.includes(value)));
-};
-
-const effectiveChat = (chat: ChatModelInfo | undefined, rules: ChatAliasRules): ChatModelInfo | undefined => {
-  if (!chat?.reasoning || !rules.reasoning) return chat;
-  const reasoning = { ...chat.reasoning };
-  if (rules.reasoning.effort !== undefined) delete reasoning.effort;
-  if (rules.reasoning.budget_tokens !== undefined) delete reasoning.budget_tokens;
-  if (rules.reasoning.adaptive === true) delete reasoning.adaptive;
-  return { ...chat, reasoning };
-};
-
-const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
-  const result: ChatModelInfo = {};
-  if (chats.every(chat => chat.modalities)) {
-    const input = intersectArrays(chats.map(chat => chat.modalities!.input));
-    const output = intersectArrays(chats.map(chat => chat.modalities!.output));
-    if (input.length && output.length) result.modalities = { input, output };
-  }
-  if (chats.every(chat => chat.image_detail_original !== undefined)) {
-    result.image_detail_original = chats.every(chat => chat.image_detail_original === true);
-  }
-  if (chats.every(chat => chat.reasoning)) {
-    const blocks = chats.map(chat => chat.reasoning!);
-    const reasoning: NonNullable<ChatModelInfo['reasoning']> = {};
-    if (blocks.every(block => block.effort)) {
-      const supported = intersectArrays(blocks.map(block => block.effort!.supported));
-      if (supported.length) {
-        const defaults = new Set(blocks.map(block => block.effort!.default));
-        const agreed = defaults.size === 1 ? [...defaults][0] : undefined;
-        reasoning.effort = { supported, default: agreed && supported.includes(agreed) ? agreed : supported[0]! };
-      }
-    }
-    if (blocks.every(block => block.budget_tokens)) {
-      const budgets = blocks.map(block => block.budget_tokens!);
-      if (budgets.every(budget => budget.min !== undefined && budget.max !== undefined)) {
-        const min = Math.max(...budgets.map(budget => budget.min!));
-        const max = Math.min(...budgets.map(budget => budget.max!));
-        if (min <= max) reasoning.budget_tokens = { min, max };
-      }
-    }
-    for (const field of ['adaptive', 'mandatory'] as const) {
-      const values = new Set(blocks.map(block => block[field]));
-      if (values.size === 1 && [...values][0] !== undefined) reasoning[field] = [...values][0];
-    }
-    if (Object.keys(reasoning).length) result.reasoning = reasoning;
-  }
-  return Object.keys(result).length ? result : undefined;
-};
+const effectiveChat = chatMetadataWithRules;
+const intersectChat = intersectChatMetadata;
 
 export const computeAnnouncedMetadata = (
   targets: readonly AliasTarget[],

@@ -52,6 +52,20 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(list[0].targets[0].target_model_id, 'gpt-5.4');
   });
 
+  test(`[${backend}] announced Codex metadata preserves null, false and opaque instruction objects`, async () => {
+    const repo = await freshRepo();
+    const announcedMetadata = {
+      limits: { max_context_window_tokens: 872000 }, chat: {
+        verbosity: { supported: false }, codex: {
+          default_context_window_tokens: 272000, auto_compact_token_limit: null, use_responses_lite: false, tool_mode: null,
+          model_messages: { instructions_template: '', future: { instructions: 'Preserve.' } },
+        },
+      },
+    };
+    await repo.modelAliases.insert(aliasFixture({ announcedMetadata }));
+    assertEquals((await repo.modelAliases.getByName('gpt-fast'))?.announcedMetadata, announcedMetadata);
+  });
+
   test(`[${backend}] insert with a name another row already holds throws`, async () => {
     const repo = await freshRepo();
     await repo.modelAliases.insert(aliasFixture());

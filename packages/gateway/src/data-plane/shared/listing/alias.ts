@@ -37,7 +37,7 @@
 import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
-import { composeAliasDisplayName } from '@floway-dev/protocols/common';
+import { chatMetadataWithRules, intersectChatMetadata, composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, OpaqueBlobCompatibilityScope, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
@@ -65,16 +65,6 @@ export interface ListedAliasInputs {
   // configuration is editable end to end.
   readonly narrowTargets: boolean;
 }
-
-// Result preserves the order of `arrays[0]`. Matters for callers like the
-// reasoning-effort intersection below: when no agreed-default exists, the
-// fallback default is `supported[0]`, so the first input's relative order
-// determines which level wins as the listing's `default`.
-const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
-  if (arrays.length === 0) return [];
-  const [head, ...tail] = arrays;
-  return head.filter(value => tail.every(other => other.includes(value)));
-};
 
 // All-or-nothing field intersect. Every input must declare a non-undefined
 // value for `pick` or the field drops (undefined). When every input carries
@@ -104,84 +94,10 @@ const intersectField = <Src, R>(
 // the corresponding catalog sub-field as unsupported (= undefined) for
 // the purposes of intersection. Fields the rule doesn't touch pass
 // through unchanged.
-const effectiveChatForIntersection = (chat: ChatModelInfo | undefined, target: AliasTarget): ChatModelInfo | undefined => {
-  if (chat === undefined) return undefined;
-  const ruleReasoning = target.rules.reasoning;
-  if (ruleReasoning === undefined) return chat;
-  if (chat.reasoning === undefined) return chat;
+const effectiveChatForIntersection = (chat: ChatModelInfo | undefined, target: AliasTarget): ChatModelInfo | undefined =>
+  chatMetadataWithRules(chat, target.rules);
 
-  const reasoning: NonNullable<ChatModelInfo['reasoning']> = { ...chat.reasoning };
-  if (ruleReasoning.effort !== undefined) delete reasoning.effort;
-  if (ruleReasoning.budget_tokens !== undefined) delete reasoning.budget_tokens;
-  if (ruleReasoning.adaptive === true) delete reasoning.adaptive;
-
-  return { ...chat, reasoning };
-};
-
-const intersectReasoning = (
-  rs: readonly NonNullable<ChatModelInfo['reasoning']>[],
-): NonNullable<ChatModelInfo['reasoning']> | undefined => {
-  const result: NonNullable<ChatModelInfo['reasoning']> = {};
-
-  const effort = intersectField(rs, r => r.effort, efforts => {
-    const supported = intersectArrays(efforts.map(e => e.supported));
-    if (supported.length === 0) return undefined;
-    // Intersection's `default` is the agreed value when every target names
-    // the same one and that value still survives the supported intersection;
-    // otherwise fall back to `supported[0]` (ordered by the first input).
-    const defaults = new Set(efforts.map(e => e.default));
-    const agreed = defaults.size === 1 ? [...defaults][0] : undefined;
-    return { supported, default: agreed !== undefined && supported.includes(agreed) ? agreed : supported[0] };
-  });
-  if (effort !== undefined) result.effort = effort;
-
-  const budgetTokens = intersectField(rs, r => r.budget_tokens, budgets => {
-    // BOTH min and max must be all-declared — a half-declared block would
-    // advertise a capability some target does not actually report. Drop the
-    // block when the intersected window is empty (contradictory ranges).
-    const min = intersectField(budgets, b => b.min, ns => Math.max(...ns));
-    const max = intersectField(budgets, b => b.max, ns => Math.min(...ns));
-    return min !== undefined && max !== undefined && min <= max ? { min, max } : undefined;
-  });
-  if (budgetTokens !== undefined) result.budget_tokens = budgetTokens;
-
-  // adaptive / mandatory are `true | undefined` — the intersectField gate
-  // already drops the field the moment any target leaves it undeclared, so
-  // the merge just re-yields `true`.
-  const adaptive = intersectField(rs, r => r.adaptive, () => true as const);
-  if (adaptive !== undefined) result.adaptive = adaptive;
-  const mandatory = intersectField(rs, r => r.mandatory, () => true as const);
-  if (mandatory !== undefined) result.mandatory = mandatory;
-
-  return Object.keys(result).length > 0 ? result : undefined;
-};
-
-const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
-  const result: ChatModelInfo = {};
-
-  const modalities = intersectField(chats, c => c.modalities, mods => {
-    const input = intersectArrays(mods.map(m => m.input));
-    const output = intersectArrays(mods.map(m => m.output));
-    // Both halves must survive — an alias that consumes a modality but
-    // promises no output (or the inverse) is incoherent.
-    return input.length > 0 && output.length > 0 ? { input, output } : undefined;
-  });
-  if (modalities !== undefined) result.modalities = modalities;
-
-  // Conjunction, not agreement: the announced metadata must not promise detail
-  // 'original' above any single target's own answer, so a split verdict between
-  // targets that declared the field is a stated `false` rather than a dropped
-  // one — `false` is the field's own answer, not a re-encoding of absence. A
-  // target that leaves the field undeclared still drops it, as `intersectField`
-  // requires of every sub-field here.
-  const imageDetailOriginal = intersectField(chats, c => c.image_detail_original, values => values.every(v => v));
-  if (imageDetailOriginal !== undefined) result.image_detail_original = imageDetailOriginal;
-
-  const reasoning = intersectField(chats, c => c.reasoning, intersectReasoning);
-  if (reasoning !== undefined) result.reasoning = reasoning;
-
-  return Object.keys(result).length > 0 ? result : undefined;
-};
+const intersectChat = intersectChatMetadata;
 
 // `limits` intersection: min across targets per field; the field is
 // absent when any target leaves it undeclared. Matches the safe-lower-

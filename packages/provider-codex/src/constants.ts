@@ -66,7 +66,7 @@ export const CODEX_OPENAI_IMAGES_EDITS_PATH = '/codex/images/edits';
 // https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
 export const CODEX_CLI_VERSION = '0.156.0';
 
-// Official Codex HTTP/WS markers. Only private catalog metadata may select
+// Official Codex HTTP/WS markers. Only the selected provider model may select
 // the outbound HTTP marker; caller markers never select a model's wire format.
 // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L163-L169
 export const CODEX_RESPONSES_LITE_HEADER =

@@ -3,8 +3,10 @@ import { useId, useState } from 'react';
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { CodexEditor } from '../models/codex-editor';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { OptionalBooleanField } from '../ui/optional-field';
 import { SectionHeader } from '../ui/section-header';
 import type { AnnouncedMetadata, ModelKind } from '@floway-dev/protocols/common';
 
@@ -32,7 +34,8 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
   };
   const patchChat = (patch: Partial<NonNullable<AnnouncedMetadata['chat']>>) => {
     const chat = { ...(value.chat ?? {}), ...patch };
-    onChange({ ...value, chat: chat.image_detail_original !== undefined || chat.modalities || chat.reasoning ? chat : undefined });
+    for (const key of Object.keys(chat) as (keyof typeof chat)[]) if (chat[key] === undefined) delete chat[key];
+    onChange({ ...value, chat: Object.keys(chat).length ? chat : undefined });
   };
   const patchReasoning = (patch: Record<string, unknown>) => {
     const reasoning = { ...(value.chat?.reasoning ?? {}), ...patch } as NonNullable<NonNullable<AnnouncedMetadata['chat']>['reasoning']>;
@@ -57,6 +60,8 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
         </div>
       </section>
       {kind === 'chat' && <>
+        <OptionalBooleanField disabled={disabled} readOnly={readOnly} label={t('dashboard.upstreamEditor.models.verbositySupported')} value={value.chat?.verbosity?.supported} onChange={supported => patchChat({ verbosity: supported === undefined ? undefined : { supported } })} />
+        <CodexEditor error={issues.codex === undefined ? undefined : t(issues.codex)} maxContextWindowTokens={value.limits?.max_context_window_tokens} readOnly={readOnly || disabled} value={value.chat?.codex} onChange={codex => patchChat({ codex })} />
         {/* Image input leads the group that depends on it, matching the shape
             the upstream editor's capabilities section gives the same two fields. */}
         <section aria-labelledby={imageInputLabelId} className={SECTION_STACK_CLASS} role="group">

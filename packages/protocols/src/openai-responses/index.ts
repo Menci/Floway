@@ -31,6 +31,9 @@ export interface OpenAIResponsesPayload {
   tools?: OpenAIResponsesTool[] | null;
   tool_choice?: OpenAIResponsesToolChoice | null;
   metadata?: Record<string, unknown> | null;
+  // Codex WebSocket requests carry their transport markers in this object.
+  // https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L163-L169
+  client_metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
   parallel_tool_calls?: boolean | null;

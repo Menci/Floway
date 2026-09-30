@@ -161,6 +161,38 @@ const collectPrefixTools = (body: CodexResponsesBody): OpenAIResponsesTool[] => 
   return tools;
 };
 
+// Decode only marked Lite requests at ingress. Standard Responses supports
+// positional additional_tools declarations, whose chronology must survive.
+// Lite clients move the request's tool set into these input carriers.
+// https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L938-L1005
+export const decodeCodexResponsesLiteRequest = <T extends CodexResponsesBody>(body: T): T => {
+  const tools = collectPrefixTools(body);
+  const identities: CallableEntries = new Map();
+  for (const tool of tools) registerToolIdentities(identities, tool);
+  return {
+    ...body,
+    tools,
+    input: body.input.filter(item => !isAdditionalToolsItem(item)),
+  };
+};
+
+// With effort updates enabled, the request-level effort stays at its original
+// baseline. Translating targets need the last durable control's sampling effort.
+// https://github.com/openai/codex/blob/d42056091aded7feb1d88ac7e83972108b2aa478/codex-rs/core/tests/suite/reasoning_effort_override.rs#L400-L490
+export const foldCodexReasoningUpdates = <T extends CodexResponsesBody>(body: T): T => {
+  let effort: string | undefined;
+  const input = body.input.filter(item => {
+    const control = item as { type: string; reasoning?: unknown };
+    if (control.type !== 'configuration_update') return true;
+    if (!isRecord(control.reasoning) || typeof control.reasoning.effort !== 'string' || control.reasoning.effort.length === 0) {
+      throw new TypeError('Codex configuration_update requires a non-empty reasoning.effort');
+    }
+    effort = control.reasoning.effort;
+    return false;
+  });
+  return effort === undefined ? body : { ...body, input, reasoning: { ...body.reasoning, effort } };
+};
+
 const toolsForLite = (
   tools: readonly OpenAIResponsesTool[],
 ): OpenAIResponsesTool[] => {
