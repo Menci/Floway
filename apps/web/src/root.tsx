@@ -9,10 +9,10 @@ import criticalCss from 'virtual:floway-critical.css?inline';
 import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
+import flowayLogoUrl from './assets/floway-blue.svg?no-inline';
 import { DocumentTitleSync } from './components/document-title-sync';
 import { GradientBackground } from './components/gradient-background';
 import { LanguageSync } from './components/language-sync';
-import { markPickerScript } from './components/logo-mark';
 import { NavigationProgress } from './components/navigation-progress';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
@@ -39,6 +39,7 @@ const { Button, FluentProvider, Spinner } = fluentComponents;
 const SEGOE_UI_VARIABLE_MIRROR_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02';
 
 export const links: Route.LinksFunction = () => [
+  { rel: 'icon', type: 'image/svg+xml', href: flowayLogoUrl },
   { rel: 'preconnect', href: 'https://docs.azure.cn', crossOrigin: 'anonymous' },
   { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_MIRROR_URL, crossOrigin: 'anonymous' },
 ];
@@ -68,8 +69,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             block above, whose spinner rules reach Fluent's class names at the
             same specificity. */}
         <link href={winuiStylesheet} rel="stylesheet" />
-        {/* Inline so the mark and tab icon are set before anything paints. */}
-        <script dangerouslySetInnerHTML={{ __html: markPickerScript }} />
       </head>
       <body className="text-[14px]">
         <FluentProvider theme={theme}>
