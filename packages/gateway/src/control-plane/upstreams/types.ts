@@ -23,6 +23,8 @@ import type {
   CodexAccountIdentity,
   CodexQuotaSnapshot,
   CodexQuotaSnapshotMap,
+  CodexRateLimitResetCredit,
+  CodexRateLimitResetCredits,
   CodexUpstreamConfig as StoredCodexUpstreamConfig,
   CodexUpstreamState as StoredCodexUpstreamState,
 } from '@floway-dev/provider-codex';
@@ -41,7 +43,7 @@ import type {
   OllamaUpstreamState as StoredOllamaUpstreamState,
 } from '@floway-dev/provider-ollama';
 
-export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CustomModelsFetch, ProxyFallbackEntry };
+export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CodexRateLimitResetCredit, CodexRateLimitResetCredits, CustomModelsFetch, ProxyFallbackEntry };
 export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
 
 type CustomConfigFields = Pick<

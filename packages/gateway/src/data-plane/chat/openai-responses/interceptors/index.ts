@@ -1,3 +1,4 @@
+import { answerWebSocketWarmup } from './answer-websocket-warmup.ts';
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withOpenAIResponsesCollaborationShim } from './collaboration-shim.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
@@ -21,7 +22,9 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 // after pairwise translation has finished.
 //
 // Order matters: earlier entries wrap later ones.
-//   - withOpenAIResponsesCompactShim: runs outermost so the action pivot
+//   - answerWebSocketWarmup: runs outermost so a WebSocket `generate: false` prewarm is
+//     answered before any shim or upstream call can turn it into a generation.
+//   - withOpenAIResponsesCompactShim: wraps the remaining shims so the action pivot
 //     ('compact' → 'generate' for the inner summarization turn) is visible
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
@@ -53,6 +56,7 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     the role-compatibility entry so each gets the final say on the outbound wire
 //     body.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
+  answerWebSocketWarmup,
   withOpenAIResponsesCompactShim,
   withOpenAIResponsesCollaborationShim,
   withOpenAIResponsesServerToolShim([
