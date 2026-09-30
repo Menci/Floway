@@ -16,12 +16,16 @@ const record: DumpEdgeRecord = {
   capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: null }, error: null }], response: { body: { encoding: 'utf8', data: 'data: downstream\n' }, complete: true, error: null } },
 };
 
-it('shows pipeline facts through the searchable event viewer with timing and export controls', () => {
+it('opens stage facts and offers searchable events with timing and export controls', async () => {
   const run: DumpRunRecord = {
     shape: 'run', meta: { ...record.meta, ttftMs: 125 },
     events: '{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null,"facts":{"serve.model":"m"}}\n',
   };
   renderInApp(<RequestDetailPanel record={run} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+  expect(screen.getByRole('treeitem', { name: 'serve #1' })).toBeTruthy();
+  expect((await screen.findByTestId('body-content')).textContent).toContain('serve.model');
+  fireEvent.click(screen.getByRole('combobox', { name: 'Run' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Events (1)' }));
   expect(screen.getByRole('button', { name: '#1 stage.entered serve' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Search events' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Export record' })).toBeTruthy();
