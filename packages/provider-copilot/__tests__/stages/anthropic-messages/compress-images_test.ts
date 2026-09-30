@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/anthropic-messages/compress-images.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesCompressImages } from '../../../src/stages/anthropic-messages/compress-images.ts';
 import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
@@ -27,7 +27,7 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; targ
   return { processor, inputs, targets };
 };
 
-const invocation = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude-test'): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude-test'): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -57,7 +57,7 @@ test('compresses a top-level image block to WebP', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesCompressImages, ctx, okEvents);
 
   const block = (ctx.payload.messages[0].content as Array<{ type: string; source?: { media_type: string; data: string } }>)[1];
   assertEquals(block.source?.media_type, 'image/webp');
@@ -108,7 +108,7 @@ test('compresses an image nested inside tool_result content', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesCompressImages, ctx, okEvents);
 
   const rewrittenContent = ctx.payload.messages[0].content;
   if (!Array.isArray(rewrittenContent)) throw new Error('expected rewritten user content');
@@ -142,7 +142,7 @@ test('leaves image-free payloads untouched and does not invoke the processor', a
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesCompressImages, ctx, okEvents);
 
   assertEquals(inputs.length, 0);
   assert(ctx.payload === payload);
@@ -172,7 +172,7 @@ test('compresses each unique inline image only once when the same base64 data re
     ],
   });
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesCompressImages, ctx, okEvents);
 
   assertEquals(inputs.length, 2);
 });
@@ -212,7 +212,7 @@ const capTargetFor = async (upstreamModelId: string, source: ImageDimensions): P
       },
     ],
   }, upstreamModelId);
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesCompressImages, ctx, okEvents);
   return targets[0];
 };
 

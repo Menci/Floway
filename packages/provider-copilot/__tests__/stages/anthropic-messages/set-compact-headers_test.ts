@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withCompactHeadersSet } from '../../../src/interceptors/anthropic-messages/set-compact-headers.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesSetCompactHeaders } from '../../../src/stages/anthropic-messages/set-compact-headers.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -30,7 +30,7 @@ test('Compact headers set when the last user message carries all three markers',
     messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
   assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
@@ -52,7 +52,7 @@ test('Compact headers set from a multi-block last message that joins to the full
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
 });
@@ -65,7 +65,7 @@ test('Compact headers set when the system prompt starts with a compact summariza
     messages: [{ role: 'user', content: 'go ahead' }],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
   assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
@@ -82,7 +82,7 @@ test('Compact headers set when an array system prompt contains a compact prefix 
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
 });
@@ -94,7 +94,7 @@ test('Compact headers absent when only the text-only guard is present (other mar
     messages: [{ role: 'user', content: 'CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.' }],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-initiator'), false);
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -107,7 +107,7 @@ test('Compact headers absent for an ordinary user turn', async () => {
     messages: [{ role: 'user', content: 'hello there' }],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-initiator'), false);
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -128,7 +128,7 @@ test('Compact headers absent when the last message is assistant-role with compac
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-initiator'), false);
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -150,7 +150,7 @@ test('Compact headers absent when the last assistant message is a multi-block co
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-initiator'), false);
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -169,7 +169,7 @@ test('Auto-continue absent when the assistant role carries the resume prompt ver
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-initiator'), false);
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -187,7 +187,7 @@ test('Auto-continue marks Claude Code resume prompts with x-initiator: agent onl
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -205,7 +205,7 @@ test('Auto-continue marks OpenCode primary continuation prompts with x-initiator
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
   assertEquals(ctx.headers.has('x-interaction-type'), false);
@@ -223,7 +223,7 @@ test('Auto-continue marks OpenCode media-eviction continuation prompts with x-in
     ],
   });
 
-  await withCompactHeadersSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetCompactHeaders, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
   assertEquals(ctx.headers.has('x-interaction-type'), false);

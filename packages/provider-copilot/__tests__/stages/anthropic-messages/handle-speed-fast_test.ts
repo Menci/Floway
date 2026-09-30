@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { withSpeedFast } from '../../../src/interceptors/anthropic-messages/handle-speed-fast.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesSpeedFast } from '../../../src/stages/anthropic-messages/handle-speed-fast.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -16,7 +16,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 
 const baseUsage: AnthropicMessagesUsage = { input_tokens: 10, output_tokens: 0 };
 
-const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
+const makeCtx = (speed?: unknown): AnthropicMessagesProbe => ({
   payload: {
     model: 'claude-opus-4.6-fast',
     messages: [{ role: 'user', content: 'hi' }],
@@ -58,38 +58,38 @@ const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Ex
     testTelemetryModelIdentity,
   );
 
-test('withSpeedFast strips speed=fast from the outbound payload', async () => {
+test('copilotAnthropicMessagesSpeedFast strips speed=fast from the outbound payload', async () => {
   const ctx = makeCtx('fast');
 
-  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
+  await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
 });
 
-test('withSpeedFast strips speed=standard (semantically equivalent to omitted)', async () => {
+test('copilotAnthropicMessagesSpeedFast strips speed=standard (semantically equivalent to omitted)', async () => {
   const ctx = makeCtx('standard');
 
-  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
+  await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
 });
 
-test('withSpeedFast leaves unknown speed values untouched so the upstream rejects them', async () => {
+test('copilotAnthropicMessagesSpeedFast leaves unknown speed values untouched so the upstream rejects them', async () => {
   // Anthropic returns 400 invalid_request_error on unknown enum values rather
   // than silently downgrading; the gateway mirrors that by passing the
   // unknown value through to Copilot, which will surface the same shape of
   // error. We never invent a fall-through here.
   const ctx = makeCtx('priority');
 
-  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
+  await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals(ctx.payload.speed, 'priority');
 });
 
-test('withSpeedFast stamps usage.speed=fast on message_start when fast was requested', async () => {
+test('copilotAnthropicMessagesSpeedFast stamps usage.speed=fast on message_start when fast was requested', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, () =>
+  const result = await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () =>
     Promise.resolve(streamResult([messageStart(baseUsage), messageStop(), doneFrame()])));
 
   assertEquals(result.type, 'events');
@@ -102,10 +102,10 @@ test('withSpeedFast stamps usage.speed=fast on message_start when fast was reque
   ]);
 });
 
-test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usage', async () => {
+test('copilotAnthropicMessagesSpeedFast stamps usage.speed=fast on every message_delta carrying usage', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, () =>
+  const result = await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () =>
     Promise.resolve(streamResult([messageStart(baseUsage), messageDelta(7), messageStop()])));
 
   assertEquals(result.type, 'events');
@@ -122,11 +122,11 @@ test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usag
   ]);
 });
 
-test('withSpeedFast leaves the stream untouched when speed is absent', async () => {
+test('copilotAnthropicMessagesSpeedFast leaves the stream untouched when speed is absent', async () => {
   const ctx = makeCtx();
   const frames = [messageStart(baseUsage), messageDelta(3), messageStop()];
 
-  const result = await withSpeedFast(ctx, () => Promise.resolve(streamResult(frames)));
+  const result = await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () => Promise.resolve(streamResult(frames)));
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events');
@@ -134,21 +134,21 @@ test('withSpeedFast leaves the stream untouched when speed is absent', async () 
   assertEquals(await collect(result.events), frames);
 });
 
-test('withSpeedFast leaves the stream untouched when speed=standard (no fast intent to stamp)', async () => {
+test('copilotAnthropicMessagesSpeedFast leaves the stream untouched when speed=standard (no fast intent to stamp)', async () => {
   const ctx = makeCtx('standard');
   const frames = [messageStart(baseUsage), messageStop()];
 
-  const result = await withSpeedFast(ctx, () => Promise.resolve(streamResult(frames)));
+  const result = await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () => Promise.resolve(streamResult(frames)));
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events');
   assertEquals(await collect(result.events), frames);
 });
 
-test('withSpeedFast surfaces non-events results (api-error / internal-error) verbatim', async () => {
+test('copilotAnthropicMessagesSpeedFast surfaces non-events results (api-error / internal-error) verbatim', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, () =>
+  const result = await applyProviderStage(copilotAnthropicMessagesSpeedFast, ctx, () =>
     Promise.resolve({
       type: 'internal-error',
       status: 502,

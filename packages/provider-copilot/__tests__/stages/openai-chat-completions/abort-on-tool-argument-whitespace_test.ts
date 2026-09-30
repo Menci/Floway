@@ -1,15 +1,15 @@
 import { test } from 'vitest';
 
-import { withToolArgumentWhitespaceAborted } from '../../../src/interceptors/openai-chat-completions/abort-on-tool-argument-whitespace.ts';
-import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/interceptors/shared/whitespace-overflow.ts';
+import { copilotOpenAIChatCompletionsAbortToolWhitespace } from '../../../src/stages/openai-chat-completions/abort-on-tool-argument-whitespace.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
 import { assert, assertEquals, assertStringIncludes, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const invocation = (): OpenAIChatCompletionsBoundaryCtx => ({
+const invocation = (): OpenAIChatCompletionsProbe => ({
   payload: { model: 'test-model', messages: [] },
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
@@ -32,7 +32,7 @@ const collect = async (result: ExecuteResult<ProtocolFrame<OpenAIChatCompletions
 };
 
 const runWith = async (frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]> => {
-  const result = await withToolArgumentWhitespaceAborted(invocation(), () =>
+  const result = await applyProviderStage(copilotOpenAIChatCompletionsAbortToolWhitespace, invocation(), () =>
     Promise.resolve(
       eventResult(
         (async function* () {

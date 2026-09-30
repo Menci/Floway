@@ -1,5 +1,6 @@
 import type { MessagesFacts } from '../../chat-facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
+import { mapKeepingIdentity, withKeysChanged } from '@floway-dev/protocols/common';
 
 /**
  * `eager_input_streaming` is a per-tool property in the Anthropic Messages API
@@ -23,14 +24,15 @@ export const copilotAnthropicMessagesStripEagerInputStreaming = defineStage<Mess
     let payload = facts['request.provider.payload'];
 
     if (payload.tools) {
-      payload = {
-        ...payload, tools: payload.tools.map(tool => {
+      payload = withKeysChanged(payload, {
+        tools: mapKeepingIdentity(payload.tools, tool => {
+          if (!Object.hasOwn(tool, 'eager_input_streaming')) return tool;
           const { eager_input_streaming: _, ...rest } = tool as typeof tool & {
             eager_input_streaming?: unknown;
           };
           return rest;
         }),
-      };
+      });
     }
 
     return move({ ...await next(move({ ...facts, 'request.provider.payload': payload })) });

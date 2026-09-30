@@ -4,7 +4,7 @@ import type { CustomIngressHeaderRule } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, callProviderPipeline, assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
 
@@ -119,12 +119,7 @@ const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string 
 
   const [model] = await provider.instance.getProvidedModels(directFetcher);
   assertExists(model);
-  await provider.instance.callOpenAIChatCompletions(
-    model,
-    { messages: [] },
-    undefined,
-    noopUpstreamCallOptions({ fetcher, headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }),
-  );
+  await collectChatProviderPipeline(provider, 'openaiChatCompletions', model, { messages: [] }, undefined, noopUpstreamCallOptions({ fetcher, headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }));
 
   assertExists(observed);
   return observed;
@@ -196,12 +191,12 @@ test('every endpoint resolves the same rules', async () => {
       const messagesBody = { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] };
 
       await callProviderPipeline(provider, 'alphaSearch', model, { query: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts());
+      await collectChatProviderPipeline(provider, 'openaiChatCompletions', model, { messages: [] }, undefined, opts());
       await callProviderPipeline(provider, 'openaiCompletions', model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'compact', undefined, opts());
-      await provider.instance.callAnthropicMessages(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callAnthropicMessagesCountTokens(model, messagesBody, undefined, messagesOpts());
+      await collectChatProviderPipeline(provider, 'openaiResponses', model, { input: [] }, undefined, opts());
+      await collectChatProviderPipeline(provider, 'openaiResponsesCompact', model, { input: [] }, undefined, opts());
+      await collectChatProviderPipeline(provider, 'anthropicMessages', model, messagesBody, undefined, messagesOpts());
+      await collectChatProviderPipeline(provider, 'anthropicMessagesCountTokens', model, messagesBody, undefined, messagesOpts());
       await callProviderPipeline(provider, 'openaiEmbeddings', model, { input: 'hi' }, undefined, opts());
       await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'hi' }, undefined, opts());
       await callProviderPipeline(provider, 'openaiImagesEdits', model, {

@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withCacheControlExtensionsStripped } from '../../../src/interceptors/anthropic-messages/strip-cache-control-extensions.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesStripCacheControlExtensions } from '../../../src/stages/anthropic-messages/strip-cache-control-extensions.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -50,7 +50,7 @@ test('strips scope and ttl from system, tools, and message content blocks while 
     ],
   });
 
-  await withCacheControlExtensionsStripped(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesStripCacheControlExtensions, ctx, okEvents);
 
   assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }]);
   assertEquals(ctx.payload.tools, [{ name: 't', input_schema: { type: 'object' }, cache_control: { type: 'ephemeral' } }]);
@@ -72,7 +72,7 @@ test('deletes cache_control entirely if no recognised field survives the strip',
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await withCacheControlExtensionsStripped(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesStripCacheControlExtensions, ctx, okEvents);
 
   assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys' }]);
 });
@@ -86,7 +86,7 @@ test('no-op when no cache_control is present anywhere', async () => {
     tools: [{ name: 't', input_schema: { type: 'object' } }],
   });
 
-  await withCacheControlExtensionsStripped(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesStripCacheControlExtensions, ctx, okEvents);
 
   assertEquals(ctx.payload.system, 'plain system');
   assertEquals(ctx.payload.tools, [{ name: 't', input_schema: { type: 'object' } }]);

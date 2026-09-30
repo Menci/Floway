@@ -11,7 +11,7 @@ export type { AnthropicMessagesCountTokensBody, ChatProviderOperation, NonChatPr
 export { providerModelFacts } from './pipeline.ts';
 export { decodeProviderResponse } from './stages/decode-response.ts';
 export { selectProviderResponsesAction } from './stages/select-responses-action.ts';
-export { observeProviderCall } from './stages/observe-call.ts';
+export { observeProviderCall, observeProviderResponsesCall } from './stages/observe-call.ts';
 export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';

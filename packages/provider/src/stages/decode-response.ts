@@ -6,7 +6,8 @@ import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 
-type Request = Pick<HttpRequestFacts, 'request.http.callId'> & { 'request.provider.responsesAction': 'generate' | 'compact' };
+type Request = Pick<HttpRequestFacts, 'request.http.callId'>;
+type Up = HttpResponseFacts & { 'response.provider.responsesAction': 'generate' | 'compact' };
 type Answer<O extends ChatProviderOperation> = HttpResponseFacts & Pick<ProviderChatResponse<O>, 'response.provider.output'>;
 
 const parsedBody = (text: string): unknown => {
@@ -23,18 +24,18 @@ const protocolFailure = (exchange: HttpResponseExchange, text: string): Provider
   };
 };
 
-export const decodeProviderResponse = <O extends ChatProviderOperation>(operation: O) => defineStage<Request, Request, HttpResponseFacts, Answer<O>, ProviderChatServices>({
+export const decodeProviderResponse = <O extends ChatProviderOperation>(operation: O) => defineStage<Request, Request, Up, Answer<O>, ProviderChatServices>({
   name: `decodeProvider${operation.replace(/^openai/, 'OpenAI').replace(/^anthropic/, 'Anthropic')}`,
   through: {
-    request: { needs: ['request.http.callId', ...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['request.provider.responsesAction' as const] : [])], consumes: [], provides: [] },
-    response: { needs: ['response.http.exchange', 'response.http.body'], consumes: ['response.http.body'], provides: ['response.http.body', 'response.provider.output'] },
+    request: { needs: ['request.http.callId'], consumes: [], provides: [] },
+    response: { needs: ['response.http.exchange', 'response.http.body', ...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['response.provider.responsesAction' as const] : [])], consumes: ['response.http.body'], provides: ['response.http.body', 'response.provider.output'] },
   },
   execute: async (facts, next, use) => {
     const back = await next(move({ ...facts }));
     const exchange = back['response.http.exchange'];
     const output = (answer: ProviderOperationOutputs[O] | ProviderProtocolFailure | null) => move({ ...back, 'response.provider.output': answer });
     if (exchange.type === 'transportFailure' || exchange.status < 200 || exchange.status >= 300) return output(null);
-    if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && facts['request.provider.responsesAction'] === 'compact' || operation === 'anthropicMessagesCountTokens') {
+    if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && back['response.provider.responsesAction'] === 'compact' || operation === 'anthropicMessagesCountTokens') {
       const text = await exchangeResponse(exchange).text();
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
       let body: unknown;

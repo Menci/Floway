@@ -1,12 +1,12 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/openai-responses/compress-images.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { copilotOpenAIResponsesCompressImages } from '../../../src/stages/openai-responses/compress-images.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
@@ -16,7 +16,7 @@ const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
@@ -53,7 +53,7 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
   assertEquals(imageUrlOf(sourceItem), 'data:image/png;base64,AAAA');
@@ -79,7 +79,7 @@ test.each(Object.entries(contentContainers))('leaves remote images in %s untouch
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'https://example.com/cat.png');
   assert(ctx.payload === payload);
@@ -125,7 +125,7 @@ test('compresses each unique inline image only once when the same data URL appea
     ],
   });
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
 
   // Two unique data URLs across five targets → exactly two compress calls.
   assertEquals(calls, 2);
@@ -149,16 +149,24 @@ test('reuses its compressed image when the same attempt payload is retried', asy
     }],
   });
 
-  await withInlineImagesCompressed(ctx, okEvents);
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
 
   assertEquals(calls, 1);
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
 
   const item = ctx.payload.input[0];
-  if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
-  item.content[0].image_url = 'data:image/png;base64,BBBB';
-  await withInlineImagesCompressed(ctx, okEvents);
+  if (item.type !== 'message' || !Array.isArray(item.content)) throw new Error('expected image message');
+  const content = item.content;
+  const image = content[0];
+  if (image?.type !== 'input_image') throw new Error('expected image content');
+  expect(() => { image.image_url = 'data:image/png;base64,BBBB'; }).toThrow();
+  ctx.payload = {
+    ...ctx.payload, input: ctx.payload.input.map((candidate, index) => index === 0
+      ? { ...item, content: content.map((part, partIndex) => partIndex === 0 ? { ...part, image_url: 'data:image/png;base64,BBBB' } : part) }
+      : candidate),
+  };
+  await applyProviderStage(copilotOpenAIResponsesCompressImages, ctx, okEvents);
 
   assertEquals(calls, 2);
 });

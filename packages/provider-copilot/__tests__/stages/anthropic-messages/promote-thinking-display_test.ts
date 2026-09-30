@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { resolveAnthropicMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted } from '../../../src/interceptors/anthropic-messages/promote-thinking-display.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { resolveAnthropicMessagesDownstreamThinkingDisplay, copilotAnthropicMessagesThinkingDisplay } from '../../../src/stages/anthropic-messages/promote-thinking-display.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -15,11 +15,11 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 };
 
 const makeCtx = (
-  thinking: AnthropicMessagesBoundaryCtx['payload']['thinking'],
+  thinking: AnthropicMessagesProbe['payload']['thinking'],
   overrides: {
     model?: string;
   } = {},
-): AnthropicMessagesBoundaryCtx => ({
+): AnthropicMessagesProbe => ({
   payload: {
     model: overrides.model ?? 'claude-opus-4.7-1m-internal',
     messages: [{ role: 'user', content: 'hi' }],
@@ -80,10 +80,10 @@ test('resolveAnthropicMessagesDownstreamThinkingDisplay ignores unknown explicit
   assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(ctx), undefined);
 });
 
-test('withThinkingDisplayPromoted sends summarized upstream when thinking display is omitted', async () => {
+test('copilotAnthropicMessagesThinkingDisplay sends summarized upstream when thinking display is omitted', async () => {
   const ctx = makeCtx({ type: 'adaptive' });
 
-  await withThinkingDisplayPromoted(ctx, () =>
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, ctx, () =>
     Promise.resolve({
       type: 'internal-error',
       status: 418,
@@ -99,41 +99,41 @@ test('withThinkingDisplayPromoted sends summarized upstream when thinking displa
   assertEquals(ctx.payload.thinking?.display, 'summarized');
 });
 
-test('withThinkingDisplayPromoted overrides omitted but preserves full', async () => {
+test('copilotAnthropicMessagesThinkingDisplay overrides omitted but preserves full', async () => {
   const omittedCtx = makeCtx({ type: 'adaptive', display: 'omitted' });
   const fullCtx = makeCtx({ type: 'adaptive', display: 'full' });
 
-  await withThinkingDisplayPromoted(omittedCtx, okEvents);
-  await withThinkingDisplayPromoted(fullCtx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, omittedCtx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, fullCtx, okEvents);
 
   assertEquals(omittedCtx.payload.thinking?.display, 'summarized');
   assertEquals(fullCtx.payload.thinking?.display, 'full');
 });
 
-test('withThinkingDisplayPromoted leaves disabled or absent thinking untouched', async () => {
+test('copilotAnthropicMessagesThinkingDisplay leaves disabled or absent thinking untouched', async () => {
   const disabledCtx = makeCtx({ type: 'disabled' });
   const absentCtx = makeCtx(undefined);
 
-  await withThinkingDisplayPromoted(disabledCtx, okEvents);
-  await withThinkingDisplayPromoted(absentCtx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, disabledCtx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, absentCtx, okEvents);
 
   assertEquals(disabledCtx.payload.thinking, { type: 'disabled' });
   assertEquals(absentCtx.payload.thinking, undefined);
 });
 
-test('withThinkingDisplayPromoted leaves unknown display values for upstream validation', async () => {
+test('copilotAnthropicMessagesThinkingDisplay leaves unknown display values for upstream validation', async () => {
   const ctx = makeCtx({ type: 'adaptive' });
   (ctx.payload.thinking as { display?: unknown }).display = 'omit';
 
-  await withThinkingDisplayPromoted(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, ctx, okEvents);
 
   assertEquals((ctx.payload.thinking as { display?: unknown }).display, 'omit');
 });
 
-test('withThinkingDisplayPromoted simulates omitted display on protocol events', async () => {
+test('copilotAnthropicMessagesThinkingDisplay simulates omitted display on protocol events', async () => {
   const ctx = makeCtx({ type: 'adaptive' });
 
-  const result = await withThinkingDisplayPromoted(ctx, () =>
+  const result = await applyProviderStage(copilotAnthropicMessagesThinkingDisplay, ctx, () =>
     Promise.resolve(
       eventResult(
         (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {

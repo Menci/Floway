@@ -108,7 +108,7 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
       }
       base = withHttpContentType(base, body, encoding);
       let headers = mergeHttpHeaders(base, resolvedHeaders(config, facts['request.http.headers']));
-      if ('request.provider.anthropicBeta' in facts) {
+      if (operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens') {
         const beta = facts['request.provider.anthropicBeta'] as readonly string[];
         headers = headers.filter(([name]) => name.toLowerCase() !== 'anthropic-beta');
         if (beta.length > 0) headers = [...headers, ['anthropic-beta', beta.join(',')]];

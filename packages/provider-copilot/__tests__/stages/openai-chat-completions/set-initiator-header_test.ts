@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withInitiatorHeaderSet } from '../../../src/interceptors/openai-chat-completions/set-initiator-header.ts';
-import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
+import { copilotOpenAIChatCompletionsSetInitiatorHeader } from '../../../src/stages/openai-chat-completions/set-initiator-header.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
+const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
@@ -23,7 +23,7 @@ test('OpenAI Chat Completions initiator is user when the last message is from th
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -37,7 +37,7 @@ test('OpenAI Chat Completions initiator is agent when the last message is an ass
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -56,7 +56,7 @@ test('OpenAI Chat Completions initiator is agent when the last message is a tool
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -76,7 +76,7 @@ test('OpenAI Chat Completions initiator follows the final user role for a lifted
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });

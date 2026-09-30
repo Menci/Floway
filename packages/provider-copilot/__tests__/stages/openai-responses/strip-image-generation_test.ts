@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { stripImageGenerationFromPayload } from '../../../src/interceptors/openai-responses/strip-image-generation.ts';
+import { stripImageGenerationFromPayload } from '../../../src/stages/openai-responses/strip-image-generation.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 

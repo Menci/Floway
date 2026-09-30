@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withInitiatorHeaderSet } from '../../../src/interceptors/anthropic-messages/set-initiator-header.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesSetInitiatorHeader } from '../../../src/stages/anthropic-messages/set-initiator-header.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -25,7 +25,7 @@ test('Anthropic Messages initiator is user when the last message is a plain user
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -45,7 +45,7 @@ test('Anthropic Messages initiator is user when the last user turn mixes text an
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -64,7 +64,7 @@ test('Anthropic Messages initiator is agent when the last user turn is entirely 
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -79,7 +79,7 @@ test('Anthropic Messages initiator is agent when the final message is from the a
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });

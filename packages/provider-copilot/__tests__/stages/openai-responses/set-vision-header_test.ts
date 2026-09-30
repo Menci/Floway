@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withVisionHeaderSet } from '../../../src/interceptors/openai-responses/set-vision-header.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { copilotOpenAIResponsesSetVisionHeader } from '../../../src/stages/openai-responses/set-vision-header.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
@@ -33,7 +33,7 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header det
     ])],
   });
 
-  await withVisionHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetVisionHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -44,7 +44,7 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header ign
     input: [wrap([{ type: 'input_text', text: 'plain text only' }])],
   });
 
-  await withVisionHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetVisionHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.has('copilot-vision-request'), false);
 });

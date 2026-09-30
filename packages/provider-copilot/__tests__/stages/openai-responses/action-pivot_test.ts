@@ -1,42 +1,31 @@
 import { test, vi } from 'vitest';
 
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
-import type { Interceptor } from '@floway-dev/interceptor';
-import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
+import { defineStage, move } from '@floway-dev/pipeline';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// `provider.callOpenAIResponses` runs the boundary chain and the terminal
-// switches on `ctx.action`, not on the closure-captured `action` parameter
-// — so an interceptor that flips `ctx.action` mid-chain reroutes dispatch.
-// To prove that contract end-to-end, swap the boundary chain for one
-// containing a pivot interceptor (compact → generate) via `vi.mock`,
-// then drive `provider.callOpenAIResponses(model, body, 'compact', ...)`. The
-// observed wire request must be the streaming /responses shape
-// (stream:true, no `compaction_trigger`), and the typed result must
-// surface as the `action: 'generate'` variant.
-const pivotCompactToGenerate: Interceptor<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult> = async (ctx, run) => {
-  ctx.action = 'generate';
-  return await run();
-};
+type Facts = { 'request.provider.payload': CanonicalOpenAIResponsesPayload; 'request.provider.responsesAction': 'generate' | 'compact' };
 
-vi.mock('../../../src/interceptors/openai-responses/index.ts', async () => {
-  const original = await vi.importActual<typeof import('../../../src/interceptors/openai-responses/index.ts')>('../../../src/interceptors/openai-responses/index.ts');
-  return {
-    ...original,
-    COPILOT_OPENAI_RESPONSES_BOUNDARY: [...original.COPILOT_OPENAI_RESPONSES_BOUNDARY, pivotCompactToGenerate],
-  };
-});
+vi.mock('../../../src/stages/openai-responses/force-store-false.ts', () => ({
+  copilotOpenAIResponsesForceStoreFalse: defineStage<Facts, Facts, object, object>({
+    name: 'pivotCompactToGenerate',
+    through: {
+      request: { needs: ['request.provider.payload', 'request.provider.responsesAction'], consumes: ['request.provider.payload', 'request.provider.responsesAction'], provides: ['request.provider.payload', 'request.provider.responsesAction'] },
+      response: { needs: [], consumes: [], provides: [] },
+    },
+    execute: async (facts, next) => move({ ...await next(move({ ...facts, 'request.provider.payload': { ...facts['request.provider.payload'], store: false }, 'request.provider.responsesAction': 'generate' })) }),
+  }),
+}));
 
-// Imports below MUST follow the vi.mock so the provider module resolves
-// against the mocked chain on first import.
+// Resolve the provider assembly after installing the request-stage fixture.
 const { clearInProcessCopilotTokenCache } = await import('../../../src/auth.ts');
 const { createCopilotProvider } = await import('../../../src/provider.ts');
 const { createInMemoryImageProcessor, initImageProcessor } = await import('@floway-dev/platform');
 const { directFetcher, initProviderRepo } = await import('@floway-dev/provider');
-const { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } = await import('@floway-dev/test-utils');
+const { collectChatProviderPipeline, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } = await import('@floway-dev/test-utils');
 type UpstreamRecord = import('@floway-dev/provider').UpstreamRecord;
 
-test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor flip compact→generate routes to the streaming generate path)', async () => {
+test('Copilot dispatch and decoding follow the action changed by a stage (compact→generate)', async () => {
   const upstream: UpstreamRecord = {
     id: 'up_copilot_pivot',
     kind: 'copilot',
@@ -98,17 +87,15 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callOpenAIResponses(providerModel, {
+      const result = await collectChatProviderPipeline(instance, 'openaiResponsesCompact', providerModel, {
         input: [{ type: 'message', role: 'user', content: 'hi' }],
-      }, 'compact', undefined, noopUpstreamCallOptions());
-      if (!result.ok) throw new Error('expected ok result');
-      if (result.action !== 'generate') throw new Error(`expected generate variant after pivot, got ${result.action}`);
+      }, undefined, noopUpstreamCallOptions());
+      if (result.output === null || !('kind' in result.output) || result.output.kind !== 'stream') throw new Error('expected generate stream after action pivot');
+      assertEquals(result.facts['response.provider.responsesAction'], 'generate');
     },
   );
 
   if (!openaiResponsesBody) throw new Error('expected /responses to be hit');
-  // Stream-true wire shape proves the terminal took the generate branch,
-  // not the synth-via-trigger compact branch.
   assertEquals(openaiResponsesBody.stream, true);
   const wireInput = openaiResponsesBody.input as Array<{ type: string }>;
   assertEquals(wireInput.some(item => item.type === 'compaction_trigger'), false);

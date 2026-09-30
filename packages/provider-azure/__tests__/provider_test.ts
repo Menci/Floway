@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createAzureProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, callProviderPipeline, assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -120,8 +120,8 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
       return sseResponse();
     },
     async () => {
-      const chat = await instance.instance.callOpenAIChatCompletions(providerModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
-      const responses = await instance.instance.callOpenAIResponses(providerModel, {
+      const chat = await collectChatProviderPipeline(instance, 'openaiChatCompletions', providerModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
+      const responses = await collectChatProviderPipeline(instance, 'openaiResponses', providerModel, {
         input: [{
           type: 'additional_tools',
           role: 'developer',
@@ -132,11 +132,11 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
             tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
           }],
         }],
-      }, 'generate', undefined, noopUpstreamCallOptions());
+      }, undefined, noopUpstreamCallOptions());
       const embeddings = await callProviderPipeline(instance, 'openaiEmbeddings', providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
-      assertEquals(chat.modelKey, 'gpt-prod');
-      assertEquals(responses.modelKey, 'gpt-prod');
+      assertEquals(chat.facts['response.provider.modelKey'], 'gpt-prod');
+      assertEquals(responses.facts['response.provider.modelKey'], 'gpt-prod');
       assertEquals(embeddings.modelKey, 'gpt-prod');
     },
   );
@@ -177,7 +177,7 @@ test('createAzureProvider runs the OpenAI Responses boundary on compact requests
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     },
     async () => {
-      const result = await instance.instance.callOpenAIResponses(providerModel, {
+      const result = await collectChatProviderPipeline(instance, 'openaiResponsesCompact', providerModel, {
         input: [{
           type: 'additional_tools',
           role: 'developer',
@@ -188,9 +188,9 @@ test('createAzureProvider runs the OpenAI Responses boundary on compact requests
             tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
           }],
         }],
-      }, 'compact', undefined, noopUpstreamCallOptions());
-      assertEquals(result.action, 'compact');
-      assertEquals(result.ok, true);
+      }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.facts['request.provider.responsesAction'], 'compact');
+      assertEquals((result.output !== null && 'kind' in result.output), true);
     },
   );
 
@@ -212,21 +212,15 @@ test.each(['generate', 'compact'] as const)('createAzureProvider preserves %s up
   await withMockedFetch(
     () => Promise.resolve(upstreamResponse),
     async () => {
-      const result = await instance.instance.callOpenAIResponses(
-        providerModel,
-        { input: [{ type: 'message', role: 'user', content: 'hello' }] },
-        action,
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      assertEquals(result.action, action);
-      assertEquals(result.ok, false);
-      if (result.ok) throw new Error('expected upstream error');
-      assertEquals(result.modelKey, 'gpt-prod');
-      assertEquals(result.response, upstreamResponse);
-      assertEquals(result.response.status, 418);
-      assertEquals(result.response.headers.get('x-upstream-error'), action);
-      assertEquals(await result.response.text(), '{"error":"upstream rejected the request"}');
+      const result = await collectChatProviderPipeline(instance, action === 'compact' ? 'openaiResponsesCompact' : 'openaiResponses', providerModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.facts['request.provider.responsesAction'], action);
+      assertEquals((result.output !== null && 'kind' in result.output), false);
+      if ((result.output !== null && 'kind' in result.output)) throw new Error('expected upstream error');
+      assertEquals(result.facts['response.provider.modelKey'], 'gpt-prod');
+      if (result.response === null) throw new Error('expected HTTP failure body');
+      assertEquals(result.response!.status, 418);
+      assertEquals(result.response!.headers.get('x-upstream-error'), action);
+      assertEquals(await result.response!.text(), '{"error":"upstream rejected the request"}');
     },
   );
 });
@@ -271,10 +265,10 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
       return sseResponse();
     },
     async () => {
-      const chat = await instance.instance.callOpenAIChatCompletions(chatProviderModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, chatOpts);
-      const responses = await instance.instance.callOpenAIResponses(openaiResponsesProviderModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }, 'generate', undefined, openaiResponsesOpts);
-      assertEquals(chat.modelKey, 'deepseek-v4-pro');
-      assertEquals(responses.modelKey, 'gpt-5.4-pro');
+      const chat = await collectChatProviderPipeline(instance, 'openaiChatCompletions', chatProviderModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, chatOpts);
+      const responses = await collectChatProviderPipeline(instance, 'openaiResponses', openaiResponsesProviderModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }, undefined, openaiResponsesOpts);
+      assertEquals(chat.facts['response.provider.modelKey'], 'deepseek-v4-pro');
+      assertEquals(responses.facts['response.provider.modelKey'], 'gpt-5.4-pro');
     },
   );
 
@@ -333,10 +327,10 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
       return sseResponse();
     },
     async () => {
-      const messages = await instance.instance.callAnthropicMessages(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m'] });
-      const count = await instance.instance.callAnthropicMessagesCountTokens(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      assertEquals(messages.modelKey, 'claude-prod');
-      assertEquals(count.modelKey, 'claude-prod');
+      const messages = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m'] });
+      const count = await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      assertEquals(messages.facts['response.provider.modelKey'], 'claude-prod');
+      assertEquals(count.facts['response.provider.modelKey'], 'claude-prod');
     },
   );
 
@@ -476,7 +470,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       assertEquals(models[0].endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
       const result = await callProviderPipeline(provider, 'openaiImagesGenerations', models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.response!.status, 200);
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
@@ -529,7 +523,7 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.response!.status, 200);
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/edits?api-version=preview');

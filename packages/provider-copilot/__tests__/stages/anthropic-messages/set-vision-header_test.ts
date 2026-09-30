@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withVisionHeaderSet } from '../../../src/interceptors/anthropic-messages/set-vision-header.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesSetVisionHeader } from '../../../src/stages/anthropic-messages/set-vision-header.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -33,7 +33,7 @@ test('Anthropic Messages vision header set when a top-level image block is prese
     ],
   });
 
-  await withVisionHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetVisionHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -58,7 +58,7 @@ test('Anthropic Messages vision header set when an image is nested inside tool_r
     ],
   });
 
-  await withVisionHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetVisionHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -81,7 +81,7 @@ test('Anthropic Messages vision header absent when no image is present', async (
     ],
   });
 
-  await withVisionHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetVisionHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.has('copilot-vision-request'), false);
 });

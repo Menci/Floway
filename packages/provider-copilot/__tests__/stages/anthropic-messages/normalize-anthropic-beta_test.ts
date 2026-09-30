@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { withAnthropicBetaNormalized } from '../../../src/interceptors/anthropic-messages/normalize-anthropic-beta.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesNormalizeAnthropicBeta } from '../../../src/stages/anthropic-messages/normalize-anthropic-beta.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
@@ -13,7 +13,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStream
 const invocation = (
   payload: AnthropicMessagesPayload & { context_management?: unknown },
   anthropicBeta: string[] = [],
-): AnthropicMessagesBoundaryCtx => ({
+): AnthropicMessagesProbe => ({
   payload: payload as AnthropicMessagesPayload,
   headers: new Headers(),
   anthropicBeta,
@@ -33,7 +33,7 @@ test('keeps only supported caller beta values in first-seen order', async () => 
     'advanced-tool-use-2025-11-20',
     'context-1m-2025-08-07',
   ]);
-  await withAnthropicBetaNormalized(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, ctx, okEvents);
   assertEquals(ctx.anthropicBeta, ['advanced-tool-use-2025-11-20']);
 });
 
@@ -41,15 +41,15 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
   const payload = { ...baseBody, thinking: { type: 'enabled' as const, budget_tokens: 1024 } };
   const silent = invocation(payload);
   const explicit = invocation(payload, ['context-1m-2025-08-07']);
-  await withAnthropicBetaNormalized(silent, okEvents);
-  await withAnthropicBetaNormalized(explicit, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, silent, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, explicit, okEvents);
   assertEquals(silent.anthropicBeta, ['interleaved-thinking-2025-05-14']);
   assertEquals(explicit.anthropicBeta, []);
 });
 
 test('does not synthesize interleaved thinking for adaptive thinking', async () => {
   const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive', budget_tokens: 1024 } });
-  await withAnthropicBetaNormalized(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, ctx, okEvents);
   assertEquals(ctx.anthropicBeta, []);
 });
 
@@ -58,7 +58,7 @@ test('pairs context management with its required beta token', async () => {
     { ...baseBody, context_management: { edits: [] } },
     ['interleaved-thinking-2025-05-14'],
   );
-  await withAnthropicBetaNormalized(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesNormalizeAnthropicBeta, ctx, okEvents);
   assertEquals(ctx.anthropicBeta, [
     'interleaved-thinking-2025-05-14',
     'context-management-2025-06-27',

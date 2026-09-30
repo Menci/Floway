@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withTopLevelCacheControlApplied } from '../../../src/interceptors/anthropic-messages/apply-top-level-cache-control.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesApplyTopLevelCacheControl } from '../../../src/stages/anthropic-messages/apply-top-level-cache-control.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload & { cache_control?: { type: 'ephemeral' } }): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload & { cache_control?: { type: 'ephemeral' } }): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -30,7 +30,7 @@ test('ports top-level cache_control onto the last cacheable block and drops the 
     ],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[2].content, [{ type: 'text', text: 'second', cache_control: { type: 'ephemeral' } }]);
@@ -46,7 +46,7 @@ test('respects an explicit cache_control on the last cacheable block', async () 
     messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', cache_control: explicit }] }],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[0].content, [{ type: 'text', text: 'hi', cache_control: explicit }]);
@@ -60,7 +60,7 @@ test('promotes string message content so the auto-marker has a block to land on'
     messages: [{ role: 'user', content: 'plain' }],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[0].content, [{ type: 'text', text: 'plain', cache_control: { type: 'ephemeral' } }]);
@@ -77,7 +77,7 @@ test('walks past trailing non-cacheable blocks to find the last cacheable one', 
     ],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[1].content, [{ type: 'thinking', thinking: 'pondering' }]);
@@ -92,7 +92,7 @@ test('drops top-level cache_control when no cacheable block exists', async () =>
     messages: [{ role: 'assistant', content: [{ type: 'thinking', thinking: 'no text yet' }] }],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[0].content, [{ type: 'thinking', thinking: 'no text yet' }]);
@@ -105,7 +105,7 @@ test('no-op when payload has no top-level cache_control', async () => {
     messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
   });
 
-  await withTopLevelCacheControlApplied(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesApplyTopLevelCacheControl, ctx, okEvents);
 
   assertEquals((ctx.payload as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(ctx.payload.messages[0].content, [{ type: 'text', text: 'hi' }]);

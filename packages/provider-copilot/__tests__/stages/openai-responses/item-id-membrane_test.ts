@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest';
 
 import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/interceptors/openai-responses/item-id-carrier.ts';
-import { withCopilotOpenAIResponsesItemIdMembrane } from '../../../src/interceptors/openai-responses/item-id-membrane.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { copilotOpenAIResponsesItemIdMembrane } from '../../../src/stages/openai-responses/item-id-membrane.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
-const invocation = (input: OpenAIResponsesInputItem[] = []): OpenAIResponsesBoundaryCtx => ({
+const invocation = (input: OpenAIResponsesInputItem[] = []): OpenAIResponsesProbe => ({
   payload: {
     model: 'test-model',
     input,
@@ -49,13 +49,13 @@ const collect = async (result: ProviderOpenAIResponsesResult): Promise<ProtocolF
 const runStream = async (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> | ProtocolFrame<OpenAIResponsesStreamEvent>[],
   ctx = invocation(),
-): Promise<{ result: ProviderOpenAIResponsesResult; ctx: OpenAIResponsesBoundaryCtx }> => {
+): Promise<{ result: ProviderOpenAIResponsesResult; ctx: OpenAIResponsesProbe }> => {
   const iterable = Symbol.asyncIterator in frames
     ? frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>
     : (async function* () { yield* frames as ProtocolFrame<OpenAIResponsesStreamEvent>[]; })();
-  const result = await withCopilotOpenAIResponsesItemIdMembrane(ctx, () => Promise.resolve({
-    action: 'generate',
-    ok: true,
+  const result = await applyProviderStage(copilotOpenAIResponsesItemIdMembrane, ctx, () => Promise.resolve({
+    action: 'generate' as const,
+    ok: true as const,
     events: iterable,
     modelKey: 'test-model',
   }));
@@ -404,7 +404,7 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
   ];
   const ctx = invocation(input);
   let wireInput: OpenAIResponsesInputItem[] | undefined;
-  await withCopilotOpenAIResponsesItemIdMembrane(ctx, () => {
+  await applyProviderStage(copilotOpenAIResponsesItemIdMembrane, ctx, () => {
     wireInput = structuredClone(ctx.payload.input);
     return Promise.resolve({
       action: 'generate',
@@ -445,7 +445,7 @@ test('rejects conflicting ids carried by one input item', async () => {
     ],
   }]);
 
-  await expect(withCopilotOpenAIResponsesItemIdMembrane(ctx, () => {
+  await expect(applyProviderStage(copilotOpenAIResponsesItemIdMembrane, ctx, () => {
     throw new Error('must not reach upstream');
   })).rejects.toThrow(/conflicting upstream ids/);
 });
@@ -455,7 +455,7 @@ test('normalizes the generated compaction item without touching retained compact
     { type: 'message', id: 'msg_retained', status: 'completed', role: 'assistant', content: [] },
     { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
   ]);
-  const result = await withCopilotOpenAIResponsesItemIdMembrane(invocation(), () => Promise.resolve({
+  const result = await applyProviderStage(copilotOpenAIResponsesItemIdMembrane, invocation(), () => Promise.resolve({
     action: 'compact',
     ok: true,
     result: compactResult,

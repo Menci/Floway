@@ -46,7 +46,7 @@ export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUp
             : { ...payload, ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}), model: modelKey };
       const base = config.apiKey ? [['Authorization', secret(`Bearer ${config.apiKey}`)] as const] : [];
       let headers = mergeHttpHeaders(withHttpContentType(base, body, encoding), facts['request.http.headers']);
-      if ('request.provider.anthropicBeta' in facts) {
+      if (operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens') {
         const beta = facts['request.provider.anthropicBeta'] as readonly string[];
         headers = headers.filter(([name]) => name.toLowerCase() !== 'anthropic-beta');
         if (beta.length > 0) headers = [...headers, ['anthropic-beta', beta.join(',')]];

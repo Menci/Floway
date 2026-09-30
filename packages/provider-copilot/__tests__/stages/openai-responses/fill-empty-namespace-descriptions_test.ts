@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { withEmptyNamespaceDescriptionsFilled } from '../../../src/interceptors/openai-responses/fill-empty-namespace-descriptions.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { copilotOpenAIResponsesFillEmptyNamespaceDescriptions } from '../../../src/stages/openai-responses/fill-empty-namespace-descriptions.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
@@ -36,7 +36,7 @@ test('fills Codex OpenAI Responses Lite namespace descriptions before Copilot di
     }],
   });
 
-  await withEmptyNamespaceDescriptionsFilled(ctx, async () => {});
+  await applyProviderStage(copilotOpenAIResponsesFillEmptyNamespaceDescriptions, ctx, async () => {});
 
   const [item] = ctx.payload.input;
   if (item?.type !== 'additional_tools') throw new Error('expected additional_tools input');

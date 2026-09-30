@@ -1,18 +1,18 @@
 import { parse, validate, version } from 'uuid';
 import { test } from 'vitest';
 
-import { withInteractionIdHeaderSet } from '../../../src/interceptors/anthropic-messages/set-interaction-id-header.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { copilotAnthropicMessagesSetInteractionIdHeader } from '../../../src/stages/anthropic-messages/set-interaction-id-header.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesProbe => ({
   payload,
   headers: new Headers(),
   anthropicBeta: [],
@@ -37,7 +37,7 @@ const SESS_ALONE_UUID = '19be0c9e-9a65-43eb-be80-efb2770d4510';
 test('Interaction-id forwarded as a SHA-256 UUID for the legacy fingerprint with both halves', async () => {
   const ctx = invocation(payloadWith('user_acct-1_account__session_sess-legacy'));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-id'), SESS_LEGACY_UUID);
 });
@@ -45,7 +45,7 @@ test('Interaction-id forwarded as a SHA-256 UUID for the legacy fingerprint with
 test('Interaction-id forwarded as a SHA-256 UUID for the JSON fingerprint carrying session_id', async () => {
   const ctx = invocation(payloadWith(JSON.stringify({ device_id: 'dev', session_id: 'sess-json' })));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-id'), SESS_JSON_UUID);
 });
@@ -55,7 +55,7 @@ test('Interaction-id forwarded as a SHA-256 UUID even when only the sessionId ha
   // device_id / account_uuid; we still want trace correlation in that case.
   const ctx = invocation(payloadWith(JSON.stringify({ session_id: 'sess-alone' })));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-id'), SESS_ALONE_UUID);
 });
@@ -64,8 +64,8 @@ test('Interaction-id hashing is deterministic across repeated invocations', asyn
   const first = invocation(payloadWith(JSON.stringify({ session_id: 'sess-alone' })));
   const second = invocation(payloadWith(JSON.stringify({ session_id: 'sess-alone' })));
 
-  await withInteractionIdHeaderSet(first, okEvents);
-  await withInteractionIdHeaderSet(second, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, first, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, second, okEvents);
 
   assertEquals(first.headers.get('x-interaction-id'), second.headers.get('x-interaction-id'));
 });
@@ -73,7 +73,7 @@ test('Interaction-id hashing is deterministic across repeated invocations', asyn
 test('Interaction-id has RFC UUIDv4 version and variant bits', async () => {
   const ctx = invocation(payloadWith(JSON.stringify({ session_id: 'sess-shape-check' })));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   const value = ctx.headers.get('x-interaction-id');
   assert(value !== null && validate(value));
@@ -85,7 +85,7 @@ test('Interaction-id has RFC UUIDv4 version and variant bits', async () => {
 test('Interaction-id absent when metadata.user_id is missing', async () => {
   const ctx = invocation(payloadWith(undefined));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-interaction-id'), false);
 });
@@ -93,7 +93,7 @@ test('Interaction-id absent when metadata.user_id is missing', async () => {
 test('Interaction-id absent when metadata.user_id carries no session marker', async () => {
   const ctx = invocation(payloadWith('user_acct-1_account'));
 
-  await withInteractionIdHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotAnthropicMessagesSetInteractionIdHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.has('x-interaction-id'), false);
 });

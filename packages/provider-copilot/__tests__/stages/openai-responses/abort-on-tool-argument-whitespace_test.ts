@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
-import { withToolArgumentWhitespaceAborted } from '../../../src/interceptors/openai-responses/abort-on-tool-argument-whitespace.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/interceptors/shared/whitespace-overflow.ts';
+import { copilotOpenAIResponsesAbortToolWhitespace } from '../../../src/stages/openai-responses/abort-on-tool-argument-whitespace.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const invocation = (): OpenAIResponsesBoundaryCtx => ({
+const invocation = (): OpenAIResponsesProbe => ({
   payload: {
     model: 'test-model',
     input: [],
@@ -44,7 +44,7 @@ const collect = async (result: ProviderOpenAIResponsesResult): Promise<ProtocolF
 };
 
 const runWith = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<ProtocolFrame<OpenAIResponsesStreamEvent>[]> => {
-  const result = await withToolArgumentWhitespaceAborted(invocation(), () =>
+  const result = await applyProviderStage(copilotOpenAIResponsesAbortToolWhitespace, invocation(), () =>
     Promise.resolve<ProviderOpenAIResponsesResult>({
       action: 'generate',
       ok: true,

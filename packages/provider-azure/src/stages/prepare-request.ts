@@ -1,5 +1,5 @@
 import type { AzureUpstreamConfig } from '../config.ts';
-import { azureOpenAiV1BaseUrl } from '../endpoint.ts';
+import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from '../endpoint.ts';
 import { type HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { multipartBody, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import { defineStage, move, secret } from '@floway-dev/pipeline';
@@ -17,8 +17,8 @@ const PATHS: Record<Exclude<AzureOperation, 'openaiAudioTranscriptions'>, string
   openaiChatCompletions: '/chat/completions',
   openaiResponses: '/responses',
   openaiResponsesCompact: '/responses/compact',
-  anthropicMessages: '/messages',
-  anthropicMessagesCountTokens: '/messages/count_tokens',
+  anthropicMessages: '/v1/messages',
+  anthropicMessagesCountTokens: '/v1/messages/count_tokens',
   openaiCompletions: '/completions',
   openaiEmbeddings: '/embeddings',
   openaiImagesGenerations: '/images/generations',
@@ -39,6 +39,7 @@ export const prepareAzureRequest = <O extends AzureOperation>(config: AzureUpstr
     execute: async (facts, next) => {
       const { 'request.provider.model': model, 'request.provider.payload': payload, ...rest } = facts;
       const deployment = (model.providerData as { upstreamModelId: string }).upstreamModelId;
+      const anthropic = operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens';
       let body: HttpBody;
       let encoding: HttpBodyEncoding = 'json';
       let url: URL;
@@ -52,7 +53,11 @@ export const prepareAzureRequest = <O extends AzureOperation>(config: AzureUpstr
         // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
         url.searchParams.set('api-version', '2025-04-01-preview');
       } else {
-        url = new URL(joinBaseAndPath(azureOpenAiV1BaseUrl(config.endpoint), ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') ? PATHS[facts['request.provider.responsesAction'] === 'compact' ? 'openaiResponsesCompact' : 'openaiResponses'] : PATHS[operation as Exclude<AzureOperation, 'openaiAudioTranscriptions'>])));
+        const baseUrl = anthropic ? azureAnthropicBaseUrl(config.endpoint) : azureOpenAiV1BaseUrl(config.endpoint);
+        const path = operation === 'openaiResponses' || operation === 'openaiResponsesCompact'
+          ? PATHS[facts['request.provider.responsesAction'] === 'compact' ? 'openaiResponsesCompact' : 'openaiResponses']
+          : PATHS[operation as Exclude<AzureOperation, 'openaiAudioTranscriptions'>];
+        url = new URL(joinBaseAndPath(baseUrl, path));
         if (operation === 'openaiImagesEdits') {
           const prepared = await prepareOpenAIImagesEditsBody(payload as ProviderOperationPayloads['openaiImagesEdits'], deployment);
           body = prepared.body;
@@ -64,9 +69,11 @@ export const prepareAzureRequest = <O extends AzureOperation>(config: AzureUpstr
         }
         if (operation === 'openaiImagesGenerations' || operation === 'openaiImagesEdits') url.searchParams.append('api-version', 'preview');
       }
-      const base = withHttpContentType([['api-key', secret(config.apiKey)]], body, encoding);
+      // https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/how-to/use-foundry-models
+      // https://docs.anthropic.com/en/api/versioning
+      const base = withHttpContentType(anthropic ? [['x-api-key', secret(config.apiKey)], ['anthropic-version', '2023-06-01']] : [['api-key', secret(config.apiKey)]], body, encoding);
       let headers = mergeHttpHeaders(base, facts['request.http.headers']);
-      if ('request.provider.anthropicBeta' in facts) {
+      if (anthropic) {
         const beta = facts['request.provider.anthropicBeta'] as readonly string[];
         headers = headers.filter(([name]) => name.toLowerCase() !== 'anthropic-beta');
         if (beta.length > 0) headers = [...headers, ['anthropic-beta', beta.join(',')]];

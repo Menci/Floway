@@ -59,7 +59,7 @@ export const copilotOpenAIResponsesAbortToolWhitespace = defineStage<object, obj
             whitespaceByIndex.set(event.output_index, count);
 
             if (exceeded) {
-              use.log.warn('Copilot: infinite whitespace detected in OpenAI Responses function call arguments, aborting stream');
+              await use.log.warn('Copilot: infinite whitespace detected in OpenAI Responses function call arguments, aborting stream');
               yield eventFrame(errorEvent());
               yield doneFrame();
               return;

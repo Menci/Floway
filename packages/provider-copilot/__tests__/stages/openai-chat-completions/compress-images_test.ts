@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/openai-chat-completions/compress-images.ts';
-import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
+import { copilotOpenAIChatCompletionsCompressImages } from '../../../src/stages/openai-chat-completions/compress-images.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
@@ -16,7 +16,7 @@ const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
+const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
@@ -45,7 +45,7 @@ test('rewrites a base64 image_url data URL to a WebP data URL', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsCompressImages, ctx, okEvents);
 
   assertEquals(imageUrl(ctx.payload), 'data:image/webp;base64,AQID');
   assertEquals(imageUrl(payload), 'data:image/png;base64,AAAA');
@@ -77,7 +77,7 @@ test('leaves remote https image references untouched', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsCompressImages, ctx, okEvents);
 
   assertEquals(imageUrl(ctx.payload), 'https://example.com/cat.png');
   assert(ctx.payload === payload);
@@ -112,7 +112,7 @@ test('compresses each unique inline image only once when the same data URL repea
     ],
   });
 
-  await withInlineImagesCompressed(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIChatCompletionsCompressImages, ctx, okEvents);
 
   assertEquals(calls, 2);
 });

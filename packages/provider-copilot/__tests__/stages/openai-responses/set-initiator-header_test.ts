@@ -1,17 +1,17 @@
 import { test } from 'vitest';
 
-import { withInitiatorHeaderSet } from '../../../src/interceptors/openai-responses/set-initiator-header.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { copilotOpenAIResponsesSetInitiatorHeader } from '../../../src/stages/openai-responses/set-initiator-header.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
+import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesProbe => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
@@ -30,7 +30,7 @@ test.each(['user', 'system', 'developer'] as const)('OpenAI Responses initiator 
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -38,7 +38,7 @@ test.each(['user', 'system', 'developer'] as const)('OpenAI Responses initiator 
 test('OpenAI Responses initiator is user when input is an empty array', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [] });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -53,7 +53,7 @@ test('OpenAI Responses initiator is user for the role-bearing additional_tools i
     }],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -82,7 +82,7 @@ test('OpenAI Responses initiator is agent when the last input item is a function
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -110,7 +110,7 @@ test('OpenAI Responses initiator is agent when the last input item is a custom_t
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -128,7 +128,7 @@ test('OpenAI Responses initiator is agent when the last canonical item is reason
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -150,7 +150,7 @@ test('OpenAI Responses initiator is agent when the last input item is an assista
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, okEvents);
+  await applyProviderStage(copilotOpenAIResponsesSetInitiatorHeader, ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
