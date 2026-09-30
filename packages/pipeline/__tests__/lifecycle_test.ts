@@ -19,6 +19,17 @@ describe('run lifetime', () => {
     expect(() => setRelease(resource, async () => {})).toThrow('after disposal has started');
   });
 
+  it('composes the previous release action without recursively awaiting its own disposal', async () => {
+    const steps: string[] = [];
+    const resource = move(own({}, async () => { steps.push('drain'); }));
+    const previous = setRelease(resource, async () => {
+      try { await previous(); } finally { steps.push('settle'); }
+    });
+    await resource[Symbol.asyncDispose]();
+    await resource[Symbol.asyncDispose]();
+    expect(steps).toEqual(['drain', 'settle']);
+  });
+
   it('cleans an initial resource consumed before the first handover', async () => {
     let released = 0;
     const body = move(own({}, async () => { released++; }));

@@ -62,10 +62,12 @@ export const own = <T extends object>(value: T, release: () => Promise<void>): T
   return resource;
 };
 
-export const setRelease = (value: Owned, release: () => Promise<void>): void => {
+export const setRelease = (value: Owned, release: () => Promise<void>): (() => Promise<void>) => {
   const state = ownership.get(value)!;
   if (state.disposal !== undefined) throw new Error('Cannot change a resource release action after disposal has started');
+  const previous = state.release;
   state.release = release;
+  return previous;
 };
 
 export const isOwned = (value: unknown): value is Owned =>

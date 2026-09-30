@@ -42,6 +42,8 @@ resources belong to the run until `drain()`.
 `setRelease(resource, release)` changes how that same resource is released
 before disposal starts. An HTTP body can initially be cancellable, then acquire
 the decoder's drain action without a second ownership claim.
+It returns the prior release callback so a later layer can compose its own
+settlement around that callback without recursively invoking the disposer.
 
 `defer(promise)` marks work the run must finish. Initial facts and all later
 handovers register owned and deferred values. `drain()` waits for their
