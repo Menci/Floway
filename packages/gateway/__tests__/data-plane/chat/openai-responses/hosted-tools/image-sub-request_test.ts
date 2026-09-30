@@ -11,6 +11,7 @@ import { eventsOf, installDumpStubs } from '../../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { flushBackground, trackBackground } from '../../../../test-utils/background-tracker.ts';
 import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { stubProviderPipeline } from '../../../../test-utils/provider-pipeline.ts';
 import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -24,14 +25,22 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
     const dumps = installDumpStubs(initDumpStore, initDumpBroker);
     const dump = openRunDump(apiKey, { method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null } }, trackBackground, true, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
     const parent = mockGatewayCtx({ dump, backgroundScheduler: trackBackground });
-    const candidate = stubModelCandidate({ model: { id: 'image-model', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } } });
+    const plainCandidate = stubModelCandidate({ model: { id: 'image-model', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } } });
     const prefix = action === 'edit' ? 'image_edit' : 'image_generation';
     const response = () => new Response([
       { type: `${prefix}.partial_image`, partial_image_index: 0, b64_json: 'preview' },
       { type: `${prefix}.completed`, b64_json: 'pixels', usage: { input_tokens: 7, output_tokens: 3 } },
     ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
-    const generate = vi.spyOn(candidate.provider.instance, 'callOpenAIImagesGenerations').mockImplementation(async () => ({ response: response(), modelKey: 'backend-image' }));
-    const edit = vi.spyOn(candidate.provider.instance, 'callOpenAIImagesEdits').mockImplementation(async () => ({ response: response(), modelKey: 'backend-image' }));
+    const generate = vi.fn(async () => ({ response: response(), modelKey: 'backend-image' }));
+    const edit = vi.fn(async () => ({ response: response(), modelKey: 'backend-image' }));
+    const candidate = {
+      ...plainCandidate, provider: {
+        ...plainCandidate.provider, pipelines: {
+          openaiImagesGenerations: stubProviderPipeline('openaiImagesGenerations', generate),
+          openaiImagesEdits: stubProviderPipeline('openaiImagesEdits', edit),
+        },
+      },
+    };
     vi.spyOn(resolution, 'enumerateModelCandidates').mockResolvedValue({ candidates: [candidate], sawModel: true, failedUpstreams: [] });
     const request: ImageGenerationRequest = {
       prompt: 'draw a tree', action, config: { model: 'image-model', action, quality: 'high', partial_images: 1 },
@@ -59,7 +68,7 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
     expect(prepared).toMatchObject({ operation: action === 'edit' ? 'edits' : 'generations', parameters: { prompt: 'draw a tree', n: 1, quality: 'high', stream: true, partial_images: 1 } });
     if (action === 'edit') expect(prepared).toMatchObject({ images: [{ kind: 'file', file: { fileName: 'image_0.png', mediaType: 'image/png', bytes: { bytes: 'AQID' } } }] });
     const entered = eventsOf(record).filter(event => event.type === 'stage.entered').map(event => event.name);
-    expect(entered).toEqual(['emitHostedImageGeneration', 'prepareHostedImageGeneration', 'writeSettlement', 'resolveCandidates', 'failover', 'retryRateLimitedImages', 'callOpenAIImagesUpstream']);
+    expect(entered).toEqual(['writeSettlement', 'emitHostedImageGeneration', 'prepareHostedImageGeneration', 'resolveCandidates', 'failover', 'retryRateLimitedImages', 'callOpenAIImagesUpstream', 'stubHttp']);
     const frames = decoded.flatMap(event => event?.frames ?? []);
     if (consume) expect(frames).toContainEqual({ type: 'event', event: { item: { type: 'image_generation_call', status: 'completed', action, result: 'pixels', revised_prompt: 'draw a tree' }, endEvents: [{ type: 'response.image_generation_call.completed' }] } });
     else expect(frames).toEqual([]);

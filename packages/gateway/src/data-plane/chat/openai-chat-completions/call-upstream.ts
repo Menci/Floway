@@ -1,100 +1,40 @@
 import type { Fields } from './facts.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
-import type { BillableEntity } from '../../pipeline/facts.ts';
-import { upstreamPerformanceContext, telemetryModelIdentity } from '../../shared/telemetry/attribution.ts';
-import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
+import { providerEntry } from '../../pipeline/provider-entry.ts';
+import { upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import type { ChatServices } from '../services.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
+import { providerChatAnswer } from '../shared/provider-answer.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { providerModelOf } from '@floway-dev/provider';
+import type { ProviderOperationRequest, ProviderChatResponse } from '@floway-dev/provider';
 
-/**
- * The wire. It dials OpenAI Chat Completions and provides the answer at whichever family's response
- * key the chain above it reads — which is what makes it interchangeable with a translated
- * chain: both hand up `response.chat.openaiChatCompletions`, and the stage above cannot tell which
- * ran.
- *
- * What it hands up is the upstream's own frames, unread. The reading is taken at the top of the
- * wire, above every rule that rewrites them, so nothing here has the means to produce a figure
- * the client will not be shown.
- */
 export const callOpenAIChatCompletionsUpstream = defineStage<
   Fields<'request.chat.openaiChatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
-  Fields<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers'>,
+  ProviderOperationRequest<'openaiChatCompletions'>,
+  ProviderChatResponse<'openaiChatCompletions'>,
+  Fields<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status' | 'response.http.body'>,
   ChatServices
 >({
   name: 'callOpenAIChatCompletionsUpstream',
-  return: {
-    provides: [
-      'response.chat.openaiChatCompletions',
-      'response.usage.billable',
-      'response.http.headers',
-    ],
+  into: {
+    request: { needs: ['request.chat.openaiChatCompletions', 'route.attempt', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.output', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.output', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.chat.openaiChatCompletions', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    // Attribution is set before the dial, so an attempt that never completes still names the
-    // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
-
-    // What the record holds by now: the payload affinity materialized for this candidate,
-    // as every stage between the fork and here has rewritten it — or, on a translated wire,
-    // what the handoff put here.
     const body = bodyForAttempt(facts['request.chat.openaiChatCompletions'], candidate, applyRulesToUpstreamOpenAIChatCompletions);
-
-    let result;
-    try {
-      result = await candidate.provider.instance.callOpenAIChatCompletions(
-        providerModelOf(candidate),
-        body,
-        use.gateway.abortSignal,
-        // The client's own headers reach the upstream from the record, not from a live
-        // request object: what a provider is allowed to forward is filtered per provider,
-        // and the dump shows what was there to filter.
-        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]))),
-      );
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so nothing was billed and there are
-      // no headers to carry. What it leaves behind is the performance row settlement writes.
-      return move({
-        ...facts,
-        'response.chat.openaiChatCompletions': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.usage.billable': [],
-        'response.http.headers': [],
-      });
-    }
-
-    const identity = telemetryModelIdentity(candidate, result.modelKey);
-    // An upstream that was called and reported nothing, which is a different statement from
-    // reporting zero.
-    const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
-
-    if (!result.ok) {
-      const text = await result.response.text();
-      use.log.warn('upstream refused', { status: result.response.status });
-      let parsed: unknown;
-      try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }
-      return move({
-        ...facts,
-        'response.chat.openaiChatCompletions': {
-          status: result.response.status,
-          message: text,
-          ...(parsed === undefined ? {} : { body: parsed }),
-        },
-        'response.usage.billable': called,
-        'response.http.headers': [...result.response.headers],
-      });
-    }
-
-    // This candidate answered, so it is the one a follow-up turn carrying our own state
-    // must come back to.
-    use.selectAffinity(candidate);
+    const pipeline = candidate.provider.pipelines.openaiChatCompletions;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no openaiChatCompletions pipeline`);
+    const back = await next(providerEntry(facts, candidate, body), pipeline);
+    const { 'response.http.exchange': _exchange, 'response.provider.output': _output, 'response.provider.modelKey': _modelKey, 'response.provider.called': _called, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    const reply = await providerChatAnswer(candidate, back);
+    const answer = reply.answer;
+    if ('kind' in answer) use.selectAffinity(candidate);
     return move({
-      ...facts,
-      'response.chat.openaiChatCompletions': { kind: 'stream' as const, frames: result.events },
-      'response.usage.billable': called,
-      'response.http.headers': [...(result.headers ?? new Headers())],
+      ...rest, 'response.chat.openaiChatCompletions': answer,
+      'response.usage.billable': reply.billable, 'response.http.headers': reply.headers,
+      'response.http.status': reply.status, 'response.http.body': reply.body,
     });
   },
 });

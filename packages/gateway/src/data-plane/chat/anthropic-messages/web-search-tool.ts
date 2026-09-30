@@ -70,7 +70,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
   // A declaration this gateway cannot execute, and a search backend the operator has not
   // configured, are both answered here: neither is a body an upstream should be asked about.
   return: {
-    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
+    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.chat.anthropicMessages.streamedUsage'],
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -86,13 +86,14 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
     const prepared = prepareAnthropicMessagesWebSearchInvocation(invocation);
     if (prepared.type === 'inactive') return await next(facts);
     if (prepared.type === 'invalid-request') {
-      use.log.debug('refusing a web-search declaration this gateway cannot execute');
+      await use.log.debug('refusing a web-search declaration this gateway cannot execute');
       return move({
         ...facts,
         'response.chat.anthropicMessages': refusal(prepared.message),
         'response.chat.anthropicMessages.streamedUsage': null,
         'response.usage.billable': [],
         'response.http.headers': [],
+        'response.http.body': null,
       }) as never;
     }
 

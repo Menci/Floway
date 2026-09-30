@@ -1,27 +1,60 @@
 import type { Fields, WebSearchRequest } from './facts.ts';
 import type { SearchServices, WebSearchRuntime } from './services.ts';
+import { providerEntry } from '../../../../pipeline/provider-entry.ts';
+import { providerCalls } from '../../../../pipeline/provider-usage.ts';
+import { spentBody } from '../../../../pipeline/upstream-body.ts';
+import { upstreamPerformanceContext } from '../../../../shared/telemetry/attribution.ts';
+import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
+import type { AlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
 import { assertLocalWebSearchSupport, executeOperationToIr, parseWebSearchOperations, runBackendSearchMulti, schemaErrorIr, startBatchFetch, UnsupportedLocalWebSearchFeatureError, unsupportedLocalWebSearchFeatureIr, type WebSearchCallIR, type WebSearchOperation } from '../../../../tools/web-search/operations.ts';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { ProviderOperationRequest, ProviderResponse } from '@floway-dev/provider';
 
 const ITERATION_CAP = 30;
 
 export const runWebSearchCall = defineStage<
   Fields<'request.webSearch.canonical'>,
-  Fields<'response.webSearch.ir'> & { 'response.usage.billable': readonly never[] },
+  ProviderOperationRequest<'alphaSearch'>,
+  ProviderResponse,
+  Fields<'response.webSearch.ir' | 'response.usage.billable'>,
+  Fields<'response.webSearch.ir' | 'response.usage.billable'>,
   SearchServices
 >({
   name: 'runWebSearchCall',
+  into: {
+    request: { needs: ['request.webSearch.canonical'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.http.body', 'response.provider.called', 'response.provider.modelKey', 'response.provider.previousCalls'], consumes: ['response.http.exchange', 'response.http.body', 'response.provider.called', 'response.provider.modelKey', 'response.provider.previousCalls'], provides: ['response.webSearch.ir', 'response.usage.billable'] },
+  },
   return: { provides: ['response.webSearch.ir', 'response.usage.billable'] },
-  execute: async (facts, use) => move({
-    ...facts,
-    'response.webSearch.ir': await execute(facts['request.webSearch.canonical'], use.webSearch),
-    // Search billing belongs to the backend operations; no model entity is called here.
-    'response.usage.billable': [],
-  }),
+  execute: async (facts, next, use) => {
+    let billable: Fields<'response.usage.billable'>['response.usage.billable'] = [];
+    const dispatch: AlphaSearchDispatcher = async (body, _signal, headers) => {
+      const alpha = use.webSearch.alpha;
+      if (alpha === undefined) throw new Error('Alpha Search was dispatched without a selected provider');
+      const candidate = await alpha.candidate;
+      const pipeline = candidate.provider.pipelines.alphaSearch;
+      if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no Alpha Search pipeline`);
+      const selector = use.rememberCandidates([candidate])[0];
+      use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
+      const { model: _callerModel, ...payload } = body;
+      const back = await next(providerEntry({ ...facts, 'route.attempt': selector, 'ingress.http.headers': [...headers] }, candidate, payload), pipeline);
+      billable = providerCalls(candidate, back as unknown as Record<string, unknown>);
+      const exchange = back['response.http.exchange'];
+      if (exchange.type === 'transportFailure') throw exchange.error;
+      const response = exchangeResponse(exchange);
+      // Formatting reads the finite body before the child returns; release then has no bytes left.
+      const bytes = await response.arrayBuffer();
+      spentBody(exchange.body);
+      return new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: exchange.headers.map(([name, value]): [string, string] => [name, value]) });
+    };
+    const ir = await execute(facts['request.webSearch.canonical'], use.webSearch, dispatch);
+    return move({ ...facts, 'response.webSearch.ir': ir, 'response.usage.billable': billable });
+  },
 });
 
-const execute = async (request: WebSearchRequest, runtime: WebSearchRuntime): Promise<WebSearchCallIR> => {
+const execute = async (request: WebSearchRequest, runtime: WebSearchRuntime, dispatch: AlphaSearchDispatcher): Promise<WebSearchCallIR> => {
   const { commands, toolName, iterationCount } = request;
   const parsed = parseWebSearchOperations(commands);
   if (iterationCount > ITERATION_CAP) {
@@ -38,7 +71,7 @@ const execute = async (request: WebSearchRequest, runtime: WebSearchRuntime): Pr
       'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
     );
   }
-  if (runtime.executeAlpha !== undefined) {
+  if (runtime.alpha !== undefined) {
     const first = parsed.ops[0];
     let action: OpenAIResponsesWebSearchAction;
     if (first.kind === 'search') {
@@ -53,7 +86,7 @@ const execute = async (request: WebSearchRequest, runtime: WebSearchRuntime): Pr
     } else {
       action = { type: 'search', query: Object.keys(commands).join(', ') };
     }
-    return await runtime.executeAlpha(request, action);
+    return await executeAlphaSearch({ dispatcher: dispatch, sessionId: runtime.alpha.sessionId, commands: request.commands, settings: request.settings, input: request.input, action, signal: runtime.session.signal });
   }
   try {
     assertLocalWebSearchSupport(commands);

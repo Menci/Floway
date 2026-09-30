@@ -7,7 +7,7 @@ import { type InterceptedFunctionCall, type HostedToolResultSlot, type TurnSumma
 import { FUNCTION_TOOL_NAME, webSearchHostedTool } from '../../../../src/data-plane/chat/openai-responses/hosted-tools/web-search.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
-import { resolveAlphaSearchDispatcher } from '../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
+import { resolveAlphaSearchCandidate } from '../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../src/data-plane/tools/web-search/provider.ts';
 import type {
@@ -24,6 +24,7 @@ import { openRunDump } from '../../../../src/dump/run-sink.ts';
 import { getRepo, initRepo } from '../../../../src/repo/index.ts';
 import { eventsOf, installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubAlphaSearchCandidate } from '../../../test-utils/alpha-search-provider.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
@@ -282,7 +283,7 @@ interface DepsOverrides {
 }
 
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
-const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
+const mockResolveAlpha = vi.mocked(resolveAlphaSearchCandidate);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
 // `loadWebSearchConfig()` returns a non-default value. The actual provider
@@ -4059,7 +4060,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
     output: 'alpha output',
     results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
-  mockResolveAlpha.mockResolvedValue(call);
+  mockResolveAlpha.mockResolvedValue(stubAlphaSearchCandidate(call));
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
@@ -4121,13 +4122,13 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_floway', model: 'gpt-search' },
   } satisfies WebSearchConfig);
-  mockResolveAlpha.mockResolvedValue(async () => new Response(JSON.stringify({
+  mockResolveAlpha.mockResolvedValue(stubAlphaSearchCandidate(async () => new Response(JSON.stringify({
     error: {
       type: 'internal_error',
       name: 'UnsupportedLocalWebSearchFeatureError',
       message: 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.',
     },
-  }), { status: 500, headers: { 'content-type': 'application/json' } }));
+  }), { status: 500, headers: { 'content-type': 'application/json' } })));
 
   const cascadedMessage = await runUnsupported();
   assertEquals(localMessage, expected);

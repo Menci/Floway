@@ -15,6 +15,7 @@ import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candid
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
@@ -44,7 +45,8 @@ const candidate = (
     provider: {
       upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider(calls as never),
+      pipelines: stubChatProviderPipelines(calls as never),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       {
@@ -163,6 +165,7 @@ const compact = async (request: CanonicalOpenAIResponsesPayload = payload, signa
     {
       gateway,
       background: () => {},
+      ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
       rememberChatSelection: () => {},
       chatPayloadFor: () => request,
@@ -197,6 +200,7 @@ beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   settlements.length = 0;
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
     openaiResponsesSnapshots: { lookup: async () => null, put: async () => {} },
@@ -438,8 +442,8 @@ describe('native compaction decryption', () => {
     }, { enabledFlags: decryptFlags })]);
     const { facts } = await compact({ ...payload, instructions: 'original instructions', tools: [{ type: 'function', name: 'f' }] });
     expect(calls.map(call => call.action)).toEqual(['compact', 'generate', 'generate']);
-    expect(calls[1].model).toBe(calls[0].model);
-    expect(calls[2].model).toBe(calls[0].model);
+    expect(calls[1].model).toStrictEqual(calls[0].model);
+    expect(calls[2].model).toStrictEqual(calls[0].model);
     for (const call of calls.slice(1)) {
       expect(call.body).not.toHaveProperty('instructions');
       expect(call.body).not.toHaveProperty('tools');

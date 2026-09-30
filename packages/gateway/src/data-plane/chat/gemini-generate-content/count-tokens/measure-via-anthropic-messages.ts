@@ -21,7 +21,7 @@ export const measureGeminiGenerateContentAsAnthropicMessages = defineStage<
   Fields<'request.chat.anthropicMessages'>,
   Counted<'response.chat.anthropicMessages'>,
   Counted<'response.chat.geminiGenerateContent'>,
-  Counted<'response.chat.geminiGenerateContent'> & Fields<'response.usage.billable' | 'response.http.headers'>,
+  Counted<'response.chat.geminiGenerateContent'> & Fields<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   ChatServices
 >({
   name: 'measureGeminiGenerateContentAsAnthropicMessages',
@@ -37,7 +37,7 @@ export const measureGeminiGenerateContentAsAnthropicMessages = defineStage<
       provides: ['response.chat.geminiGenerateContent'],
     },
   },
-  return: { provides: ['response.chat.geminiGenerateContent', 'response.usage.billable', 'response.http.headers'] },
+  return: { provides: ['response.chat.geminiGenerateContent', 'response.usage.billable', 'response.http.headers', 'response.http.body'] },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const { 'request.chat.geminiGenerateContent': asked, ...down } = facts;
@@ -62,6 +62,7 @@ export const measureGeminiGenerateContentAsAnthropicMessages = defineStage<
         // never opens a stream, which is why this chain carries no such key at all.
         'response.usage.billable': [],
         'response.http.headers': [],
+        'response.http.body': null,
       });
     }
 

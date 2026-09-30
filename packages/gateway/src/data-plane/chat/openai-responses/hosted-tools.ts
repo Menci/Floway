@@ -24,10 +24,11 @@ import { buildErrorFromRefusal, consumeTurnStreaming, createMergeState, material
 import { type ActiveHostedTool, type MergeState, type HostedToolDispatcher, type HostedToolRewrite, type HostedToolLoopState, type HostedToolRegistration, type HostedToolPrepareResult, type TurnSummary } from './hosted-tools/types.ts';
 import type { BillableEntity, Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import { providerCalls } from '../../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import type { ChatAnswer, ChatFacts } from '../facts.ts';
 import type { ChatServices } from '../services.ts';
-import { defer, defineStage, move, type Deferred } from '@floway-dev/pipeline';
+import { defer, defineStage, getFailureFacts, move, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
@@ -154,8 +155,8 @@ export const hostedTools = (
   registrations: readonly HostedToolRegistration[],
   wiring: HostedToolWiring,
 ) => defineStage<
-  R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
-  R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
+  R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>,
+  R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>,
   Answered,
   Answered,
   Answered,
@@ -164,20 +165,20 @@ export const hostedTools = (
   name: 'hostedTools',
   through: {
     request: {
-      needs: ['request.chat.openaiResponses', 'route.attempt', 'ingress.http.headers'],
+      needs: ['request.chat.openaiResponses', 'route.attempt', 'ingress.http.headers', 'serve.usage.prior'],
       consumes: [],
       provides: ['request.chat.openaiResponses'],
     },
     response: {
       needs: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers'],
-      consumes: [],
-      provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable'],
+      consumes: ['response.http.body'],
+      provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.body'],
     },
   },
   // A tool declaration this gateway cannot accept is answered here rather than dialled: the
   // upstream would have been asked for a tool it does not implement, on a body the dispatcher wrote.
   return: {
-    provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers'],
+    provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers', 'response.http.body'],
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -193,13 +194,14 @@ export const hostedTools = (
 
     const prepared = await prepareHostedTools(registrations, invocation, use.gateway);
     if ('refused' in prepared) {
-      use.log.debug('refusing a hosted-tool declaration this gateway cannot accept');
+      await use.log.debug('refusing a hosted-tool declaration this gateway cannot accept');
       return move({
         ...facts,
         'response.chat.openaiResponses': prepared.refused,
         [wiring.streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
+        'response.http.body': null,
       }) as never;
     }
     const { active } = prepared;
@@ -241,28 +243,40 @@ export const hostedTools = (
     // spliced stream ends — which is the moment the run is answerable for what it billed.
     const usage = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
 
+    let started = false;
+    let drainActive: () => Promise<void> = async () => {};
+    let closing: Promise<void> | undefined;
+    const close = (): Promise<void> => closing ??= (async () => {
+      await drainActive();
+      if (!started) {
+        const outcome = first.usage === null ? { billable: back['response.usage.billable'], failed: false } : await first.usage;
+        settle({ ...outcome, failed: true });
+      }
+      await iterator.return();
+    })();
+    const observeBody = (turn: Answered): void => {
+      if (!('response.http.body' in turn) || turn['response.http.body'] === null) return;
+      const body = turn['response.http.body'] as ReadableStream<Uint8Array> & Owned;
+      const drain = setRelease(body, async () => {
+        try { await drain(); } finally { await close(); }
+      });
+      drainActive = drain;
+    };
+    const iterator = (async function* () {
+      started = true;
+      yield* spliceTurns({
+        next, facts, invocation, merge, loopState, demoteForcedHostedToolChoiceAfterFirstTurn,
+        first, dispatchers, store: use.gateway.store, canonicalInput, active, billed, settle,
+        streamedUsage: wiring.streamedUsage, candidate,
+        reportFailure: error => { use.gateway.dump?.failed(error); }, observeBody,
+      });
+    })();
+    observeBody(back);
     return {
       ...back,
       'response.chat.openaiResponses': move({
         kind: 'stream' as const,
-        frames: {
-          [Symbol.asyncIterator]: () => spliceTurns({
-            next,
-            facts,
-            invocation,
-            merge,
-            loopState,
-            demoteForcedHostedToolChoiceAfterFirstTurn,
-            first,
-            dispatchers,
-            store: use.gateway.store,
-            canonicalInput,
-            active,
-            billed,
-            settle,
-            streamedUsage: wiring.streamedUsage,
-          }),
-        },
+        frames: { [Symbol.asyncIterator]: () => ({ next: () => iterator.next() }) },
       }),
       [wiring.streamedUsage]: move(usage),
       // What was known when this stage handed up, which is what the first call reported. The
@@ -274,8 +288,8 @@ export const hostedTools = (
 
 /** One descent, asked with the payload the dispatcher wrote. */
 const descend = async (
-  next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>) => Promise<Answered>,
-  facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
+  next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>) => Promise<Answered>,
+  facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>,
   payload: CanonicalOpenAIResponsesPayload,
 ): Promise<Answered> => await next(move({ ...facts, 'request.chat.openaiResponses': move(payload) }));
 
@@ -313,8 +327,8 @@ async function* consumeBilledTurn(
 }
 
 async function* spliceTurns(args: {
-  next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>) => Promise<Answered>;
-  facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>;
+  next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>) => Promise<Answered>;
+  facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'serve.usage.prior'>;
   invocation: OpenAIResponsesInvocation;
   merge: MergeState;
   loopState: HostedToolLoopState;
@@ -327,6 +341,9 @@ async function* spliceTurns(args: {
   billed: BillableEntity[];
   settle: (outcome: StreamOutcome) => void;
   streamedUsage: string;
+  candidate: ModelCandidate;
+  reportFailure: (error: unknown) => void;
+  observeBody: (back: Answered) => void;
 }): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
   const { invocation, merge, loopState, demoteForcedHostedToolChoiceAfterFirstTurn, dispatchers, store, active, billed, settle } = args;
   const baseInput = args.canonicalInput;
@@ -386,7 +403,15 @@ async function* spliceTurns(args: {
       };
       loopState.iterationCount += 1;
 
-      const back = await descend(args.next, args.facts, invocation.payload);
+      let back: Answered;
+      try {
+        back = await descend(args.next, { ...args.facts, 'serve.usage.prior': move([...args.facts['serve.usage.prior'], ...billed]) }, invocation.payload);
+      } catch (error) {
+        const atFailure = getFailureFacts(error);
+        if (atFailure !== undefined) billed.push(...providerCalls(args.candidate, atFailure));
+        throw error;
+      }
+      args.observeBody(back);
       const nextTurn = turnOf(back, args.streamedUsage);
       if (nextTurn === null) {
         failed = true;
@@ -399,6 +424,7 @@ async function* spliceTurns(args: {
     }
   } catch (error) {
     failed = true;
+    args.reportFailure(error);
     if (merge.lastSeenModel === null) throw error;
     yield synthesizeTerminalEnvelope(merge, {
       kind: 'failed',

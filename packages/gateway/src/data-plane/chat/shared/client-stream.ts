@@ -1,6 +1,6 @@
 import { recordStream, streamReferenceOf, type RunDump } from '../../../dump/run-sink.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
-import { defer, type Deferred } from '@floway-dev/pipeline';
+import { defer, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 
 export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
@@ -20,14 +20,16 @@ export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
   const generator = (async function* () {
     started = true;
     let failed = false;
+    let completed = false;
     try {
       for await (const frame of source) yield { frame, wire: render(frame) };
+      completed = true;
     } catch (error) {
       failed = true;
       dump?.failed(error);
       for (const frame of errorFrames(error)) yield { frame, wire: render(frame) };
     } finally {
-      settle(failed);
+      settle(failed || !completed);
     }
   })();
   // A protocol frame is published only after it has a valid transport representation.
@@ -39,7 +41,7 @@ export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
     rendered: { ...reference, [Symbol.asyncIterator]: () => (async function* () { for await (const packet of packets) yield packet.wire; })() },
     failed,
     release: async () => {
-      if (!started) settle(false);
+      if (!started) settle(true);
       await generator.return();
     },
   };
@@ -47,3 +49,11 @@ export const framedClientStream = <Frame extends ProtocolFrame<unknown>>(
 
 export const withClientVerdict = (reading: Deferred<StreamOutcome> | null, failed: Promise<boolean>): Deferred<StreamOutcome> | null =>
   reading === null ? null : defer(Promise.all([reading, failed]).then(([outcome, clientFailed]) => ({ ...outcome, failed: outcome.failed || clientFailed })));
+
+export const bindClientRelease = (facts: object, release: () => Promise<void>): void => {
+  if (!('response.http.body' in facts) || facts['response.http.body'] === null) return;
+  const body = facts['response.http.body'] as ReadableStream<Uint8Array> & Owned;
+  const drain = setRelease(body, async () => {
+    try { await drain(); } finally { await release(); }
+  });
+};

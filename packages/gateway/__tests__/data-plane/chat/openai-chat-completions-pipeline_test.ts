@@ -10,11 +10,13 @@ import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import type { StubChatProviderCall } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -25,7 +27,7 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
-  callOpenAIChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>,
+  callOpenAIChatCompletions: StubChatProviderCall<'openaiChatCompletions'>,
   upstreamId = 'up_a',
   flags: readonly FlagId[] = [],
 ): ModelCandidate => {
@@ -34,7 +36,8 @@ const candidate = (
     provider: {
       upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callOpenAIChatCompletions }),
+      pipelines: stubChatProviderPipelines({ callOpenAIChatCompletions }),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       {
@@ -110,6 +113,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
+    ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => affinityPayload,
@@ -127,6 +131,7 @@ const serveWith = async (
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);
@@ -451,7 +456,7 @@ describe('the chat completions chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); }, 'up_dead'),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, 'up_dead'),
       candidate(async () => { tried.push('alive'); return stream(chunk('hi')); }, 'up_alive'),
     ]);
 

@@ -12,11 +12,13 @@ import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/ant
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import type { StubChatProviderCall } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -26,12 +28,7 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 
 let live: readonly ModelCandidate[] = [];
 
-type CallAnthropicMessages = (
-  model: unknown,
-  body: unknown,
-  signal: AbortSignal | undefined,
-  opts: AnthropicMessagesUpstreamCallOptions,
-) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+type CallAnthropicMessages = StubChatProviderCall<'anthropicMessages'>;
 
 const candidate = (callAnthropicMessages: CallAnthropicMessages, upstreamId = 'up_a'): ModelCandidate => {
   const endpoints = { anthropicMessages: {} };
@@ -42,7 +39,8 @@ const candidate = (callAnthropicMessages: CallAnthropicMessages, upstreamId = 'u
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callAnthropicMessages: callAnthropicMessages as never }),
+      pipelines: stubChatProviderPipelines({ callAnthropicMessages: callAnthropicMessages as never }),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       { id: 'claude-model', endpoints, providerModels: { [upstreamId]: stubProviderModel({ id: 'claude-model', endpoints }) } },
@@ -120,6 +118,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
+    ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
@@ -173,6 +172,7 @@ beforeEach(() => {
   affinityPayload = payload;
   asked = 0;
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);
@@ -297,7 +297,7 @@ describe('the messages chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); }, 'up_dead'),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, 'up_dead'),
       candidate(async () => { tried.push('alive'); return stream(turn('hi')); }, 'up_alive'),
     ]);
 

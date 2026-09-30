@@ -56,6 +56,7 @@ const meterOpenAIResponses = (
         if (isOpenAIResponsesTerminalEvent(frame.event)) {
           sawTerminal = true;
           failed = frame.event.type === 'response.failed' || frame.event.type === 'error';
+          settle({ billable: [billedOpenAIResponsesEntity(identity, reported)], failed });
         }
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the

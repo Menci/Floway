@@ -36,15 +36,15 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 };
 
 export const retryRateLimitedImages = defineStage<
-  Fields<'request.openaiImages.canonical' | 'route.attempt'>,
-  Fields<'request.openaiImages.canonical' | 'route.attempt'>,
+  Fields<'request.openaiImages.canonical' | 'route.attempt' | 'serve.usage.prior'>,
+  Fields<'request.openaiImages.canonical' | 'route.attempt' | 'serve.usage.prior'>,
   Fields<'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable' | 'response.openaiImages.streamedUsage'>,
   Fields<'response.http.status' | 'response.http.headers' | 'response.http.body' | 'response.usage.billable' | 'response.openaiImages.streamedUsage'>,
   GatewayServices
 >({
   name: 'retryRateLimitedImages',
   through: {
-    request: { needs: ['request.openaiImages.canonical', 'route.attempt'], consumes: [], provides: [] },
+    request: { needs: ['request.openaiImages.canonical', 'route.attempt', 'serve.usage.prior'], consumes: [], provides: ['serve.usage.prior'] },
     response: {
       needs: ['response.http.status', 'response.http.headers', 'response.http.body', 'response.usage.billable', 'response.openaiImages.streamedUsage'],
       consumes: ['response.http.body'],
@@ -54,13 +54,14 @@ export const retryRateLimitedImages = defineStage<
   execute: async (facts, next, use) => {
     const prior: BillableEntity[] = [];
     for (let retry = 0; ; retry++) {
-      const back = await next(facts);
+      const back = await next({ ...facts, 'serve.usage.prior': move([...facts['serve.usage.prior'], ...prior]) });
       if (back['response.http.status'] !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) {
-        if (prior.length === 0) return back;
+        if (prior.length === 0) return { ...back, 'serve.usage.prior': facts['serve.usage.prior'] };
         const pending = back['response.openaiImages.streamedUsage'] as Deferred<StreamOutcome> | null;
         const calls = move([...prior]);
         return {
           ...back,
+          'serve.usage.prior': facts['serve.usage.prior'],
           'response.usage.billable': move([...calls, ...back['response.usage.billable']]),
           'response.openaiImages.streamedUsage': pending === null ? null
             : move(defer(pending.then(outcome => ({ ...outcome, billable: move([...calls, ...outcome.billable]) })))),

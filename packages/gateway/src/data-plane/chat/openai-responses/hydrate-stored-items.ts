@@ -14,9 +14,10 @@ const refuseStoredItems = (
   status: number,
   message: string,
   extra: { readonly param: string; readonly code: string | null },
-): Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers'> => ({
+): Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'> => ({
   'response.usage.billable': [],
   'response.http.headers': [],
+  'response.http.body': null,
   'response.chat.openaiResponses.streamedUsage': null,
   'response.chat.openaiResponses': {
     status,
@@ -49,7 +50,7 @@ export const hydrateStoredItems = (
   Fields<'request.chat.openaiResponses' | 'request.chat.openaiResponses.privatePayloads'>,
   Record<string, never>,
   Record<string, never>,
-  Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers'>,
+  Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   ChatServices
 >({
   name: 'hydrateStoredItems',
@@ -66,7 +67,7 @@ export const hydrateStoredItems = (
       'response.chat.openaiResponses',
       'response.chat.openaiResponses.streamedUsage',
       'response.usage.billable',
-      'response.http.headers',
+      'response.http.headers', 'response.http.body',
     ],
   },
   execute: async (facts, next, use) => {

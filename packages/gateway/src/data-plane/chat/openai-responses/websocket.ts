@@ -13,7 +13,7 @@ import type { Context } from 'hono';
 import { type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './facts.ts';
 import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
 import { openaiResponsesServePipeline } from './pipeline.ts';
-import { openRunDump } from '../../../dump/run-sink.ts';
+import { recordStream, openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
@@ -256,6 +256,7 @@ const openOpenAIResponsesWebSocketTurn = (
     services: {
       ...base.services,
       gateway,
+      recordProtocolFrames: frames => recordStream(frames, gateway.dump),
       rememberChatSelection: payloadFor => { materialize = payloadFor; },
       chatPayloadFor: selector => {
         if (materialize === undefined) {

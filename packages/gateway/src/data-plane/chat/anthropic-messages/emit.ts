@@ -6,7 +6,7 @@ import { isFailure, renderFailure, mintedAs } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
@@ -63,7 +63,7 @@ export const emitAnthropicMessages = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
 
@@ -84,7 +84,7 @@ export const emitAnthropicMessages = defineStage<
         'response.chat.anthropicMessages.rendered': move(
           await collectAnthropicMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
     const completed = framedClientStream(
@@ -93,13 +93,14 @@ export const emitAnthropicMessages = defineStage<
       error => [eventFrame({ type: 'error' as const, error: toInternalDebugError(error, 'anthropicMessages') })],
       use.gateway.dump,
     );
+    bindClientRelease(back, completed.release);
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.anthropicMessages.rendered': move(completed.rendered),
       'response.chat.anthropicMessages.streamedUsage': move(withClientVerdict(back['response.chat.anthropicMessages.streamedUsage'], completed.failed)),
-      'response.http.status': 200,
+      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
     };
   },
 });

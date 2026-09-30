@@ -51,7 +51,7 @@ export const dialChatWire = (wiring: ChatWiring) => defineStage<
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const target = wiring.pick(candidate.model.endpoints);
-    use.log.debug('dialling', { upstream: facts['route.attempt'].upstreamId, wire: target });
+    await use.log.debug('dialling', { upstream: facts['route.attempt'].upstreamId, wire: target });
     return await next(facts, wiring.wire(target, candidate, use));
   },
 });

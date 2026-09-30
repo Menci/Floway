@@ -9,6 +9,7 @@ import { geminiGenerateContentCountTokensPipeline } from '../../../src/data-plan
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -44,7 +45,8 @@ const candidate = (
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
+      pipelines: stubChatProviderPipelines({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       {
@@ -86,6 +88,7 @@ const count = async (
     {
       gateway,
       background: () => {},
+      ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
       rememberChatSelection: () => {},
       chatPayloadFor: () => request,
@@ -102,6 +105,7 @@ const count = async (
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);

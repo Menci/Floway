@@ -26,7 +26,8 @@ export const prepareHostedImageGeneration = defineStage<
       use.gateway.dump?.failed(error);
       return move({
         ...facts, 'response.openaiImages.canonical': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.openaiImages.streamedUsage': null, 'response.http.status': 502, 'response.http.headers': [], 'response.usage.billable': [],
+        'response.openaiImages.streamedUsage': null, 'response.http.status': 502, 'response.http.headers': [],
+        'response.http.body': null, 'response.usage.billable': [],
       });
     }
     return await next({

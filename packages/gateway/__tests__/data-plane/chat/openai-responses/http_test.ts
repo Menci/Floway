@@ -7,6 +7,7 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -140,7 +141,7 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null, pipelines: {},
+      modelsCache: null, pipelines: stubChatProviderPipelines(provider),
       instance: provider,
     },
     model: stubInternalModel({
@@ -830,7 +831,7 @@ const translatedCustomCandidate = (
       };
     },
   });
-  return { ...candidate, provider: { ...candidate.provider, instance } };
+  return { ...candidate, provider: { ...candidate.provider, instance, pipelines: stubChatProviderPipelines(instance) } };
 };
 
 for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {

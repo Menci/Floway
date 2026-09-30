@@ -10,11 +10,13 @@ import { anthropicMessagesCountTokensPipeline } from '../../../src/data-plane/ch
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
 import { type FlagId, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderCallResult } from '@floway-dev/provider';
+import type { StubChatProviderCall } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -24,12 +26,7 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 
 let live: readonly ModelCandidate[] = [];
 
-type CountTokens = (
-  model: unknown,
-  body: unknown,
-  signal: AbortSignal | undefined,
-  opts: AnthropicMessagesUpstreamCallOptions,
-) => Promise<ProviderCallResult>;
+type CountTokens = StubChatProviderCall<'anthropicMessagesCountTokens'>;
 
 const candidate = (
   callAnthropicMessagesCountTokens: CountTokens,
@@ -50,7 +47,8 @@ const candidate = (
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
+      pipelines: stubChatProviderPipelines({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       {
@@ -96,6 +94,7 @@ const count = async (
     {
       gateway,
       background: () => {},
+      ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
       rememberChatSelection: () => {},
       chatPayloadFor: () => affinityPayload,
@@ -113,6 +112,7 @@ beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   affinityPayload = payload;
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);
@@ -301,7 +301,7 @@ describe('the messages count-tokens chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); }, { upstreamId: 'up_dead' }),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, { upstreamId: 'up_dead' }),
       candidate(async () => { tried.push('alive'); return counted(7); }, { upstreamId: 'up_alive' }),
     ]);
 

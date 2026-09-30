@@ -5,7 +5,7 @@ import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/fa
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -65,7 +65,7 @@ export const emitOpenAIChatCompletions = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
 
@@ -86,7 +86,7 @@ export const emitOpenAIChatCompletions = defineStage<
         'response.chat.openaiChatCompletions.rendered': move(
           await collectOpenAIChatCompletionsProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
     const completed = framedClientStream<ProtocolFrame<ClientOpenAIChatCompletionsStreamEvent>>(
@@ -95,13 +95,14 @@ export const emitOpenAIChatCompletions = defineStage<
       error => [eventFrame({ error: toInternalDebugError(error, 'openaiChatCompletions') })],
       use.gateway.dump,
     );
+    bindClientRelease(back, completed.release);
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.openaiChatCompletions.rendered': move(completed.rendered),
       'response.chat.openaiChatCompletions.streamedUsage': move(withClientVerdict(back['response.chat.openaiChatCompletions.streamedUsage'], completed.failed)),
-      'response.http.status': 200,
+      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
     };
   },
 });

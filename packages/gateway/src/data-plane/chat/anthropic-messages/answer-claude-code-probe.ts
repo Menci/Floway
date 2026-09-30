@@ -28,11 +28,11 @@ export const answerClaudeCodeProbe = defineStage<
   Fields<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers'>,
   Fields<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers'>,
   Fields<'response.chat.anthropicMessages' | 'response.chat.anthropicMessages.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+  | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   Fields<'response.chat.anthropicMessages' | 'response.chat.anthropicMessages.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+  | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   Fields<'response.chat.anthropicMessages' | 'response.chat.anthropicMessages.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+  | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   ChatServices
 >({
   name: 'answerClaudeCodeProbe',
@@ -53,7 +53,7 @@ export const answerClaudeCodeProbe = defineStage<
       'response.chat.anthropicMessages',
       'response.chat.anthropicMessages.streamedUsage',
       'response.usage.billable',
-      'response.http.headers',
+      'response.http.headers', 'response.http.body',
     ],
   },
   execute: async (facts, next, use) => {
@@ -64,7 +64,7 @@ export const answerClaudeCodeProbe = defineStage<
     // The probe is answered *for* this candidate, so it is the one a follow-up turn carrying
     // our own state must come back to — the same statement a dialled attempt makes.
     use.selectAffinity(candidate);
-    use.log.debug('answering a Claude Code probe without dialling', { upstream: facts['route.attempt'].upstreamId });
+    await use.log.debug('answering a Claude Code probe without dialling', { upstream: facts['route.attempt'].upstreamId });
     return move({
       ...facts,
       'response.chat.anthropicMessages': {
@@ -79,6 +79,7 @@ export const answerClaudeCodeProbe = defineStage<
         quantities: {},
       }],
       'response.http.headers': [],
+      'response.http.body': null,
     });
   },
 });

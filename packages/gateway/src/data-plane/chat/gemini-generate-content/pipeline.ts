@@ -24,7 +24,7 @@ export const geminiGenerateContentServePipeline = (payload: GeminiGenerateConten
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
-      owns: [],
+      owns: ['response.http.body'],
       pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),

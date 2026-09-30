@@ -22,7 +22,7 @@ export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
-      owns: [],
+      owns: ['response.http.body'],
       pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.anthropicMessages'),

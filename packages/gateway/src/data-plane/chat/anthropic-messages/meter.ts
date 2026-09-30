@@ -50,6 +50,7 @@ const meterAnthropicMessages = (
         if (isAnthropicMessagesTerminalFrame(frame)) {
           sawTerminal = true;
           failed = frame.type === 'event' && frame.event.type === 'error';
+          settle({ billable: [billedEntity(reported, identity)], failed });
         }
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the

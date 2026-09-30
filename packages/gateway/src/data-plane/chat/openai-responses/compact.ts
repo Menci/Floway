@@ -32,7 +32,7 @@ export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponses
     resolveChatCandidates(openaiResponsesNarrowing(() => prepared)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
-      owns: [],
+      owns: ['response.http.body'],
       pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),

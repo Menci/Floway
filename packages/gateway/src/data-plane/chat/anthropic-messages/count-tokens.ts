@@ -21,7 +21,7 @@ export const anthropicMessagesCountTokensPipeline = (payload: AnthropicMessagesP
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
-      owns: [],
+      owns: ['response.http.body'],
     }),
     materializeAttempt('request.chat.anthropicMessages'),
     ...anthropicMessagesCountTokensWire,

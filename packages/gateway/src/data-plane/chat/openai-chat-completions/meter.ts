@@ -47,6 +47,7 @@ const meterOpenAIChatCompletions = (
         if (isTerminal(frame)) {
           completed = true;
           failed = frame.type === 'event' && 'error' in frame.event;
+          settle({ billable: [billedEntity(reported, identity)], failed });
         }
         yield frame;
         // The terminator is written out before the read stops, because it is what the client

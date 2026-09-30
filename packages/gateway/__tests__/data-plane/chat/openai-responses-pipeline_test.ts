@@ -18,12 +18,14 @@ import type { StreamOutcome } from '../../../src/data-plane/pipeline/serve.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run, type Deferred } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
+import type { StubChatProviderCall } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -35,7 +37,7 @@ let live: readonly ModelCandidate[] = [];
 
 const candidate = (
   calls: {
-    callOpenAIResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderOpenAIResponsesResult>;
+    callOpenAIResponses?: StubChatProviderCall<'openaiResponses'>;
     callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
@@ -47,7 +49,8 @@ const candidate = (
     provider: {
       upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider(calls as never),
+      pipelines: stubChatProviderPipelines(calls as never),
+      instance: stubProvider(),
     },
     model: stubInternalModel(
       {
@@ -169,6 +172,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
+    ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
@@ -243,6 +247,7 @@ beforeEach(() => {
   asked = 0;
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);
@@ -556,7 +561,7 @@ describe('the responses chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate({ callOpenAIResponses: async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); } }, { upstreamId: 'up_dead' }),
+      candidate({ callOpenAIResponses: async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; } }, { upstreamId: 'up_dead' }),
       candidate({ callOpenAIResponses: async () => { tried.push('alive'); return stream(completed('hi')); } }, { upstreamId: 'up_alive' }),
     ]);
 

@@ -10,11 +10,12 @@
 
 import type { ChatServices } from './services.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from './shared/gateway-ctx.ts';
+import { recordStream } from '../../dump/run-sink.ts';
+import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
 import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
 import type { OpenAIResponsesStatefulStore } from './openai-responses/items/store.ts';
-import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface ChatPrologue extends Prologue {
@@ -48,6 +49,7 @@ export const openChatPrologue = (
     services: {
       ...base.services,
       gateway,
+      recordProtocolFrames: frames => recordStream(frames, gateway.dump),
       rememberChatSelection: payloadFor => { materialize = payloadFor; },
       chatPayloadFor: (selector: AttemptSelector) => {
         if (materialize === undefined) {

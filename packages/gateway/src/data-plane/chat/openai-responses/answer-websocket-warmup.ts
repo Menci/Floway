@@ -36,6 +36,7 @@ export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request
       'response.chat.openaiResponses.streamedUsage': null,
       'response.usage.billable': [{ identity: telemetryModelIdentity(candidate, providerModelOf(candidate).id), quantities: {} }],
       'response.http.headers': [],
+      'response.http.body': null,
     });
   },
 });

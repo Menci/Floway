@@ -37,9 +37,9 @@ export interface ChatNarrowing<Refusal extends object> {
 export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNarrowing<Refusal>) => defineStage<
   Slice<'serve.model'>,
   Slice<'serve.model' | 'serve.candidates'>,
-  Slice<'response.usage.billable' | 'response.http.headers'>,
-  Slice<'response.usage.billable' | 'response.http.headers'>,
-  Slice<'response.usage.billable' | 'response.http.headers'> & Refusal,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'> & Refusal,
   ChatServices
 >({
   name: 'resolveChatCandidates',
@@ -47,7 +47,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
     request: { needs: ['serve.model'], consumes: [], provides: ['serve.candidates'] },
     response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
+  return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.body', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -65,6 +65,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
         ...facts,
         'response.usage.billable': [],
         'response.http.headers': [],
+        'response.http.body': null,
         ...narrowing.refuse(status, message, reason),
       });
 
@@ -86,7 +87,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
     // is owed is part of that live half — affinity materializes it per candidate, and it
     // carries the client's own state rewritten for the upstream that will see it.
     use.rememberChatSelection(selection.payloadFor);
-    use.log.debug('resolved chat candidates', { model, viable: selection.candidates.length, resolved: candidates.length });
+    await use.log.debug('resolved chat candidates', { model, viable: selection.candidates.length, resolved: candidates.length });
     return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(selection.candidates)) });
   },
 });

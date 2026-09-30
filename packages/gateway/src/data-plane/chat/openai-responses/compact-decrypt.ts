@@ -3,11 +3,12 @@ import { internalErrorEnvelope } from './errors.ts';
 import { syntheticEventsFromCompaction, syntheticEventsFromResult } from './items/output.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import { providerCalls } from '../../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import type { ChatFacts, ChatAnswer } from '../facts.ts';
 import type { ChatServices } from '../services.ts';
 import type { ChatWire } from '../wire.ts';
-import { defer, defineStage, move, type Deferred } from '@floway-dev/pipeline';
+import { defer, defineStage, getFailureFacts, move, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesProtocolEventsToResult,
@@ -18,7 +19,7 @@ import {
   type OpenAIResponsesStreamEvent,
 } from '@floway-dev/protocols/openai-responses';
 
-type Request = Pick<ChatFacts, 'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>;
+type Request = Pick<ChatFacts, 'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'serve.usage.prior'>;
 type Answer = Pick<ChatFacts, 'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>;
 
 export const decryptNativeCompaction = (spec: {
@@ -30,11 +31,11 @@ export const decryptNativeCompaction = (spec: {
 }) => defineStage<Request, Request, Answer, Answer, ChatServices>({
   name: 'decryptNativeCompaction',
   into: {
-    request: { needs: ['request.chat.openaiResponses', 'route.attempt', 'ingress.http.headers', 'ingress.chat.sourceProtocol'], consumes: [], provides: ['request.chat.openaiResponses'] },
+    request: { needs: ['request.chat.openaiResponses', 'route.attempt', 'ingress.http.headers', 'ingress.chat.sourceProtocol', 'serve.usage.prior'], consumes: [], provides: ['request.chat.openaiResponses'] },
     response: {
       needs: ['response.chat.openaiResponses', spec.streamedUsage, 'response.usage.billable', 'response.http.headers'],
-      consumes: [],
-      provides: ['response.chat.openaiResponses', spec.streamedUsage, 'response.usage.billable'],
+      consumes: ['response.http.body'],
+      provides: ['response.chat.openaiResponses', spec.streamedUsage, 'response.usage.billable', 'response.http.body'],
     },
   },
   execute: async (facts, next, use) => {
@@ -86,7 +87,14 @@ export const decryptNativeCompaction = (spec: {
           ],
           store: false,
         };
-        const replay = await next({ ...facts, 'request.chat.openaiResponses': move(replayPayload) }, spec.replay as never);
+        let replay: Answer;
+        try {
+          replay = await next({ ...facts, 'request.chat.openaiResponses': move(replayPayload), 'serve.usage.prior': move([...facts['serve.usage.prior'], ...billed]) }, spec.replay as never);
+        } catch (error) {
+          const atFailure = getFailureFacts(error);
+          if (atFailure !== undefined) billed.push(...providerCalls(use.resolveAttempt(facts['route.attempt']), atFailure));
+          throw error;
+        }
         const replayAnswer = replay['response.chat.openaiResponses'];
         if (isFailure(replayAnswer)) {
           billed.push(...replay['response.usage.billable']);
@@ -102,6 +110,7 @@ export const decryptNativeCompaction = (spec: {
       const result = { ...native, ...(!spec.compactEndpoint ? { object: 'response' as const } : {}), output, ...(usage === undefined ? {} : { usage }) };
       return returned(initial, { kind: 'stream', frames: spec.compactEndpoint ? syntheticEventsFromCompaction(result) : syntheticEventsFromResult(result) }, false);
     } catch (error) {
+      use.gateway.dump?.failed(error);
       const envelope = internalErrorEnvelope(error);
       return returned(initial, { status: 500, message: envelope.error.message, envelope }, true);
     }

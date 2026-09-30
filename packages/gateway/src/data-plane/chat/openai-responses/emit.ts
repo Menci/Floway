@@ -5,7 +5,7 @@ import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
-import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';
@@ -72,7 +72,7 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
 
@@ -107,7 +107,7 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
           'response.chat.openaiResponses.rendered': move(
             await collectOpenAIResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
           ),
-          'response.http.status': 200,
+          'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
         };
       } catch (error) {
         // Nothing has gone out yet, so the fault is still a status. A turn the gateway could
@@ -127,12 +127,13 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
     if (framing === 'events') {
       const clientStream = completeEventStream(egress, error => { use.gateway.dump?.failed(error); });
       const frames = recordStream(clientStream.frames, use.gateway.dump);
+      bindClientRelease(back, clientStream.release);
       return {
         ...rest,
         'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(frames),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
         [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], clientStream.failed)),
       };
     }
@@ -147,12 +148,13 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
       error => [eventFrame(streamErrorEvent(error)), ...(announced === undefined ? [] : [eventFrame(streamFailedEvent(announced, error))])],
       use.gateway.dump,
     );
+    bindClientRelease(back, completed.release);
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.openaiResponses.rendered': move(completed.rendered),
-      'response.http.status': 200,
+      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], completed.failed)),
     };
   },
@@ -192,22 +194,31 @@ const streamFailedEvent = (announced: ClientResponseResource, error: unknown): C
 const completeEventStream = (
   frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
   reportFailure: (error: unknown) => void,
-): { frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>; failed: Promise<boolean> } => {
+): { frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>; failed: Promise<boolean>; release: () => Promise<void> } => {
   let settle!: (failed: boolean) => void;
   const failed = new Promise<boolean>(resolve => { settle = resolve; });
+  let started = false;
   const stream = (async function* () {
+    started = true;
     let failed = false;
+    let completed = false;
     try {
       for await (const frame of frames) if (frame.type !== 'done') yield frame;
+      completed = true;
     } catch (error) {
       failed = true;
       reportFailure(error);
       throw error;
     } finally {
-      settle(failed);
+      settle(failed || !completed);
     }
   })();
-  return { frames: { [Symbol.asyncIterator]: () => stream }, failed };
+  return {
+    frames: { [Symbol.asyncIterator]: () => stream }, failed, release: async () => {
+      if (!started) settle(true);
+      await stream.return();
+    },
+  };
 };
 
 const completedSseFrames = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => ({

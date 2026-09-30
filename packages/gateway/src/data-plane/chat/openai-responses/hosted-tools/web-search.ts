@@ -3,8 +3,7 @@ import { runWebSearchSubRequest } from './search-sub-request.ts';
 import { type HostedToolOutputItem, type HostedToolRegistration } from './types.ts';
 import { shortId } from '../../../../shared/short-id.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
-import { executeAlphaSearch } from '../../../tools/web-search/alpha-search/execution.ts';
-import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import { resolveAlphaSearchCandidate } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
 import { normalizeDomainEntry } from '../../../tools/web-search/domain-normalize.ts';
 import {
@@ -603,26 +602,20 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
-  let executeAlpha: WebSearchRuntime['executeAlpha'];
-  if (webSearchConfig.passthroughOpenAiSearch.enabled) {
-    const dispatcher = resolveAlphaSearchDispatcher({
-      config: webSearchConfig.passthroughOpenAiSearch,
-      upstreamIds: gatewayCtx.upstreamIds,
-      scheduler: gatewayCtx.backgroundScheduler,
-      runtimeLocation: gatewayCtx.runtimeLocation,
-    });
-    const sessionId = crypto.randomUUID();
-    executeAlpha = async (request, action) => await executeAlphaSearch({
-      dispatcher: await dispatcher,
-      sessionId,
-      commands: request.commands,
-      settings: request.settings,
-      input: request.input,
-      action,
-      signal: gatewayCtx.abortSignal,
-    });
-  }
-  const webSearch: WebSearchRuntime = { session, ...(executeAlpha === undefined ? {} : { executeAlpha }) };
+  const webSearch: WebSearchRuntime = {
+    session,
+    ...(webSearchConfig.passthroughOpenAiSearch.enabled ? {
+      alpha: {
+        candidate: resolveAlphaSearchCandidate({
+          config: webSearchConfig.passthroughOpenAiSearch,
+          upstreamIds: gatewayCtx.upstreamIds,
+          scheduler: gatewayCtx.backgroundScheduler,
+          runtimeLocation: gatewayCtx.runtimeLocation,
+        }),
+        sessionId: crypto.randomUUID(),
+      },
+    } : {}),
+  };
 
   return {
     type: 'active',

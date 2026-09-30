@@ -6,6 +6,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -115,7 +116,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(provider), instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,

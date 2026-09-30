@@ -4,8 +4,11 @@ import type { WebSearchRequest } from '../../../../../src/data-plane/chat/openai
 import { runWebSearchSubRequest } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/search-sub-request.ts';
 import { initDumpBroker, initDumpStore } from '../../../../../src/dump/registry.ts';
 import { openRunDump } from '../../../../../src/dump/run-sink.ts';
+import { initRepo } from '../../../../../src/repo/index.ts';
 import type { ApiKey } from '../../../../../src/repo/types.ts';
 import { eventsOf, installDumpStubs } from '../../../../dump/test-fixtures.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { stubAlphaSearchCandidate } from '../../../../test-utils/alpha-search-provider.ts';
 import { flushBackground, trackBackground } from '../../../../test-utils/background-tracker.ts';
 import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
@@ -19,6 +22,7 @@ const request: WebSearchRequest = {
 
 for (const failed of [false, true]) {
   test(`web search records backend content before dispatch and closes its ${failed ? 'failed' : 'successful'} child run`, async () => {
+    initRepo(new InMemoryRepo());
     const dumps = installDumpStubs(initDumpStore, initDumpBroker);
     const dump = openRunDump(apiKey, { method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null } }, trackBackground, true, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
     const parent = mockGatewayCtx({ dump, backgroundScheduler: trackBackground });
@@ -26,13 +30,14 @@ for (const failed of [false, true]) {
     let dispatched = false;
     const invocation = runWebSearchSubRequest(parent, request, {
       session: { pageCache: new Map(), getProvider: () => { throw new Error('local provider must not dispatch in alpha mode'); }, apiKeyId: apiKey.id },
-      executeAlpha: async (content, action) => {
-        dispatched = true;
-        expect(content).toEqual(request);
-        expect(Object.isFrozen(content.commands)).toBe(true);
-        expect(action).toEqual({ type: 'search', query: 'pipeline streams', queries: ['pipeline streams'] });
-        if (failed) throw fault;
-        return { action, results: [], outputText: 'documentation' };
+      alpha: {
+        sessionId: 'search-session', candidate: Promise.resolve(stubAlphaSearchCandidate(async body => {
+          dispatched = true;
+          expect(body).toEqual({ id: 'search-session', commands: request.commands, settings: request.settings, input: request.input });
+          expect(Object.isFrozen(body.commands)).toBe(true);
+          if (failed) throw fault;
+          return new Response(JSON.stringify({ output: 'documentation' }), { headers: { 'content-type': 'application/json' } });
+        })),
       },
     });
     if (failed) await expect(invocation).rejects.toBe(fault);
@@ -47,6 +52,7 @@ for (const failed of [false, true]) {
     const decoded = eventsOf(record).map(event => read(event as unknown as DumpEvent));
     const entered = decoded.find(event => event?.facts && 'request.webSearch.canonical' in event.facts);
     expect(entered?.facts?.['request.webSearch.canonical']).toEqual(request);
+    expect(decoded).toContainEqual(expect.objectContaining({ facts: expect.objectContaining({ 'request.provider.payload': { id: 'search-session', commands: request.commands, settings: request.settings, input: request.input } }) }));
     expect(new TextDecoder().decode(record.events)).not.toContain('searchCall');
   });
 }

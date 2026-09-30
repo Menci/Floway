@@ -1,88 +1,41 @@
-import type { Fields, Counted } from './facts.ts';
 import { bodyForAttempt } from '../../../pipeline/attempt-body.ts';
-import { buildUpstreamCallOptions } from '../../../shared/upstream-call-options.ts';
+import { providerEntry } from '../../../pipeline/provider-entry.ts';
 import type { ChatServices } from '../../services.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../../shared/alias-rules.ts';
+import { providerChatAnswer } from '../../shared/provider-answer.ts';
+import type { Fields } from '../facts.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { parseAnthropicBetaHeader } from '@floway-dev/protocols/anthropic-messages';
-import { providerModelOf } from '@floway-dev/provider';
+import type { ProviderOperationRequest, ProviderChatResponse } from '@floway-dev/provider';
 
-/**
- * The ending. It asks the upstream what the turn would cost and hands the answer up as a
- * value — the one shape this operation ever produces, because a measurement is a body and
- * never a stream.
- */
 export const callAnthropicMessagesCountTokensUpstream = defineStage<
   Fields<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
-  Counted<'response.chat.anthropicMessages'> & Fields<'response.usage.billable' | 'response.http.headers'>,
+  ProviderOperationRequest<'anthropicMessagesCountTokens'>,
+  ProviderChatResponse<'anthropicMessagesCountTokens'>,
+  Fields<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status' | 'response.http.body'>,
   ChatServices
 >({
   name: 'callAnthropicMessagesCountTokensUpstream',
-  return: {
-    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers'],
+  into: {
+    request: { needs: ['request.chat.anthropicMessages', 'route.attempt', 'ingress.http.headers', 'ingress.chat.sourceProtocol'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers', 'request.provider.anthropicBeta'] },
+    response: { needs: ['response.http.exchange', 'response.provider.output', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.output', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-
-    // The payload affinity materialized for this candidate, as every stage between the fork
-    // and here has rewritten it — built for the dial exactly as generation builds it, so what
-    // is measured is what generation would be charged for.
     const body = bodyForAttempt(facts['request.chat.anthropicMessages'], candidate, applyRulesToUpstreamAnthropicMessages);
-
-    // Anthropic's beta flags have a typed path of their own, so no header allowlist can admit
-    // them, and they are the client's own only when the client spoke this protocol.
     const headers = new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]));
-    const anthropicBeta = facts['ingress.chat.sourceProtocol'] === 'anthropicMessages'
-      ? parseAnthropicBetaHeader(headers.get('anthropic-beta'))
-      : [];
+    const anthropicBeta = facts['ingress.chat.sourceProtocol'] === 'anthropicMessages' ? parseAnthropicBetaHeader(headers.get('anthropic-beta')) : [];
     headers.delete('anthropic-beta');
-
-    // Nothing here is billed: measuring is not generating, and an upstream that answered
-    // the question charged nothing for it.
-    const nothingBilled = { 'response.usage.billable': [] as const };
-
-    let response: Response;
-    try {
-      ({ response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(
-        providerModelOf(candidate),
-        body,
-        use.gateway.abortSignal,
-        { ...buildUpstreamCallOptions(candidate, use.gateway, headers), anthropicBeta },
-      ));
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so there are no headers to carry.
-      return move({
-        ...facts,
-        ...nothingBilled,
-        'response.chat.anthropicMessages': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.http.headers': [],
-      });
-    }
-
-    const text = await response.text();
-    let parsed: unknown;
-    try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }
-
-    if (!response.ok) {
-      use.log.warn('upstream refused', { status: response.status });
-      return move({
-        ...facts,
-        ...nothingBilled,
-        'response.chat.anthropicMessages': {
-          status: response.status,
-          message: text,
-          ...(parsed === undefined ? {} : { body: parsed }),
-        },
-        'response.http.headers': [...response.headers],
-      });
-    }
-
+    const pipeline = candidate.provider.pipelines.anthropicMessagesCountTokens;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no anthropicMessagesCountTokens pipeline`);
+    const back = await next(move({ ...providerEntry(facts, candidate, body, [...headers]), 'request.provider.anthropicBeta': anthropicBeta }), pipeline);
+    const { 'response.http.exchange': _exchange, 'response.provider.output': _output, 'response.provider.modelKey': _modelKey, 'response.provider.called': _called, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    const reply = await providerChatAnswer(candidate, back);
+    const answer = reply.answer;
     return move({
-      ...facts,
-      ...nothingBilled,
-      'response.chat.anthropicMessages': { kind: 'value' as const, body: parsed },
-      'response.http.headers': [...response.headers],
+      ...rest, 'response.chat.anthropicMessages': answer,
+      'response.usage.billable': [], 'response.http.headers': reply.headers,
+      'response.http.status': reply.status, 'response.http.body': reply.body,
     });
   },
 });

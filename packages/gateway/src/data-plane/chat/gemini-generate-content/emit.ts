@@ -6,7 +6,7 @@ import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { bindClientRelease, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
@@ -66,7 +66,7 @@ export const emitGeminiGenerateContent = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
 
@@ -87,7 +87,7 @@ export const emitGeminiGenerateContent = defineStage<
         'response.chat.geminiGenerateContent.rendered': move(
           await collectGeminiGenerateContentProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
       };
     }
     const completed = framedClientStream(
@@ -96,13 +96,14 @@ export const emitGeminiGenerateContent = defineStage<
       error => [eventFrame(geminiStreamError(error))],
       use.gateway.dump,
     );
+    bindClientRelease(back, completed.release);
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.geminiGenerateContent.rendered': move(completed.rendered),
       'response.chat.geminiGenerateContent.streamedUsage': move(withClientVerdict(back['response.chat.geminiGenerateContent.streamedUsage'], completed.failed)),
-      'response.http.status': 200,
+      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
     };
   },
 });

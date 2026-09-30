@@ -23,6 +23,7 @@ import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/opena
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { compose, move, run, type Pipeline } from '@floway-dev/pipeline';
 import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
@@ -65,7 +66,8 @@ const candidate = (
   provider: {
     upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
     disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-    instance: stubProvider(calls as never),
+    pipelines: stubChatProviderPipelines(calls as never),
+    instance: stubProvider(),
   },
   model: stubInternalModel(
     {
@@ -173,6 +175,7 @@ const serve = async <Entry extends object, Exit extends object>(
   return await run(pipeline, move(facts) as never, {
     gateway,
     background: () => {},
+    ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => attemptPayload,
@@ -251,6 +254,7 @@ const geminiGenerateContentText = (rendered: unknown): string | undefined =>
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);

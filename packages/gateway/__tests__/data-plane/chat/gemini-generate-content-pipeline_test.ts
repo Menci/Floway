@@ -10,12 +10,14 @@ import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import type { StubChatProviderCall } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -39,12 +41,7 @@ const resolveAttempt = (selector: { readonly upstreamId: string }): ModelCandida
   return found;
 };
 
-type CallOpenAIChatCompletions = (
-  model: unknown,
-  body: unknown,
-  signal: AbortSignal | undefined,
-  opts: UpstreamCallOptions,
-) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+type CallOpenAIChatCompletions = StubChatProviderCall<'openaiChatCompletions'>;
 
 const candidate = (upstream: string, callOpenAIChatCompletions: CallOpenAIChatCompletions): ModelCandidate => {
   const endpoints = { openaiChatCompletions: {} };
@@ -52,8 +49,8 @@ const candidate = (upstream: string, callOpenAIChatCompletions: CallOpenAIChatCo
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      pipelines: {},
-      instance: stubProvider({ callOpenAIChatCompletions: callOpenAIChatCompletions as never }),
+      pipelines: stubChatProviderPipelines({ callOpenAIChatCompletions: callOpenAIChatCompletions as never }),
+      instance: stubProvider(),
     },
     model: stubInternalModel({ id: 'gemini-2.5-pro', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'gemini-2.5-pro', endpoints }) } }, upstream),
     fetcher: directFetcher,
@@ -124,6 +121,7 @@ beforeEach(() => {
   affinityPayload = payload;
   asked = 0;
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async (row: unknown) => { recorded.usage.push(row); } },
     performance: {
       recordNeutral: async (dims: unknown) => { recorded.performance.push(dims); },
@@ -141,6 +139,7 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: 
   {
     gateway,
     background: () => {},
+    ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
@@ -322,13 +321,14 @@ describe('the Gemini generateContent pipeline', () => {
     // An upstream that was called and reported nothing, which is a different statement from
     // reporting zero.
     expect(facts['response.usage.billable']).toEqual([
+      { identity: { model: 'gemini-2.5-pro', upstream: 'up_a', modelKey: 'k', pricing: null }, quantities: {} },
       { identity: { model: 'gemini-2.5-pro', upstream: 'up_b', modelKey: 'k', pricing: null }, quantities: {} },
     ]);
     await drain();
   });
 
   it('turns a dial that threw into a failure value rather than a thrown run', async () => {
-    resolves([candidate('up_a', () => Promise.reject(new Error('socket hang up')))]);
+    resolves([candidate('up_a', async () => ({ type: 'transportFailure', error: new Error('socket hang up') }))]);
 
     const { facts, drain } = await serve(entryFacts());
 
@@ -357,8 +357,7 @@ describe('the Gemini generateContent pipeline', () => {
 
   // The wire below always streams, whatever the client asked for, so this family's numbers
   // always arrive with the last chunk — which is after the run has answered. Settling in the
-  // stage as well would write the row twice, so the pipeline hands the numbers up as a promise
-  // and the epilogue is what writes them.
+  // settlement stage registers that promise once and writes the measured result at completion.
   it('defers settlement to the promise it hands up, metered on the dialect the upstream spoke', async () => {
     resolves([candidate('up_a', async () => streamed(turn()))]);
 
@@ -366,7 +365,7 @@ describe('the Gemini generateContent pipeline', () => {
     await collect(facts['response.chat.geminiGenerateContent.rendered']);
     await drain();
 
-    expect(recorded.usage).toHaveLength(0);
+    expect(recorded.usage).toHaveLength(1);
     const usage = facts['response.chat.geminiGenerateContent.streamedUsage'];
     expect(usage).not.toBeNull();
     const outcome = await usage!;

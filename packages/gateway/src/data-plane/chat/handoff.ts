@@ -42,6 +42,7 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
 const refuseTranslation = (response: ResponseKey, message: string): Record<string, unknown> => ({
   'response.usage.billable': [],
   'response.http.headers': [],
+  'response.http.body': null,
   [`${response}.streamedUsage`]: null,
   [response]: { status: 400, message },
 });
@@ -72,7 +73,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
       handoff.from.response,
       `${handoff.from.response}.streamedUsage`,
       'response.usage.billable',
-      'response.http.headers',
+      'response.http.headers', 'response.http.body',
     ],
   },
   through: {
@@ -84,7 +85,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
     response: {
       // The upstream's own headers are read, not rewritten: a pair that rewrites a refusal
       // is handed what actually came back rather than a synthesized set.
-      needs: [handoff.to.response, 'response.http.headers'],
+      needs: [handoff.to.response, 'response.http.headers', 'response.http.body'],
       consumes: [handoff.to.response],
       provides: [handoff.from.response],
     },

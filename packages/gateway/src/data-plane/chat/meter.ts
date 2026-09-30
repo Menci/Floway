@@ -22,7 +22,7 @@ import { streamReferenceOf } from '../../dump/run-sink.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
-import { defineStage, move, type Deferred } from '@floway-dev/pipeline';
+import { defer, defineStage, move, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -37,18 +37,13 @@ export type ChatMeterReading<Event> = (
   attempt: { firstOutputTokenAt: number | null },
 ) => { readonly frames: AsyncIterable<ProtocolFrame<Event>>; readonly outcome: Deferred<StreamOutcome> };
 
-/** Which identity the figure is attributed to, read off the entity the dial recorded when it
- *  called an upstream. That entity is already the statement "this attempt bills to this
- *  identity, and nothing has been reported for it yet" — so the meter fills in what it turned
- *  out to be billable for rather than deriving a second identity of its own.
- *
- *  A wire that hands up a stream has been dialled, so there is exactly one. Anything else is
- *  this gateway contradicting itself, and it says so rather than billing to a guess. */
+/** Credential retries precede the final called entity. Only the final reply has frames
+ *  to meter; earlier endpoint replies retain their own empty-quantity observations. */
 const attributedTo = (billable: readonly BillableEntity[], wire: string): TelemetryModelIdentity => {
-  if (billable.length !== 1) {
-    throw new Error(`${wire} handed up a stream billable to ${billable.length} entities, and a metered stream bills to the one that was dialled`);
+  if (billable.length === 0) {
+    throw new Error(`${wire} handed up a stream billable to ${billable.length} entities, and a metered stream requires a called model identity`);
   }
-  return billable[0].identity;
+  return billable[billable.length - 1].identity;
 };
 
 /**
@@ -98,10 +93,22 @@ export const meterChatWire = <Event>(spec: {
       attributedTo(back['response.usage.billable'], spec.wire),
       use.gateway.attempt.timing,
     );
+    const iterator = metered.frames[Symbol.asyncIterator]();
+    // Downstream transforms may stop after a terminal or cancellation. The body owner keeps
+    // this single reading alive so release can finish the upstream's billable usage.
+    const ownsBody = 'response.http.body' in back && back['response.http.body'] !== null;
+    const frames = { ...streamReferenceOf(answer.frames), [Symbol.asyncIterator]: () => ownsBody ? { next: () => iterator.next() } : iterator };
+    if ('response.http.body' in back && back['response.http.body'] !== null) {
+      setRelease(back['response.http.body'] as ReadableStream<Uint8Array> & Owned, async () => {
+        let step = await iterator.next();
+        while (!step.done) step = await iterator.next();
+      });
+    }
+    const prior = back['response.usage.billable'].slice(0, -1);
     return move({
       ...back,
-      [spec.answer]: { kind: 'stream' as const, frames: { ...streamReferenceOf(answer.frames), [Symbol.asyncIterator]: () => metered.frames[Symbol.asyncIterator]() } },
-      [spec.streamedUsage]: metered.outcome,
+      [spec.answer]: { kind: 'stream' as const, frames },
+      [spec.streamedUsage]: prior.length === 0 ? metered.outcome : defer(metered.outcome.then(outcome => ({ ...outcome, billable: [...prior, ...outcome.billable] }))),
     }) as never;
   },
 });

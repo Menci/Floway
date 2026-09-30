@@ -48,7 +48,7 @@ export const dialOpenAIResponsesCompaction = (wires: { native: ChatWire; simulat
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const compacts = !simulatesCompaction(candidate, facts['route.attempt']);
-    use.log.debug('compacting', { upstream: facts['route.attempt'].upstreamId, wire: compacts ? 'compact' : 'simulated' });
+    await use.log.debug('compacting', { upstream: facts['route.attempt'].upstreamId, wire: compacts ? 'compact' : 'simulated' });
     return await next(facts, compacts ? wires.native : wires.simulated);
   },
 });
