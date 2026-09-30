@@ -43,5 +43,5 @@ export type Fields<K extends keyof OpenAIImagesFacts> = { [P in K]: OpenAIImages
 export type OpenAIImagesServeEntry = Fields<'ingress.http.headers' | 'ingress.openaiImages.wantsStream' | 'request.openaiImages.canonical' | 'serve.model'>;
 
 export type OpenAIImagesServeExit = Fields<
-  'response.openaiImages.rendered' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+  'response.http.jsonBody' | 'response.openaiImages.rendered' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
 >;

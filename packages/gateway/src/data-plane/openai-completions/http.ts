@@ -48,7 +48,7 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
       const rendered = facts['response.openaiCompletions.rendered'];
       return isFrames(rendered)
         ? { frames: rendered }
-        : { body: JSON.stringify(rendered), contentType: 'application/json' };
+        : { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
     },
   );
 };

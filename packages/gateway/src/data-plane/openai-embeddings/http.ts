@@ -49,6 +49,6 @@ export const openaiEmbeddings = async (c: Context): Promise<Response> => {
       'request.openaiEmbeddings.canonical': request,
       'serve.model': model,
     }) as never,
-    facts => ({ body: JSON.stringify(facts['response.openaiEmbeddings.rendered']), contentType: 'application/json' }),
+    facts => ({ body: facts['response.http.jsonBody']!, contentType: 'application/json' }),
   );
 };

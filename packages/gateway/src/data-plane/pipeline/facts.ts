@@ -1,12 +1,4 @@
-// The keys every family's pipeline shares. A family extends this space with its own
-// protocol keys by intersection and never merges into it, so a stage written here drops
-// into any family's pipeline and a family's own keys are unreachable from a stage that
-// was not written against them.
-//
-// Keys are namespaced, camelCase and family-first. `ingress.*` is what the client sent and
-// stays put across a protocol switch; `serve.*` belongs to the served request as a whole
-// and outlives an attempt; `request.*` and `response.*` are the two directions, mirrored
-// key for key and semantically disjoint.
+// Shared gateway content facts. Live providers, fetchers and model caches remain in services.
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { Secret, Owned } from '@floway-dev/pipeline';
@@ -43,8 +35,7 @@ export interface BillableEntity {
 export interface Failure {
   readonly status: number;
   readonly message: string;
-  /** The upstream's own body, when there was one. A client is not owed the upstream's
-   *  exact bytes, but a dump reader is owed what actually came back. */
+  /** Complete parsed upstream error content when available. */
   readonly body?: unknown;
 }
 
@@ -61,25 +52,15 @@ export interface GatewayFacts {
   'serve.model': string;
   'serve.candidates': readonly AttemptSelector[];
 
-  /** Which upstream this attempt targets. Provided per attempt by the stage that forks.
-   *
-   *  A **selector**, not the candidate itself. A `ModelCandidate` carries the provider's
-   *  live instance, its fetcher and its models cache, and a live handle is never a fact —
-   *  the test being whether it can be rendered into the dump. Putting one in the record
-   *  deep-freezes all three, and the writes the provider relies on then fail *silently*,
-   *  because a frozen write only throws in strict mode and the provider's own code is not
-   *  the caller. The SWR models cache would stop refreshing with nothing to see.
-   *
-   *  So the resolver is a service and the selector is the fact, which is the ruling as
-   *  written. What travels is what identifies the attempt; what dials is injected. */
+  /** A selector resolves a live candidate without freezing the provider's mutable catalog. */
   'route.attempt': AttemptSelector;
 
-  /** There is exactly one url and one headers. Headers are rewritten the whole way down,
-   *  so the dump shows a header's entire history in one place, and a value may be secret. */
-  'request.http.url': string;
+  /** Admitted headers remain values until the provider shapes its authenticated HTTP request. */
   'request.http.headers': readonly (readonly [string, string | Secret<string>])[];
 
   'response.http.status': number;
+  /** Serialized client JSON, or null for a protocol stream or an upstream document. */
+  'response.http.jsonBody': Uint8Array<ArrayBuffer> | null;
   'response.http.headers': readonly (readonly [string, string])[];
   /** The upstream's body, still open, and marked as something the run answers for. `Owned`
    *  rather than `AsyncDisposable`, because a structural type would say what the host happens
