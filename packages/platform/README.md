@@ -12,8 +12,17 @@ object at EOF. Until then, readers see the previous value or a missing key.
 Failures preserve the prior object and expose the original error; cleanup
 failures retain it in the error chain. `get` still returns complete bytes.
 
-Node writes to a same-directory staging file and atomically renames it after
-closing. Cloudflare uses bounded 5 MiB multipart parts for unknown-length
+Node stages each write inside the target parent’s reserved `.floway-staging`
+namespace and atomically renames it after closing. This preserves the published
+key paths and the target filesystem when a key prefix is a separate mount.
+Node keys cannot contain that private segment. `deleteKeys` removes the exact
+key’s unfinished writes as well as its published file, so retention cleanup
+also collects a writer killed before EOF. Public keys resembling UUID temporary
+filenames remain ordinary keys. Empty staging directories stay available to
+concurrent writers until key deletion; the common private directory stays in
+place like other parent directories.
+
+Cloudflare uses bounded 5 MiB multipart parts for unknown-length
 streams, since R2's single put requires a known length. Short and empty streams
 use a single byte put. A storage/source failure cancels the source and cleans
 up unfinished multipart state; live-view degradation does not affect this path.
