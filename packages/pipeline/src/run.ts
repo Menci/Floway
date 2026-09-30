@@ -346,9 +346,6 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   initial: Entry,
   services: S,
 ): Promise<RunResult<Exit>> => {
-  for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
-  requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
-
   // With no dump sink resolved in the prologue, none of the recording happens.
   const sink = services.dump;
   const events: Event[] = [];
@@ -360,14 +357,6 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     parentStageId: null,
     nextStageId: 1,
   };
-  // The first state the record is in is the one the prologue built, and it is frozen here
-  // so it cannot be rewritten after the run has recorded it.
-  Object.freeze(initial);
-
-  for (const value of Object.values(initial)) {
-    registerFact(value, initial as Facts, scope);
-  }
-
   let draining: Promise<void> | undefined;
   const drain = (): Promise<void> => {
     if (draining !== undefined) return draining;
@@ -384,9 +373,14 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   };
 
   try {
+    Object.freeze(initial);
+    for (const value of Object.values(initial)) registerFact(value, initial as Facts, scope);
+    for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
+    requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
     return { facts, events, drain };
   } catch (error) {
+    captureFailure(error, initial as Facts, scope);
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.
