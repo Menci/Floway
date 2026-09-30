@@ -10,9 +10,9 @@
 
 import type { Context } from 'hono';
 
-import { type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './facts.ts';
 import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
 import { openaiResponsesServePipeline } from './pipeline.ts';
+import type { OpenAIResponsesWebSocketExit } from './project-websocket.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
@@ -21,14 +21,12 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { prologueFor, type Ingress } from '../../pipeline/serve.ts';
 import type { AttemptState } from '../../shared/gateway-ctx.ts';
 import { takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
+import { type StreamCompletion } from '../../shared/sse.ts';
 import type { ChatPrologue } from '../prologue.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
@@ -44,17 +42,6 @@ interface OpenAIResponsesWebSocketSocket {
 }
 
 const UTF8_ENCODER = new TextEncoder();
-
-// Our implementor slug prefixes the keep-alive's wire type; the spec reserves
-// every unprefixed type for itself, gives `acme:trace_event` as the form, and
-// makes `type` and `sequence_number` the only mandatory fields — which is all
-// this frame carries.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758-L765
-// A slug type is inert in openai-node's WebSocket reader: the frame is emitted
-// under its own literal type name, nothing is listening on that name, and only
-// a frame typed `error` is routed into the socket's error path.
-// https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/resources/responses/ws-base.ts#L346-L371
-export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
 interface OpenAIResponsesWebSocketHandlers {
   onMessage(event: { readonly data: unknown }, socket: OpenAIResponsesWebSocketSocket): void;
@@ -365,6 +352,7 @@ const handleClientMessage = async (
         'ingress.chat.sourceProtocol': 'openaiResponses',
         // A turn on this transport always streams, whatever the client wrote.
         'ingress.chat.openaiResponses.wantsStream': true,
+        'ingress.chat.openaiResponses.eventId': eventId,
         'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
       }) as never,
@@ -372,7 +360,7 @@ const handleClientMessage = async (
     );
     prologue.runDump?.afterRun(drain);
 
-    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure });
+    await respondOpenAIResponsesWebSocket({ socket, signal, isClosed, prologue, facts, drain, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -420,333 +408,43 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
 const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
   ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
 
-/** The chain hands its answer up at one key, and this entry assembled it to hand up events
- *  rather than the SSE frames an HTTP body is written from — so what is not a stream at that
- *  key is the one object arm this transport can see. */
-const isRenderedStream = (
-  rendered: OpenAIResponsesFacts['response.chat.openaiResponses.rendered'],
-): rendered is AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => Symbol.asyncIterator in rendered;
-
 const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
-  readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
   readonly prologue: ChatPrologue;
-  readonly facts: OpenAIResponsesServeExit;
+  readonly facts: OpenAIResponsesWebSocketExit;
   readonly drain: () => Promise<void>;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure } = input;
+  const { socket, signal, isClosed, prologue, facts, drain, turnFailure } = input;
   const ctx = prologue.gateway;
-  const status = facts['response.http.status'];
-  const rendered = facts['response.chat.openaiResponses.rendered'];
-
-  if (!isRenderedStream(rendered)) {
-    // A body at the rendered key is a refusal — the upstream's own, or one the chain made
-    // before reaching an upstream. Nothing else can arrive there on this transport: a turn
-    // here always asks to stream, and the one non-refusal body the chain can produce is a
-    // compaction envelope, which no `response.create` frame has a way to ask for. It goes out
-    // under the spec's WebSocket error envelope so a client can still compare error.message
-    // byte-for-byte against upstream. Nothing is left to read, so releasing starts at once.
-    prologue.services.background(drain());
-    turnFailure.fail(status, normalizeErrorBody(rendered, status));
-    ctx.dump?.finalize(status, 0);
-    return;
-  }
-
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
-    let terminalEvent: ClientOpenAIResponsesStreamEvent | undefined;
-    const iterator = observeOpenAIResponsesWebSocketFrames(rendered, state)[Symbol.asyncIterator]();
-    let pendingNext = pendingWsFrameResult(iterator.next());
-    let completed = false;
-    let stoppedByDownstream = false;
-    let streamed = false;
-    const sequence = createDownstreamSequence();
-
-    const stopForDownstream = (): void => {
-      stoppedByDownstream = true;
-      completion = 'cancel';
-    };
-
-    try {
-      while (true) {
-        if (signal.aborted || isClosed()) {
-          stopForDownstream();
-          return;
-        }
-
-        const next = await nextFrameOrKeepAlive(pendingNext);
-
-        if (next.type === 'keep-alive') {
-          // Extended reasoning turns go completely silent: upstream sends SSE
-          // `ping` events, `parseOpenAIResponsesStream` drops them, and no frame at
-          // all reaches this socket for minutes. A silent Workers WebSocket
-          // does not reliably survive that. Cloudflare states the
-          // teardown without naming a duration — "when no data is transmitted
-          // in either direction for a period of time" — and probing a
-          // `workers.dev` endpoint built on this handler's own `WebSocketPair`
-          // shape found no constant to design against: from one vantage point
-          // an idle socket lived a full hour, 4/4, while from another 13 of 16
-          // idle sockets died between 215.8 s and 1788.2 s, median around
-          // 660 s. Teardown is path-dependent and stochastic, and it is always
-          // a silent EOF — across roughly 40 observed teardowns, not one CLOSE
-          // frame and not one RST, so the failure carries no protocol-level
-          // signal.
-          // https://developers.cloudflare.com/network/websockets/#idle-timeout
-          //
-          // Cloudflare's stated remedy, a client-side ping/pong heartbeat,
-          // does not cover it: on the path that drops, 6 of 9 sockets pinging
-          // every 30 s died anyway, one of them after 61.5 s. A
-          // server-originated text frame did cover it — 12/12 survived on that
-          // same path, with ≤400 s intervals holding and ≥500 s failing. Why a
-          // data frame outlives a protocol ping there was not established.
-          // Sending a ping is not open to us regardless: workerd's `WebSocket`
-          // exposes only accept/send/close/(de)serializeAttachment, and the kj
-          // layer beneath states the omission as a design decision ("Ping/Pong
-          // … are not exposed through this interface"). RFC 6455 §5.5.2 is the
-          // right mechanism, it is unreachable here, and it would not help the
-          // client that needs it most either, since Codex's frame pump
-          // swallows control frames and only a text frame rearms its 300 s
-          // idle timeout.
-          // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
-          // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
-          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L91-L101
-          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L695-L699
-          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/model-provider-info/src/lib.rs#L26
-          //
-          // So the keep-alive is a text frame whose `type` no client
-          // recognizes. The spec's extension section governs its shape: an
-          // implementor slug prefix plus a `sequence_number`. A keep-alive is
-          // neither a delta nor a state-machine event, so it cannot be spelled
-          // as a `response.*` event; the slug form is what makes it ignorable
-          // without loss. openai-node's SSE `responses.stream()` helper is the
-          // one client that treats a prefixed type as fatal — its accumulator
-          // closes its `switch` on `assertNever` — and it is out of reach here:
-          // Floway's SSE keep-alive is a comment line, and this frame exists
-          // only on the WebSocket transport.
-          // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758
-          // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L387-L389
-          //
-          // Held back until the turn's first event has gone out. That gate is
-          // parity with the stricter transport, not a demand of this one: both
-          // SDKs' SSE stream helpers refuse anything before `response.created`
-          // — openai-node rejects even its own `keepalive` type there — while
-          // every WebSocket reader we can inspect tolerates an unknown type at
-          // any position, openai-node emitting it under a name nothing listens
-          // on, openai-python constructing it unchecked, and Codex tracing and
-          // discarding it. The window before the first event therefore stays
-          // unprotected, and closing it is a behavior question rather than a
-          // client-compatibility one.
-          // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L25-L31
-          // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L369-L370
-          // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
-          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
-          if (!streamed) continue;
-          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
-            stopForDownstream();
-            return;
-          }
-          continue;
-        }
-        if (next.type === 'next-error') throw next.error;
-        if (next.result.done) {
-          completed = true;
-          break;
-        }
-
-        const frame = next.result.value;
-        pendingNext = pendingWsFrameResult(iterator.next());
-        if (frame.type !== 'event') continue;
-
-        const event = frame.event;
-
-        // The wrapped terminal event arrives only after its item and snapshot
-        // writes have committed, but the generator still has work to drain
-        // behind it. Buffer it here and flush it once the loop has run to
-        // completion, so the terminal event is the last frame of the turn and
-        // is itself the signal that a follow-up turn may reference this
-        // response. WebSocket carries the same streaming event objects as
-        // streaming HTTP, and the specification defines no frame after the
-        // terminal event:
-        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
-        // Live captures agree. Azure Foundry OpenAI-Responses-over-WebSocket, and the
-        // ChatGPT backend the Codex CLI talks to, both end a turn on
-        // `response.completed` and send nothing further while the socket stays
-        // open and idle. Codex's own reader breaks its loop on that event
-        // rather than waiting for any trailing envelope:
-        // https://github.com/openai/codex/blob/acd540f1581bf30f963fccbcce43ac494102242c/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L792-L799
-        if (terminalEvent !== undefined) continue;
-
-        if (isOpenAIResponsesTerminalEvent(event)) {
-          terminalEvent = event;
-          continue;
-        }
-
-        if (!sendOpenAIResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
-          stopForDownstream();
-          return;
-        }
-        streamed = true;
-      }
-    } finally {
-      if (!completed) {
-        const stopped = iterator.return?.(undefined);
-        if (stoppedByDownstream) stopped?.catch(() => {});
-        else await stopped;
-      }
-    }
-
-    if (terminalEvent === undefined) {
-      throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
-    }
-    // Renumbered here rather than where it was buffered: keep-alives can still
-    // fire while the generator drains behind the terminal event, and each of
-    // those takes a slot that has to land before the terminal event's own.
-    if (!sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
-      completion = 'cancel';
-      return;
+    for await (const packet of facts['response.chat.openaiResponses.websocket']) {
+      if (signal.aborted || isClosed() || !sendText(socket, packet.text, ctx.dump)) { completion = 'cancel'; return; }
+      if (packet.frame?.type !== 'event') continue;
+      const event = packet.frame.event;
+      if (event.type === 'error' || event.type === 'response.failed') state.failed = true;
+      if (isOpenAIResponsesTerminalEvent(event as unknown as ClientOpenAIResponsesStreamEvent) && !state.failed) state.completed = true;
     }
     completion = 'eof';
-  } catch (error) {
-    if (signal.aborted || isClosed()) {
-      completion = 'cancel';
-      return;
-    }
-    state.failed = true;
-    turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
-    // Writing the frames to the socket *is* releasing the body they came from, so the drain
-    // waits for that to finish. A client that stopped reading still gets here, which is what
-    // leaves nothing open behind it.
     await drain();
     const failed = state.failedAfter(completion);
     if (failed) {
-      // `fail` cannot carry the eviction for every failed turn: one that streamed an `error`
-      // or `response.failed` terminal answered the client with an event rather than an error
-      // envelope, and one the client abandoned before the terminal event answered with
-      // nothing at all. Both settle here. For the abandoned turn the eviction is inert — the
-      // connection-local cache dies with the socket.
       turnFailure.evict();
-      ctx.dump?.failed(`openai-responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+      ctx.dump?.failed(`openai-responses ws turn failed (completion=${completion}, source-failed=${state.failed})`, { fallback: true });
     }
-    ctx.dump?.finalize(failed ? 500 : 200, 0);
+    ctx.dump?.finalize(failed ? 500 : facts['response.http.status'], 0);
   }
-};
-
-/** Reads the turn's own ending off the frames on their way to the socket. The record is not
- *  its business: the edge tees these same frames, so what reaches here is already recorded. */
-const observeOpenAIResponsesWebSocketFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
-  state: SourceStreamState,
-): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
-  for await (const frame of frames) {
-    if (frame.type === 'event') {
-      const event = frame.event;
-      const failed = event.type === 'error' || event.type === 'response.failed';
-      if (failed) state.failed = true;
-      if (isOpenAIResponsesTerminalEvent(event) && !failed) state.completed = true;
-    }
-    yield frame;
-  }
-};
-
-type WsFrameRaceResult =
-  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> }
-  | { type: 'next-error'; error: unknown }
-  | { type: 'keep-alive' };
-
-const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
-  pendingNext.then(
-    (result): WsFrameRaceResult => ({ type: 'frame', result }),
-    (error): WsFrameRaceResult => ({ type: 'next-error', error }),
-  );
-
-// The interval is the one already shared with SSE rather than a WebSocket
-// constant of its own. Widening the gap between server data frames on a
-// dropping path put the boundary between 400 s, which still held the socket
-// open, and 500 s, which did not, so 15 s is far more frequent than the
-// mechanism needs. It is kept because widening it buys nothing: a keep-alive
-// is ~70 bytes, and the earliest unprotected idle teardown seen on that same
-// path was 215.8 s, so an interval chosen for economy would spend a real
-// margin against a stochastic teardown to save nothing.
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
-    timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-  });
-  try {
-    return await Promise.race([pendingFrame, keepAlive]);
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-  }
-};
-
-interface DownstreamSequence {
-  renumber(event: ClientOpenAIResponsesStreamEvent): ClientOpenAIResponsesStreamEvent;
-  take(): number;
-}
-
-// A WebSocket turn shares one sequence space with the streaming-HTTP events it
-// carries, so a keep-alive cannot sit outside that numbering: it takes a real
-// slot and every later event is shifted past it. The number is always present
-// and always numeric, because a resuming openai-python client compares it with
-// `>` against its `starting_after` cursor and `None` there raises a TypeError.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
-// https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L59
-//
-// Upstream numbering is left untouched until the first keep-alive, and a
-// keep-alive can only follow an event that already went out, so the slot it
-// takes is always known.
-const createDownstreamSequence = (): DownstreamSequence => {
-  let shift = 0;
-  let next = 0;
-  return {
-    renumber: event => {
-      if (event.sequence_number === undefined) return event;
-      const sequenceNumber = event.sequence_number + shift;
-      next = sequenceNumber + 1;
-      return { ...event, sequence_number: sequenceNumber };
-    },
-    take: () => {
-      shift += 1;
-      const taken = next;
-      next += 1;
-      return taken;
-    },
-  };
 };
 
 const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error),
   code: 'internal_error',
 });
-
-/** The rendered refusal, as this transport's envelope carries one. The chain already answered
- *  in the words a refusal was made in — the upstream's own body when it sent one, and the
- *  gateway's own envelope when the refusal was its — so what is left is to state the two
- *  fields the WebSocket envelope requires of every error whatever wrote it. */
-const normalizeErrorBody = (body: unknown, status: number): Record<string, unknown> => {
-  const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'
-    ? (body as { error: Record<string, unknown> }).error
-    : body && typeof body === 'object'
-      ? body as Record<string, unknown>
-      : {};
-  const type = typeof source.type === 'string'
-    ? source.type
-    : status >= 500 ? 'server_error' : 'invalid_request_error';
-  const message = typeof source.message === 'string'
-    ? source.message
-    : `OpenAI Responses request failed with status ${status}.`;
-  return {
-    ...source,
-    type,
-    code: typeof source.code === 'string' ? source.code : type,
-    message,
-  };
-};
 
 // "WebSocket failures MUST be sent as a JSON `error` envelope with a `status`
 // code and an `error.code`."
@@ -764,21 +462,6 @@ const sendError = (
   sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
 
-// A turn's own frames go out through this entry, which accepts only a stream
-// event whose response resource has already passed the client-facing egress
-// stage. The two frames Floway synthesizes for the transport itself — the
-// `error` envelope and the `floway:keep_alive` keep-alive — carry no response
-// resource at all, and neither belongs to the stream-event union: the error
-// envelope is not a streaming event, and the keep-alive is a slug-prefixed
-// extension the union deliberately does not model. Both keep the untyped
-// `sendJson`.
-const sendOpenAIResponsesEvent = (
-  socket: OpenAIResponsesWebSocketSocket,
-  event: ClientOpenAIResponsesStreamEvent,
-  eventId?: string,
-  dump?: RunDump | null,
-): boolean => sendJson(socket, event, eventId, dump);
-
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
@@ -789,13 +472,14 @@ const sendJson = (
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
-  let text: string;
-  try {
-    text = JSON.stringify(payload);
-    socket.send(text);
-  } catch {
-    return false;
-  }
+  return sendText(socket, JSON.stringify(payload), dump);
+};
+
+const sendText = (socket: OpenAIResponsesWebSocketSocket, text: string, dump?: RunDump | null): boolean => {
+  if (socket.readyState !== 1) return false;
+  try { socket.send(text); } catch { return false; }
   dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
   return true;
 };
+
+export { KEEP_ALIVE_EVENT_TYPE } from './project-websocket.ts';

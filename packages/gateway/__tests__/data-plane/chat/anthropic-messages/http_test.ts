@@ -250,6 +250,27 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(await repo.performance.listAll(), []);
 });
 
+test('POST /v1/messages/count_tokens preserves a body read failure without charging the native count call', async () => {
+  const repo = installRepo();
+  const fault = new Error('native count body read failed');
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+    response: new Response(new ReadableStream<Uint8Array>({ pull(controller) { controller.error(fault); } }), { headers: { 'content-type': 'application/json' } }),
+    modelKey: 'count-model',
+  }));
+  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
+  const response = await makeApp().request('/v1/messages/count_tokens', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(response.status, 500);
+  const body = await response.text();
+  assert(body.includes(fault.message));
+  await flushBackground();
+  assertEquals(await repo.usage.listAll(), []);
+  assertEquals(await repo.performance.listAll(), []);
+});
+
 test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
   installRepo();
   const upstreamHeaders = new Headers({

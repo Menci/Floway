@@ -12,6 +12,7 @@ import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const waitForMessages = async (
@@ -301,15 +302,24 @@ test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload byt
   );
 });
 
-const recordedFrameCount = (record: Parameters<typeof runRecordOf>[0]): number => {
+const recordedClientEvents = (record: Parameters<typeof runRecordOf>[0]): unknown[] => {
   const events = eventsOf(runRecordOf(record));
-  const selected = events.flatMap(event => {
-    const facts = event.facts as Record<string, { $stream: number }> | undefined;
-    return facts?.['response.chat.clientFrames'] === undefined ? [] : [facts['response.chat.clientFrames'].$stream];
-  }).at(-1);
+  const read = createRunReader();
+  const frames = new Map<number, unknown[]>();
+  let selected: number | undefined;
+  for (const event of events) {
+    const decoded = read(event as unknown as DumpEvent);
+    const client = decoded?.facts?.['response.chat.clientFrames'];
+    if (typeof client === 'object' && client !== null && 'stream' in client) selected = client.stream as number;
+    if (event.type === 'stream.frame') {
+      const values = frames.get(event.streamId as number) ?? [];
+      values.push(...(decoded?.frames ?? []).map(frame => (frame as { event: unknown }).event));
+      frames.set(event.streamId as number, values);
+    }
+  }
   assertExists(selected);
-  return events.filter(event => event.type === 'stream.frame' && event.streamId === selected)
-    .reduce((total, event) => total + (event.frames as readonly unknown[]).length, 0);
+  assertEquals(events.some(event => event.type === 'stream.end' && event.streamId === selected), true);
+  return frames.get(selected) ?? [];
 };
 
 test('OpenAI Responses WebSocket records one frame per event it sent', async () => {
@@ -331,7 +341,7 @@ test('OpenAI Responses WebSocket records one frame per event it sent', async () 
           .map(message => JSON.parse(message) as { type?: unknown })
           .filter(message => message.type !== KEEP_ALIVE_EVENT_TYPE);
         assert(sent.length > 0, 'expected the turn to have sent events at all');
-        assertEquals(recordedFrameCount(dumps.stored[0]?.record), sent.length);
+        assertEquals(recordedClientEvents(dumps.stored[0]?.record), sent);
       } finally {
         recorded.stop();
         client.close();
@@ -412,6 +422,8 @@ test('OpenAI Responses WebSocket rejects the next turn after its API key is rota
 
 test('OpenAI Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
   try {
     await withMockedFetch(
@@ -463,6 +475,9 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
         assertEquals(error.error?.message, 'simulated item persistence failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(isTerminalResponseEvent));
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        assertEquals(recordedClientEvents(dumps.stored[0]?.record), messages);
+        assertEquals(dumps.stored[0]?.record.meta.error, { kind: 'failed', reason: 'simulated item persistence failure' });
       }),
     );
   } finally {
@@ -471,7 +486,9 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
 });
 
 test('OpenAI Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   // Captured before the clock is faked: the turn's frames cross real event-loop
   // turns (upstream body reads, item persistence), which a faked `setTimeout`
   // cannot yield to.
@@ -611,6 +628,8 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
           ],
           'expected the keep-alive to take a slot and shift every later event past it',
         );
+        assert(await drainFramesUntil(() => dumps.stored.length === 1), 'expected the completed turn dump to persist');
+        assertEquals(recordedClientEvents(dumps.stored[0]?.record), messages.filter(message => message.type !== KEEP_ALIVE_EVENT_TYPE));
       } finally {
         client.removeEventListener('message', onMessage);
       }

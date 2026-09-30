@@ -256,11 +256,11 @@ export interface StreamRecording {
  * cannot guess and a cast would be it guessing.
  */
 export function recordStream<T extends ProtocolFrame<unknown>>(stream: AsyncIterable<T>, dump: RunDump | null): AsyncIterable<T>;
-export function recordStream<T>(stream: AsyncIterable<T>, dump: RunDump | null, asFrame: (value: T) => ProtocolFrame<unknown>): AsyncIterable<T>;
+export function recordStream<T>(stream: AsyncIterable<T>, dump: RunDump | null, asFrame: (value: T) => ProtocolFrame<unknown> | null): AsyncIterable<T>;
 export function recordStream<T>(
   stream: AsyncIterable<T>,
   dump: RunDump | null,
-  asFrame: (value: T) => ProtocolFrame<unknown> = value => value as ProtocolFrame<unknown>,
+  asFrame: (value: T) => ProtocolFrame<unknown> | null = value => value as ProtocolFrame<unknown>,
 ): AsyncIterable<T> {
   // No recording configured hands the same iterable back, so a record shows no step where
   // nothing happened and the stream is not wrapped for nobody.
@@ -271,7 +271,8 @@ export function recordStream<T>(
     ...recording.fact,
     [Symbol.asyncIterator]: () => (async function* () {
       for await (const value of stream) {
-        await recording.frame(asFrame(value));
+        const frame = asFrame(value);
+        if (frame !== null) await recording.frame(frame);
         yield value;
       }
       // Reached only where the source ran out on its own, which is what makes the record of

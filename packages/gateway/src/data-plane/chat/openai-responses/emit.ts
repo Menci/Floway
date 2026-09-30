@@ -88,15 +88,8 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
       use.gateway,
       client,
     );
-    // The record is teed above all of that, which is what makes it a record of what the client
-    // was served rather than of what some layer below had still to rewrite. One tee covers both
-    // shapes this edge hands out itself, because both read the same iterable: the SSE body, and
-    // the object the fold assembles from the frames that would have gone out.
-    //
-    // Both transports too. A WebSocket turn is the same frames rendered differently, so it is
-    // recorded here rather than where it is framed — one tee for the family, whatever writes
-    // what it hands up. Reading is what records, so a transport that stopped early records
-    // exactly what it took.
+    // HTTP records the client-facing protocol before writing SSE or folding it into a
+    // resource. WebSocket records later, after its event-id/sequence/error projection.
     if (!back['ingress.chat.openaiResponses.wantsStream']) {
       const frames = recordStream(egress, use.gateway.dump);
       try {
@@ -126,7 +119,7 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
     }
     if (framing === 'events') {
       const clientStream = completeEventStream(egress, error => { use.gateway.dump?.failed(error); });
-      const frames = recordStream(clientStream.frames, use.gateway.dump);
+      const frames = clientStream.frames;
       bindClientRelease(back, clientStream.release);
       return {
         ...rest,
