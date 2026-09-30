@@ -93,3 +93,14 @@ test('an actual upstream quantity-formatting fault rejects produced usage with t
   expect(causes.length).toBeGreaterThan(0);
   expect(causes.every(error => error === original)).toBe(true);
 });
+
+test('actual native HTTP zero usage remains measured after the complete wire and client projection', async () => {
+  const zero = { ...usage, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
+  const { executed } = await runWire(new Response([first, zero].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } }));
+  const iterator = (executed.facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>)[Symbol.asyncIterator]();
+  let step = await iterator.next();
+  while (!step.done) step = await iterator.next();
+  await executed.drain();
+  const outcome = await (executed.facts['response.chat.openaiChatCompletions.streamedUsage'] as Deferred<StreamOutcome>);
+  expect(outcome).toMatchObject({ failed: false, billable: [{ quantities: { input_tokens: '0', output_tokens: '0' }, pricingFacts: { inputTokens: 0 } }] });
+});

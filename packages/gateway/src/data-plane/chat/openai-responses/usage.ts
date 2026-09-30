@@ -1,4 +1,5 @@
-import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
+import type { ChatBillableUsage } from '../shared/usage.ts';
+import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 // service_tier reports the tier actually served and therefore selects the
@@ -8,7 +9,7 @@ import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResult, type 
 // body can be priced through the same helper.
 export const billableUsageFromOpenAIResponsesResult = (
   response: { readonly usage?: OpenAIResponsesResult['usage']; readonly service_tier?: OpenAIResponsesResult['service_tier'] },
-): BillableUsage | null => {
+): ChatBillableUsage | null => {
   const usage = response.usage;
   if (!usage) return null;
   const cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;
@@ -19,17 +20,17 @@ export const billableUsageFromOpenAIResponsesResult = (
   );
   const tier = billableServiceTier(response.service_tier);
   return {
-    input,
+    ...(usage.input_tokens === undefined ? {} : { input }),
     cacheRead,
     cacheWrite,
     // OpenAI Responses has no cache-write TTL split; every write bills at one rate.
     cacheWrite1h: 0,
-    output: usage.output_tokens,
+    ...(usage.output_tokens === undefined ? {} : { output: usage.output_tokens }),
     ...(tier !== null ? { tier } : {}),
   };
 };
 
-export const billableUsageFromOpenAIResponsesEvent = (event: OpenAIResponsesStreamEvent): BillableUsage | null => {
+export const billableUsageFromOpenAIResponsesEvent = (event: OpenAIResponsesStreamEvent): ChatBillableUsage | null => {
   const response = openaiResponsesResultFromStreamEvent(event);
   return response === null ? null : billableUsageFromOpenAIResponsesResult(response);
 };

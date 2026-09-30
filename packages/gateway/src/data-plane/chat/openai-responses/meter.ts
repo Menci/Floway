@@ -2,10 +2,10 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { meterChatWire } from '../meter.ts';
 import { billableUsageFromOpenAIResponsesEvent } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { tokenUsageMeasurement, tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
+import { chatUsageMeasurement, type ChatBillableUsage } from '../shared/usage.ts';
 import { defer, type Deferred } from '@floway-dev/pipeline';
-import type { ProtocolFrame, BillableUsage } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesTerminalEvent, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -33,7 +33,7 @@ const meterOpenAIResponses = (
   let sawTerminal = false;
   let failed = false;
   const generator = (async function* () {
-    let reported: BillableUsage | undefined;
+    let reported: ChatBillableUsage | undefined;
     const finish = (): void => {
       if (settled) return;
       settled = true;
@@ -92,8 +92,8 @@ const meterOpenAIResponses = (
  *  because on this protocol it is not a quantity but a rate selector — `service_tier` states
  *  the tier the turn was actually served at, and that is the pricing entry it is billed
  *  under. */
-export const billedOpenAIResponsesEntity = (identity: TelemetryModelIdentity, usage: BillableUsage | undefined): BillableEntity => {
+export const billedOpenAIResponsesEntity = (identity: TelemetryModelIdentity, usage: ChatBillableUsage | undefined): BillableEntity => {
   if (usage === undefined) return { identity, quantities: {} };
-  const measurement = tokenUsageMeasurement(tokenUsageFromBillableUsage(usage));
+  const measurement = chatUsageMeasurement(usage);
   return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };

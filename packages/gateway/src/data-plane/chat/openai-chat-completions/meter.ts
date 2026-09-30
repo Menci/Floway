@@ -2,10 +2,10 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { meterChatWire } from '../meter.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
+import { chatUsageMeasurement, type ChatBillableUsage } from '../shared/usage.ts';
 import { defer, type Deferred } from '@floway-dev/pipeline';
-import type { ProtocolFrame, BillableUsage } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -31,7 +31,7 @@ const meterOpenAIChatCompletions = (
   let completed = false;
   let failed = false;
   const generator = (async function* () {
-    let reported: BillableUsage | undefined;
+    let reported: ChatBillableUsage | undefined;
     const finish = (): void => {
       if (settled) return;
       settled = true;
@@ -81,9 +81,8 @@ const isTerminal = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>): boo
  *  at all, which is a different statement from reporting zero — and a rate can depend on the
  *  service tier and on how much input there was, so both travel as pricing facts rather than
  *  being folded into the quantities. */
-const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModelIdentity): BillableEntity => {
-  const tokens = tokenUsageFromBillableUsage(usage);
-  if (tokens === null) return { identity, quantities: {} };
-  const measurement = tokenUsageMeasurement(tokens);
+const billedEntity = (usage: ChatBillableUsage | undefined, identity: TelemetryModelIdentity): BillableEntity => {
+  if (usage === undefined) return { identity, quantities: {} };
+  const measurement = chatUsageMeasurement(usage);
   return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };

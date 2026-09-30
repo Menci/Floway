@@ -14,10 +14,10 @@ const exercise = async (generate: boolean | null | undefined) => {
   const dial = vi.fn();
   const ending = defineStage<Record<string, unknown>, Record<string, unknown>>({
     name: 'scriptedWarmupDial',
-    return: { provides: ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers'] },
+    return: { provides: ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.body'] },
     execute: async facts => {
       dial();
-      return move({ ...facts, 'response.chat.openaiResponses': { kind: 'stream', frames: (async function* () { yield doneFrame(); })() }, 'response.chat.openaiResponses.streamedUsage': null, 'response.usage.billable': [], 'response.http.headers': [] });
+      return move({ ...facts, 'response.chat.openaiResponses': { kind: 'stream', frames: (async function* () { yield doneFrame(); })() }, 'response.chat.openaiResponses.streamedUsage': null, 'response.usage.billable': [], 'response.http.headers': [], 'response.http.body': null });
     },
   });
   const payload: CanonicalOpenAIResponsesPayload = { model: 'client-model', input: [{ type: 'message', role: 'developer', content: 'Base instructions' }], ...(generate === undefined ? {} : { generate }) };
