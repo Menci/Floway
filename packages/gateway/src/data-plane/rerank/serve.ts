@@ -54,7 +54,6 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     parsedRequest = parseRerankRequest(sourceProtocol, parseJson(requestBody.bytes));
   } catch (error) {
     const ctx = createGatewayCtxFromHono(c, {
-      transport: 'http',
       wantsStream: false,
       requestBody: takeRequestBody(requestBody),
       backgroundScheduler: backgroundSchedulerFromContext(c),
@@ -65,7 +64,6 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
 
   const { model, request } = parsedRequest;
   const ctx = createGatewayCtxFromHono(c, {
-    transport: 'http',
     wantsStream: false,
     model,
     requestBody: takeRequestBody(requestBody),

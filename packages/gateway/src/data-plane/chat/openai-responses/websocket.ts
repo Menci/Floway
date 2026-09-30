@@ -281,7 +281,6 @@ const handleClientMessage = async (
     const payload = openaiResponsesPayloadFromClientSource(source);
     previousResponseId = payload.previous_response_id ?? undefined;
     ctx = createChatGatewayCtxFromHono(c, {
-      transport: 'websocket',
       wantsStream: true,
       downstreamAbortController,
       // The WS upgrade has no HTTP body; the dump's request body is the

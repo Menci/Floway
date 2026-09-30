@@ -15,7 +15,6 @@ export interface AttemptState {
 }
 
 export interface GatewayCtx {
-  readonly transport: 'http' | 'websocket';
   readonly apiKeyId: string;
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
@@ -36,7 +35,6 @@ export interface GatewayCtx {
 }
 
 export interface CreateGatewayCtxOptions {
-  transport: GatewayCtx['transport'];
   wantsStream: boolean;
   // WebSocket-style call sites own the AbortController (so the upgrade
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
@@ -77,7 +75,6 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt.timing);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
-    transport: opts.transport,
     apiKeyId: apiKey.id,
     requestStartedAt: Date.now(),
     upstreamIds,

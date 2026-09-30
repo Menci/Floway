@@ -71,7 +71,7 @@ const prepareJsonOpenAIImagesEdit = (body: Record<string, unknown>): PreparedOpe
 export const openaiImagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   const request = prepareJsonModelRequest(requestBody.bytes, 'OpenAI Images Generations');
-  const ctx = createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
     return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
@@ -101,7 +101,7 @@ const serveOpenAIImagesEditRequest = async (
   model: string,
   request: OpenAIImagesEditsRequest,
 ): Promise<Response> => {
-  const ctx = createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   ctx.dump?.requestedModel(model);
   const response = await passthroughServe({
     c,
@@ -120,7 +120,7 @@ const serveOpenAIImagesEditRequest = async (
 export const openaiImagesEdits = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   const invalid = (message: string): Response => {
-    const errorCtx = createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+    const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
     errorCtx.dump?.error('gateway');
     return finalizeGatewayResponse(errorCtx, passthroughApiError(c, message, 400));
   };

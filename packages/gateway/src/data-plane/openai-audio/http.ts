@@ -60,7 +60,6 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
   const requestBody = await readRequestBody(c);
   const request = await prepareOpenAIAudioTranscription(requestBody.bytes, c.req.header('content-type'));
   const ctx = createGatewayCtxFromHono(c, {
-    transport: 'http',
     wantsStream: request.type === 'ok' ? request.wantsStream : false,
     requestBody: takeRequestBody(requestBody),
     backgroundScheduler: backgroundSchedulerFromContext(c),

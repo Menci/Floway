@@ -71,11 +71,6 @@ one single port now.
 | Jina Rerank | `POST /jina/v1/rerank` |
 | Voyage Rerank | `POST /voyage/v1/rerank` |
 
-OpenAI Responses WebSocket `response.create` events with `generate: false`
-prepare local continuation state without an upstream generation. Subsequent
-turns can reuse the returned response ID. This handling is limited to WebSocket
-requests; HTTP Responses requests, including SSE, follow the upstream path.
-
 `/v1/models` and `/models` return Floway's public model superset to ordinary
 callers and select the Codex or Claude Code discovery shape for those clients'
 User-Agent. Each public model includes `opaqueBlobCompatibilityScope`: its

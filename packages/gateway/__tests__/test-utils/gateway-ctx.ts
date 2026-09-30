@@ -11,7 +11,6 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 // `{ abortSignal: controller.signal, downstreamAbortController: controller }`
 // into the overrides.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => ({
-  transport: 'http',
   apiKeyId: 'key_test',
   requestStartedAt: 0,
   upstreamIds: null,
