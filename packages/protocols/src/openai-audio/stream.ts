@@ -23,15 +23,6 @@ export const isOpenAIAudioTranscriptionDoneEvent = (event: unknown): event is Op
   && (event as { type?: unknown }).type === 'transcript.text.done'
   && typeof (event as { text?: unknown }).text === 'string';
 
-/** The reading every frame goes through, so the value at the canonical key is a parsed
- *  event and the edge re-serializes it rather than relaying the bytes it arrived in. */
-export const parseOpenAIAudioTranscriptionStreamEvent = (value: unknown): OpenAIAudioTranscriptionStreamEvent => {
-  if (typeof value !== 'object' || value === null || typeof (value as { type?: unknown }).type !== 'string') {
-    throw new Error('OpenAI Audio Transcriptions stream event must be an object carrying a string type');
-  }
-  return value as OpenAIAudioTranscriptionStreamEvent;
-};
-
 /** A streamed transcription states its usage once, in the terminal event, in the same shape
  *  a JSON body states it. */
 export const parseOpenAIAudioTranscriptionStreamUsage = (

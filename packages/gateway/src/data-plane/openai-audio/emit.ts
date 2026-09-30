@@ -1,9 +1,7 @@
 import type { OpenAIAudioTranscriptionEvents, Fields } from './facts.ts';
-import { streamReferenceOf } from '../../dump/run-sink.ts';
 import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { renderOpenAIAudioTranscription, type CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
 
 const isEvents = (answer: CanonicalOpenAIAudioTranscription | OpenAIAudioTranscriptionEvents): answer is OpenAIAudioTranscriptionEvents =>
@@ -16,11 +14,8 @@ const isEvents = (answer: CanonicalOpenAIAudioTranscription | OpenAIAudioTranscr
  * for a document that is carried rather than rewritten the upstream's label is the only true
  * description there is.
  *
- * SSE framing is produced here and nowhere else — below this stage the answer is parsed
- * events, so the same assembly would serve another transport by rendering differently at
- * this one point. The upstream's own `event:` label is not carried: it is transport, and
- * OpenAI's clients read this endpoint's frames by their payload's `type` rather than by the
- * label. https://github.com/openai/openai-python/blob/10ee3f0da2ac6f93345c1204bd7bb1a2faa79ff2/src/openai/_streaming.py#L61-L107
+ * Streamed answers retain the upstream's parsed SSE frames. Reading their event payloads
+ * for usage must not replace labels or reserialize data seen by the client.
  */
 export const emitOpenAIAudioTranscription = defineStage<
   Fields<'ingress.openaiAudioTranscription.responseFormat'>,
@@ -69,17 +64,8 @@ export const emitOpenAIAudioTranscription = defineStage<
       'response.http.headers': forClient,
       'response.http.status': 200,
       'response.openaiAudioTranscription.rendered': move(isEvents(answer)
-        ? renderSSE(answer)
+        ? answer
         : renderOpenAIAudioTranscription(back['ingress.openaiAudioTranscription.responseFormat'], answer)),
     };
   },
-});
-
-const renderSSE = (events: OpenAIAudioTranscriptionEvents): AsyncIterable<SseFrame> => ({
-  // The frames the client reads are a reframing of the events the record holds, so this key
-  // points at that same stream rather than at nothing.
-  ...streamReferenceOf(events),
-  [Symbol.asyncIterator]: () => (async function* () {
-    for await (const event of events) yield sseFrame(JSON.stringify(event));
-  })(),
 });

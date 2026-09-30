@@ -24,6 +24,5 @@ export {
 export type { OpenAIAudioTranscriptionDoneEvent, OpenAIAudioTranscriptionStreamEvent } from './stream.ts';
 export {
   isOpenAIAudioTranscriptionDoneEvent,
-  parseOpenAIAudioTranscriptionStreamEvent,
   parseOpenAIAudioTranscriptionStreamUsage,
 } from './stream.ts';

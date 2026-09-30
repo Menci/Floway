@@ -50,6 +50,7 @@
     "@floway-dev/gateway": "workspace:*",
     "@react-router/dev": "8.3.0",
     "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "14.6.7",
     "@types/culori": "^4.0.1",
     "@types/d3-shape": "^3.1.8",
     "@types/node": "^22",

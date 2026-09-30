@@ -1,7 +1,7 @@
 import type { BillableEntity, GatewayFacts, Failure } from '../pipeline/facts.ts';
 import type { Deferred } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import type { OpenAIAudioTranscriptionStreamEvent, OpenAIAudioTranscriptionResponseFormat, CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
+import type { OpenAIAudioTranscriptionResponseFormat, CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
 import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 /** The answer while it is still the upstream's, one event at a time. It is a view and not a
@@ -11,7 +11,7 @@ import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
  *  A view is a wrapper around the generator rather than the generator itself, which is what
  *  says where the resource is: the upstream's body at `response.http.body`, claimed with
  *  `own()`, and nothing else here. */
-export type OpenAIAudioTranscriptionEvents = AsyncIterable<OpenAIAudioTranscriptionStreamEvent>;
+export type OpenAIAudioTranscriptionEvents = AsyncIterable<SseFrame>;
 
 /** What settling this run will be told once the events run out: what the upstream metered,
  *  and whether the transcript ever finished. */
