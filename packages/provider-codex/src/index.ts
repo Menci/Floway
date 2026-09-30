@@ -1,6 +1,7 @@
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { createCodexProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
+export { createCodexPipelines } from './pipelines.ts';
 
 export const codexProviderModule: ProviderModule = {
   create: createCodexProvider,

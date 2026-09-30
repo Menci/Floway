@@ -4,6 +4,7 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
+import type { ProviderPipelines } from './pipeline.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -41,6 +42,7 @@ export interface Provider {
   // The row's persisted catalog snapshot, mirrored so resolution does not pay
   // a second round trip after the row has already been loaded.
   modelsCache: UpstreamModelsCache | null;
+  pipelines: ProviderPipelines;
   instance: ProviderInstance;
 }
 

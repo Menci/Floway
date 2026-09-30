@@ -113,6 +113,7 @@ export const stubModelCandidate = (overrides: {
     disabledPublicModelIds: [],
     modelPrefix: null,
     modelsCache: null,
+    pipelines: {},
     instance: stubProvider(),
   };
   const modelOverrides = overrides.model ?? {};
