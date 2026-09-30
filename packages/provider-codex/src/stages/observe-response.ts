@@ -1,4 +1,4 @@
-import { classifyCodexHttpResponse, classifyCodexUnauthorizedResponse, decodeCodexUpstreamError } from '../fetch.ts';
+import { classifyCodexUnauthorizedResponse, decodeCodexUpstreamError, writeCodexQuotaObservation } from '../fetch.ts';
 import { codexCall, type CodexHttpFacts, type CodexOperation, type CodexPipelineConfig } from '../pipeline-facts.ts';
 import { exchangeResponse, takeHttpResponse, type HttpResponseFacts } from '@floway-dev/http/pipeline';
 import { defer, defineStage, move, setRelease, type Deferred } from '@floway-dev/pipeline';
@@ -27,7 +27,12 @@ export const observeCodexResponse = (config: CodexPipelineConfig, operation: Cod
       failureBody = parsed.body;
       classified = await classifyCodexUnauthorizedResponse(call, response, parsed);
     } else {
-      classified = await classifyCodexHttpResponse({ ...call, call: { ...call.call, waitUntil: work => { pending.push(work); } } }, response, operation === 'alphaSearch' ? 'always' : 'when-present');
+      classified = response;
+      if (response.ok || response.status === 429) {
+        const policy = operation === 'alphaSearch' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? 'always' : 'when-present';
+        const work = writeCodexQuotaObservation(call, response, response.status === 429, policy);
+        if (work !== null) pending.push(work);
+      }
     }
     const retained = classified === response ? exchange : takeHttpResponse(classified);
     return move({ ...back, 'response.http.exchange': retained, 'response.http.body': retained.body, 'response.codex.background': defer(Promise.all(pending)), 'response.codex.failureBody': failureBody });

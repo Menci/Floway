@@ -5,7 +5,7 @@ import type { HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { secret, type Secret } from '@floway-dev/pipeline';
 import type { ProviderModelFacts, ProviderOperationPayloads, ProviderRequest, ProviderServices } from '@floway-dev/provider';
 
-export type CodexOperation = 'alphaSearch' | 'openaiImagesGenerations' | 'openaiImagesEdits';
+export type CodexOperation = 'alphaSearch' | 'openaiImagesGenerations' | 'openaiImagesEdits' | 'openaiResponses' | 'openaiResponsesCompact';
 export type CodexRequest<O extends CodexOperation = CodexOperation> = ProviderRequest<ProviderOperationPayloads[O]>;
 export type CodexToken = Omit<CodexAccessTokenEntry, 'token'> & { readonly token: Secret<string> };
 export type CodexAccount = Omit<CodexAccountCredential, 'refresh_token' | 'accessToken'> & {
@@ -25,6 +25,7 @@ export interface CodexHttpFacts extends HttpRequestFacts {
   'request.codex.accessToken': CodexToken;
   'request.codex.plan': CodexPlanObservation | null;
   'request.codex.modelKey': string;
+  'request.provider.modelKey': string;
 }
 
 export interface CodexPipelineConfig {

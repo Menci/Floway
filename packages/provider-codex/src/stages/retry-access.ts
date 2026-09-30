@@ -25,7 +25,7 @@ export const retryCodexAccess = (config: CodexPipelineConfig, operation: CodexOp
     };
     if (!fresh.ok) return declined(fresh.response);
     const plan = codexPlanObservation(fresh.accessToken) ?? facts['request.codex.plan'];
-    if (operation !== 'alphaSearch' && plan !== null && !codexPlanSupportsImages(plan.planType)) return declined(Response.json({ error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' } }, { status: 403 }));
+    if ((operation === 'openaiImagesGenerations' || operation === 'openaiImagesEdits') && plan !== null && !codexPlanSupportsImages(plan.planType)) return declined(Response.json({ error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' } }, { status: 403 }));
     const retried = await next(move({ ...facts, 'request.codex.accessToken': tokenFacts(fresh.accessToken), 'request.codex.plan': plan }));
     return move({ ...retried, 'response.provider.called': retried['response.http.exchange'].type === 'response', 'response.provider.previousCalls': [{ modelKey: facts['request.codex.modelKey'] }] });
   },

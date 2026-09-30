@@ -7,7 +7,7 @@ import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts'
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { move, run, setRelease, type Event } from '@floway-dev/pipeline';
 import { directFetcher, initProviderRepo, providerModelFacts, type UpstreamRecord } from '@floway-dev/provider';
-import { callProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
+import { callProviderPipeline, collectChatProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -85,14 +85,62 @@ const idToken = (planType = 'plus'): string => [
   Buffer.from('signature').toString('base64url'),
 ].join('.');
 
-const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number }> = {}): Response => new Response(JSON.stringify({
+const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number; id_token: string }> = {}): Response => new Response(JSON.stringify({
   access_token: overrides.access_token ?? 'at_minted',
   refresh_token: overrides.refresh_token ?? 'rt_v2',
-  id_token: idToken(),
+  id_token: overrides.id_token ?? idToken(),
   expires_in: overrides.expires_in ?? 3600,
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createCodexProvider', () => {
+  test.each(['openaiResponses', 'openaiResponsesCompact'] as const)('%s pipeline keeps parsed private wire content and actual endpoint observations', async operation => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => operation === 'openaiResponses'
+      ? new Response(sseResponse().body, { headers: { [CODEX_RESPONSES_LITE_HEADER]: 'true' } })
+      : Response.json({ id: 'compact', object: 'response.compaction', output: [] }));
+    const provider = createCodexProvider(current!);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const options = noopUpstreamCallOptions();
+    const result = await collectChatProviderPipeline(provider, operation, model, {
+      input: [{ type: 'message', role: 'user', content: 'hi' }], tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }], text: { verbosity: 'low' },
+    }, undefined, options);
+    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('instructions');
+    expect(wire).not.toHaveProperty('tools');
+    expect(wire.text).toEqual({ verbosity: 'low' });
+    expect(typeof result.facts['request.http.body']).toBe('object');
+    expect(result.facts['response.provider.called']).toBe(true);
+    expect(result.facts['response.provider.modelKey']).toBe('future-lite');
+    const output = result.facts['response.provider.output'];
+    if (output === null || !('kind' in output)) throw new Error('Expected protocol output');
+    if (output.kind === 'stream') {
+      expect(result.frames.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(['response.created', 'response.in_progress', 'response.completed']);
+      const exchange = result.facts['response.http.exchange'];
+      if (exchange.type !== 'response') throw new Error('Expected response');
+      expect(exchange.headers.some(([name]) => name === CODEX_RESPONSES_LITE_HEADER)).toBe(false);
+      expect(exchange.headers).toContainEqual(['content-type', 'text/event-stream']);
+    } else expect(output.body).toMatchObject({ object: 'response.compaction' });
+  });
+
+  test('Responses pipeline retains the first 401 observation and retries without applying the image plan gate', async () => {
+    const state = current!.state as CodexUpstreamState;
+    current = { ...current!, config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] }, state: { accounts: [{ ...state.accounts[0]!, accessToken: { ...freshAccessToken, planType: 'free' } }] } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse({ id_token: idToken('free') });
+      return new Headers(init?.headers).get('authorization') === 'Bearer at'
+        ? Response.json({ error: { code: 'invalid_token', message: 'expired' } }, { status: 401 })
+        : sseResponse();
+    });
+    const provider = createCodexProvider(current!);
+    const model = stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } });
+    const options = noopUpstreamCallOptions();
+    const result = await collectChatProviderPipeline(provider, 'openaiResponses', model, { input: [] }, undefined, options);
+    expect(result.facts['response.provider.previousCalls']).toEqual([{ modelKey: 'gpt-5.4' }]);
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/responses'))).toHaveLength(2);
+    const output = result.facts['response.provider.output'];
+    if (output === null || !('kind' in output) || output.kind !== 'stream') throw new Error('Expected stream');
+    expect(result.frames.some(frame => frame.type === 'event' && frame.event.type === 'response.completed')).toBe(true);
+  });
+
   test('Codex Images records the complete parsed 401 body and preserves its preceding endpoint observation', async () => {
     const refusal = { error: { code: 'invalid_token', message: 'expired bearer' }, diagnostic: 'x'.repeat(600) };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

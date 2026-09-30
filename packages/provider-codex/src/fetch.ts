@@ -399,10 +399,10 @@ interface PreparedCodexResponsesRequest {
   body: ReplayableBody;
 }
 
-const prepareCodexResponsesRequest = (
+export const prepareCodexResponsesContent = (
   opts: CallCodexOpenAIResponsesOptions | CallCodexOpenAIResponsesCompactOptions,
   action: 'generate' | 'compact',
-): PreparedCodexResponsesRequest => {
+): Omit<PreparedCodexResponsesRequest, 'body'> & { body: Record<string, unknown> } => {
   const clientMetadata = { ...clientCodexClientMetadata(opts.body) };
   delete clientMetadata[CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY];
   const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
@@ -422,10 +422,18 @@ const prepareCodexResponsesRequest = (
     identity,
     turnMetadataJson,
     lite,
-    body: jsonRequestBody(action === 'compact'
+    body: action === 'compact'
       ? buildCodexOpenAIResponsesCompactBody(wire, opts.model.id)
-      : buildCodexOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body)),
+      : buildCodexOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body),
   };
+};
+
+const prepareCodexResponsesRequest = (
+  opts: CallCodexOpenAIResponsesOptions | CallCodexOpenAIResponsesCompactOptions,
+  action: 'generate' | 'compact',
+): PreparedCodexResponsesRequest => {
+  const prepared = prepareCodexResponsesContent(opts, action);
+  return { ...prepared, body: jsonRequestBody(prepared.body) };
 };
 
 const buildCodexOpenAIResponsesBody = (
@@ -570,15 +578,26 @@ export const classifyCodexHttpResponse = async (
   return response;
 };
 
+export const writeCodexQuotaObservation = (
+  opts: CodexBackendCallBase,
+  response: Response,
+  isRateLimited: boolean,
+  policy: 'always' | 'when-present',
+): Promise<void> | null => {
+  const snapshot = parseCodexQuotaHeaders(response.headers, { now: new Date(), isRateLimited });
+  return policy === 'when-present' && !hasCodexQuotaReading(snapshot)
+    ? null
+    : putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot);
+};
+
 const persistCodexQuotaObservation = (
   opts: CodexBackendCallBase,
   response: Response,
   isRateLimited: boolean,
   policy: 'always' | 'when-present',
 ): void => {
-  const snapshot = parseCodexQuotaHeaders(response.headers, { now: new Date(), isRateLimited });
-  if (policy === 'when-present' && !hasCodexQuotaReading(snapshot)) return;
-  registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+  const write = writeCodexQuotaObservation(opts, response, isRateLimited, policy);
+  if (write !== null) registerBackgroundWrite(opts, write);
 };
 
 const dispatchCodexImageCall = async (

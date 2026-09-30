@@ -20,12 +20,13 @@ const CODEX_UNSUPPORTED_BODY_FIELDS = [
   'stream_options',
 ] as const;
 
+export const supportedResponsesPayload = <P extends Omit<OpenAIResponsesBoundaryCtx['payload'], 'model'>>(payload: P): P =>
+  Object.fromEntries(Object.entries(payload).filter(([key]) => !(CODEX_UNSUPPORTED_BODY_FIELDS as readonly string[]).includes(key))) as P;
+
 export const stripUnsupportedFields = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const next: Record<string, unknown> = { ...(ctx.payload as unknown as Record<string, unknown>) };
-  for (const key of CODEX_UNSUPPORTED_BODY_FIELDS) delete next[key];
-  ctx.payload = next as unknown as typeof ctx.payload;
+  ctx.payload = supportedResponsesPayload(ctx.payload);
   return await run();
 };
