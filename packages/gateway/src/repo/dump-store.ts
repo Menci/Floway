@@ -12,10 +12,9 @@ import type {
   DumpMetadata,
   DumpRecordId,
   DumpUpstreamRef,
-  DumpWriteRecord,
   StoredDumpRecord,
 } from '../dump/types.ts';
-import { gunzipBytes, gzipBytes, gzipStream } from '../shared/gzip.ts';
+import { gunzipBytes, gzipStream } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{run}.gz`.
@@ -64,19 +63,8 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'run'): string =>
-  `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
-
-const putRawBody = async (
-  files: FileStore,
-  key: string,
-  rawBytes: Uint8Array,
-  type: DumpBodyDescriptor['type'],
-): Promise<DumpBodyDescriptor> => {
-  const gz = await gzipBytes(rawBytes);
-  await files.put(key, gz);
-  return { key, type };
-};
+const bodyPath = (keyId: string, bucket: string, recordId: string): string =>
+  `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.run.gz`;
 
 const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
@@ -94,7 +82,7 @@ export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
   async putRun(keyId: string, run: DumpRunWrite): Promise<void> {
-    const fileKey = bodyPath(keyId, hourBucket(run.startedAt), run.id, 'run');
+    const fileKey = bodyPath(keyId, hourBucket(run.startedAt), run.id);
     await this.db.prepare(
       `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
        VALUES (?, 'dump-response', ?, 'staged', ?)`,
@@ -130,49 +118,6 @@ export class FileDumpStore implements DumpStore {
         encodeDumpBodyDescriptor({ key: fileKey, type: 'run' }, `dump record ${meta.id} run descriptor`),
       ).run();
     } finally { stopRenewing(); }
-  }
-
-  // Files are staged before writing; rows publish only after the complete run
-  // artifact exists, so a failed write leaves a collectible orphan file.
-  async put(keyId: string, record: DumpWriteRecord): Promise<void> {
-    const bucket = hourBucket(record.meta.completedAt);
-    const responseFileKey = bodyPath(keyId, bucket, record.meta.id, 'run');
-    const staged = [{ fileKey: responseFileKey, ownerKind: 'dump-response' }];
-    if (staged.length > 0) {
-      await this.db
-        .prepare(
-          `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
-           SELECT
-             json_extract(value, '$.fileKey'),
-             json_extract(value, '$.ownerKind'),
-             json_array(?, ?),
-             'staged',
-             ?
-           FROM json_each(?)`,
-        )
-        .bind(keyId, record.meta.id, Date.now() + SPILLED_FILE_STAGE_GRACE_MS, JSON.stringify(staged))
-        .run();
-    }
-
-    const responseDescriptor = await putRawBody(this.files, responseFileKey, record.events, 'run');
-
-    // Files before row — a partial failure leaves orphan files the sweep
-    // collects, never an orphan row whose detail fetch would 404.
-    await this.db.prepare(
-      `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      keyId,
-      record.meta.id,
-      record.meta.completedAt,
-      record.meta.upstream?.id ?? null,
-      encodePersistedDumpMetadata(record.meta, `dump record ${record.meta.id} metadata`),
-      NO_EDGE_HEADERS,
-      null,
-      null,
-      encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
-    ).run();
   }
 
   async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {

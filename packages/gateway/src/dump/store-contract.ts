@@ -1,4 +1,4 @@
-import type { DumpMetadata, DumpRecordId, DumpWriteRecord, StoredDumpRecord } from './types.ts';
+import type { DumpMetadata, DumpRecordId, StoredDumpRecord } from './types.ts';
 
 // Per-API-key run storage: metadata in SQL and compressed NDJSON in the
 // FileStore. Streaming writes stage their file before publishing the row;
@@ -19,11 +19,9 @@ export interface DumpRunWrite {
 }
 
 export interface DumpStore {
+  // Publish metadata only after the complete run artifact exists. Failed
+  // writes leave staged files collectible by the retention sweep.
   putRun(keyId: string, run: DumpRunWrite): Promise<void>;
-
-  // Write body files BEFORE the metadata row so a partial failure leaves
-  // orphan files (sweep-collectable), not orphan rows (broken records).
-  put(keyId: string, record: DumpWriteRecord): Promise<void>;
 
   // Newest-first, paginated by ULID cursor. Reads enforce the API key's
   // current rolling retention even before queued physical deletion runs.

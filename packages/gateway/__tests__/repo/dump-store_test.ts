@@ -12,6 +12,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from '../../src/repo/spilled-files-policy.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
+import { writeRun } from '../dump/write-run.ts';
 import { encodeRun, toNdjson, type Facts } from '@floway-dev/pipeline';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
@@ -60,7 +61,7 @@ test('FileDumpStore round-trips a run record as its NDJSON event stream', async 
   const store = new FileDumpStore(db, files);
   const record = runRecord('01HZZ00000000000000000RUN1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
-  await store.put('key_x', record);
+  await writeRun(store, 'key_x', record);
   const fetched = await store.get('key_x', record.meta.id);
   assertExists(fetched);
   assertEquals(new TextDecoder().decode(fetched.events), new TextDecoder().decode(record.events));
@@ -81,8 +82,8 @@ test('FileDumpStore lists what a row renders without opening the stream', async 
   const db = await openDb();
   const store = new FileDumpStore(db, new MemoryFileStore());
   const base = Date.UTC(2026, 5, 1, 12, 0, 0);
-  await store.put('key_x', runRecord('01HZZ00000000000000000RUN1', base));
-  await store.put('key_x', runRecord('01HZZ00000000000000000RUN2', base + 1));
+  await writeRun(store, 'key_x', runRecord('01HZZ00000000000000000RUN1', base));
+  await writeRun(store, 'key_x', runRecord('01HZZ00000000000000000RUN2', base + 1));
 
   const listed = await store.list('key_x', { limit: 10 });
   assertEquals(listed.map(meta => meta.id), ['01HZZ00000000000000000RUN2', '01HZZ00000000000000000RUN1']);
@@ -99,8 +100,8 @@ test('FileDumpStore retires an expired run record and collects its stream file',
   initFileStore(files);
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
-  await store.put('key_x', runRecord('01HZZ00000000000000000RUN3', Date.UTC(2026, 5, 1, 9, 0, 0)));
-  await store.put('key_x', runRecord('01HZZ00000000000000000RUN4', now));
+  await writeRun(store, 'key_x', runRecord('01HZZ00000000000000000RUN3', Date.UTC(2026, 5, 1, 9, 0, 0)));
+  await writeRun(store, 'key_x', runRecord('01HZZ00000000000000000RUN4', now));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
 
   const originalNow = Date.now;
@@ -125,7 +126,7 @@ test('FileDumpStore rejects malformed metadata with its row identity', async () 
   const db = await openDb();
   const store = new FileDumpStore(db, new MemoryFileStore());
   const record = runRecord('01HZZ000000000000000000BADM', Date.UTC(2026, 5, 1, 12));
-  await store.put('key_x', record);
+  await writeRun(store, 'key_x', record);
   await db.prepare('UPDATE dump_records SET meta_json = ? WHERE key_id = ? AND id = ?')
     .bind(JSON.stringify({ ...record.meta, upstream: undefined, status: '200' }), 'key_x', record.meta.id)
     .run();
@@ -138,7 +139,7 @@ test('FileDumpStore rejects a malformed body descriptor before file access', asy
   const db = await openDb();
   const store = new FileDumpStore(db, new MemoryFileStore());
   const record = runRecord('01HZZ000000000000000000BADD', Date.UTC(2026, 5, 1, 12));
-  await store.put('key_x', record);
+  await writeRun(store, 'key_x', record);
   await db.prepare('UPDATE dump_records SET response_body_descriptor = ? WHERE key_id = ? AND id = ?')
     .bind(JSON.stringify({ key: 'dumps/v1/key_x/run.gz', type: 'chunks' }), 'key_x', record.meta.id)
     .run();
@@ -154,7 +155,7 @@ test('FileDumpStore refuses a row that points at no run stream', async () => {
   const db = await openDb();
   const store = new FileDumpStore(db, new MemoryFileStore());
   const record = runRecord('01HZZ000000000000000000NORUN', Date.UTC(2026, 5, 1, 12));
-  await store.put('key_x', record);
+  await writeRun(store, 'key_x', record);
   await db.prepare('UPDATE dump_records SET response_body_descriptor = ? WHERE key_id = ? AND id = ?')
     .bind(JSON.stringify({ key: 'dumps/v1/key_x/run.gz', type: 'bytes' }), 'key_x', record.meta.id)
     .run();
@@ -169,7 +170,7 @@ test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor'
   const store = new FileDumpStore(db, files);
   const base = Date.UTC(2026, 5, 1, 12, 0, 0);
   for (let i = 0; i < 5; i++) {
-    await store.put('key_x', runRecord(`01HZZ000000000000000000A0${i}`, base + i));
+    await writeRun(store, 'key_x', runRecord(`01HZZ000000000000000000A0${i}`, base + i));
   }
   const first = await store.list('key_x', { limit: 2 });
   assertEquals(first.map(m => m.id), ['01HZZ000000000000000000A04', '01HZZ000000000000000000A03']);
@@ -186,8 +187,8 @@ test('FileDumpStore applies retention immediately and retires exact expired file
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
   // Old bucket 9:xx, current bucket 12:xx.
-  await store.put('key_x', runRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
-  await store.put('key_x', runRecord('01HZZ0000000000000000000A2', now));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000A2', now));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
   const originalNow = Date.now;
   Date.now = () => now + 1;
@@ -216,7 +217,7 @@ test('growing dump retention can reveal a row not yet physically deleted', async
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12);
-  await store.put('key_x', runRecord('01HZZ0000000000000000000A4', now - 3 * 3600_000));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000A4', now - 3 * 3600_000));
   const originalNow = Date.now;
   Date.now = () => now;
   try {
@@ -236,8 +237,8 @@ test('FileDumpStore retires every dump record when retention is disabled and col
   const files = new MemoryFileStore();
   initFileStore(files);
   const store = new FileDumpStore(db, files);
-  await store.put('key_x', runRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
-  await store.put('key_x', runRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
   assertEquals(await store.deleteExpiredBatch('key_x', Date.now(), 100), 2);
@@ -251,8 +252,8 @@ test('FileDumpStore counts returned dump rows instead of trigger-amplified chang
   const repo = new SqlRepo(db);
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
-  await store.put('key_x', runRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
-  await store.put('key_x', runRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
 
   const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
@@ -266,8 +267,8 @@ test('FileDumpStore counts returned active dump rows instead of trigger-amplifie
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12);
-  await store.put('key_x', runRecord('01HZZ0000000000000000000C3', Date.UTC(2026, 5, 1, 9)));
-  await store.put('key_x', runRecord('01HZZ0000000000000000000C4', Date.UTC(2026, 5, 1, 10)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000C3', Date.UTC(2026, 5, 1, 9)));
+  await writeRun(store, 'key_x', runRecord('01HZZ0000000000000000000C4', Date.UTC(2026, 5, 1, 10)));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 3600 });
 
   const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
@@ -283,11 +284,11 @@ test('a record-ID race leaves only the losing write\'s uniquely keyed files coll
   initFileStore(files);
   const store = new FileDumpStore(db, files);
   const record = runRecord('01HZZ0000000000000000000A3', Date.now());
-  await store.put('key_x', record);
+  await writeRun(store, 'key_x', record);
 
   // One file per record now — the run's own stream — so the winner owns one and the loser
   // staged one under a key of its own.
-  await expect(store.put('key_x', record)).rejects.toThrow();
+  await expect(writeRun(store, 'key_x', record)).rejects.toThrow();
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(1);
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(1);
 
@@ -342,7 +343,7 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO', async ()
     const store = new FileDumpStore(db, new TmpDirFileStore(join(root, 'files')));
     const record = runRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
-    await store.put('key_x', record);
+    await writeRun(store, 'key_x', record);
     const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
     assertExists(fetched);
     assertEquals(new TextDecoder().decode(fetched.events), new TextDecoder().decode(record.events));
@@ -359,7 +360,7 @@ test('FileDumpStore filters all retained history before applying the page limit'
     const record = runRecord(`filter-${i}`, now - i);
     record.meta.model = i === 4 ? 'needle-model' : 'other';
     record.meta.error = i === 4 ? { kind: 'failed', reason: 'socket reset' } : null;
-    await store.put('key_x', record);
+    await writeRun(store, 'key_x', record);
   }
   expect((await store.list('key_x', { q: 'needle', limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
   expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);

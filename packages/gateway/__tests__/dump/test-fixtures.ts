@@ -40,7 +40,7 @@ export const eventsOf = (record: StoredDumpRecord): readonly Record<string, unkn
     .map(line => JSON.parse(line) as Record<string, unknown>);
 
 type DumpStubFailMethod =
-  | 'put'
+  | 'putRun'
   | 'list'
   | 'get'
   | 'publish'
@@ -70,13 +70,9 @@ export const installDumpStubs = (
   const store: DumpStore = {
     async putRun(keyId, run) {
       const bytes = new Uint8Array(await new Response(run.events).arrayBuffer());
-      await store.put(keyId, { meta: await run.metadata, events: bytes });
-    },
-    async put(keyId, record) {
-      if (throws.put) throw throws.put;
-      // A record is already stored-shaped: its stream is encoded once the run is over, so there
-      // is nothing prepared ahead of the write to rehydrate.
-      const storedRecord: StoredDumpRecord = record;
+      const meta = await run.metadata;
+      if (throws.putRun) throw throws.putRun;
+      const storedRecord: StoredDumpRecord = { meta, events: bytes };
       stored.push({ keyId, record: storedRecord });
       const list = records.get(keyId) ?? [];
       list.unshift(storedRecord);

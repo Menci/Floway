@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { writeRun } from './dump/write-run.ts';
 import { initDumpStore } from '../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../src/dump/types.ts';
+import type { StoredDumpRecord } from '../src/dump/types.ts';
 import { FileDumpStore } from '../src/repo/dump-store.ts';
 import { initRepo } from '../src/repo/index.ts';
 import { SqlRepo } from '../src/repo/sql.ts';
@@ -29,7 +30,7 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   openaiResponsesRetentionSeconds: 0,
 });
 
-const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
+const fileBackedDumpRecord = (id: string, completedAt: number): StoredDumpRecord => ({
   meta: {
     id,
     startedAt: completedAt - 1,
@@ -127,7 +128,7 @@ test('one maintenance tick collects every file retired by its four dump units', 
     const keyId = `key-${keyIndex}`;
     await repo.apiKeys.save(apiKey(keyId, now, keyIndex + 1));
     for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
-      await dumps.put(keyId, fileBackedDumpRecord(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
+      await writeRun(dumps, keyId, fileBackedDumpRecord(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
     }
   }
   const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')

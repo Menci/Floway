@@ -36,7 +36,6 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRe
 // implementations.
 const noopStore: DumpStore = {
   async putRun(_keyId, run) { await new Response(run.events).arrayBuffer(); await run.metadata; },
-  async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
   async deleteExpiredBatch(): Promise<number> { return 0; },
