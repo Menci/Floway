@@ -191,7 +191,7 @@ function RunRecordDetail({ record }: { record: DumpRunRecord }) {
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
-      <RenderedEventList events={events} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} />
+      <RenderedEventList events={events} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
     </div>
   </div>;
 }

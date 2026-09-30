@@ -54,7 +54,7 @@ export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEv
   return <RenderedEventList events={rendered} copyText={copyText} toolbarStart={toolbarStart} />;
 }
 
-export function RenderedEventList({ events, copyText, toolbarStart }: { events: RenderedEvent[]; copyText: string; toolbarStart: ReactNode }) {
+export function RenderedEventList({ events, copyText, toolbarStart, emptyText }: { events: RenderedEvent[]; copyText: string; toolbarStart: ReactNode; emptyText?: string }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -103,7 +103,7 @@ export function RenderedEventList({ events, copyText, toolbarStart }: { events: 
       <Text size={200} className="text-fui-fg3">{filtered.length} / {events.length}</Text>
       <TooltipIconButton icon={<DismissRegular />} label={t('common.dismiss')} onClick={() => { setSearchOpen(false); changeQuery(''); }} />
     </div>}
-    {filtered.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noEventMatches')}</EmptyStateLine> : <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
+    {filtered.length === 0 ? <EmptyStateLine className="p-4">{query.trim() ? t('dashboard.requests.noEventMatches') : emptyText ?? t('dashboard.requests.noEventMatches')}</EmptyStateLine> : <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
       <List
         aria-label={t('dashboard.requests.events', { count: events.length })}
         listRef={setList}
