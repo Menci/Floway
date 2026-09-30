@@ -1,5 +1,5 @@
 import { wrapOpenAIResponsesAffinityEgress } from './affinity/egress.ts';
-import { wrapOpenAIResponsesClientOutput, wrapOpenAIResponsesObservedOutput } from './items/output.ts';
+import { wrapOpenAIResponsesClientOutput } from './items/output.ts';
 import { createOpenAIResponsesResponseId } from './response-id.ts';
 import { wrapResponseResourceCompletion } from './response-resource.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
@@ -12,8 +12,8 @@ import type { CanonicalOpenAIResponsesPayload, ClientOpenAIResponsesStreamEvent,
 // date a turn the same way.
 export const openaiResponsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(ctx.requestStartedAt / 1000);
 
-// The item lifecycle first resolves any partial terminal restatement. Affinity
-// then wraps routing metadata, and the client-output boundary stores each
+// Providers resolve their upstream's terminal snapshot omissions before
+// affinity wraps routing metadata. The client-output boundary stores each
 // complete emitted item under its exact ID and applies one generated response
 // ID to the downstream stream and snapshot. Every native OpenAI Responses turn goes
 // through this half, whichever resource it answers with.
@@ -21,8 +21,7 @@ export const wrapOpenAIResponsesStatefulOutput = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   ctx: ChatGatewayCtx,
 ): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> => {
-  const withObservedOutput = wrapOpenAIResponsesObservedOutput(frames);
-  const withAffinity = wrapOpenAIResponsesAffinityEgress(withObservedOutput, affinityEgressOptions(ctx));
+  const withAffinity = wrapOpenAIResponsesAffinityEgress(frames, affinityEgressOptions(ctx));
   return wrapOpenAIResponsesClientOutput(withAffinity, {
     store: ctx.store,
     responseId: createOpenAIResponsesResponseId(),
