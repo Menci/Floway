@@ -51,7 +51,11 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     try {
       result = await candidate.provider.instance.callOpenAIAudioTranscriptions(
         providerModelOf(candidate),
-        { entries: facts['request.openaiAudioTranscription.form'] },
+        {
+          entries: facts['request.openaiAudioTranscription.form'].map(({ name, value }) => ({
+            name, value: typeof value === 'string' ? value : new File([value.bytes], value.name, { type: value.type, lastModified: value.lastModified }),
+          })),
+        },
         use.gateway.abortSignal,
         // The client's own headers reach the upstream from the record, not from a live request
         // object: what a provider is allowed to forward is filtered per provider, and the dump

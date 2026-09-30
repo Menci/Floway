@@ -17,12 +17,12 @@ import { providerModelOf } from '@floway-dev/provider';
  */
 export const callRerankUpstream = defineStage<
   Fields<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers' | 'ingress.rerank.sourceProtocol'>,
-  Fields<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.headers' | 'response.usage.billable'>,
+  Fields<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'callRerankUpstream',
   return: {
-    provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.headers', 'response.usage.billable'],
+    provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.status', 'response.http.headers', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -58,6 +58,7 @@ export const callRerankUpstream = defineStage<
         ...facts,
         'response.rerank.canonical': dialFailure(error),
         'response.rerank.targetProtocol': configuredTarget.protocol,
+        'response.http.status': 502,
         'response.http.headers': [],
         'response.usage.billable': [],
       });
@@ -78,6 +79,7 @@ export const callRerankUpstream = defineStage<
           ...('json' in body ? { body: body.json } : {}),
         },
         'response.rerank.targetProtocol': result.target.protocol,
+        'response.http.status': result.response.status,
         'response.http.headers': headers,
         // The upstream was called and reported nothing, which is a different situation
         // from reporting zero — so the entity is present with no quantities.
@@ -90,6 +92,7 @@ export const callRerankUpstream = defineStage<
         ...facts,
         'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
         'response.rerank.targetProtocol': result.target.protocol,
+        'response.http.status': result.response.status,
         'response.http.headers': headers,
         'response.usage.billable': [{ identity, quantities: {} }],
       });
@@ -129,6 +132,7 @@ export const callRerankUpstream = defineStage<
           ...facts,
           'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
           'response.rerank.targetProtocol': result.target.protocol,
+          'response.http.status': result.response.status,
           'response.http.headers': headers,
           'response.usage.billable': metered,
         });
@@ -141,6 +145,7 @@ export const callRerankUpstream = defineStage<
       ...facts,
       'response.rerank.canonical': canonical,
       'response.rerank.targetProtocol': result.target.protocol,
+      'response.http.status': result.response.status,
       'response.http.headers': headers,
       'response.usage.billable': metered,
     });

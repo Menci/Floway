@@ -52,13 +52,10 @@ export const settleBillable = (
   services: Pick<GatewayServices, 'gateway' | 'background'> & { readonly log: Logger },
   billable: readonly BillableEntity[],
   failed: boolean,
-  outputTokens = 0,
   finishedAt: number = performance.now(),
 ): void => {
   for (const entity of billable) {
-    // The dump names the upstream that answered and what it metered, which is the same
-    // reading the row is written from rather than a second one taken separately.
-    if (!failed) services.gateway.dump?.success(entity.identity, dumpUsage(entity.quantities));
+    services.gateway.dump?.success(entity.identity, dumpUsage(entity.quantities));
     services.background(recordUsage(
       services.gateway.apiKeyId,
       entity.identity,
@@ -68,6 +65,8 @@ export const settleBillable = (
       services.log.error('failed to record usage', { error: String(error) });
     }));
   }
+  if (failed) services.gateway.dump?.failed('The upstream response failed.');
+  const outputTokens = billable.reduce((total, entity) => total + Number(entity.quantities.output_tokens ?? 0), 0);
   recordPerformance(services.gateway, services.gateway.attempt.telemetry, failed, outputTokens, finishedAt);
 };
 

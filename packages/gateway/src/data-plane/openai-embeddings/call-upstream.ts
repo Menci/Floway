@@ -17,12 +17,12 @@ import { providerModelOf } from '@floway-dev/provider';
  */
 export const callOpenAIEmbeddingsUpstream = defineStage<
   Fields<'request.openaiEmbeddings.canonical' | 'route.attempt' | 'ingress.http.headers' | 'serve.model'>,
-  Fields<'response.openaiEmbeddings.canonical' | 'response.http.headers' | 'response.usage.billable'>,
+  Fields<'response.openaiEmbeddings.canonical' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'callOpenAIEmbeddingsUpstream',
   return: {
-    provides: ['response.openaiEmbeddings.canonical', 'response.http.headers', 'response.usage.billable'],
+    provides: ['response.openaiEmbeddings.canonical', 'response.http.status', 'response.http.headers', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -48,6 +48,7 @@ export const callOpenAIEmbeddingsUpstream = defineStage<
       return move({
         ...facts,
         'response.openaiEmbeddings.canonical': dialFailure(error),
+        'response.http.status': 502,
         'response.http.headers': [],
         'response.usage.billable': [],
       });
@@ -62,6 +63,7 @@ export const callOpenAIEmbeddingsUpstream = defineStage<
     const answered = (canonical: CanonicalOpenAIEmbeddingsResponse | Failure, quantities: UsageQuantities) => move({
       ...facts,
       'response.openaiEmbeddings.canonical': canonical,
+      'response.http.status': result.response.status,
       'response.http.headers': headers,
       'response.usage.billable': [{ identity, quantities }],
     });

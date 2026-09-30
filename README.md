@@ -90,10 +90,18 @@ Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
 override that protocol's canonical path; there is no upstream-wide rerank path.
 
-Audio transcription parses multipart uploads into ordered entries and rebuilds
-them for each Custom, Azure, or Ollama-compatible upstream attempt. JSON, text,
-and subtitle responses retain their upstream document; transcription SSE
-responses preserve event labels and data while usage is observed separately.
+Audio transcription parses multipart uploads into ordered content entries,
+retaining each file's name, media type, timestamp and bytes. Each upstream
+attempt builds its own multipart body. JSON, text and subtitle responses retain
+their upstream document; transcription SSE responses preserve event labels and
+data while usage is observed separately. Successful pipeline responses retain
+the upstream HTTP status.
+
+Billing records each actual upstream usage observation independently, including
+multiple model calls within one hosted-tool turn. Pricing uses each observation's
+model identity and pricing facts. Request diagnostics sum the observed token
+quantities; performance uses the observed output count for TPOT and partial
+output failures.
 
 ### Upstreams
 

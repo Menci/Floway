@@ -22,14 +22,14 @@ const isFrames = (answer: CanonicalOpenAIImagesResponse | OpenAIImagesFrames): a
 export const emitOpenAIImages = defineStage<
   Record<string, never>,
   Record<string, never>,
-  Fields<'response.openaiImages.canonical' | 'response.http.headers'>,
+  Fields<'response.openaiImages.canonical' | 'response.http.status' | 'response.http.headers'>,
   Fields<'response.openaiImages.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitOpenAIImages',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.openaiImages.canonical', 'response.http.headers'],
+      needs: ['response.openaiImages.canonical', 'response.http.headers', 'response.http.status'],
       consumes: ['response.openaiImages.canonical', 'response.http.headers'],
       provides: ['response.openaiImages.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -44,7 +44,7 @@ export const emitOpenAIImages = defineStage<
     return {
       ...rest,
       'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
-      'response.http.status': isFailure(answer) ? answer.status : 200,
+      'response.http.status': isFailure(answer) ? answer.status : back['response.http.status'],
       'response.openaiImages.rendered': move(rendered(answer)),
     };
   },
