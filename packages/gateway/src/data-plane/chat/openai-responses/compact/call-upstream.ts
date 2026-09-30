@@ -1,4 +1,5 @@
-import type { Fields, Compacted } from './facts.ts';
+import type { Fields } from '../facts.ts';
+import type { Compacted } from './facts.ts';
 import { bodyForAttempt } from '../../../pipeline/attempt-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../../../shared/upstream-call-options.ts';

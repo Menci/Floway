@@ -1,7 +1,7 @@
-import type { Fields } from './facts.ts';
 import type { ChatServices } from '../../services.ts';
 import type { ChatWire } from '../../wire.ts';
 import { simulatesCompaction } from '../compaction-policy.ts';
+import type { Fields } from '../facts.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE } from '../facts.ts';
 import { defineStage } from '@floway-dev/pipeline';
 

@@ -1,4 +1,5 @@
-import type { Compacted, Fields } from './facts.ts';
+import type { Fields } from '../facts.ts';
+import type { Compacted } from './facts.ts';
 import { recordStream } from '../../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../../pipeline/serve.ts';

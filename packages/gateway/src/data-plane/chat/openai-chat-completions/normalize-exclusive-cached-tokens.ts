@@ -1,7 +1,6 @@
 import { asJsonObject } from '../../../shared/json-helpers.ts';
 import type { AttemptSelector } from '../../pipeline/facts.ts';
 import type { Chat } from '../facts.ts';
-import { attemptIdentity } from '../shared/attempt-identity.ts';
 import { withCacheBucketsFolded, type CacheBucketNames } from '../shared/cache-buckets.ts';
 import { answerWithFrames, rewritingEvents } from '../shared/frames.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
@@ -58,7 +57,7 @@ export const normalizeExclusiveCachedTokensForOpenAIChatCompletions = defineStag
       },
       response: facts => {
         const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
-        const identity = attemptIdentity(attempt);
+        const identity = `${attempt.upstreamId}/${attempt.modelId}`;
         const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(
           facts['response.chat.openaiChatCompletions'],
           frames => rewritingEvents(frames, chunk => foldOpenAIChatCompletionsUsage(chunk, declaredExclusive, identity)),

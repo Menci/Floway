@@ -1,7 +1,5 @@
 import type { Failure } from '../../../pipeline/facts.ts';
-import type { OpenAIResponsesFacts } from '../facts.ts';
-
-export type Fields<K extends keyof OpenAIResponsesFacts> = { [P in K]: OpenAIResponsesFacts[P] };
+import type { Fields } from '../facts.ts';
 
 /** What a compaction wire hands up. A compaction is a stream by the time it leaves either
  *  ending — the envelope is expanded into the events the stateful half reads — so the value
