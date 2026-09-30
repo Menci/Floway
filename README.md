@@ -193,6 +193,14 @@ also available as a root script. Route type generation runs first because the
 web app's generated types are not checked in and its lint configuration is
 type-aware. The web build includes assertions on the emitted bundle.
 
+Provider operations use typed pipeline handoffs. Portable model facts snapshot flags as arrays;
+upload facts contain bytes and file metadata. The shared HTTP stage adopts each native body
+once, and decoders replace its release action as ownership moves through the run. Provider
+retry observations and failed-over attempts join the same billable collection. Settlement
+wraps rendering and writes each observed call once, including calls completed before a later
+stage throws. Streaming quantities settle at the deferred exit. Explicit protocol and
+transport errors take precedence over the settlement's generic failure marker.
+
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same
 file and can place independent parts in a sibling directory of the same name.

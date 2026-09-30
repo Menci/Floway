@@ -22,29 +22,10 @@ const edits: CanonicalOpenAIImagesRequest = {
 
 describe('the OpenAI Images pipeline', () => {
   it('assembles both endpoints as one array, and asks its caller for what the descending stages need', () => {
-    expect([...openaiImagesServePipeline(generations).entryNeeds].sort()).toEqual(['serve.model']);
-    expect([...openaiImagesServePipeline(edits).entryNeeds].sort()).toEqual(['serve.model']);
+    expect([...openaiImagesServePipeline(generations).entryNeeds].sort()).toEqual(['ingress.http.headers', 'ingress.openaiImages.wantsStream', 'request.openaiImages.canonical', 'serve.model']);
+    expect([...openaiImagesServePipeline(edits).entryNeeds].sort()).toEqual(['ingress.http.headers', 'ingress.openaiImages.wantsStream', 'request.openaiImages.canonical', 'serve.model']);
   });
 
-  // `callOpenAIImagesUpstream` reads `request.openaiImages.canonical`,
-  // `ingress.openaiImages.wantsStream` and `ingress.http.headers`, and the derived contract
-  // mentions none of them. That is not this family's defect: a stage whose only trait is
-  // `return` declares no request side at all, by ruling — "when it short-circuits, only
-  // `provides`" — so assembly cannot see what an ending stage reads, and every family's ending
-  // stage reads something.
-  //
-  // Written as a test rather than a comment because the hole has a consequence: a caller who
-  // omits any of them gets a runtime failure at the deepest stage instead of the assembly error
-  // the entry contract exists to produce.
-  it('cannot see what its ending stage reads, because a return-only stage declares no needs', () => {
-    const derived = openaiImagesServePipeline(generations).entryNeeds;
-    expect(derived).not.toContain('request.openaiImages.canonical');
-    expect(derived).not.toContain('ingress.openaiImages.wantsStream');
-    expect(derived).not.toContain('ingress.http.headers');
-  });
-
-  // What covers that hole, and the reason it is a gap rather than a break: the entry type names
-  // all four, so the caller `entryNeeds` would have let through does not compile.
   it('names every key a caller must bring in its entry type', () => {
     const entry: OpenAIImagesServeEntry = {
       'ingress.http.headers': [['content-type', 'application/json']],

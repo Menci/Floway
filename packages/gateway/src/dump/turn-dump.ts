@@ -35,7 +35,7 @@ export interface TurnDump {
   requestedModel(model: string): void;
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void;
   error(kind: 'upstream' | 'gateway', upstream?: string): void;
-  failed(reason: unknown): void;
+  failed(reason: unknown, options?: { readonly fallback: boolean }): void;
   frame(frame: ProtocolFrame<unknown>): void;
   /** Begins recording one stream. Every call is a new one, which is what lets a turn that
    *  opens two — a sub-request beside the answer — keep them apart. */

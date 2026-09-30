@@ -91,7 +91,7 @@ const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
  * that declared none — so `Rendered.contentType` carries a null and the seam answers without
  * the header rather than inventing one. And a transcription's stream states its own outcome in
  * its last event, which the family's meter reads because it is the one place that knows — so
- * what `DeferredUsage` hands back is both what was billed and whether the stream finished,
+ * the deferred reading holds both what was billed and whether the stream finished,
  * settled from one promise while the request is still live.
  */
 export const openaiAudioTranscriptions = async (c: Context): Promise<Response> => {
@@ -127,6 +127,5 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
       // gateway carried rather than wrote is not one it can describe.
       return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };
     },
-    facts => facts['response.openaiAudioTranscription.streamedOutcome'],
   );
 };

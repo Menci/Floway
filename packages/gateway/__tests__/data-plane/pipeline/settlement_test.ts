@@ -31,6 +31,7 @@ describe('pipeline settlement', () => {
       attempt: { timing, telemetry: mockPerfTelemetryContext({ keyId: key.id }) },
     });
     const identity = { model: 'm', upstream: 'u', modelKey: 'm', pricing: null };
+    if (failed) dump!.failed(new Error('Original source failure', { cause: new Error('socket reset') }));
     settleBillable({ gateway, background, log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } }, [
       { identity, quantities: { input_tokens: '10', output_tokens: '2' } },
       { identity, quantities: { input_tokens: '20', output_tokens: '3' } },
@@ -47,7 +48,7 @@ describe('pipeline settlement', () => {
     await Promise.all(pending);
     expect(runRecordOf(stubs.stored[0]?.record).meta).toMatchObject({
       inputTokens: 30, outputTokens: 5, model: 'm',
-      error: failed ? { kind: 'failed' } : null,
+      error: failed ? { kind: 'failed', reason: 'Original source failure' } : null,
     });
   });
 });

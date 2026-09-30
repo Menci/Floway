@@ -1,5 +1,5 @@
 import type { TokenUsage } from '../../repo/types.ts';
-import { foldsExclusiveCacheTokens, openAICacheTokensFromUsage, tokenUsage } from '../shared/telemetry/usage.ts';
+import { foldsExclusiveCacheTokens, openAICacheTokensFromUsage } from '../shared/telemetry/usage.ts';
 import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 
 // `/v1/completions` shares OpenAI's CompletionUsage schema with
@@ -43,11 +43,11 @@ export const tokenUsageFromOpenAICompletionsUsage = (
     cacheWrite,
   }, identity);
   const split = splitInclusiveInputTokens(fold ? promptTokens + cacheRead + cacheWrite : promptTokens, cacheRead, cacheWrite);
-  return tokenUsage({
+  return {
     input: split.input,
     input_cache_read: split.cacheRead,
     input_cache_write: split.cacheWrite,
     output: completionTokens,
     tier: billableServiceTier(serviceTier),
-  });
+  };
 };

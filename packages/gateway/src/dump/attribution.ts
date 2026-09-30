@@ -44,11 +44,10 @@ export const oneLineError = (err: unknown): string => {
 // and cache writes; sum the present ones onto the dump's single inputTokens
 // column. Missing categories stay null (not measured) instead of zero so a
 // recorded zero genuinely means "upstream said zero".
-const tokenUsageInput = (usage: TokenUsage | null): number | null => {
-  if (!usage) return null;
-  const { input, input_cache_read, input_cache_write } = usage;
-  if (input === undefined && input_cache_read === undefined && input_cache_write === undefined) return null;
-  return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
+const tokenTotal = (usage: TokenUsage | null, keys: readonly (keyof TokenUsage)[]): number | null => {
+  if (usage === null) return null;
+  const present = keys.map(key => usage[key]).filter((value): value is number => typeof value === 'number');
+  return present.length === 0 ? null : present.reduce((sum, value) => sum + value, 0);
 };
 
 const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | null> => {
@@ -90,6 +89,7 @@ export class DumpAttribution {
   private inputTokens: number | null = null;
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
+  private settlementError: DumpErrorMeta | null = null;
 
   requestedModel(model: string): void {
     this.model = model;
@@ -100,16 +100,19 @@ export class DumpAttribution {
     if (upstream !== undefined) this.upstreamId = upstream;
   }
 
-  failed(reason: unknown): void {
-    this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
+  failed(reason: unknown, options?: { readonly fallback: boolean }): void {
+    const error: DumpErrorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
+    if (options?.fallback === true) this.settlementError = error;
+    else this.errorMeta = error;
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
-    const input = tokenUsageInput(usage);
+    const input = tokenTotal(usage, ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image']);
     if (input !== null) this.inputTokens = (this.inputTokens ?? 0) + input;
-    if (usage?.output !== undefined) this.outputTokens = (this.outputTokens ?? 0) + usage.output;
+    const output = tokenTotal(usage, ['output', 'output_image']);
+    if (output !== null) this.outputTokens = (this.outputTokens ?? 0) + output;
   }
 
   async metadata(outcome: DumpTurnOutcome): Promise<DumpMetadata> {
@@ -128,7 +131,7 @@ export class DumpAttribution {
       responseBytes: outcome.responseBytes,
       durationMs: outcome.completedAt - outcome.startedAt,
       ttftMs: outcome.ttftMs,
-      error: this.errorMeta ?? outcome.fallbackError,
+      error: this.errorMeta ?? outcome.fallbackError ?? this.settlementError,
     };
   }
 }

@@ -362,7 +362,7 @@ describe('/alpha/search data plane', () => {
       const entered = eventsOf(record)
         .filter(event => event.type === 'stage.entered')
         .map(event => event.name);
-      expect(entered).toEqual(['emitAlphaSearch', 'writeSettlement', 'parseSearchOperations', 'executeSearchOperations']);
+      expect(entered).toEqual(['writeSettlement', 'emitAlphaSearch', 'parseSearchOperations', 'executeSearchOperations']);
     });
   });
 

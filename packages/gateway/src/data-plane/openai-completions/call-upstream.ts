@@ -1,18 +1,19 @@
 import type { Fields, OpenAICompletionsFacts, OpenAICompletionsFrames } from './facts.ts';
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
 import { recordStream, type TurnDump } from '../../dump/turn-dump.ts';
-import type { UsageQuantities } from '../../repo/types.ts';
-import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import { isFailure, type BillableEntity, type Failure } from '../pipeline/facts.ts';
+import { providerEntry } from '../pipeline/provider-entry.ts';
+import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure } from '../pipeline/upstream-body.ts';
+import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
-import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
-import { defineStage, move, own, defer, type Owned, type Deferred } from '@floway-dev/pipeline';
+import { tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
+import { defineStage, move, setRelease, defer, type Owned, type Deferred } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { parseOpenAICompletionsStream, parseOpenAICompletionsResult, type OpenAICompletionsResult, type OpenAICompletionsStreamEvent } from '@floway-dev/protocols/openai-completions';
-import { providerModelOf, type TelemetryModelIdentity, type ModelCandidate } from '@floway-dev/provider';
+import { providerModelOf, type ProviderRequest, type ProviderOperationPayloads, type ProviderResponse, type TelemetryModelIdentity, type ModelCandidate } from '@floway-dev/provider';
 
 /**
  * A stream as a value the record can hold: a wrapper around the generator rather than the
@@ -33,22 +34,18 @@ const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyn
  */
 export const callOpenAICompletionsUpstream = defineStage<
   Fields<'ingress.openaiCompletions.wantsStream' | 'request.openaiCompletions.payload' | 'route.attempt' | 'ingress.http.headers'>,
+  ProviderRequest<ProviderOperationPayloads['openaiCompletions']>,
+  ProviderResponse,
   Fields<'response.openaiCompletions.payload' | 'response.openaiCompletions.streamedUsage' | 'response.usage.billable'
     | 'response.http.status' | 'response.http.headers' | 'response.http.body'>,
   GatewayServices
 >({
   name: 'callOpenAICompletionsUpstream',
-  return: {
-    provides: [
-      'response.openaiCompletions.payload',
-      'response.openaiCompletions.streamedUsage',
-      'response.usage.billable',
-      'response.http.status',
-      'response.http.headers',
-      'response.http.body',
-    ],
+  into: {
+    request: { needs: ['ingress.openaiCompletions.wantsStream', 'request.openaiCompletions.payload', 'route.attempt', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.openaiCompletions.payload', 'response.openaiCompletions.streamedUsage', 'response.usage.billable', 'response.http.status', 'response.http.headers', 'response.http.body'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     // The provider re-stamps whatever id it resolved upstream, so the id the client
     // addressed does not travel with the body.
@@ -57,31 +54,23 @@ export const callOpenAICompletionsUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'text_completion');
 
-    let result;
-    try {
-      result = await candidate.provider.instance.callOpenAICompletions(
-        providerModelOf(candidate),
-        body,
-        use.gateway.abortSignal,
-        // The client's own headers reach the upstream from the record, not from a live request
-        // object: what a provider is allowed to forward is filtered per provider, and the dump
-        // shows what was there to filter.
-        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]))),
-      );
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so nothing was billed and there are
-      // no headers to carry. What it leaves behind is the performance row settlement writes.
+    const pipeline = candidate.provider.pipelines.openaiCompletions;
+    if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no openaiCompletions pipeline`);
+    const back = await next(providerEntry(facts, candidate, body), pipeline);
+    const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    if (exchange.type === 'transportFailure') {
       return move({
-        ...facts,
-        'response.openaiCompletions.payload': dialFailure(error),
+        ...rest,
+        'response.openaiCompletions.payload': dialFailure(exchange.error),
         'response.openaiCompletions.streamedUsage': null,
-        'response.usage.billable': [],
+        'response.usage.billable': providerUsage(candidate, back, []),
         'response.http.status': 502,
         'response.http.headers': [],
         'response.http.body': spentBody(null),
       });
     }
+    const result = { response: exchangeResponse(exchange), modelKey };
+
     if (!result.response.ok) use.log.warn('upstream refused', { status: result.response.status });
 
     const answer = await readUpstream(
@@ -91,12 +80,14 @@ export const callOpenAICompletionsUpstream = defineStage<
       candidate,
       use.gateway.abortSignal,
       use.gateway.dump,
+      exchange.body,
+      wasCalled,
     );
     return move({
-      ...facts,
+      ...rest,
       'response.openaiCompletions.payload': answer.payload,
-      'response.openaiCompletions.streamedUsage': answer.streamedUsage,
-      'response.usage.billable': answer.billable,
+      'response.openaiCompletions.streamedUsage': answer.streamedUsage === null ? null : defer(answer.streamedUsage.then(outcome => ({ ...outcome, billable: providerUsage(candidate, back, outcome.billable) }))),
+      'response.usage.billable': providerUsage(candidate, back, answer.billable),
       'response.http.status': result.response.status,
       'response.http.headers': [...result.response.headers],
       'response.http.body': answer.body,
@@ -110,7 +101,7 @@ interface UpstreamAnswer {
   readonly billable: readonly BillableEntity[];
   /** Every arm hands one up, this stage's own reading included: the record holds a body as a
    *  stream, and `failover` releases the losing attempts' by consuming that key. */
-  readonly body: ReadableStream<Uint8Array> & Owned;
+  readonly body: (ReadableStream<Uint8Array> & Owned) | null;
 }
 
 /** What the upstream said, on the shape the request asked for. Which of the four this is is
@@ -122,24 +113,28 @@ const readUpstream = async (
   candidate: ModelCandidate,
   signal: AbortSignal | undefined,
   dump: TurnDump | null,
+  ownedBody: (ReadableStream<Uint8Array> & Owned) | null,
+  wasCalled: boolean,
 ): Promise<UpstreamAnswer> => {
   // An upstream was called and reported nothing — which is what every arm but a read usage
   // block leaves standing, and is a different statement from reporting zero.
-  const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
+  const called: readonly BillableEntity[] = wasCalled ? [{ identity, quantities: {} }] : [];
 
   if (!response.ok) {
     // An upstream error body is JSON like any other body. Reading it here is also what
     // leaves a losing attempt with nothing open behind it.
-    return { payload: await refusal(response), streamedUsage: null, billable: called, body: spentBody(response.body) };
+    spentBody(ownedBody);
+    return { payload: await refusal(response), streamedUsage: null, billable: called, body: spentBody(ownedBody) };
   }
 
   if (!wantsStream) {
+    spentBody(ownedBody);
     const read = await readResult(response);
     return {
       payload: isFailure(read) ? read : read.value,
       streamedUsage: null,
-      billable: isFailure(read) ? called : [{ identity, quantities: billed(read.value.usage, read.value.service_tier, candidate) }],
-      body: spentBody(response.body),
+      billable: isFailure(read) || !wasCalled ? called : [{ identity, ...billed(read.value.usage, read.value.service_tier, candidate) }],
+      body: spentBody(ownedBody),
     };
   }
 
@@ -157,21 +152,16 @@ const readUpstream = async (
   // what drives it. What it finds arrives with the last frame, long after this stage has
   // handed up, which is why the entity above carries no quantities.
   const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate);
+  setRelease(ownedBody!, async () => { for await (const _frame of metered.frames) { /* drain */ } });
   return {
     payload: recordStream(metered.frames, dump),
     streamedUsage: metered.outcome,
     billable: called,
     // Releasing this body is draining those frames: they are one reader over one connection,
     // and a second reader is not something a `ReadableStream` allows.
-    body: own(response.body, async (): Promise<void> => { for await (const _frame of metered.frames) { /* to end of stream */ } }),
+    body: ownedBody,
   };
 };
-
-/** A body this stage has already read to the end, or one the upstream never sent. The record
- *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
- *  one up; what says an answer was unusable is the failure at the payload key, not this. */
-const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & Owned =>
-  own(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), (): Promise<void> => Promise.resolve());
 
 const refusal = async (response: Response): Promise<Failure> => {
   const text = await response.text();
@@ -232,13 +222,13 @@ const meterFrames = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [{ identity, quantities: billed(usage, tier, candidate) }], failed: !sawTerminal });
+      settle({ billable: [{ identity, ...billed(usage, tier, candidate) }], failed: !sawTerminal });
     }
   })());
   return { frames, outcome };
 };
 
-const billed = (usage: unknown, tier: string | null | undefined, candidate: ModelCandidate): UsageQuantities => {
+const billed = (usage: unknown, tier: string | null | undefined, candidate: ModelCandidate): Pick<BillableEntity, 'quantities' | 'pricingFacts'> => {
   const model = providerModelOf(candidate);
   const tokens = tokenUsageFromOpenAICompletionsUsage(
     usage,
@@ -246,11 +236,6 @@ const billed = (usage: unknown, tier: string | null | undefined, candidate: Mode
     model.enabledFlags.has('usage-exclusive-cached-tokens'),
     `${candidate.provider.upstreamId}/${model.id}`,
   );
-  // An upstream that reported nothing leaves no quantities at all, which is a different
-  // statement from reporting zero.
-  //
-  // The service tier survives as far as `TokenUsage.tier` and no further: a billed entity is
-  // an identity and a bag of quantities, and the pricing selector the tier feeds has no seat
-  // there. It comes back when settlement does.
-  return tokens === null ? {} : tokenUsageQuantities(tokens);
+  const measurement = tokenUsageMeasurement(tokens);
+  return { quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };

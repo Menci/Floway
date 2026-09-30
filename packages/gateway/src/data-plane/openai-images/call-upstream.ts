@@ -2,15 +2,17 @@ import type { Fields, OpenAIImagesFrames } from './facts.ts';
 import { recordStream } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure } from '../pipeline/facts.ts';
+import { providerEntry } from '../pipeline/provider-entry.ts';
+import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure, readUpstreamBody } from '../pipeline/upstream-body.ts';
+import { dialFailure, readUpstreamBody, spentBody } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
-import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
-import { defineStage, move, own, defer, type Owned, type Deferred } from '@floway-dev/pipeline';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
+import { defineStage, move, setRelease, defer, type Deferred } from '@floway-dev/pipeline';
 import { upstreamErrorMessage, isEventStreamMediaType, eventFrame, mediaTypeEssence, parseDecimalString } from '@floway-dev/protocols/common';
 import { parseOpenAIImagesResponse, parseOpenAIImagesStream, isOpenAIImagesTerminalEvent, parseOpenAIImagesUsage, OPENAI_IMAGES_MISSING_TERMINAL_MESSAGE, type OpenAIImagesOperation, type CanonicalOpenAIImagesResponse, type CanonicalOpenAIImagesUsage, type CanonicalOpenAIImagesEditsRequest, type OpenAIImagesEditImage, type OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
-import { providerModelOf, isBase64ImageDataUrl, type PerformanceOperation, type TelemetryModelIdentity, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads, type PerformanceOperation, type TelemetryModelIdentity, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/provider';
 
 /** A stream as a value the record can hold, as a wrapper around the generator rather than the
  *  generator itself. What the wrapper says is where the resource is: the one resource in an
@@ -32,81 +34,62 @@ const PERFORMANCE_OPERATION = {
  */
 export const callOpenAIImagesUpstream = defineStage<
   Fields<'ingress.openaiImages.wantsStream' | 'request.openaiImages.canonical' | 'route.attempt' | 'ingress.http.headers'>,
+  ProviderRequest<ProviderOperationPayloads['openaiImagesGenerations' | 'openaiImagesEdits']>,
+  ProviderResponse,
   Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers'
     | 'response.http.body' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'callOpenAIImagesUpstream',
-  return: {
-    provides: [
-      'response.openaiImages.canonical',
-      'response.openaiImages.streamedUsage',
-      'response.http.status',
-      'response.http.headers',
-      'response.http.body',
-      'response.usage.billable',
-    ],
+  into: {
+    request: { needs: ['ingress.openaiImages.wantsStream', 'request.openaiImages.canonical', 'route.attempt', 'ingress.http.headers'], consumes: [], provides: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'] },
+    response: { needs: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', 'response.http.body'], consumes: ['response.http.exchange', 'response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'], provides: ['response.openaiImages.canonical', 'response.openaiImages.streamedUsage', 'response.http.status', 'response.http.headers', 'response.http.body', 'response.usage.billable'] },
   },
-  execute: async (facts, use) => {
+  execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.openaiImages.canonical'];
-    const options = buildUpstreamCallOptions(
-      candidate,
-      use.gateway,
-      // The client's own headers reach the upstream from the record, not from a live request
-      // object: what a provider is allowed to forward is filtered per provider, and the dump
-      // shows what was there to filter.
-      new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value])),
-    );
-    const model = providerModelOf(candidate);
     // Attribution is set before the dial, so an attempt that never completes still names the
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, PERFORMANCE_OPERATION[request.operation]);
 
-    let result;
-    try {
-      // No abort signal, as on this family's endpoints from the beginning: an image the upstream
-      // has already begun is charged for whether or not the client waited for it, so dropping the
-      // call would lose the usage reading and save nothing. Reading a stream is the other half of
-      // that and does take the signal — what it drops there is a connection, not an image.
-      result = request.operation === 'generations'
-        ? await candidate.provider.instance.callOpenAIImagesGenerations(model, request.parameters, undefined, options)
-        : await candidate.provider.instance.callOpenAIImagesEdits(model, providerEditsRequest(request), undefined, options);
-    } catch (error) {
-      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
-      // A dial that never completed reached no upstream, so nothing was billed and there are
-      // no headers to carry. What it leaves behind is the performance row settlement writes.
+    const back = request.operation === 'generations'
+      ? await next(providerEntry(facts, candidate, request.parameters), candidate.provider.pipelines.openaiImagesGenerations!)
+      : await next(providerEntry(facts, candidate, providerEditsRequest(request)), candidate.provider.pipelines.openaiImagesEdits!);
+    const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
+    if (exchange.type === 'transportFailure') {
       return move({
-        ...facts,
-        'response.openaiImages.canonical': dialFailure(error),
+        ...rest,
+        'response.openaiImages.canonical': dialFailure(exchange.error),
         'response.openaiImages.streamedUsage': null,
         'response.http.status': 502,
         'response.http.headers': [],
         'response.http.body': spentBody(null),
-        'response.usage.billable': [],
+        'response.usage.billable': providerUsage(candidate, back, []),
       });
     }
+    const result = { response: exchangeResponse(exchange), modelKey };
 
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     // What came back, unfiltered: the edge is where a client's view of it is decided.
     const headers = [...result.response.headers];
     // An entity with no quantities is how "the upstream was called and reported nothing" is
     // said, which is a different situation from reporting zero.
-    const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
+    const called: readonly BillableEntity[] = wasCalled ? [{ identity, quantities: {} }] : [];
     const read = (canonical: CanonicalOpenAIImagesResponse | Failure, billable: readonly BillableEntity[]) => move({
-      ...facts,
+      ...rest,
       'response.openaiImages.canonical': canonical,
       'response.openaiImages.streamedUsage': null,
       'response.http.status': result.response.status,
       'response.http.headers': headers,
-      'response.http.body': spentBody(result.response.body),
-      'response.usage.billable': billable,
+      'response.http.body': spentBody(exchange.body),
+      'response.usage.billable': providerUsage(candidate, back, billable),
     });
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
       // An upstream error body is JSON like any other body. Reading it here is also what
       // leaves a losing attempt with nothing open behind it.
+      spentBody(exchange.body);
       const body = await readUpstreamBody(result.response);
       return read({
         status: result.response.status,
@@ -129,21 +112,23 @@ export const callOpenAIImagesUpstream = defineStage<
       // stream is what drives it. What it finds arrives with the completed event, long after
       // this stage has handed up, which is why the entity above carries no quantities.
       const metered = meterFrames(result.response.body, identity, use.gateway.abortSignal);
+      setRelease(exchange.body!, async () => { for await (const _event of metered.frames) { /* drain */ } });
       return move({
-        ...facts,
+        ...rest,
         // This protocol's stream is bare events rather than protocol frames, so the record is
         // told how one becomes a frame instead of being left to assume.
         'response.openaiImages.canonical': recordStream(metered.frames, use.gateway.dump, eventFrame),
-        'response.openaiImages.streamedUsage': metered.outcome,
+        'response.openaiImages.streamedUsage': defer(metered.outcome.then(outcome => ({ ...outcome, billable: providerUsage(candidate, back, outcome.billable) }))),
         'response.http.status': result.response.status,
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over one
         // connection, and a second reader is not something a `ReadableStream` allows.
-        'response.http.body': own(result.response.body, async (): Promise<void> => { for await (const _event of metered.frames) { /* to end of stream */ } }),
-        'response.usage.billable': called,
+        'response.http.body': exchange.body,
+        'response.usage.billable': providerUsage(candidate, back, called),
       });
     }
 
+    spentBody(exchange.body);
     const body = await readUpstreamBody(result.response);
     if (!('json' in body)) {
       // Every protocol the gateway carries is one it fully understands, so a body it cannot
@@ -165,15 +150,9 @@ export const callOpenAIImagesUpstream = defineStage<
       use.log.warn('upstream answered with a body the OpenAI Images protocol cannot read', { message });
       return read({ status: 502, message, body: body.json }, called);
     }
-    return read(canonical, [{ identity, quantities: billed(canonical.usage) }]);
+    return read(canonical, wasCalled ? [{ identity, quantities: billed(canonical.usage) }] : []);
   },
 });
-
-/** A body this stage has already read to the end, or one the upstream never sent. The record
- *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
- *  one up; what says an answer was unusable is the failure at the canonical key, not this. */
-const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & Owned =>
-  own(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), (): Promise<void> => Promise.resolve());
 
 interface MeteredFrames {
   readonly frames: OpenAIImagesFrames;
@@ -246,7 +225,7 @@ const providerEditsRequest = (request: CanonicalOpenAIImagesEditsRequest): OpenA
 
 const providerEditsSource = (image: OpenAIImagesEditImage): OpenAIImagesEditsSource => {
   if (image.kind === 'file') {
-    return { type: 'upload', file: new File([image.file.bytes], image.file.fileName, { type: image.file.mediaType }) };
+    return { type: 'upload', file: { bytes: image.file.bytes, name: image.file.fileName, type: image.file.mediaType } };
   }
   const { reference } = image;
   return typeof reference.image_url === 'string' && isBase64ImageDataUrl(reference.image_url)

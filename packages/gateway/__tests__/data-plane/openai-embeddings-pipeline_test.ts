@@ -11,28 +11,11 @@ import { move, run } from '@floway-dev/pipeline';
 describe('the OpenAI Embeddings pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
     expect([...openaiEmbeddingsServePipeline.entryNeeds].sort()).toEqual([
+      'ingress.http.headers',
       'ingress.openaiEmbeddings.encodingFormat',
+      'request.openaiEmbeddings.canonical',
       'serve.model',
     ]);
-  });
-
-  // Rerank records the same hole against `ingress.http.headers`; OpenAI Embeddings shows it
-  // twice over, and the second one is the sharper case. A stage whose only trait is `return`
-  // declares no request side at all, by ruling — "when it short-circuits, only `provides`"
-  // — so assembly cannot see what an ending stage reads. `callOpenAIEmbeddingsUpstream` reads
-  // both the headers and the request payload, and neither reaches the entry contract.
-  //
-  // Rerank's edge happened to need `request.rerank.canonical` for rendering, which put it
-  // in the contract for an unrelated reason. This family's edge needs only the encoding,
-  // so nothing above the ending stage names the payload — and the pipeline that cannot run
-  // without it does not ask for it. Written as a test rather than a comment because the
-  // hole has a consequence: a caller who omits either key gets a runtime failure at the
-  // deepest stage instead of an assembly error, and the entry contract exists to stop
-  // exactly that. The type layer still catches it at the definition site, which is why
-  // this is a gap and not a break.
-  it('cannot see what an ending stage reads, because a return-only stage declares no needs', () => {
-    expect(openaiEmbeddingsServePipeline.entryNeeds).not.toContain('request.openaiEmbeddings.canonical');
-    expect(openaiEmbeddingsServePipeline.entryNeeds).not.toContain('ingress.http.headers');
   });
 
   it('names the entry key a caller did not bring, before any stage runs', async () => {

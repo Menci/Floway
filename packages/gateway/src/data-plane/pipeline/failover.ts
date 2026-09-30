@@ -1,6 +1,8 @@
+import type { BillableEntity } from './facts.ts';
+import type { StreamOutcome } from './serve.ts';
 import type { GatewayServices } from './services.ts';
 import type { Slice } from './stage-contracts.ts';
-import { defineStage, move, type Facts } from '@floway-dev/pipeline';
+import { defineStage, move, defer, type Deferred, type Facts } from '@floway-dev/pipeline';
 
 /**
  * Runs what follows it once per candidate and returns the first that did not fail.
@@ -23,40 +25,55 @@ export interface Forking {
    *  produce and hands up makes it throw the other way. Which keys carry a resource is a
    *  statement only the family can make. */
   readonly owns: readonly string[];
+  readonly pendingUsage?: string;
 }
 
-export const failover = ({ failed, owns }: Forking) => defineStage<
-  Slice<'serve.candidates'>,
-  Slice<'serve.candidates' | 'route.attempt'>,
+export const failover = ({ failed, owns, pendingUsage }: Forking) => defineStage<
+  Slice<'serve.candidates' | 'serve.usage.prior'>,
+  Slice<'serve.candidates' | 'route.attempt' | 'serve.usage.prior'>,
   Slice<'response.usage.billable'>,
   Slice<'response.usage.billable'>,
   GatewayServices
 >({
   name: 'failover',
   through: {
-    request: { needs: ['serve.candidates'], consumes: [], provides: ['route.attempt'] },
+    request: { needs: ['serve.candidates', 'serve.usage.prior'], consumes: [], provides: ['route.attempt', 'serve.usage.prior'] },
     response: {
-      needs: ['response.usage.billable'],
+      needs: ['response.usage.billable', ...(pendingUsage === undefined ? [] : [pendingUsage])] as never,
       // Owned on the way up and handed onward: every attempt's is this stage's to release,
       // and the one it adopts rides up with ownership going with it.
       consumes: owns as never,
-      provides: owns as never,
+      provides: [...owns, 'response.usage.billable', ...(pendingUsage === undefined ? [] : [pendingUsage])] as never,
     },
   },
   execute: async (facts, next, use) => {
     let last: Slice<'response.usage.billable'> | undefined;
+    let observed: readonly BillableEntity[] = [];
     for (const candidate of facts['serve.candidates']) {
       // Per-attempt telemetry state, cleared before control leaves, so a mid-attempt throw
       // still attributes its performance row to the candidate that was being tried.
       use.gateway.attempt.timing.upstreamCallStartedAt = null;
       use.gateway.attempt.timing.firstOutputTokenAt = null;
-      last = await next({ ...facts, 'route.attempt': move(candidate) });
-      if (!failed(last as Facts)) return last;
+      last = await next({ ...facts, 'route.attempt': move(candidate), 'serve.usage.prior': move([...facts['serve.usage.prior'], ...observed]) });
+      const prior = observed;
+      observed = [...observed, ...last['response.usage.billable']];
+      if (!failed(last as Facts)) {
+        if (prior.length === 0) return { ...last, 'serve.usage.prior': facts['serve.usage.prior'] };
+        const pending = pendingUsage === undefined ? null : (last as Facts)[pendingUsage] as Deferred<StreamOutcome> | null;
+        return {
+          ...last,
+          'serve.usage.prior': facts['serve.usage.prior'],
+          'response.usage.billable': move(observed),
+          ...(pending === null ? {} : {
+            [pendingUsage!]: move(defer(pending.then(outcome => ({ ...outcome, billable: [...prior, ...outcome.billable] })))),
+          }),
+        };
+      }
       use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
     }
     if (last === undefined) throw new Error('failover: assembly handed it an empty candidate list');
     // Every candidate failed, and the last failure is the base — so the client sees real
     // upstream telemetry rather than a synthesized gateway envelope.
-    return last;
+    return { ...last, 'serve.usage.prior': facts['serve.usage.prior'], 'response.usage.billable': move(observed) };
   },
 });

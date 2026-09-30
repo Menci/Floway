@@ -18,19 +18,8 @@ describe('the search pipeline', () => {
     ]);
   });
 
-  // The pinned ending is one `return`-only stage, and such a stage declares no request side
-  // at all — by ruling, when it short-circuits there is only `provides`. So assembly sees
-  // nothing it reads and derives an empty contract, even though the stage cannot run without
-  // `request.search.alphaSearch` and `ingress.http.headers`. It is the same hole every
-  // family's ending stage has; here it swallows the family's whole entry contract, because
-  // the ending is the only stage below the edge.
-  //
-  // Written as a test rather than a comment because the hole has a consequence: a caller who
-  // omits either key gets a runtime failure at the deepest stage instead of an assembly
-  // error, and the entry contract exists to stop exactly that. The type layer still catches
-  // it at the definition site, which is why this is a gap and not a break.
-  it('cannot see what the pinned ending reads, because a return-only stage declares no needs', () => {
-    expect(searchServePipeline(pinned).entryNeeds).toEqual([]);
+  it('requires the pinned request payload and admitted headers before entering its provider', () => {
+    expect([...searchServePipeline(pinned).entryNeeds].sort()).toEqual(['ingress.http.headers', 'request.search.alphaSearch']);
   });
 
   it('names the entry key a caller did not bring, before any stage runs', async () => {

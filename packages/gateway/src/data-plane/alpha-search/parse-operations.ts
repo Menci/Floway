@@ -11,6 +11,7 @@ const inBandOutput = (facts: Fields<'request.search.alphaSearch'>, output: strin
   'response.usage.billable': [],
   // Nothing was called, so there are no upstream headers to carry.
   'response.http.headers': [],
+  'response.http.status': 200,
 });
 
 /**
@@ -21,9 +22,9 @@ const inBandOutput = (facts: Fields<'request.search.alphaSearch'>, output: strin
 export const parseSearchOperations = defineStage<
   Fields<'request.search.alphaSearch'>,
   Fields<'request.search.operations' | 'request.search.filters'>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>
 >({
   name: 'parseSearchOperations',
   through: {
@@ -34,7 +35,7 @@ export const parseSearchOperations = defineStage<
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
+  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status'] },
   execute: async (facts, next) => {
     const { 'request.search.alphaSearch': request, ...rest } = facts;
     const commands = request.commands ?? {};

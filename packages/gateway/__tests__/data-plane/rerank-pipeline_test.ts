@@ -20,24 +20,11 @@ const request: CanonicalRerankRequest = {
 describe('the rerank pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
     expect([...rerankServePipeline(request).entryNeeds].sort()).toEqual([
+      'ingress.http.headers',
       'ingress.rerank.sourceProtocol',
       'request.rerank.canonical',
       'serve.model',
     ]);
-  });
-
-  // `callRerankUpstream` reads `ingress.http.headers`, and the entry contract does not
-  // mention it. That is not this family's defect: a stage whose only trait is `return`
-  // declares no request side at all, by ruling — "when it short-circuits, only `provides`"
-  // — so assembly cannot see what an ending stage reads, and every family's ending stage
-  // reads something.
-  //
-  // Written as a test rather than a comment because the hole has a consequence: a caller
-  // who omits that key gets a runtime failure at the deepest stage instead of an assembly
-  // error, and the entry contract exists to stop exactly that. The type layer still
-  // catches it at the definition site, which is why this is a gap and not a break.
-  it('cannot see what an ending stage reads, because a return-only stage declares no needs', () => {
-    expect(rerankServePipeline(request).entryNeeds).not.toContain('ingress.http.headers');
   });
 
   // `failover` used to declare that it provides `response.http.body` for every family. Three
@@ -51,13 +38,13 @@ describe('the rerank pipeline', () => {
   it('claims nothing on the way up when a family reads its answer to the end', () => {
     const reading = failover({ failed: () => false, owns: [] });
     expect(reading.through?.response.consumes).toEqual([]);
-    expect(reading.through?.response.provides).toEqual([]);
+    expect(reading.through?.response.provides).toEqual(['response.usage.billable']);
 
     // And a family that streams claims the key it streams at, in both directions: every
     // attempt's is the fork's to release, and the one it adopts rides up with ownership.
     const streaming = failover({ failed: () => false, owns: ['response.http.body'] });
     expect(streaming.through?.response.consumes).toEqual(['response.http.body']);
-    expect(streaming.through?.response.provides).toEqual(['response.http.body']);
+    expect(streaming.through?.response.provides).toEqual(['response.http.body', 'response.usage.billable']);
   });
 
   // A live handle is never a fact, and the test for that is whether it can be rendered into

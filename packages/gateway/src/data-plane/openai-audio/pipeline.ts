@@ -14,15 +14,13 @@ export const openaiAudioTranscriptionServePipeline: Pipeline<
   & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[];
     'response.http.headers': readonly (readonly [string, string])[]; }
 > = compose('openaiAudioTranscriptionServe', [
+  writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, 'response.openaiAudioTranscription.streamedOutcome'),
   emitOpenAIAudioTranscription,
-  writeSettlement(
-    handedUp => isFailure((handedUp as { 'response.openaiAudioTranscription.canonical'?: unknown })['response.openaiAudioTranscription.canonical']),
-    handedUp => (handedUp as { 'response.openaiAudioTranscription.streamedOutcome'?: unknown })['response.openaiAudioTranscription.streamedOutcome'] !== null,
-  ),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.openaiAudioTranscription.canonical'?: unknown })['response.openaiAudioTranscription.canonical']),
     owns: ['response.http.body'],
+    pendingUsage: 'response.openaiAudioTranscription.streamedOutcome',
   }),
   callOpenAIAudioTranscriptionUpstream,
 ]);

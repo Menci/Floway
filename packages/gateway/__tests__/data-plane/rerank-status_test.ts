@@ -11,6 +11,7 @@ import { enumerateModelCandidates } from '../../src/data-plane/providers/resolut
 import { rerankServePipeline } from '../../src/data-plane/rerank/pipeline.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
+import { stubProviderPipeline } from '../test-utils/provider-pipeline.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 import { directFetcher, type ModelCandidate, type ProviderRerankCallResult } from '@floway-dev/provider';
@@ -29,6 +30,7 @@ const candidate = (upstream: string, callRerank: () => Promise<ProviderRerankCal
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
       instance: stubProvider({ callRerank }),
+      pipelines: { rerank: stubProviderPipeline('rerank', callRerank) },
     },
     model: stubInternalModel(
       { id: 'rr', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'rr', endpoints, rerankTarget: { protocol: 'cohere-v2' } }) } },
@@ -69,6 +71,7 @@ const serve = async () => await run(
 
 beforeEach(() => {
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
   } as never);

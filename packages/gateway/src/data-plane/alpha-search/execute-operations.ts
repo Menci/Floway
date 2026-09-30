@@ -11,11 +11,11 @@ import { defineStage, move } from '@floway-dev/pipeline';
  */
 export const executeSearchOperations = defineStage<
   Fields<'request.search.operations' | 'request.search.filters'>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
   SearchServices
 >({
   name: 'executeSearchOperations',
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
+  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status'] },
   execute: async (facts, use) => {
     const session: WebSearchExecutionSession = {
       getProvider: use.searchProvider,
@@ -42,6 +42,7 @@ export const executeSearchOperations = defineStage<
       'response.usage.billable': [],
       // Nothing was called, so there are no upstream headers to carry.
       'response.http.headers': [],
+      'response.http.status': 200,
     });
   },
 });

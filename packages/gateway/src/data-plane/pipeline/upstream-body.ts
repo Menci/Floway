@@ -7,6 +7,7 @@
 // upstream answered with something the protocol does not admit.
 
 import type { Failure } from './facts.ts';
+import { setRelease, type Owned } from '@floway-dev/pipeline';
 
 export interface UpstreamBody {
   readonly text: string;
@@ -35,6 +36,7 @@ export const readUpstreamBody = async (response: Response): Promise<UpstreamBody
 export const unreadableBody = (response: Response, body: UpstreamBody, protocolName: string): Failure => ({
   status: 502,
   message: `The upstream answered ${response.status} with a body ${protocolName} cannot read: ${body.text.slice(0, 200)}`,
+  body: 'json' in body ? body.json : body.text,
 });
 
 /**
@@ -50,3 +52,8 @@ export const dialFailure = (error: unknown): Failure => ({
   status: 502,
   message: error instanceof Error ? error.message : String(error),
 });
+
+export const spentBody = (body: (ReadableStream<Uint8Array> & Owned) | null): typeof body => {
+  if (body !== null) setRelease(body, async () => {});
+  return body;
+};

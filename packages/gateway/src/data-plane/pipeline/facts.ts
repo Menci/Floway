@@ -85,9 +85,12 @@ export interface GatewayFacts {
    *  rather than `AsyncDisposable`, because a structural type would say what the host happens
    *  to mark rather than what this run answers for — and what a host marks differs between the
    *  Node versions this ships on. Ownership is claimed, so the type says so too. */
-  'response.http.body': ReadableStream<Uint8Array> & Owned;
+  'response.http.body': (ReadableStream<Uint8Array> & Owned) | null;
 
   /** The authoritative reading, provided closest to the upstream on the dialect it
    *  actually spoke. Every step that changes usage re-provides it. */
   'response.usage.billable': readonly BillableEntity[];
+
+  /** Completed calls carried into a nested attempt so an exceptional exit can settle them. */
+  'serve.usage.prior': readonly BillableEntity[];
 }

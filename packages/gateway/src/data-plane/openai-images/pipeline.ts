@@ -11,15 +11,13 @@ import type { CanonicalOpenAIImagesRequest } from '@floway-dev/protocols/openai-
 
 export const openaiImagesServePipeline = (request: CanonicalOpenAIImagesRequest): Pipeline<OpenAIImagesServeEntry, OpenAIImagesServeExit> =>
   compose('openaiImagesServe', [
+    writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, 'response.openaiImages.streamedUsage'),
     emitOpenAIImages,
-    writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
-      handedUp => (handedUp as { 'response.openaiImages.streamedUsage'?: unknown })['response.openaiImages.streamedUsage'] !== null,
-    ),
     resolveCandidates(narrowing(request)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
       owns: ['response.http.body'],
+      pendingUsage: 'response.openaiImages.streamedUsage',
     }),
     callOpenAIImagesUpstream,
   ]);

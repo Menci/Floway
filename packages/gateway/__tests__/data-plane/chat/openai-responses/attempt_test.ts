@@ -71,7 +71,7 @@ const makeCandidate = (
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: provider,
     },
     model: stubInternalModel({
@@ -328,7 +328,7 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: stubProvider({ callOpenAIChatCompletions }),
     },
     model: stubInternalModel({
@@ -479,7 +479,7 @@ test('generate strips disallowed headers and injects external image loading acro
   const candidate: ModelCandidate = {
     provider: {
       upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: anthropicMessagesProvider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: anthropicMessagesProvider,
     },
     model: upstreamModel,
     fetcher: directFetcher,

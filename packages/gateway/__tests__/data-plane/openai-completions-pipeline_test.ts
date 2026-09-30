@@ -11,9 +11,10 @@ import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidate
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
-import { isDeferred, move, run } from '@floway-dev/pipeline';
+import { stubProviderPipeline } from '../test-utils/provider-pipeline.ts';
+import { compose, defineStage, isDeferred, move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ModelCandidate, type ProviderCallResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ModelCandidate, type ProviderCallResult, type UpstreamCallOptions, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -47,6 +48,7 @@ const candidate = (
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
       instance: stubProvider({ callOpenAICompletions }),
+      pipelines: { openaiCompletions: stubProviderPipeline('openaiCompletions', callOpenAICompletions) },
     },
     model: stubInternalModel({ id: 'text-model', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'text-model', endpoints }) } }, upstream),
     fetcher: directFetcher,
@@ -74,6 +76,7 @@ beforeEach(() => {
   recorded.usage = [];
   recorded.performance = [];
   initRepo({
+    apiKeys: { update: async () => {} },
     usage: { record: async (row: unknown) => { recorded.usage.push(row); } },
     performance: {
       recordNeutral: async (dims: unknown) => { recorded.performance.push(dims); },
@@ -113,21 +116,12 @@ beforeEach(() => { vi.mocked(enumerateModelCandidates).mockReset(); });
 describe('the OpenAI Completions pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
     expect([...openaiCompletionsServePipeline.entryNeeds].sort()).toEqual([
+      'ingress.http.headers',
       'ingress.openaiCompletions.wantsStream',
       'ingress.openaiCompletions.wantsUsageChunk',
       'request.openaiCompletions.payload',
       'serve.model',
     ]);
-  });
-
-  // `callOpenAICompletionsUpstream` reads `ingress.http.headers`, and the entry contract does
-  // not mention it. That is not this family's defect: a stage whose only trait is `return`
-  // declares no request side at all, by ruling — "when it short-circuits, only `provides`" —
-  // so assembly cannot see what an ending stage reads, and every family's ending stage reads
-  // something. A caller who omits that key gets a runtime failure at the deepest stage
-  // instead of the assembly error the entry contract exists to give it.
-  it('cannot see what an ending stage reads, because a return-only stage declares no needs', () => {
-    expect(openaiCompletionsServePipeline.entryNeeds).not.toContain('ingress.http.headers');
   });
 
   it('renders the upstream frames as SSE, hiding the usage chunk the client did not ask for', async () => {
@@ -203,7 +197,8 @@ describe('the OpenAI Completions pipeline', () => {
     expect(facts['response.usage.billable']).toEqual([
       {
         identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null },
-        quantities: { input_tokens: '5', output_tokens: '7' },
+        quantities: { input_tokens: '5', input_cache_read_tokens: '0', input_cache_write_tokens: '0', output_tokens: '7' },
+        pricingFacts: { inputTokens: 5, serviceTier: null },
       },
     ]);
     await drain();
@@ -245,11 +240,65 @@ describe('the OpenAI Completions pipeline', () => {
     expect(drained).toContain('winner');
   });
 
-  // Settlement is above the fork, so a run bills once however many candidates it tried —
-  // and it is unconditional, so a run that reached no upstream still writes a row that names
-  // no billed entity. Nothing asserted either until the review found the stage was composed
-  // into no pipeline at all.
-  it('writes exactly one usage row per run, however many candidates it tried', async () => {
+  it.each([false, true])('includes the provider retry observation for stream=%s', async streaming => {
+    const upstream = candidate('up_a', async () => ({
+      response: streaming ? sse(chunk('hi'), usageChunk, '[DONE]') : Response.json({
+        id: 'cmpl_1', choices: [], service_tier: 'flex', usage: { prompt_tokens: 0, completion_tokens: 0 },
+      }),
+      modelKey: 'final-model',
+    }));
+    const terminal = upstream.provider.pipelines.openaiCompletions!;
+    upstream.provider.pipelines = {
+      openaiCompletions: compose('retryingProvider', [
+        defineStage<ProviderRequest<ProviderOperationPayloads['openaiCompletions']>, ProviderRequest<ProviderOperationPayloads['openaiCompletions']>, ProviderResponse, ProviderResponse>({
+          name: 'retryObservation',
+          through: {
+            request: { needs: [], consumes: [], provides: [] },
+            response: { needs: [], consumes: [], provides: ['response.provider.previousCalls'] },
+          },
+          execute: async (facts, next) => ({ ...await next({ ...facts }), 'response.provider.previousCalls': move([{ modelKey: 'initial-model' }]) }),
+        }),
+        defineStage<ProviderRequest<ProviderOperationPayloads['openaiCompletions']>, ProviderRequest<ProviderOperationPayloads['openaiCompletions']>, ProviderResponse, ProviderResponse>({
+          name: 'providerEntry',
+          into: {
+            request: { needs: [], consumes: [], provides: [] },
+            response: { needs: [], consumes: [], provides: [] },
+          },
+          execute: async (facts, next) => ({ ...await next({ ...facts }, terminal) }),
+        }),
+      ]),
+    };
+    resolves([upstream]);
+    const { facts, drain } = await serve(entryFacts({ 'ingress.openaiCompletions.wantsStream': streaming }));
+    if (streaming) await collect(facts['response.openaiCompletions.rendered']);
+    await drain();
+    expect(recorded.usage).toMatchObject([
+      { modelKey: 'initial-model', requests: 1, metrics: [] },
+      { modelKey: 'final-model', requests: 1 },
+    ]);
+    if (!streaming) {
+      expect(facts['response.usage.billable'][1]).toMatchObject({
+        quantities: { input_tokens: '0', output_tokens: '0' },
+        pricingFacts: { inputTokens: 0, serviceTier: 'flex' },
+      });
+    }
+  });
+
+  it('settles completed attempts when a later refusal body throws, preserving the original exception', async () => {
+    const original = new Error('response socket reset', { cause: new Error('connection closed') });
+    resolves([
+      candidate('up_a', async () => ({ response: Response.json({ error: 'retry' }, { status: 429 }), modelKey: 'first' })),
+      candidate('up_b', async () => ({
+        response: new Response(new ReadableStream({ start: controller => { controller.error(original); } }), { status: 429 }),
+        modelKey: 'second',
+      })),
+    ]);
+    await expect(serve(entryFacts({ 'ingress.openaiCompletions.wantsStream': false }))).rejects.toBe(original);
+    expect(recorded.usage).toMatchObject([{ modelKey: 'first', requests: 1 }, { modelKey: 'second', requests: 1 }]);
+    expect(recorded.performance).toHaveLength(1);
+  });
+
+  it('settles each upstream observation across failed-over attempts', async () => {
     resolves([
       candidate('up_a', async () => ({ response: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
       candidate('up_b', async () => ({
@@ -262,7 +311,7 @@ describe('the OpenAI Completions pipeline', () => {
       'request.openaiCompletions.payload': { model: 'text-model', prompt: 'hello' },
     }));
     await drain();
-    expect(recorded.usage).toHaveLength(1);
+    expect(recorded.usage).toHaveLength(2);
     expect(recorded.performance).toHaveLength(1);
   });
 
@@ -274,9 +323,9 @@ describe('the OpenAI Completions pipeline', () => {
     resolves([candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
 
     const { facts, drain } = await serve(entryFacts());
-    await drain();
-
     expect(recorded.usage).toHaveLength(0);
+    await drain();
+    expect(recorded.usage).toHaveLength(1);
     const streamed = facts['response.openaiCompletions.streamedUsage'];
     expect(streamed).not.toBeNull();
     const outcome = await streamed!;

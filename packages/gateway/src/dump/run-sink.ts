@@ -67,8 +67,8 @@ export class RunDump {
     this.attribution.error(kind, upstream);
   }
 
-  failed(reason: unknown): void {
-    this.attribution.failed(reason);
+  failed(reason: unknown, options?: { readonly fallback: boolean }): void {
+    this.attribution.failed(reason, options);
   }
 
   /**

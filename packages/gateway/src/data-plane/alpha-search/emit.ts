@@ -16,14 +16,14 @@ import { defineStage, move } from '@floway-dev/pipeline';
 export const emitAlphaSearch = defineStage<
   Fields<never>,
   Fields<never>,
-  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  Fields<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,
   Fields<'response.search.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitAlphaSearch',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'],
+      needs: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers', 'response.http.status'],
       consumes: ['response.search.alphaSearch', 'response.http.headers'],
       provides: ['response.search.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -53,7 +53,7 @@ export const emitAlphaSearch = defineStage<
       ...rest,
       'response.http.headers': forClient,
       'response.search.rendered': move(renderAlphaSearchResponse(answer)),
-      'response.http.status': 200,
+      'response.http.status': back['response.http.status'],
     };
   },
 });
