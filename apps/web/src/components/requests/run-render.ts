@@ -15,12 +15,11 @@ export interface RenderedRunEvent {
   parseError: string | null;
 }
 
-// Only three of the six name a stage, and each of the other three names its own
-// namespace, so the subject is read off the event rather than looked up.
 const subjectOf = (event: DumpEvent): string | null => {
   switch (event.type) {
   case 'stage.entered': return event.name;
-  case 'stage.leaved':  return `#${event.stageId}`;
+  case 'stage.leaved':
+  case 'stage.failed': return `#${event.stageId}`;
   case 'stage.log':     return event.level;
   case 'object':        return `#${event.fromObjectId}`;
   case 'stream.frame':

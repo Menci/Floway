@@ -34,4 +34,16 @@ describe('run stages', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Response facts' }));
     expect(screen.getByTestId('state').textContent).toContain('"response": "answer"');
   });
+
+  it('shows the failure separately from a child response', async () => {
+    renderInApp(<RunStages ndjson={`${ndjson}\n${JSON.stringify({ type: 'stage.failed', stageId: 1, error: 'projection failed' })}`} />);
+    await screen.findByTestId('state');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Stage view' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Response facts' }));
+    expect(screen.getByText('This stage failed without returning facts.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Stage view' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Stage error' }));
+    expect(screen.getByTestId('state').textContent).toContain('projection failed');
+  });
+
 });

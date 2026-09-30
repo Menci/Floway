@@ -10,6 +10,7 @@ export interface RunStage {
   readonly children: RunStage[];
   readonly request: FactState;
   response: FactState | null;
+  failure: FactState | null;
   readonly logs: Extract<DumpEvent, { type: 'stage.log' }>[];
 }
 
@@ -52,13 +53,14 @@ export const readRun = (ndjson: string) => {
       if (request === undefined) throw new Error(`Run root stage ${event.stageId} has no request facts`);
       const entered: RunStage = {
         id: event.stageId, name: event.name, parentId: event.parentStageId,
-        children: [], logs: [], request, response: null,
+        children: [], logs: [], request, response: null, failure: null,
       };
       stages.set(entered.id, entered);
       (parent === null ? roots : parent.children).push(entered);
       break;
     }
     case 'stage.leaved': stage(event.stageId).response = event.facts; break;
+    case 'stage.failed': stage(event.stageId).failure = { error: event.error }; break;
     case 'stage.log': stage(event.stageId).logs.push(event); break;
     case 'stream.frame':
     case 'stream.end': break;
@@ -72,7 +74,7 @@ export const readRun = (ndjson: string) => {
   }
   // Folded exits inherit the last descent's returned state, including repeated next().
   for (const current of [...stages.values()].reverse()) {
-    if (current.response === null && current.children.length > 0) {
+    if (current.failure === null && current.response === null && current.children.length > 0) {
       current.response = current.children.at(-1)!.response;
     }
   }

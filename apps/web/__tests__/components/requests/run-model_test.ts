@@ -21,6 +21,20 @@ describe('run stage model', () => {
     ]);
   });
 
+  it('does not fold a successful child response into a parent that subsequently failed', () => {
+    const model = readRun([
+      { type: 'object', fromObjectId: 1, nodes: [{ $error: { name: 'Error', message: 'projection failed', stack: 'stack' } }] },
+      { type: 'stage.entered', stageId: 1, name: 'projection', parentStageId: null, facts: {} },
+      { type: 'stage.entered', stageId: 2, name: 'answer', parentStageId: 1 },
+      { type: 'stage.leaved', stageId: 2, facts: { answer: 'upstream value' } },
+      { type: 'stage.failed', stageId: 1, error: { $: 1 } },
+    ].map(event => JSON.stringify(event)).join('\n'));
+    const parent = model.roots[0]!;
+    expect(parent.response).toBeNull();
+    expect(parent.children[0]!.response).toEqual({ answer: 'upstream value' });
+    expect(model.state(parent.failure!)).toMatchObject({ error: { $error: { message: 'projection failed' } } });
+  });
+
   it('uses shared object identities, handles cycles and decodes schema keys', () => {
     const model = readRun([
       { type: 'object', fromObjectId: 1, nodes: [{ '$$ref': 'schema', self: { $: 1 } }, { '$$ref': 'next', self: { $: 2 } }] },

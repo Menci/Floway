@@ -1012,6 +1012,8 @@ const zhHansCN = {
         requestChanges: '请求变化',
         responseChanges: '响应变化',
         stageLogs: 'Stage 日志',
+        stageError: 'Stage 错误',
+        stageFailed: '此 stage 失败，未返回 facts。',
         stageView: 'Stage 视图',
         descent: '分支',
         noRunEvents: '这次运行没有记录到任何事件。',

@@ -25,15 +25,16 @@ export const RunStages = ({ ndjson }: { ndjson: string }) => {
   const labels = {
     request: t('dashboard.requests.requestFacts'), response: t('dashboard.requests.responseFacts'),
     down: t('dashboard.requests.requestChanges'), up: t('dashboard.requests.responseChanges'),
-    logs: t('dashboard.requests.stageLogs'),
+    logs: t('dashboard.requests.stageLogs'), error: t('dashboard.requests.stageError'),
   };
   const current = model.stages.find(stage => stage.id === selected);
   if (current === undefined) return <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine>;
   const child = current.children[descent];
-  const text = view === 'request' ? model.state(current.request)
-    : view === 'response' ? current.response === null ? null : model.state(current.response)
-      : view === 'down' ? child === undefined ? [] : model.diff(current.request, child.request)
-        : child?.response === null || child === undefined || current.response === null ? [] : model.diff(child.response, current.response);
+  const text = view === 'error' ? current.failure === null ? null : model.state(current.failure)
+    : view === 'request' ? model.state(current.request)
+      : view === 'response' ? current.response === null ? null : model.state(current.response)
+        : view === 'down' ? child === undefined ? [] : model.diff(current.request, child.request)
+          : child?.response === null || child === undefined || current.response === null ? [] : model.diff(child.response, current.response);
   const select = (id: number) => { setSelected(id); setDescent(0); };
   const toolbar = <div className="flex flex-wrap items-center gap-2 min-w-0">
     <Dropdown clearable={false} size="small" aria-label={t('dashboard.requests.stageView')} value={labels[view as keyof typeof labels]} selectedOptions={[view]} onOptionSelect={(_, data) => setView(data.optionValue!)}>
@@ -52,7 +53,7 @@ export const RunStages = ({ ndjson }: { ndjson: string }) => {
       </Tree>
     </ScrollArea>
     <div className="flex-1 min-w-0 min-h-0">
-      {view === 'logs' ? <RenderedEventList
+      {view === 'response' && current.failure !== null ? <div className="p-4">{toolbar}<EmptyStateLine className="mt-4">{t('dashboard.requests.stageFailed')}</EmptyStateLine></div> : view === 'logs' ? <RenderedEventList
         events={current.logs.map(log => ({ event: log.level, text: JSON.stringify({ ...log, ...(log.fields === undefined ? {} : { fields: model.state(log.fields) }) }, null, 2), parseError: null }))}
         copyText={current.logs.map(log => JSON.stringify({ ...log, ...(log.fields === undefined ? {} : { fields: model.state(log.fields) }) })).join('\n')}
         toolbarStart={toolbar}

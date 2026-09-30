@@ -1060,6 +1060,8 @@ const en = {
         requestChanges: 'Request changes',
         responseChanges: 'Response changes',
         stageLogs: 'Stage logs',
+        stageError: 'Stage error',
+        stageFailed: 'This stage failed without returning facts.',
         stageView: 'Stage view',
         descent: 'Descent',
         noRunEvents: 'This run recorded no events.',
