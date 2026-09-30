@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
@@ -319,7 +321,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: tool.parameters ?? { type: 'object', properties: {} },
+        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
@@ -404,7 +406,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   const { thinking, effort: outputConfigEffort } = anthropicMessagesReasoningFieldsFromEffort(effort);
   const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {};
   if (outputConfigEffort !== undefined) outputConfig.effort = outputConfigEffort;
-  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
+  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: klona(formatSchema) };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
   const serviceTierFields = anthropicMessagesServiceTierFieldsFromOpenAI(payload.service_tier);

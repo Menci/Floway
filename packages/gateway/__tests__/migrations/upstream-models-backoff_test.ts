@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
+
+const PRE_MIGRATION_CATALOG_REVISION = 12;
 
 test('config-version migration preserves cached models and gives existing failures one retry count', async () => {
   const db = await createSqlJsDatabase();
@@ -11,7 +12,7 @@ test('config-version migration preserves cached models and gives existing failur
     db.run(sql);
   }
   const cache = {
-    revision: MODEL_CATALOG_REVISION,
+    revision: PRE_MIGRATION_CATALOG_REVISION,
     fetchedAt: 100,
     models: [],
     lastError: { message: 'existing failure', at: 200 },
@@ -29,8 +30,12 @@ test('config-version migration preserves cached models and gives existing failur
 
   const record = await new SqlRepo(wrapSqlJsDatabase(db)).upstreams.getById('up_legacy_failure');
   expect(record?.configVersion).toBe(1);
-  expect(record?.modelsCache).toMatchObject({
-    revision: MODEL_CATALOG_REVISION,
+  expect(record?.modelsCache).toBeNull();
+
+  const cacheJson = db.exec("SELECT models_cache_json FROM upstreams WHERE id = 'up_legacy_failure'")[0]?.values[0]?.[0];
+  if (typeof cacheJson !== 'string') throw new Error('Migrated models cache missing');
+  expect(JSON.parse(cacheJson)).toMatchObject({
+    revision: PRE_MIGRATION_CATALOG_REVISION,
     fetchedAt: 100,
     models: [],
     lastError: { message: 'existing failure', at: 200, failureCount: 1 },

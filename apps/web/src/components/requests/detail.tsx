@@ -1,4 +1,4 @@
-import { ArrowDownloadRegular, EyeOffRegular, EyeRegular, InfoRegular, WarningRegular } from '@fluentui/react-icons';
+import { ArrowDownloadRegular, EyeOffRegular, EyeRegular, FlashRegular, InfoRegular, TimerRegular, WarningRegular } from '@fluentui/react-icons';
 import { lazy, Suspense, useMemo, useState } from 'react';
 
 import { contentTypeOf, renderBody } from './body-render';
@@ -9,6 +9,7 @@ import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { formatDuration } from '../../lib/format-duration';
 import { DialogShell } from '../ui/dialog-shell';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Dropdown } from '../ui/fluent-form-controls';
@@ -20,7 +21,7 @@ import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-cop
 import type { DumpRecord, DumpResponseBody } from '@floway-dev/gateway/dump-types';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
-const { Button, DialogActions, DialogTitle, Option, Spinner, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Option, Spinner, Text, Tooltip } = fluentComponents;
 
 type Source = 'request' | 'upstreamRequest' | 'upstreamResponse' | 'response';
 
@@ -130,6 +131,18 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
         {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <Tooltip content={t('dashboard.requests.duration', { value: record.meta.durationMs })} relationship="description">
+        <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.durationMs)}</Text>
+        </span>
+      </Tooltip>
+      {record.meta.ttftMs != null && (
+        <Tooltip content={t('dashboard.requests.ttft', { value: record.meta.ttftMs })} relationship="description">
+          <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.ttftMs)}</Text>
+          </span>
+        </Tooltip>
+      )}
       <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
         {diagnostics.length ? t('dashboard.requests.diagnostics', { count: String(diagnostics.length) }) : t('dashboard.requests.metadata')}
       </Button>

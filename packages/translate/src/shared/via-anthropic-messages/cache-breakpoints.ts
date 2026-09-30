@@ -29,7 +29,7 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 
-export const EPHEMERAL_CACHE_CONTROL: AnthropicMessagesCacheControl = { type: 'ephemeral' };
+const ephemeralCacheControl = (): AnthropicMessagesCacheControl => ({ type: 'ephemeral' });
 
 export const applyLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | undefined): void => {
   if (!tools || tools.length === 0) return;
@@ -39,7 +39,7 @@ export const applyLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | un
     // part of the stable prefix, so the breakpoint lands on the last custom
     // tool instead.
     if (!tool.type || tool.type === 'custom') {
-      tool.cache_control = EPHEMERAL_CACHE_CONTROL;
+      tool.cache_control = ephemeralCacheControl();
       return;
     }
   }
@@ -47,7 +47,7 @@ export const applyLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | un
 
 export const applyLastSystemCacheBreakpoint = (system: AnthropicMessagesTextBlock[] | undefined): void => {
   if (!system || system.length === 0) return;
-  system[system.length - 1].cache_control = EPHEMERAL_CACHE_CONTROL;
+  system[system.length - 1].cache_control = ephemeralCacheControl();
 };
 
 export const applyLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessage[]): void => {
@@ -57,7 +57,7 @@ export const applyLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessa
     if (typeof message.content === 'string') {
       // AnthropicMessagesTextBlock is valid in the user, assistant, and system content
       // unions, so the union cast lets one literal serve any of the three roles.
-      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: EPHEMERAL_CACHE_CONTROL };
+      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: ephemeralCacheControl() };
       message.content = [block] as AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[] | AnthropicMessagesTextBlock[];
       return;
     }
@@ -65,7 +65,7 @@ export const applyLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessa
     for (let b = message.content.length - 1; b >= 0; b--) {
       const block = message.content[b];
       if (block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result') {
-        block.cache_control = EPHEMERAL_CACHE_CONTROL;
+        block.cache_control = ephemeralCacheControl();
         return;
       }
     }

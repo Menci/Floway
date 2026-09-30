@@ -7,7 +7,10 @@
 // defaults `parameters` to `{type: 'object', properties: {}}`, so this closes a
 // real asymmetry. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
+import { klona } from 'klona/json';
+
 export const normalizeAnthropicMessagesToolInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  if (schema.type !== 'object' || schema.properties !== undefined) return schema;
-  return { ...schema, properties: {} };
+  const target = klona(schema);
+  if (target.type !== 'object' || target.properties !== undefined) return target;
+  return { ...target, properties: {} };
 };

@@ -107,6 +107,23 @@ test('Codex GPT-6 Astra resolves the announced standard, priority and flex rate 
   }
 });
 
+test('Codex GPT-6.1 Sol resolves its lower cache rate across every published tier and context band', () => {
+  const pricing = pricingForCodexModelKey('gpt-6.1-sol');
+  const cases = [
+    [{ inputTokens: 272000 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }],
+    [{ inputTokens: 272001 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }],
+    [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }],
+    [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }],
+    [{ serviceTier: 'flex', inputTokens: 272000 }, { input_tokens: '1', input_cache_read_tokens: '0.05', input_cache_write_tokens: '1.25', output_tokens: '5' }],
+    [{ serviceTier: 'flex', inputTokens: 272001 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '7.5' }],
+  ] as const;
+
+  for (const [facts, rates] of cases) {
+    assertEquals(priceRequest(pricing, facts).rates, published(rates));
+  }
+  assertEquals(pricingForCodexModelKey('gpt-6.1-sol-fast'), null);
+});
+
 test('Codex GPT-6 Sol and Luna resolve every published service tier and context band', () => {
   const cases = {
     'gpt-6-sol': [

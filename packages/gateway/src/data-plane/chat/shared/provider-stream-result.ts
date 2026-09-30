@@ -39,8 +39,8 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   const stampedEvents = (async function* () {
     try {
       for await (const frame of providerResult.events) {
-        if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-          ctx.attempt.firstOutputTokenAt = performance.now();
+        if (ctx.attempt.timing.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+          ctx.attempt.timing.firstOutputTokenAt = performance.now();
         }
         if (frame.type === 'event') {
           const reported = readBillableUsage(frame.event);

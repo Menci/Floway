@@ -1,68 +1,24 @@
-// Build a Codex `models.json`-shaped catalog entry for a Floway chat model.
-//
-// Both branches of the pipeline — a resolved client-catalog match and a
-// registry model with no catalog equivalent — funnel through this function.
-// `base` is the resolved entry when there is a match, `undefined` otherwise;
-// on `undefined` the hardcoded `BASELINE` fills in the same slot.
-//
-// Field precedence, per field family:
-//
-//   1. `slug` — always the registry public id (the catalog base carries the
-//      upstream slug; we always overwrite with the operator-visible id).
-//   2. `display_name` — `model.display_name ?? source.display_name`. Registry
-//      wins when the operator set a label; else the catalog/base label
-//      rides through. Catalog inheritance is fine here because display_name is
-//      pure UI — inheriting the vendored "GPT-5.5" string when the operator
-//      has not customized it is meaningful, unlike service_tiers below
-//      where a stale bundled value could mis-bill a real request.
-//   3. `service_tiers` — expose only registry-priced tier ids. Metadata resolves
-//      first from the matched model, then from other models in the client
-//      catalog, then falls back to the wire id. Official entries may advertise
-//      tiers Floway cannot bill, so unpriced catalog tiers never survive.
-//   4. `context_window` / `max_context_window` — `registry ?? source ?? 128k`.
-//      Registry-supplied limits win; else preserve the base's value (official
-//      entries carry a real OpenAI-vendored window); else the conservative
-//      default so codex's `(cw * 9) / 10` auto-compact math never sees zero.
-//   5. `input_modalities` (and its derived sibling `web_search_tool_type`) —
-//      `chat.modalities.input ?? source.input_modalities`. When the operator
-//      declared `chat.modalities`, honour it (even if the upstream base
-//      advertised more); else keep the base's list. `web_search_tool_type`
-//      follows the final modality list so it cannot drift from it.
-//   6. `supports_image_detail_original` — true only when every chat provider
-//      behind the public id states `chat.image_detail_original: true`; a
-//      synthesized row without provider candidates uses its own chat metadata.
-//      The value is NOT derived from either modalities or the client catalog: a
-//      model can take images while rejecting detail 'original' (gpt-5.2 in the
-//      bundled catalog is exactly that), and a same-named non-Codex upstream
-//      must not inherit OpenAI's capability. An unstated value is unsupported.
-//   7. `supported_reasoning_levels` / `default_reasoning_level` — same
-//      `chat.reasoning.effort ?? source's` precedence as the modalities.
-//      Ultra is appended only when the exact client-version catalog proves
-//      v2 Ultra semantics and the resulting model supports Max.
-//
-// Fields not listed above ride through from `source` unchanged: the base
-// pass supplies resolved catalog defaults for a hit and hardcoded baselines
-// for the miss path.
+// Matched client-catalog entries retain their model-specific instructions and
+// opaque fields. Registry metadata controls the public identity, priced tiers,
+// modalities, reasoning and limits. Codex providers additionally supply their
+// private default window; other providers expose a single input budget.
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
+import type { CodexContextWindow } from '@floway-dev/provider-codex';
 
-// A synthesized (miss-path) entry with no registry-supplied
-// `max_context_window_tokens` still needs SOME window — codex's auto-compact
-// math (see `auto_compact_token_limit` in BASELINE for the source URL) blows
-// up on absent / zero. 128k is deliberately low; an operator who wants more
-// sets `max_context_window_tokens` on the registry entry.
+// Keep the established 128K compaction policy for synthesized models whose
+// provider has no published limit. Operators can replace it with a model limit.
 const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 
-// Hardcoded baseline for a codex catalog entry when no resolved match exists.
-// The synthesizer starts from this object (via a shallow spread) and layers
-// registry-derived overlays on top. Catalog matches use the resolved entry
-// as the base and overlay the same fields, so both paths converge on one
-// field-precedence rule set (documented above).
+// Current model metadata and legacy wire fields for older Codex clients.
+// https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L404-L511
+// https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L838-L943
+// https://github.com/openai/codex/blob/7ca611348db9446711ed16ed81c84095e3721cee/codex-rs/protocol/src/openai_models.rs#L283-L337
 const BASELINE = {
-  slug: '',                                             // always overwritten
+  slug: '',
   description: '',
   truncation_policy: { mode: 'tokens', limit: 10000 },
   input_modalities: ['text'],
@@ -73,20 +29,15 @@ const BASELINE = {
   shell_type: 'shell_command',
   support_verbosity: false,
   default_verbosity: null,
-  prefer_websockets: true,
   supported_in_api: true,
-  // ModelInfo requires `supports_reasoning_summaries: bool` and
-  // `apply_patch_tool_type: Option<...>` to be present; absence aborts
-  // deserialization of the whole `/models` body and codex silently falls
-  // back to its bundled catalog
-  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L351-L429).
+  // Current clients default summary-parameter support to true; the legacy
+  // supports_reasoning_summaries field alone no longer suppresses the parameter.
+  // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/core/src/client.rs#L873-L887
+  supports_reasoning_summary_parameter: false,
   supports_reasoning_summaries: false,
   apply_patch_tool_type: null,
   default_reasoning_summary: 'none',
-  // Placeholder — the miss-path always overlays this with a model-specific
-  // string from `synthesizedBaseInstructions(model.id, model.display_name ?? model.id)`.
-  // Leaving an empty default here keeps BASELINE a plain constant that
-  // TypeScript can type without depending on the eventual model.
+  model_messages: { instructions_template: '' },
   base_instructions: '',
   experimental_supported_tools: [],
   additional_speed_tiers: [],
@@ -95,12 +46,9 @@ const BASELINE = {
   visibility: 'list',
   availability_nux: null,
   upgrade: null,
-  // Bundled entries also emit `null` here, and codex's
-  // `ModelInfo::auto_compact_token_limit()` resolves it to `(context_window
-  // * 9) / 10`. An explicit positive integer would be clamped down by that
-  // same 90% ceiling, so writing a value here is a no-op at best and a
-  // ceiling lowering at worst
-  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L436-L447).
+  // Let Codex derive the threshold from the selected window, including local
+  // model_context_window overrides, rather than pinning it to the default.
+  // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L524-L537
   auto_compact_token_limit: null,
   context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
@@ -131,13 +79,10 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
+  codexContextWindow?: CodexContextWindow,
 ): CatalogModel => {
   const source: CatalogModel = base ?? BASELINE;
 
-  // Overlay chain for every registry-derived field: `registry ?? source ?? BASELINE`.
-  // BASELINE is always the ultimate fallback so a partially-populated `source`
-  // (e.g. an entry from an older Codex release that omits a field)
-  // still lands on a valid value.
   const inputModalities = (model.chat?.modalities?.input
     ?? source.input_modalities
     ?? BASELINE.input_modalities) as readonly Modality[];
@@ -173,13 +118,15 @@ export const synthesizeCatalogEntry = (
     : supportedReasoning;
   const shouldEnableUltra = advertisedReasoning !== supportedReasoning;
 
-  const registryWindow = model.limits.max_context_window_tokens;
-  const contextWindow = (registryWindow
-    ?? source.context_window
-    ?? BASELINE.context_window) as number;
-  const maxContextWindow = (registryWindow
-    ?? source.max_context_window
-    ?? BASELINE.max_context_window) as number;
+  const providerLimits = [model.limits.max_context_window_tokens, model.limits.max_prompt_tokens]
+    .filter((limit): limit is number => limit !== undefined);
+  const providerWindow = providerLimits.length > 0
+    ? Math.min(...providerLimits)
+    : source.context_window ?? BASELINE.context_window;
+  const contextWindow = codexContextWindow?.context_window ?? providerWindow;
+  const maxContextWindow = codexContextWindow === undefined
+    ? providerWindow
+    : codexContextWindow.max_context_window;
 
   const entry: CatalogModel = {
     ...source,
@@ -207,13 +154,10 @@ export const synthesizeCatalogEntry = (
     entry.default_reasoning_level = registryEffort.default;
   }
 
-  // Miss-path `base_instructions` names the underlying model id so
-  // introspection questions ("what model are you?") resolve against the
-  // actual routed model instead of confabulating a GPT-5 lineage from the
-  // "Codex" persona. Catalog matches keep the release-vendored prompt
-  // (accurate for that entry's GPT-5 family).
   if (base === undefined) {
-    entry.base_instructions = synthesizedBaseInstructions(model.id, model.display_name ?? model.id);
+    const instructions = synthesizedBaseInstructions(model.id, model.display_name ?? model.id);
+    entry.model_messages = { instructions_template: instructions };
+    entry.base_instructions = instructions;
   }
 
   return entry;

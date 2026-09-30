@@ -18,6 +18,7 @@ import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCa
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
+import { codexModelContextWindow } from '@floway-dev/provider-codex';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -54,7 +55,17 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers));
+    // Limits follow the registry's first-provider metadata policy. Only that
+    // provider can supply Codex's private default; a same-named model from a
+    // different provider must use its own advertised input budget.
+    const primaryUpstream = entry.upstreams[0];
+    let codexContextWindow;
+    if (primaryUpstream?.kind === 'codex') {
+      const providerModel = entry.model.providerModels?.[primaryUpstream.upstreamId];
+      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no primary provider model`);
+      codexContextWindow = codexModelContextWindow(providerModel);
+    }
+    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, codexContextWindow));
   }
   return { models };
 };

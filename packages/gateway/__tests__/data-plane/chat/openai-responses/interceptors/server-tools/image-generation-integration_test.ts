@@ -600,7 +600,7 @@ test('an image sub-call records its own perf row attributed to the image backend
   assertEquals(imageRows[0].model, 'gpt-image-2');
   // The image shim runs on a local AttemptState distinct from the outer
   // OpenAI Responses turn's — no image-call stamps may leak onto ctx.attempt.
-  assertEquals(ctx.attempt.upstreamCallStartedAt, null);
-  assertEquals(ctx.attempt.firstOutputTokenAt, null);
+  assertEquals(ctx.attempt.timing.upstreamCallStartedAt, null);
+  assertEquals(ctx.attempt.timing.firstOutputTokenAt, null);
   assertEquals(ctx.attempt.telemetry, undefined);
 });

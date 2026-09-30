@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import {
   geminiGenerateContentFunctionCallingIntent,
   geminiGenerateContentFunctionCallPart,
@@ -160,7 +162,7 @@ const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, generation
     request.top_p = generationConfig.topP;
   }
   if (generationConfig.stopSequences !== undefined) {
-    request.stop = generationConfig.stopSequences;
+    request.stop = klona(generationConfig.stopSequences);
   }
   if (generationConfig.candidateCount !== undefined) {
     request.n = generationConfig.candidateCount;
@@ -180,7 +182,7 @@ const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, generation
       type: 'json_schema',
       json_schema: {
         name: 'gemini_response',
-        schema: generationConfig.responseSchema,
+        schema: klona(generationConfig.responseSchema),
       },
     };
   } else if (generationConfig.responseMimeType === 'application/json') {
@@ -197,7 +199,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIChatCompletion
     function: {
       name: declaration.name,
       ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-      ...(declaration.parameters !== undefined ? { parameters: declaration.parameters } : {}),
+      ...(declaration.parameters !== undefined ? { parameters: klona(declaration.parameters) } : {}),
     },
   }));
 

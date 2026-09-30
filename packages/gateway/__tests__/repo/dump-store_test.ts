@@ -96,6 +96,27 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
   assertEquals(new TextDecoder().decode(fetched.response.body.body), '{"id":"abc"}');
 });
 
+test('FileDumpStore round-trips ttftMs on persisted records', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const base = baseRecord('01HZZ0000000000000000000TT', Date.UTC(2026, 5, 1, 12, 0, 0));
+  const record: DumpWriteRecord = {
+    ...base,
+    meta: { ...base.meta, ttftMs: 250 },
+  };
+
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000TT');
+  assertExists(fetched);
+  assertEquals(fetched.meta.ttftMs, 250);
+
+  const listed = await store.list('key_x', { limit: 10 });
+  const item = listed.find(m => m.id === '01HZZ0000000000000000000TT');
+  assertExists(item);
+  assertEquals(item.ttftMs, 250);
+});
+
 test('FileDumpStore preserves the original content-type header on binary bodies', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();

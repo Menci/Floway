@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -9,7 +11,7 @@ const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIR
     ? tools.map(tool => ({
         type: 'function',
         name: tool.function.name,
-        parameters: tool.function.parameters ?? { type: 'object', properties: {} },
+        parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
         // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
         // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
         strict: tool.function.strict ?? false,
@@ -133,7 +135,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     });
   }
 
-  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: payload.response_format };
+  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: klona(payload.response_format) };
 
   // OpenAI Chat Completions' `reasoning_effort: 'none'` disables reasoning without an OpenAI Responses
   // equivalent (OpenAI Responses `reasoning.effort` has no 'none' member); drop the
@@ -160,7 +162,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     // Same-purpose OpenAI fields are normal OpenAI Chat Completions/OpenAI Responses adapter surface;
     // provider-specific policy filtering belongs at the target boundary, not in
     // pairwise translation.
-    ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
+    ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     stream: true,
     // Preserve OpenAI Chat Completions' omitted `store` as omitted instead of synthesizing
     // `store: false`. OpenAI's migration guide treats storage as the default

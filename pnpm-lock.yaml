@@ -622,6 +622,9 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
+      klona:
+        specifier: 2.0.6
+        version: 2.0.6
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
