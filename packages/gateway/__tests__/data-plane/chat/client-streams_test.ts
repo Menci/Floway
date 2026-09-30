@@ -64,9 +64,9 @@ for (const fixture of cases) {
     const dump = openRunDump(key, { method: 'POST', path: '/v1/chat', body: { bytes: new Uint8Array(), streamError: null } }, trackBackground, true, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
     if (dump === null) throw new Error('retained client request has no run recording');
     const dial = defineStage<Record<string, unknown>, Record<string, unknown>>({
-      name: 'scriptedDial', return: { provides: [fixture.response, 'response.http.headers'] },
+      name: 'scriptedDial', return: { provides: [fixture.response, 'response.http.headers', `${fixture.response}.streamedUsage`] },
       execute: async facts => move({
-        ...facts, 'response.http.headers': [],
+        ...facts, 'response.http.headers': [], [`${fixture.response}.streamedUsage`]: null,
         [fixture.response]: { kind: 'stream', frames: { async *[Symbol.asyncIterator]() { yield* fixture.upstream; } } },
       }),
     });

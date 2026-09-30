@@ -1,13 +1,13 @@
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { internalErrorEnvelope } from './errors.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesStreamFraming, type Fields } from './facts.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
+import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
-import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
-import { defer, defineStage, move, type Deferred } from '@floway-dev/pipeline';
-import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { defineStage, move } from '@floway-dev/pipeline';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';
 import { toInternalDebugError } from '@floway-dev/provider';
 
@@ -124,15 +124,36 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
         };
       }
     }
-    const clientStream = completeStream(egress, framing, error => { use.gateway.dump?.failed(error); });
-    const frames = recordStream(clientStream.frames, use.gateway.dump);
+    if (framing === 'events') {
+      const clientStream = completeEventStream(egress, error => { use.gateway.dump?.failed(error); });
+      const frames = recordStream(clientStream.frames, use.gateway.dump);
+      return {
+        ...rest,
+        'response.chat.clientFrames': move(frames),
+        'response.http.headers': forClient,
+        'response.chat.openaiResponses.rendered': move(frames),
+        'response.http.status': 200,
+        [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], clientStream.failed)),
+      };
+    }
+    let announced: ClientResponseResource | undefined;
+    const completed = framedClientStream(
+      completedSseFrames(egress),
+      frame => {
+        const wire = openaiResponsesProtocolFrameToSSEFrame(frame);
+        if (frame.type === 'event' && 'response' in frame.event) announced = frame.event.response;
+        return wire;
+      },
+      error => [eventFrame(streamErrorEvent(error)), ...(announced === undefined ? [] : [eventFrame(streamFailedEvent(announced, error))])],
+      use.gateway.dump,
+    );
     return {
       ...rest,
-      'response.chat.clientFrames': move(frames),
+      'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
-      'response.chat.openaiResponses.rendered': move(framing === 'sse' ? renderSSE(frames) : frames),
+      'response.chat.openaiResponses.rendered': move(completed.rendered),
       'response.http.status': 200,
-      [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], clientStream.failed)),
+      [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], completed.failed)),
     };
   },
 });
@@ -168,34 +189,20 @@ const streamFailedEvent = (announced: ClientResponseResource, error: unknown): C
   } as ClientOpenAIResponsesStreamEvent;
 };
 
-/** The client's terminal frames are protocol content, so they precede recording and transport
- *  framing. A stream that finishes carries its own terminator, while an interrupted one carries
- *  the failure under the response id already announced to that client.
- *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
- */
-const completeStream = (
+const completeEventStream = (
   frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
-  framing: OpenAIResponsesStreamFraming,
   reportFailure: (error: unknown) => void,
 ): { frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>; failed: Promise<boolean> } => {
   let settle!: (failed: boolean) => void;
   const failed = new Promise<boolean>(resolve => { settle = resolve; });
   const stream = (async function* () {
-    let announced: ClientResponseResource | undefined;
     let failed = false;
     try {
-      for await (const frame of frames) {
-        if (frame.type === 'done') continue;
-        if ('response' in frame.event) announced = frame.event.response;
-        yield frame;
-      }
-      if (framing === 'sse') yield doneFrame();
+      for await (const frame of frames) if (frame.type !== 'done') yield frame;
     } catch (error) {
       failed = true;
       reportFailure(error);
-      if (framing === 'events') throw error;
-      yield eventFrame(streamErrorEvent(error));
-      if (announced !== undefined) yield eventFrame(streamFailedEvent(announced, error));
+      throw error;
     } finally {
       settle(failed);
     }
@@ -203,16 +210,9 @@ const completeStream = (
   return { frames: { [Symbol.asyncIterator]: () => stream }, failed };
 };
 
-// Persistence and client projection can fail after the upstream terminal has settled its
-// usage. Settlement waits for both boundaries and retains the measured upstream quantities.
-const withClientVerdict = (reading: Deferred<StreamOutcome> | null, failed: Promise<boolean>): Deferred<StreamOutcome> | null =>
-  reading === null ? null : defer(Promise.all([reading, failed]).then(([outcome, failed]) => ({ ...outcome, failed: outcome.failed || failed })));
-
-const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
-  // The frames the client reads are a reframing of the ones the record holds, so this key
-  // points at that same stream rather than at nothing.
-  ...streamReferenceOf(frames),
+const completedSseFrames = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) yield openaiResponsesProtocolFrameToSSEFrame(frame);
+    for await (const frame of frames) if (frame.type !== 'done') yield frame;
+    yield doneFrame();
   })(),
 });

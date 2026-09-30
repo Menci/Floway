@@ -1,14 +1,16 @@
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { mintGeminiGenerateContentFailure } from './errors.ts';
 import type { Fields } from './facts.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
+import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { sseFrame, type EventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
  * The outermost edge. A Gemini generateContent answer is always a stream by the time it reaches
@@ -22,8 +24,8 @@ import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerate
 export const emitGeminiGenerateContent = defineStage<
   Fields<'ingress.chat.geminiGenerateContent.wantsStream'>,
   Fields<'ingress.chat.geminiGenerateContent.wantsStream'>,
-  Fields<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers'>,
-  Fields<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
+  Fields<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers' | 'response.chat.geminiGenerateContent.streamedUsage'>,
+  Fields<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.geminiGenerateContent.streamedUsage'>,
   ChatServices
 >({
   name: 'emitGeminiGenerateContent',
@@ -34,9 +36,9 @@ export const emitGeminiGenerateContent = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.chat.geminiGenerateContent', 'response.http.headers'],
+      needs: ['response.chat.geminiGenerateContent', 'response.http.headers', 'response.chat.geminiGenerateContent.streamedUsage'],
       consumes: ['response.chat.geminiGenerateContent', 'response.http.headers'],
-      provides: ['response.chat.clientFrames', 'response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers', 'response.chat.geminiGenerateContent.streamedUsage'],
     },
   },
   execute: async (facts, next, use) => {
@@ -88,12 +90,18 @@ export const emitGeminiGenerateContent = defineStage<
         'response.http.status': 200,
       };
     }
-    const frames = recordStream(clientFrames(egress), use.gateway.dump);
+    const completed = framedClientStream(
+      clientFrames(egress),
+      frame => sseFrame(JSON.stringify(frame.event)),
+      error => [eventFrame(geminiStreamError(error))],
+      use.gateway.dump,
+    );
     return {
       ...rest,
-      'response.chat.clientFrames': move(frames),
+      'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
-      'response.chat.geminiGenerateContent.rendered': move(renderSSE(frames)),
+      'response.chat.geminiGenerateContent.rendered': move(completed.rendered),
+      'response.chat.geminiGenerateContent.streamedUsage': move(withClientVerdict(back['response.chat.geminiGenerateContent.streamedUsage'], completed.failed)),
       'response.http.status': 200,
     };
   },
@@ -105,9 +113,8 @@ const clientFrames = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentS
   })(),
 });
 
-const renderSSE = (frames: AsyncIterable<EventFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<SseFrame> => ({
-  ...streamReferenceOf(frames),
-  [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) yield sseFrame(JSON.stringify(frame.event));
-  })(),
-});
+const geminiStreamError = (error: unknown): GeminiGenerateContentStreamEvent => {
+  const debug = toInternalDebugError(error, 'geminiGenerateContent');
+  const envelope = mintGeminiGenerateContentFailure({ status: 500, message: debug.message }).body;
+  return { error: { ...(envelope.error as { code: number; message: string; status: string }), ...debug } };
+};

@@ -6,10 +6,11 @@
 // by this gateway, and the answer rewritten back into Anthropic's own
 // `server_tool_use` / `web_search_tool_result` shape on the way up.
 //
-// One descent, unlike the OpenAI Responses shim: Anthropic's protocol carries the tool result
+// One descent, unlike the OpenAI Responses hosted-tool loop: Anthropic's protocol carries the tool result
 // inside the same turn, so there is nothing to ask again for. What this stage is, then, is a
 // request rewrite and a response rewrite around one dial.
 
+import type { Fields } from './facts.ts';
 import {
   anthropicMessagesWebSearchInvalidRequestBody,
   prepareAnthropicMessagesWebSearchInvocation,
@@ -27,10 +28,10 @@ import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 
 type M<K extends keyof ChatFacts> = { [P in K]: ChatFacts[P] };
 
-type Answered = M<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>;
+type Answered = Fields<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers' | 'response.chat.anthropicMessages.streamedUsage'> & Record<string, unknown>;
 
 /** The gateway's own refusal, in Anthropic's words. It is written here rather than dialled,
- *  because a tool declaration this shim cannot execute would reach the upstream as a body this
+ *  because a tool declaration this gateway cannot execute would reach the upstream as a body this
  *  gateway wrote. The envelope is stated as itself: a refusal this gateway authored has no
  *  upstream bytes behind it, so there is nothing to serialize and read back. */
 const refusal = (message: string): Failure => ({
@@ -69,7 +70,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
   // A declaration this gateway cannot execute, and a search backend the operator has not
   // configured, are both answered here: neither is a body an upstream should be asked about.
   return: {
-    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers'],
+    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -89,6 +90,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
       return move({
         ...facts,
         'response.chat.anthropicMessages': refusal(prepared.message),
+        'response.chat.anthropicMessages.streamedUsage': null,
         'response.usage.billable': [],
         'response.http.headers': [],
       }) as never;

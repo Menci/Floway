@@ -392,6 +392,8 @@ describe('the messages chain', () => {
 
     const { facts } = await serve(true);
 
-    await expect(collect(facts['response.chat.anthropicMessages.rendered'])).rejects.toThrow(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE);
+    const frames = await collect(facts['response.chat.anthropicMessages.rendered']);
+    expect(frames.at(-1)?.event).toBe('error');
+    expect(JSON.parse(frames.at(-1)!.data)).toMatchObject({ type: 'error', error: { message: ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE } });
   });
 });

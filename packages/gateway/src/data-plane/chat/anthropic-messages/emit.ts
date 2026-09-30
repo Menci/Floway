@@ -1,14 +1,16 @@
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
 import type { Fields } from './facts.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
+import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedAs } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
+import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
  * The outermost edge. An Anthropic Messages answer is always a stream by the time it reaches here —
@@ -23,17 +25,17 @@ import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseFram
 export const emitAnthropicMessages = defineStage<
   Fields<'ingress.chat.anthropicMessages.wantsStream'>,
   Fields<'ingress.chat.anthropicMessages.wantsStream'>,
-  Fields<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers'>,
-  Fields<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
+  Fields<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers' | 'response.chat.anthropicMessages.streamedUsage'>,
+  Fields<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.anthropicMessages.streamedUsage'>,
   ChatServices
 >({
   name: 'emitAnthropicMessages',
   through: {
     request: { needs: ['ingress.chat.anthropicMessages.wantsStream'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.anthropicMessages', 'response.http.headers'],
+      needs: ['response.chat.anthropicMessages', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
       consumes: ['response.chat.anthropicMessages', 'response.http.headers'],
-      provides: ['response.chat.clientFrames', 'response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
     },
   },
   execute: async (facts, next, use) => {
@@ -85,12 +87,18 @@ export const emitAnthropicMessages = defineStage<
         'response.http.status': 200,
       };
     }
-    const frames = recordStream(clientFrames(egress), use.gateway.dump);
+    const completed = framedClientStream(
+      clientFrames(egress),
+      frame => sseFrame(JSON.stringify(frame.event), frame.event.type),
+      error => [eventFrame({ type: 'error' as const, error: toInternalDebugError(error, 'anthropicMessages') })],
+      use.gateway.dump,
+    );
     return {
       ...rest,
-      'response.chat.clientFrames': move(frames),
+      'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
-      'response.chat.anthropicMessages.rendered': move(renderSSE(frames)),
+      'response.chat.anthropicMessages.rendered': move(completed.rendered),
+      'response.chat.anthropicMessages.streamedUsage': move(withClientVerdict(back['response.chat.anthropicMessages.streamedUsage'], completed.failed)),
       'response.http.status': 200,
     };
   },
@@ -105,13 +113,6 @@ const clientFrames = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStrea
     for await (const frame of frames) {
       if (frame.type === 'event') yield eventFrame(anthropicMessagesEventToSsePayload(frame.event));
     }
-  })(),
-});
-
-const renderSSE = (frames: AsyncIterable<EventFrame<ClientEvent>>): AsyncIterable<SseFrame> => ({
-  ...streamReferenceOf(frames),
-  [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) yield sseFrame(JSON.stringify(frame.event), frame.event.type);
   })(),
 });
 

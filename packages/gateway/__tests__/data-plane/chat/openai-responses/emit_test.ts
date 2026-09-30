@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
-for (const failureAt of ['before-response', 'upstream-stream', 'snapshot'] as const) {
+for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'render'] as const) {
   test(`records the exact client protocol failure frames for ${failureAt} failure`, async () => {
     const announced = failureAt !== 'before-response';
     const stubs = installDumpStubs(initDumpStore, initDumpBroker);
@@ -56,6 +56,10 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot'] as co
             response: { id: 'upstream-response', object: 'response', model: 'model', status: 'in_progress', output: [], error: null, incomplete_details: null },
           },
         };
+      }
+      if (failureAt === 'render') {
+        yield { type: 'event', event: { type: 'response.in_progress', response: { id: 'upstream-response', object: 'response', model: 'model', status: 'in_progress', output: [], error: null, incomplete_details: null, impossibleJson: 1n } } };
+        return;
       }
       if (failureAt === 'snapshot') {
         yield {
@@ -116,7 +120,8 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot'] as co
       : announced ? ['response.created', 'error', 'response.failed'] : ['error'];
     expect(frames.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(expectedEvents);
     const error = frames.find(frame => frame.type === 'event' && frame.event.type === 'error');
-    expect(error).toMatchObject({ event: { error: { message: fault.message, cause: { message: 'socket reset' } } } });
+    expect(error).toMatchObject({ event: { error: { message: failureAt === 'render' ? 'Do not know how to serialize a BigInt' : fault.message } } });
+    if (failureAt !== 'render') expect(error).toMatchObject({ event: { error: { cause: { message: 'socket reset' } } } });
     if (announced) {
       const created = frames[0] as ProtocolFrame<Extract<ClientOpenAIResponsesStreamEvent, { type: 'response.created' }>>;
       if (created.type !== 'event') throw new Error('announced response has no creation event');

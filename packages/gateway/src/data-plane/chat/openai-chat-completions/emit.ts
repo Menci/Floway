@@ -1,13 +1,15 @@
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import type { Fields } from './facts.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
+import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
  * The outermost edge. A chat answer is always a stream by the time it reaches here — the
@@ -21,8 +23,8 @@ export const emitOpenAIChatCompletions = defineStage<
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
-    | 'response.chat.openaiChatCompletions' | 'response.http.headers'>,
-  Fields<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
+    | 'response.chat.openaiChatCompletions' | 'response.http.headers' | 'response.chat.openaiChatCompletions.streamedUsage'>,
+  Fields<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.openaiChatCompletions.streamedUsage'>,
   ChatServices
 >({
   name: 'emitOpenAIChatCompletions',
@@ -33,9 +35,9 @@ export const emitOpenAIChatCompletions = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.chat.openaiChatCompletions', 'response.http.headers'],
+      needs: ['response.chat.openaiChatCompletions', 'response.http.headers', 'response.chat.openaiChatCompletions.streamedUsage'],
       consumes: ['response.chat.openaiChatCompletions', 'response.http.headers'],
-      provides: ['response.chat.clientFrames', 'response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers', 'response.chat.openaiChatCompletions.streamedUsage'],
     },
   },
   execute: async (facts, next, use) => {
@@ -75,12 +77,8 @@ export const emitOpenAIChatCompletions = defineStage<
       answer.frames as AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
       affinityEgressOptions(use.gateway),
     );
-    const frames = recordStream(
-      back['ingress.chat.openaiChatCompletions.wantsStream']
-        ? clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk']) : egress,
-      use.gateway.dump,
-    );
     if (!back['ingress.chat.openaiChatCompletions.wantsStream']) {
+      const frames = recordStream(egress, use.gateway.dump);
       return {
         ...rest,
         'response.chat.clientFrames': move(frames),
@@ -91,11 +89,18 @@ export const emitOpenAIChatCompletions = defineStage<
         'response.http.status': 200,
       };
     }
+    const completed = framedClientStream<ProtocolFrame<ClientOpenAIChatCompletionsStreamEvent>>(
+      clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk']),
+      frame => openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }),
+      error => [eventFrame({ error: toInternalDebugError(error, 'openaiChatCompletions') })],
+      use.gateway.dump,
+    );
     return {
       ...rest,
-      'response.chat.clientFrames': move(frames),
+      'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
-      'response.chat.openaiChatCompletions.rendered': move(renderSSE(frames)),
+      'response.chat.openaiChatCompletions.rendered': move(completed.rendered),
+      'response.chat.openaiChatCompletions.streamedUsage': move(withClientVerdict(back['response.chat.openaiChatCompletions.streamedUsage'], completed.failed)),
       'response.http.status': 200,
     };
   },
@@ -109,16 +114,5 @@ const clientFrames = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsS
       if (frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
       yield frame;
     }
-  })(),
-});
-
-const renderSSE = (
-  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-): AsyncIterable<SseFrame> => ({
-  // The frames the client reads are a reframing of the ones the record holds, so this key
-  // points at that same stream rather than at nothing.
-  ...streamReferenceOf(frames),
-  [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) yield openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true });
   })(),
 });

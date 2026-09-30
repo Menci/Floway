@@ -402,7 +402,8 @@ describe('the Gemini generateContent pipeline', () => {
 
     const { facts, drain } = await serve(entryFacts());
 
-    await expect(collect(facts['response.chat.geminiGenerateContent.rendered'])).rejects.toThrow(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+    const frames = await collect(facts['response.chat.geminiGenerateContent.rendered']);
+    expect(JSON.parse(frames.at(-1)!.data)).toMatchObject({ error: { code: 500, status: 'INTERNAL', message: GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE } });
     await drain();
   });
 });
