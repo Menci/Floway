@@ -49,3 +49,14 @@ test('responses rewrite requires the flag and an explicit empty array', async ()
   assertEquals(missing.payload.tool_choice, 'auto');
   assertEquals(present.payload.tool_choice, 'auto');
 });
+
+test('responses keeps tool choice when an input item supplies tools', async () => {
+  for (const item of [
+    { type: 'additional_tools' as const, role: 'developer' as const, tools: [{ type: 'web_search' as const }] },
+    { type: 'tool_search_output' as const, tools: [{ type: 'web_search' as const }] },
+  ]) {
+    const input = invocation({ ...base, tools: [], input: [item], tool_choice: 'required' });
+    await withEmptyToolsToolChoiceNormalized(input, stubCtx, okEvents);
+    assertEquals(input.payload.tool_choice, 'required');
+  }
+});

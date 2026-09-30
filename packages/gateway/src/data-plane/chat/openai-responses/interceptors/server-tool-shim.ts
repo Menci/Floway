@@ -131,7 +131,8 @@ export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gat
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  // Absent only for replay activation; otherwise drives `tools` echo restore.
+  // Hosted entries are rewritten at their input-item positions; only
+  // top-level replacements participate in response.tools restoration.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
@@ -287,10 +288,9 @@ const restoreEchoedToolChoice = (
   return toolChoice;
 };
 
-// Inverse of the request-side hosted→function rewrite, applied to the
-// upstream-echoed tools array. Non-injected entries pass through
-// verbatim so upstream-side default enrichment on ordinary client
-// function tools survives.
+// Restore top-level hosted declarations in the response.tools echo.
+// Unmatched entries pass through unchanged, preserving any fields returned
+// by upstream for ordinary client tools.
 const restoreEchoedTools = (
   tools: readonly OpenAIResponsesTool[] | undefined,
   active: readonly ActiveServerTool[],
@@ -365,11 +365,9 @@ const historicalClientCallableUsesName = (name: string, input: readonly OpenAIRe
       && item.namespace === undefined && item.name === name;
   });
 
-// Azure and Copilot both deduplicate repeated hosted-tool declarations as one
-// family and retain the last complete declaration, including aliases and
-// configuration. The replacement occupies the first declaration's array slot
-// so unrelated tools retain their relative order.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+// Collapse matching hosted declarations within each tools array. Keep the
+// last declaration's configuration at the first matching slot so unrelated
+// tools retain their relative order.
 const rewriteToolsForHostedShim = (
   tools: readonly OpenAIResponsesTool[],
   hosted: ServerToolHostedDispatch,
@@ -395,6 +393,34 @@ const rewriteToolsForHostedShim = (
   }
   rewritten[replacementIndex] = hosted.buildFunctionTool(canonicalHostedTool, toolName);
   return { rewritten, canonicalHostedTool };
+};
+
+const rewriteHostedDeclarations = (
+  payload: CanonicalOpenAIResponsesPayload,
+  hosted: ServerToolHostedDispatch,
+  toolName: string,
+): { payload: CanonicalOpenAIResponsesPayload; canonicalTopLevelHostedTool: OpenAIResponsesHostedTool | undefined } => {
+  let canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
+  const rewrite = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
+    if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
+    const result = rewriteToolsForHostedShim(tools, hosted, toolName);
+    canonicalHostedTool = result.canonicalHostedTool;
+    return result.rewritten;
+  };
+  const tools = Array.isArray(payload.tools) ? rewrite(payload.tools) : undefined;
+  const canonicalTopLevelHostedTool = canonicalHostedTool;
+  const input = payload.input.map(item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const rewritten = rewrite(item.tools);
+    return rewritten === item.tools ? item : { ...item, tools: rewritten };
+  });
+  if (canonicalHostedTool === undefined) {
+    throw new Error('Hosted server-tool registration did not match any request tool');
+  }
+  return {
+    payload: { ...payload, ...(tools === undefined ? {} : { tools }), input },
+    canonicalTopLevelHostedTool,
+  };
 };
 
 export const parseServerToolArguments = (argumentsJson: string): Record<string, unknown> | null => {
@@ -1127,13 +1153,20 @@ export const withOpenAIResponsesServerToolShim = (
   registrations: readonly ServerToolRegistration[],
 ): OpenAIResponsesInterceptor => async (ctx, gatewayCtx, run) => {
   const active: ActiveServerTool[] = [];
+  const preparedTools: Array<Extract<ServerToolPrepareResult, { type: 'active' }>> = [];
 
+  // Validate the original request before any hosted rewrite changes the
+  // tool-array indexes used in error paths.
   for (const prepareServerTool of registrations) {
     const prepared = await prepareServerTool(ctx, gatewayCtx);
     if (prepared.type === 'inactive') continue;
     if (prepared.type === 'invalid-request') {
       return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
     }
+    preparedTools.push(prepared);
+  }
+
+  for (const prepared of preparedTools) {
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools, ctx.payload.input, ctx.payload.tool_choice);
     const { hosted } = prepared;
@@ -1164,9 +1197,9 @@ export const withOpenAIResponsesServerToolShim = (
     }
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
     if (hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
-      canonicalHostedTool = rewrite.canonicalHostedTool;
-      ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
+      const rewrite = rewriteHostedDeclarations(ctx.payload, hosted, toolName);
+      canonicalHostedTool = rewrite.canonicalTopLevelHostedTool;
+      ctx.payload = rewrite.payload;
     }
     const originalToolChoice = helperFunctionChoice ?? hostedToolChoiceToRestore(choice, hosted, toolName);
     if (helperFunctionChoice !== undefined) {
