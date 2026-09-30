@@ -6549,6 +6549,37 @@ for (const carrier of ['tools', 'additional_tools', 'tool_search_output'] as con
   }, 1_000);
 }
 
+for (const failedTurn of [1, 2]) {
+  test(`the shim retains observed billing when turn ${failedTurn} throws after its usage`, async () => {
+    makeStubDeps();
+    let runCalls = 0;
+    const streamError = new Error('stream interrupted after usage');
+    const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), async () => {
+      const fails = ++runCalls === failedTurn;
+      let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
+      const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
+      const billableUsage: BillableUsage = { input: 10, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
+      return eventResult((async function* () {
+        try {
+          const frames = fails ? [mkResponseCreated(), mkResponseCompleted()] : searchCallTurn(0, 'first', 'first search');
+          for (const frame of frames) yield frame;
+          if (fails) throw streamError;
+        } finally {
+          resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
+        }
+      })(), testTelemetryModelIdentity, { finalMetadata });
+    });
+
+    assert(result.type === 'events');
+    const frames = await collectFrames(result.events);
+    const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
+    assert(failed?.type === 'response.failed');
+    assertEquals(failed.response.error?.message, `Upstream stream failed mid-response: ${streamError.message}`);
+    assertEquals(runCalls, failedTurn);
+    assertEquals((await result.finalMetadata!).billableUsage, { input: 10 * failedTurn, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 * failedTurn });
+  }, 1_000);
+}
+
 test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
   const unrecognized = eventFrame({
     type: 'response.some_future_event',

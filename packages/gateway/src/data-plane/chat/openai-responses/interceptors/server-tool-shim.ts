@@ -1011,8 +1011,6 @@ async function* materializeServerToolItems(
   }
 }
 
-// `finalMetadata` resolves when that turn's stream ends; the shim has already
-// drained it before reaching here, so awaiting it cannot deadlock.
 const accumulateBillableUsage = async (
   metadata: LatestUpstreamMetadata,
   result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
@@ -1020,6 +1018,20 @@ const accumulateBillableUsage = async (
   const turn = result.finalMetadata === undefined ? undefined : (await result.finalMetadata).billableUsage;
   metadata.billableUsage = sumBillableUsage(metadata.billableUsage, turn);
 };
+
+// Billing metadata settles when the upstream event generator closes. Await it
+// after consumption or cancellation so failed turns retain observed costs.
+async function* consumeBilledTurn(
+  events: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+  metadata: LatestUpstreamMetadata,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary> {
+  try {
+    return yield* events;
+  } finally {
+    await accumulateBillableUsage(metadata, result);
+  }
+}
 
 async function* runMultiTurnLoop(args: {
   ctx: OpenAIResponsesInvocation;
@@ -1040,11 +1052,7 @@ async function* runMultiTurnLoop(args: {
   const baseInput = args.canonicalInput;
   let midStreamError: unknown = undefined;
   try {
-    let currentTurn: TurnSummary = yield* turn1Iter;
-    // Each turn resolves its own cost once its stream has drained, and the
-    // shim consumes them one at a time, so the running total is complete by
-    // the time the loop reaches its terminal.
-    await accumulateBillableUsage(metadata, args.firstResult);
+    let currentTurn: TurnSummary = yield* consumeBilledTurn(turn1Iter, args.firstResult, metadata);
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     while (true) {
       const turn = currentTurn;
@@ -1117,8 +1125,11 @@ async function* runMultiTurnLoop(args: {
       }
       metadata.modelIdentity = nextResult.modelIdentity;
       metadata.performance = nextResult.performance;
-      currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active);
-      await accumulateBillableUsage(metadata, nextResult);
+      currentTurn = yield* consumeBilledTurn(
+        consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active),
+        nextResult,
+        metadata,
+      );
       merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     }
   } catch (error) {
