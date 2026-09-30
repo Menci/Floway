@@ -49,7 +49,7 @@ export const isPersisted = (record: UpstreamRecord): boolean => record.id !== ''
 
 export const hasUnsavedDiscoveryInputs = (
   dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
-): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList, dirtyFields.flagOverrides].some(Boolean);
+): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList, dirtyFields.flagOverrides, dirtyFields.chatCompletionsReasoningOverrides].some(Boolean);
 
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
@@ -69,6 +69,7 @@ export interface UpstreamEditorValues {
   modelPrefix: UpstreamRecord['model_prefix'];
   disabledPublicModelIds: string[];
   flagOverrides: UpstreamRecord['flag_overrides'];
+  chatCompletionsReasoningOverrides: UpstreamRecord['chat_completions_reasoning_overrides'];
   config: UpstreamRecord['config'];
   state: UpstreamRecord['state'];
   manualModels: UpstreamModelConfig[];
@@ -212,6 +213,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
     modelPrefix: structuredClone(record.model_prefix),
     disabledPublicModelIds: [...record.disabled_public_model_ids],
     flagOverrides: record.flag_overrides,
+    chatCompletionsReasoningOverrides: record.chat_completions_reasoning_overrides,
     config,
     state: structuredClone(record.state),
     manualModels,
@@ -265,6 +267,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     model_prefix: values.modelPrefix,
     disabled_public_model_ids: values.disabledPublicModelIds,
     flag_overrides: values.flagOverrides,
+    chat_completions_reasoning_overrides: values.chatCompletionsReasoningOverrides,
   };
 };
 
@@ -277,6 +280,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     enabled: values.enabled,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
+    chat_completions_reasoning_overrides: values.chatCompletionsReasoningOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
@@ -293,6 +297,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     enabled: values.enabled,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
+    chat_completions_reasoning_overrides: values.chatCompletionsReasoningOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,

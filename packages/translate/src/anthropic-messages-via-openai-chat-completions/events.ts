@@ -1,4 +1,5 @@
-import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { anthropicMessagesBlocksFromChatCompletionsReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -126,7 +127,7 @@ const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => 
   const delta = choice.delta;
   return Boolean(delta.content)
     || openAIChatCompletionsScalarReasoningText(delta) !== undefined
-    || delta.reasoning_opaque != null
+    || openAIChatCompletionsReasoningOpaque(delta) != null
     || (delta.tool_calls?.length ?? 0) > 0;
 };
 
@@ -299,17 +300,20 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
     });
   }
 
-  if (delta.reasoning_opaque === undefined || delta.reasoning_opaque === null) {
+  const wireOpaque = openAIChatCompletionsReasoningOpaque(delta);
+  const block = anthropicMessagesBlocksFromChatCompletionsReasoning(reasoningText, wireOpaque)[0];
+  const reasoningOpaque = block?.type === 'thinking' ? block.signature : block?.data;
+  if (reasoningOpaque === undefined) {
     return;
   }
 
   if (state.openBlock === 'thinking') {
-    state.pendingThinkingSignature = delta.reasoning_opaque;
+    state.pendingThinkingSignature = reasoningOpaque;
     emitPendingReasoningAndDeferred(state, events);
     return;
   }
 
-  state.pendingReasoningOpaque = delta.reasoning_opaque;
+  state.pendingReasoningOpaque = reasoningOpaque;
 };
 
 const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {

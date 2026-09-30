@@ -213,7 +213,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
   const authStyle = authStyleField(raw.authStyle);
   const base = {
     baseUrl: baseUrlField(raw.baseUrl),
-    endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
+    endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true, availabilityOnly: true }),
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),

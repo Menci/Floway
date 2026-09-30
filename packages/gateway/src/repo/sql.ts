@@ -56,6 +56,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import {
+  decodeChatCompletionsReasoningOverrides,
   decodeDisabledPublicModelIds,
   decodeModelPrefix,
   decodeProxyFallbackList,
@@ -882,7 +883,7 @@ const MODELS_CACHE_EPOCH_SQL = `CASE
   ELSE 0
 END`;
 
-const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, chat_completions_reasoning_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
@@ -904,7 +905,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, chat_completions_reasoning_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
         RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         upstream.id,
@@ -917,6 +918,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         serializeStoredConfig(upstream.config),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(upstream.chatCompletionsReasoningOverrides ?? {}),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
@@ -938,7 +940,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (storedRow === null) return null;
     const modelConfigChanged = previous.kind !== upstream.kind
       || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
-      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides)
+      || serializeStoredConfig(previous.chatCompletionsReasoningOverrides ?? {}) !== serializeStoredConfig(upstream.chatCompletionsReasoningOverrides ?? {});
     const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
     const refreshInputsChanged = modelConfigChanged || transportChanged;
     const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
@@ -968,6 +971,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            config_json = ?,
            state_json = CASE WHEN ? THEN ? ELSE state_json END,
            flag_overrides = ?,
+           chat_completions_reasoning_overrides = ?,
            disabled_public_model_ids = ?,
            proxy_fallback_list_json = ?,
            model_prefix_json = ?,
@@ -982,6 +986,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND config_json = ?
            AND (? = 0 OR state_json IS ?)
            AND flag_overrides = ?
+           AND chat_completions_reasoning_overrides = ?
            AND disabled_public_model_ids = ?
            AND proxy_fallback_list_json = ?
            AND model_prefix_json IS ?
@@ -999,6 +1004,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         sqliteBoolean(replaceState),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(upstream.chatCompletionsReasoningOverrides ?? {}),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
@@ -1014,6 +1020,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         sqliteBoolean(replaceState),
         storedRow.state_json,
         storedRow.flag_overrides,
+        storedRow.chat_completions_reasoning_overrides,
         storedRow.disabled_public_model_ids,
         storedRow.proxy_fallback_list_json,
         storedRow.model_prefix_json,
@@ -1036,16 +1043,18 @@ class SqlUpstreamRepo implements UpstreamRepo {
     provider: string;
     config_json: string;
     flag_overrides: string;
+    chat_completions_reasoning_overrides: string;
     proxy_fallback_list_json: string;
   } | null> {
     const row = await this.db
-      .prepare('SELECT provider, config_json, flag_overrides, proxy_fallback_list_json FROM upstreams WHERE id = ? AND config_version = ?')
+      .prepare('SELECT provider, config_json, flag_overrides, chat_completions_reasoning_overrides, proxy_fallback_list_json FROM upstreams WHERE id = ? AND config_version = ?')
       .bind(input.id, input.configVersion)
-      .first<{ provider: string; config_json: string; flag_overrides: string; proxy_fallback_list_json: string }>();
+      .first<{ provider: string; config_json: string; flag_overrides: string; chat_completions_reasoning_overrides: string; proxy_fallback_list_json: string }>();
     if (row === null || !matchesModelsRefreshInputs({
       kind: parseUpstreamKind(input.id, row.provider),
       config: decodeUpstreamConfig(row.config_json, input.id),
       flagOverrides: parseFlagOverrides(input.id, row.flag_overrides),
+      chatCompletionsReasoningOverrides: decodeChatCompletionsReasoningOverrides(row.chat_completions_reasoning_overrides, input.id),
       proxyFallbackList: parseProxyFallbackList(input.id, row.proxy_fallback_list_json),
     }, input.refreshInputs)) return null;
     return row;
@@ -1057,10 +1066,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (fence === null) return false;
     const result = await this.db
       .prepare(`UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND config_version = ?
-        AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
+        AND provider = ? AND config_json = ? AND flag_overrides = ? AND chat_completions_reasoning_overrides = ? AND proxy_fallback_list_json = ?
         AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
       .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion,
-        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json, cacheEpoch)
+        fence.provider, fence.config_json, fence.flag_overrides, fence.chat_completions_reasoning_overrides, fence.proxy_fallback_list_json, cacheEpoch)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -1079,13 +1088,13 @@ class SqlUpstreamRepo implements UpstreamRepo {
            models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
              THEN json_set(models_cache_json, '$.lastError', json(?)) ELSE ? END
          WHERE id = ? AND config_version = ?
-           AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
+           AND provider = ? AND config_json = ? AND flag_overrides = ? AND chat_completions_reasoning_overrides = ? AND proxy_fallback_list_json = ?
            AND ${MODELS_CACHE_EPOCH_SQL} = ?
            AND coalesce(CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
              THEN json_extract(models_cache_json, '$.lastError.failureCount') END, 0) = ?`,
       )
       .bind(JSON.stringify(nextError), coldFailure, id, configVersion,
-        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json,
+        fence.provider, fence.config_json, fence.flag_overrides, fence.chat_completions_reasoning_overrides, fence.proxy_fallback_list_json,
         cacheEpoch, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
@@ -1139,6 +1148,7 @@ interface UpstreamRow {
   state_json: string | null;
   models_cache_json: string | null;
   flag_overrides: string;
+  chat_completions_reasoning_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;
@@ -1165,6 +1175,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
     config,
     state,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
+    chatCompletionsReasoningOverrides: decodeChatCompletionsReasoningOverrides(row.chat_completions_reasoning_overrides, row.id),
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
     modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),

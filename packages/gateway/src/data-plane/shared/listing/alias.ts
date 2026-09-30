@@ -36,6 +36,7 @@
 
 import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
+import { downstreamEndpointsFor } from '../../chat/openai-chat-completions/reasoning.ts';
 import { unionEndpoints } from '../../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, OpaqueBlobCompatibilityScope, PublicModelLimits } from '@floway-dev/protocols/common';
@@ -326,6 +327,7 @@ const synthesizeOne = (
     limits,
     kind: alias.kind,
     endpoints,
+    downstreamEndpoints: downstreamEndpointsFor(endpoints),
     opaqueBlobCompatibilityScope: commonOpaqueBlobCompatibilityScope(gatewayAvailable.map(({ real }) => real)),
     aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
     ...(chat !== undefined ? { chat } : {}),

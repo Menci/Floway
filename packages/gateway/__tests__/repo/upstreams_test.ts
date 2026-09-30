@@ -250,6 +250,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -274,6 +275,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{bad json',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -298,6 +300,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     state_json: null,
     models_cache_json: null,
     flag_overrides: '[]',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -326,6 +329,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{"x": 1}',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -354,6 +358,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: '{not json',
@@ -378,6 +383,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     // Prefix missing trailing slash — passes JSON.parse but fails the regex.
@@ -449,6 +455,7 @@ test('SQL upstream repo rejects a stored hue outside the circle', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
+    chat_completions_reasoning_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -965,6 +972,7 @@ type FakeUpstreamRow = {
   state_json: string | null;
   models_cache_json: string | null;
   flag_overrides: string;
+  chat_completions_reasoning_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;

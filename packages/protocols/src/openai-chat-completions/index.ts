@@ -57,12 +57,12 @@ export interface OpenAIChatCompletionsMessage extends FlowayOpenAIChatCompletion
   tool_call_id?: string;
   /** Human-readable reasoning text (thinking content) */
   reasoning_text?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
   reasoning_content?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
   reasoning?: string | null;
   /** Opaque reasoning token/signature for round-tripping */
   reasoning_opaque?: string | null;
+  reasoning_details?: Record<string, unknown>[] | null;
+  thinking_blocks?: Record<string, unknown>[] | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
   refusal?: string | null;
 }
@@ -146,6 +146,8 @@ export interface OpenAIChatCompletionsChoiceNonStreaming {
     tool_calls?: OpenAIChatCompletionsToolCall[];
     reasoning_text?: string | null;
     reasoning_opaque?: string | null;
+    reasoning_details?: Record<string, unknown>[] | null;
+    thinking_blocks?: Record<string, unknown>[] | null;
     reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
     refusal?: string | null;
   };
@@ -171,12 +173,12 @@ export interface OpenAIChatCompletionsDelta extends FlowayOpenAIChatCompletionsR
     | null;
   /** Human-readable reasoning text delta */
   reasoning_text?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
   reasoning_content?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
   reasoning?: string | null;
   /** Opaque reasoning token/signature delta */
   reasoning_opaque?: string | null;
+  reasoning_details?: Record<string, unknown>[] | null;
+  thinking_blocks?: Record<string, unknown>[] | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
   refusal?: string | null;
 }

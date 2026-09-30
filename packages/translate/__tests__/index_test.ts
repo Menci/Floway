@@ -1,3 +1,4 @@
+import { klona } from 'klona/full';
 import { test } from 'vitest';
 
 import {
@@ -12,7 +13,9 @@ import {
   translateOpenAIResponsesViaOpenAIChatCompletions,
 } from '../src/index.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { encodeReasoningData } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -33,7 +36,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
   messages: [
-    { role: 'assistant', content: 'hello', reasoning_items: [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }] },
+    { role: 'assistant', content: 'hello', ...flowayReasoningFields('', (encodeReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }])) ?? '') },
     { role: 'user', content: 'hi' },
   ],
   tools: [{ type: 'function', function: { name: 'f', parameters: schema } }],
@@ -64,7 +67,7 @@ const objectsIn = (value: unknown): Set<object> => {
   const visit = (current: unknown): void => {
     if (typeof current !== 'object' || current === null || objects.has(current)) return;
     objects.add(current);
-    for (const child of Object.values(current)) visit(child);
+    for (const child of Reflect.ownKeys(current).map(key => (current as Record<PropertyKey, unknown>)[key])) visit(child);
   };
   visit(value);
   return objects;
@@ -83,7 +86,7 @@ const translations: Array<{ name: string; source: unknown; translate: () => Prom
 ];
 
 test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
-  const original = structuredClone(source);
+  const original = klona(source);
   const first = await translate();
   const second = await translate();
   const sourceObjects = objectsIn(source);

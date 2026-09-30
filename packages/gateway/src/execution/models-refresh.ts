@@ -1,4 +1,4 @@
-import { createPreviewProvider } from '../data-plane/providers/registry.ts';
+import { resolveProviderModelEndpoints, createPreviewProvider } from '../data-plane/providers/registry.ts';
 import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../repo/models-cache-contract.ts';
@@ -148,9 +148,9 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
 }> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
-    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record), discovered: [] };
+    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) return { models: projectCustomModels(record).map(model => resolveProviderModelEndpoints(record, model)), discovered: [] };
     const response = await fetchCustomModels(custom.config, trackedFetcher);
-    return { models: projectCustomModels(record, response), discovered: projectCustomDiscoveredModels(record, response) };
+    return { models: projectCustomModels(record, response).map(model => resolveProviderModelEndpoints(record, model)), discovered: projectCustomDiscoveredModels(record, response) };
   }
   return { models: [...await createPreviewProvider(record).instance.getProvidedModels(trackedFetcher)] };
 });

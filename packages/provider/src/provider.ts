@@ -6,7 +6,7 @@ import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, Upstream
 import type { Fetcher } from './options.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { ChatCompletionsReasoningFormat, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -167,4 +167,5 @@ export interface ProviderModule {
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;
+  defaultChatCompletionsReasoning: ChatCompletionsReasoningFormat;
 }

@@ -8,6 +8,7 @@ import { FeatureFlagsEditor } from './feature-flags';
 import { type ModelValidationField, modelValidationIssues } from './model-validation';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
+import { ReasoningFormatEditor } from './reasoning-format';
 import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
@@ -42,6 +43,7 @@ export function ModelDetail({
   row,
   section,
   upstreamFlags,
+  upstreamReasoning,
 }: {
   onChange: (value: UpstreamModelConfig) => void;
   onDelete: () => void;
@@ -53,6 +55,7 @@ export function ModelDetail({
   row: ModelRow;
   section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
+  upstreamReasoning: UpstreamRecord['chat_completions_reasoning_overrides'];
 }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
@@ -199,12 +202,21 @@ export function ModelDetail({
               label={{ children: label, className: monoLabel }}
               onChange={(_, data) => {
                 const endpoints = { ...row.config.endpoints };
-                if (data.checked) endpoints[key] = {}; else delete endpoints[key];
+                if (data.checked) endpoints[key] = endpoints[key] ?? {}; else delete endpoints[key];
                 patch({ endpoints });
               }}
             />)}
           </div>
         </EditorSection>}
+
+        {row.config.endpoints.openaiChatCompletions !== undefined && <ReasoningFormatEditor
+          defaults={record.chat_completions_reasoning_defaults}
+          inherited={upstreamReasoning}
+          value={row.config.endpoints.openaiChatCompletions.reasoning ?? {}}
+          readOnly={fieldsReadOnly}
+          providerOwned={row.source === 'auto'}
+          onChange={reasoning => patch({ endpoints: { ...row.config.endpoints, openaiChatCompletions: Object.keys(reasoning).length > 0 ? { reasoning } : {} } })}
+        />}
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />

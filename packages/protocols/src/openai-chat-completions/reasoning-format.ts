@@ -20,3 +20,6 @@ export interface FlowayOpenAIChatCompletionsReasoningValue {
 export interface FlowayOpenAIChatCompletionsReasoningCarrier {
   readonly [FlowayOpenAIChatCompletionsReasoning]?: FlowayOpenAIChatCompletionsReasoningValue;
 }
+
+export const flowayReasoningFields = (reasoning: string, reasoningOpaque: string): FlowayOpenAIChatCompletionsReasoningCarrier =>
+  reasoning === '' && reasoningOpaque === '' ? {} : { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning, reasoning_opaque: reasoningOpaque }) };

@@ -2,6 +2,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
+import { wrapChatCompletionsReasoningAffinity } from './affinity/reasoning.ts';
+import { encodeChatCompletionsFrames, DOWNSTREAM_CHAT_COMPLETIONS_REASONING, warnReasoningConversion } from './reasoning.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -12,7 +14,7 @@ import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { fromFlowayOpenAIChatCompletionsReasoning, openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -44,11 +46,12 @@ export const respondOpenAIChatCompletions = async (
 
   const state = new SourceStreamState();
   const observed = observeOpenAIChatCompletionsFrames(result.events, state, ctx);
-  const frames = wrapOpenAIChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
+  const frames = wrapOpenAIChatCompletionsAffinityEgress(encodeChatCompletionsFrames(observed), affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
-      const response = await collectOpenAIChatCompletionsProtocolEventsToResult(frames);
+      const canonical = await collectOpenAIChatCompletionsProtocolEventsToResult(observed);
+      const response = { ...canonical, choices: await Promise.all(canonical.choices.map(async choice => ({ ...choice, message: await wrapChatCompletionsReasoningAffinity(fromFlowayOpenAIChatCompletionsReasoning(choice.message, DOWNSTREAM_CHAT_COMPLETIONS_REASONING, { warn: warnReasoningConversion }), affinityEgressOptions(ctx)) }))) };
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);

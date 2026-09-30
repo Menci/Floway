@@ -18,6 +18,7 @@ import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { modelValidationIssues } from './model-validation';
 import { parseModels, serializeModels } from './models-yaml';
+import { ReasoningFormatEditor } from './reasoning-format';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -223,6 +224,7 @@ export function UpstreamWorkspace({
               <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
+              <Controller name="chatCompletionsReasoningOverrides" render={({ field }) => <ReasoningFormatEditor defaults={record.chat_completions_reasoning_defaults} value={field.value} onChange={field.onChange} />} />
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}
@@ -256,6 +258,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
+  const upstreamReasoning = useWatch({ control, name: 'chatCompletionsReasoningOverrides' });
   const deleteDialog = useDialogInvocation<ModelRow>();
   const [pendingManualUpstreamModelId, setPendingManualUpstreamModelId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
@@ -392,7 +395,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
       shouldDirty: true,
       shouldTouch: true,
     });
-  }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
+  }} record={record} upstreamFlags={upstreamFlags} upstreamReasoning={upstreamReasoning} />{deleteConfirmation}</>;
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <SectionHeader

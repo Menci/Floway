@@ -14,6 +14,7 @@ import {
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
@@ -483,8 +484,8 @@ test('assistant blocks ordered: thinking → text → tool_use', async () => {
         {
           role: 'assistant',
           content: 'response text',
-          reasoning_text: 'I think...',
-          reasoning_opaque: 'sig123',
+          ...flowayReasoningFields('I think...', 'sig123'),
+
           tool_calls: [
             {
               id: 'tc1',
@@ -596,8 +597,8 @@ test('reasoning_text + reasoning_opaque → thinking block with signature', asyn
         {
           role: 'assistant',
           content: 'resp',
-          reasoning_text: 'My thoughts',
-          reasoning_opaque: 'sig',
+          ...flowayReasoningFields('My thoughts', 'sig'),
+
         },
       ],
     }),
@@ -614,7 +615,7 @@ test('reasoning_text only → thinking block without signature', async () => {
     mkPayload({
       messages: [
         { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_text: 'My thoughts' },
+        { role: 'assistant', content: 'resp', ...flowayReasoningFields('My thoughts', '') },
       ],
     }),
   );
@@ -630,7 +631,7 @@ test('reasoning_opaque only → redacted_thinking block', async () => {
     mkPayload({
       messages: [
         { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_opaque: 'opaque_data' },
+        { role: 'assistant', content: 'resp', ...flowayReasoningFields('', 'opaque_data') },
       ],
     }),
   );
@@ -662,8 +663,8 @@ test('null reasoning fields → no thinking block', async () => {
         {
           role: 'assistant',
           content: 'resp',
-          reasoning_text: null,
-          reasoning_opaque: null,
+          ...flowayReasoningFields('', ''),
+
         },
       ],
     }),
@@ -1194,8 +1195,8 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: null,
-          reasoning_text: 'thinking1',
-          reasoning_opaque: 'sig1',
+          ...flowayReasoningFields('thinking1', 'sig1'),
+
           tool_calls: [
             {
               id: 'tc1',
@@ -1208,8 +1209,8 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: 'The answer is 42.',
-          reasoning_text: 'thinking2',
-          reasoning_opaque: 'sig2',
+          ...flowayReasoningFields('thinking2', 'sig2'),
+
         },
       ],
     }),

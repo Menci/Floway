@@ -91,25 +91,26 @@ const isOwnedOpaqueItem = (items: readonly ReasoningRecord[], standard: ChatComp
 };
 
 const sameGroup = (left: ReasoningRecord, right: ReasoningRecord): boolean =>
-  left.type === right.type && left.id === right.id && left.index === right.index;
+  left.type === right.type && (left.id === right.id || left.id === undefined || right.id === undefined)
+  && (left.index === right.index || left.index === undefined || right.index === undefined);
 
-const mergeStreamItems = (previous: readonly ReasoningRecord[], incoming: readonly ReasoningRecord[], standard: ChatCompletionsReasoningDataStandard): ReasoningRecord[] => {
+export const mergeReasoningStreamItems = (previous: readonly ReasoningRecord[], incoming: readonly ReasoningRecord[], standard: ChatCompletionsReasoningDataStandard): ReasoningRecord[] => {
   const merged = previous.map(item => ({ ...item }));
-  for (const item of incoming) {
-    const last = merged.at(-1);
+  for (const [incomingIndex, item] of incoming.entries()) {
+    const last = incomingIndex === 0 ? merged.at(-1) : undefined;
     if (standard === 'openrouter-reasoning-details' && last !== undefined && sameGroup(last, item)
       && (item.type === 'reasoning.text' || item.type === 'reasoning.summary')) {
       const field = item.type === 'reasoning.text' ? 'text' : 'summary';
       const text = typeof item[field] === 'string' ? item[field] as string : '';
       const prefix = typeof last[field] === 'string' ? last[field] as string : '';
-      Object.assign(last, item, { [field]: prefix + text });
+      Object.assign(last, Object.fromEntries(Object.entries(item).filter(([, value]) => value !== null && value !== undefined)), { [field]: prefix + text });
     } else if (standard === 'litellm-thinking-blocks' && last?.type === 'thinking' && item.type === 'thinking' && sameGroup(last, item)
       && (typeof last.signature !== 'string' || last.signature === item.signature)) {
       const text = typeof item.thinking === 'string' ? item.thinking : '';
       const prefix = typeof last.thinking === 'string' ? last.thinking : '';
       // Signed LiteLLM chunks may carry the full thinking snapshot.
       // https://github.com/BerriAI/litellm/blob/b370996b9d2fc9aaec356013a698711ee3e127cc/tests/unit/llms/anthropic/pass_through/adapters/test_streaming_iterator_first_delta.py#L559-L584
-      Object.assign(last, item, { thinking: typeof item.signature === 'string' && item.thinking !== undefined ? text : prefix + text });
+      Object.assign(last, item, { thinking: typeof item.signature === 'string' && text !== '' ? text : prefix + text });
     } else merged.push({ ...item });
   }
   return merged;
@@ -123,12 +124,11 @@ const readOpaque = (value: unknown, standard: ChatCompletionsReasoningDataStanda
     return value;
   }
   let items = validateStructuredReasoning(value, standard);
-  if (items.length === 0) return '';
-  const owned = previousOpaque === undefined ? isOwnedOpaqueItem(items, standard) : undefined;
+  const owned = previousOpaque === undefined || standard === 'openrouter-reasoning-details' ? isOwnedOpaqueItem(items, standard) : undefined;
   if (owned !== undefined) { decodeReasoningData(owned); return owned; }
   if (previousOpaque !== undefined && previousOpaque !== '') {
     const previous = decodeReasoningData(previousOpaque);
-    if (previous?.type === standard) items = mergeStreamItems(validateStructuredReasoning(previous.value, standard), items, standard);
+    if (previous?.type === standard) items = mergeReasoningStreamItems(validateStructuredReasoning(previous.value, standard), items, standard);
   }
   return encodeReasoningData(standard, items);
 };

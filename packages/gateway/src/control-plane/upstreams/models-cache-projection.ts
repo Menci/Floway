@@ -7,7 +7,7 @@ export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamMo
   upstreamModelId: model.upstreamModelId,
   publicModelId: model.id,
   kind: model.kind,
-  endpoints: model.endpoints,
+  endpoints: model.endpointOverrides ?? model.endpoints,
   ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
   ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
   ...(model.pricing ? { pricing: model.pricing } : {}),

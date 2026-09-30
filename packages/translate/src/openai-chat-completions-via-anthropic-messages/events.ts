@@ -3,6 +3,7 @@ import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthr
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
 import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 
 const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopReason: AnthropicMessagesResult['stop_reason']): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] => {
@@ -120,7 +121,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       claimReasoningBlock(state, event.index);
       return [];
     case 'redacted_thinking':
-      return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
+      return claimReasoningBlock(state, event.index) ? [makeChunk(state, flowayReasoningFields('', block.data))] : [];
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
       return [
@@ -152,9 +153,9 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
     const { delta } = event;
     switch (delta.type) {
     case 'thinking_delta':
-      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_text: delta.thinking })] : [];
+      return state.reasoningBlockIndex === event.index ? [makeChunk(state, flowayReasoningFields(delta.thinking, ''))] : [];
     case 'signature_delta':
-      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
+      return state.reasoningBlockIndex === event.index ? [makeChunk(state, flowayReasoningFields('', delta.signature))] : [];
     case 'text_delta':
       return [makeChunk(state, { content: delta.text })];
     case 'input_json_delta':

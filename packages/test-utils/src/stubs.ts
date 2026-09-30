@@ -24,16 +24,19 @@ export const noopAnthropicMessagesUpstreamCallOptions = (overrides: Partial<Anth
 // `provider.callXxx` takes at dispatch time. Interceptor boundary ctx types
 // (Copilot / Codex / Claude Code) also use this shape, so interceptor tests
 // that build a ctx by hand use `stubProviderModel` directly.
-export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): ProviderModel => ({
-  id: 'test-model',
-  upstreamModelId: 'test-model',
-  limits: {},
-  kind: 'chat',
-  endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
-  opaqueBlobCompatibilityScope: { bindToUpstream: true },
-  enabledFlags: new Set<FlagId>(),
-  ...overrides,
-});
+export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): ProviderModel => {
+  const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
+  return {
+    id: 'test-model',
+    upstreamModelId: 'test-model',
+    limits: {},
+    kind: 'chat',
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
+    enabledFlags: new Set<FlagId>(),
+    ...overrides,
+    endpoints: { ...endpoints, ...(endpoints.openaiChatCompletions !== undefined ? { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'reasoning-opaque', ...endpoints.openaiChatCompletions.reasoning } } } : {}) },
+  };
+};
 
 // Gateway-side shape: what the resolver hands the attempt layer. Defaults
 // seed `providerModels` with a single entry keyed on the given upstream id —

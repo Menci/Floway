@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, test, vi } from 'vitest';
 
 import { decodeReasoningData, encodeReasoningData } from '../../src/common/index.ts';
 import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning } from '../../src/openai-chat-completions/index.ts';
@@ -168,4 +168,27 @@ describe('Floway Chat Completions reasoning conversion', () => {
     const message = { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: '', reasoning_opaque: invalid }) };
     expect(() => fromFlowayOpenAIChatCompletionsReasoning(message, format('openrouter-reasoning-details'), { warn })).toThrow(TypeError);
   });
+});
+
+const warn = vi.fn();
+
+test.each(['openrouter-reasoning-details', 'litellm-thinking-blocks'] as const)('preserves an explicit empty %s array', data => {
+  const field = data === 'openrouter-reasoning-details' ? 'reasoning_details' : 'thinking_blocks';
+  const wire = { role: 'assistant', [field]: [] };
+  const format = { text: 'reasoning' as const, data };
+  expect(fromFlowayOpenAIChatCompletionsReasoning(toFlowayOpenAIChatCompletionsReasoning(wire, format, { warn }), format, { warn })).toEqual(wire);
+});
+
+test('recognizes generated OpenRouter opaque bridges in stream deltas', () => {
+  const format = { text: 'reasoning' as const, data: 'openrouter-reasoning-details' as const };
+  const wire = fromFlowayOpenAIChatCompletionsReasoning({ [FlowayOpenAIChatCompletionsReasoning]: { reasoning: '', reasoning_opaque: 'native' } }, format, { warn });
+  const normalized = toFlowayOpenAIChatCompletionsReasoning(wire, format, { warn, stream: { previousOpaque: '' } });
+  expect(normalized[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque).toBe('native');
+});
+
+test('keeps incoming member boundaries and signature-only thinking text', () => {
+  const format = { text: 'reasoning' as const, data: 'litellm-thinking-blocks' as const };
+  const first = toFlowayOpenAIChatCompletionsReasoning({ thinking_blocks: [{ type: 'thinking', thinking: 'First', future: 1 }, { type: 'thinking', thinking: 'Second', future: 2 }] }, format, { warn, stream: { previousOpaque: '' } });
+  const second = toFlowayOpenAIChatCompletionsReasoning({ thinking_blocks: [{ type: 'thinking', thinking: '', signature: 'signature', future: 2 }] }, format, { warn, stream: { previousOpaque: first[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque } });
+  expect(fromFlowayOpenAIChatCompletionsReasoning(second, format, { warn }).thinking_blocks).toEqual([{ type: 'thinking', thinking: 'First', future: 1 }, { type: 'thinking', thinking: 'Second', signature: 'signature', future: 2 }]);
 });

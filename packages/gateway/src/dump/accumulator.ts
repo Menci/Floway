@@ -1,3 +1,4 @@
+import { projectReasoningForDump } from './reasoning.ts';
 // Per-request dump pipeline. Opens the dump session (request snapshot +
 // opt-in decision) and exposes the mid-flight hooks the respond layer
 // calls to record outcomes and frames. When the api key has no retention
@@ -152,7 +153,7 @@ export class DumpAccumulator {
   // derives the SSE wire view on demand via the per-protocol
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
-    this.events.push({ frame, ts: Date.now() - this.startedAt });
+    this.events.push({ frame: projectReasoningForDump(frame) as ProtocolFrame<unknown>, ts: Date.now() - this.startedAt });
   }
 
   // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
@@ -168,7 +169,7 @@ export class DumpAccumulator {
   // the upstream view with the same collected+events experience, dispatched
   // by `meta.targetApi` instead of `meta.path`.
   upstreamFrame(frame: ProtocolFrame<unknown>): void {
-    this.upstreamEvents.push({ frame, ts: Date.now() - this.startedAt });
+    this.upstreamEvents.push({ frame: projectReasoningForDump(frame) as ProtocolFrame<unknown>, ts: Date.now() - this.startedAt });
   }
 
   // Captures the verbatim upstream api-error envelope (status/headers/body)

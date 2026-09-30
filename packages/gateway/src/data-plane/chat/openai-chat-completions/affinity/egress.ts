@@ -1,9 +1,10 @@
+import { wrapChatCompletionsReasoningAffinity } from './reasoning.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { mergeReasoningStreamItems, type ReasoningRecord, type ChatCompletionsReasoningDataStandard, openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 interface ChoiceState {
-  opaque?: string;
+  data: Record<string, unknown>;
   finished: boolean;
 }
 
@@ -29,9 +30,23 @@ const eventWithChoices = (
 const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolean =>
   Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
 
+const carrierDelta = (data: Record<string, unknown>): Record<string, unknown> => {
+  const delta: Record<string, unknown> = {};
+  if (typeof data.reasoning_opaque === 'string') delta.reasoning_opaque = data.reasoning_opaque;
+  if (Array.isArray(data.reasoning_details)) delta.reasoning_details = (data.reasoning_details as ReasoningRecord[]).flatMap(item => {
+    if (item.type === 'reasoning.encrypted') return [{ ...item }];
+    if (item.type !== 'reasoning.text' || typeof item.signature !== 'string') return [];
+    const { text: _text, ...signed } = item;
+    return [signed];
+  });
+  if (Array.isArray(data.thinking_blocks)) delta.thinking_blocks = (data.thinking_blocks as ReasoningRecord[]).filter(item => item.type === 'redacted_thinking' || typeof item.signature === 'string');
+  return delta;
+};
+
 export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
+  format: Exclude<ChatCompletionsReasoningDataStandard, 'none'> = 'reasoning-opaque',
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   // One choice is one logical assistant element, so its carrier frame before
   // finish_reason (or DONE when finish_reason is absent) is both the turn
@@ -49,7 +64,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
             state.finished = true;
             return {
               index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+              delta: await wrapChatCompletionsReasoningAffinity(carrierDelta(state.data), options, format),
               finish_reason: null,
             } satisfies StreamingChoice;
           }));
@@ -77,11 +92,25 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
     for (const choice of frame.event.choices) {
       const { index, delta: sourceDelta, finish_reason: finishReason, ...choiceExtras } = choice;
       const previous = choices.get(index);
-      const state = previous === undefined || previous.finished ? { finished: false } : previous;
+      const state = previous === undefined || previous.finished ? { finished: false, data: {} } : previous;
       choices.set(index, state);
 
-      const { reasoning_opaque: opaque, ...delta } = sourceDelta;
-      if (typeof opaque === 'string') state.opaque = opaque;
+      const { reasoning_opaque, reasoning_details, thinking_blocks, ...delta } = sourceDelta;
+      if (typeof reasoning_opaque === 'string') state.data.reasoning_opaque = reasoning_opaque;
+      for (const [field, incoming, standard] of [
+        ['reasoning_details', reasoning_details, 'openrouter-reasoning-details'],
+        ['thinking_blocks', thinking_blocks, 'litellm-thinking-blocks'],
+      ] as const) {
+        if (!Array.isArray(incoming)) continue;
+        state.data[field] = mergeReasoningStreamItems(state.data[field] as ReasoningRecord[] | undefined ?? [], incoming, standard);
+        const readable = incoming.flatMap(item => {
+          if (item.type === 'reasoning.encrypted' || item.type === 'redacted_thinking') return [];
+          const { signature: _signature, ...visible } = item;
+          if ((item.type === 'reasoning.text' && !item.text) || (item.type === 'thinking' && !item.thinking)) return [];
+          return [visible];
+        });
+        if (readable.length > 0) Object.assign(delta, { [field]: readable });
+      }
       const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
       if (finishReason === null) {
@@ -101,7 +130,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
 
     const wrappedChoices = await Promise.all(finishingChoices.map(async ({ index, state }) => ({
       index,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+      delta: await wrapChatCompletionsReasoningAffinity(carrierDelta(state.data), options, format),
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));

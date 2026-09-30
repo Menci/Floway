@@ -11,10 +11,11 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelEndpoints, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { endpointsField, chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 
 export interface CustomRawModel {
+  endpoints?: ModelEndpoints;
   id: string;
   // OpenAI uses `created` (unix seconds). Anthropic uses `created_at`
   // (ISO-8601). We carry both and let the projection step decide.
@@ -102,6 +103,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (!isRecord(value)) return null;
   if (typeof value.id !== 'string' || value.id === '') return null;
   const model: CustomRawModel = { id: value.id };
+  if (value.endpoints !== undefined) model.endpoints = endpointsField(value.endpoints, `${value.id}.endpoints`, { allowEmpty: true });
   const created = optionalNumberField(value.created);
   if (created !== undefined) model.created = created;
   const created_at = optionalStringField(value.created_at);

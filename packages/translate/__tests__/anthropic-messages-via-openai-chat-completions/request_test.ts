@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/anthropic-messages-via-openai-chat-completions/request.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest maps thinking.disabled to reasoning_effort none', () => {
@@ -235,8 +236,8 @@ test('buildTargetRequest preserves redacted_thinking as reasoning_opaque', () =>
     {
       role: 'assistant',
       content: null,
-      reasoning_text: null,
-      reasoning_opaque: 'opaque_sig',
+      ...flowayReasoningFields('', 'opaque_sig'),
+
     },
   ]);
 });
@@ -260,8 +261,8 @@ test('buildTargetRequest projects only the first scalar reasoning group', () => 
   assertEquals(result.messages[0], {
     role: 'assistant',
     content: 'answer',
-    reasoning_text: 'first',
-    reasoning_opaque: 'sig_1',
+    ...flowayReasoningFields('first', 'sig_1'),
+
   });
 });
 
@@ -283,8 +284,8 @@ test('buildTargetRequest does not pair readable thinking with later redacted opa
   assertEquals(result.messages[0], {
     role: 'assistant',
     content: null,
-    reasoning_text: 'first',
-    reasoning_opaque: null,
+    ...flowayReasoningFields('first', ''),
+
   });
 });
 

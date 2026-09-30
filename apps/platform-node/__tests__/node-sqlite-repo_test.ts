@@ -106,6 +106,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
       provider: storedUpstream.kind,
       configJson: JSON.stringify(storedUpstream.config),
       flagOverridesJson: '{}',
+      reasoningOverridesJson: '{}',
       proxyFallbackListJson: '[]',
     },
     cache: {

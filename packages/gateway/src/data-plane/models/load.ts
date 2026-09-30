@@ -1,19 +1,12 @@
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
+import { downstreamEndpointsFor } from '../chat/openai-chat-completions/reasoning.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
 
-// Project an `InternalModel` onto the public-facing `/v1/models` wire DTO.
-// `endpoints` rides through as the merged upstream wire surface — the
-// endpoints the upstreams serve this model on, not the inbound routes a
-// client may call. Translation widens the chat keys: any one of
-// `openaiChatCompletions` / `anthropicMessages` / `openaiResponses` makes the model reachable from
-// all four inbound chat routes, and the Gemini generateContent route has no key of its own.
-// When the row is an alias-synthesized one, `aliasedFrom` is emitted verbatim
-// from the internal shape (they share the same fields); the real branch never
-// carries it, so the sidecar is present exactly on alias rows.
+// The public endpoint map describes the client-facing surface after translation.
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
@@ -22,7 +15,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
     display_name: model.display_name ?? model.id,
     limits: { ...model.limits },
     kind: model.kind,
-    endpoints: { ...model.endpoints },
+    endpoints: { ...(model.downstreamEndpoints ?? downstreamEndpointsFor(model.endpoints)) },
     opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
   };
   if (model.owned_by !== undefined) info.owned_by = model.owned_by;

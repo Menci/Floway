@@ -1,6 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-responses-via-openai-chat-completions/request.ts';
+import { encodeReasoningData } from '@floway-dev/protocols/common';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
@@ -113,14 +115,14 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
     {
       role: 'assistant',
       content: 'Hello',
-      reasoning_text: 'trace',
-      reasoning_items: [
+      ...flowayReasoningFields('trace', (encodeReasoningData('openai-responses-reasoning-items', [
         {
           type: 'reasoning',
           id: 'rs_1',
           summary: [{ type: 'summary_text', text: 'trace' }],
         },
-      ],
+      ])) ?? ''),
+
       tool_calls: [
         {
           id: 'call_1',
@@ -171,8 +173,7 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
     {
       role: 'assistant',
       content: null,
-      reasoning_text: 'first',
-      reasoning_items: [
+      ...flowayReasoningFields('first', (encodeReasoningData('openai-responses-reasoning-items', [
         {
           type: 'reasoning',
           id: 'rs_1',
@@ -183,7 +184,8 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
           id: 'rs_2',
           summary: [{ type: 'summary_text', text: 'second' }],
         },
-      ],
+      ])) ?? ''),
+
     },
   ]);
 });

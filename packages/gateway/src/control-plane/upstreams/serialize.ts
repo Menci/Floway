@@ -3,7 +3,7 @@ import type {
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
-import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
+import { flagDefaultsForKind, reasoningDefaultsForKind } from '../../data-plane/providers/registry.ts';
 import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -26,6 +26,8 @@ const serializeBase = (upstream: UpstreamRecord) => ({
   updated_at: upstream.updatedAt,
   flag_overrides: { ...upstream.flagOverrides },
   flag_defaults: flagDefaultsForKind(upstream.kind),
+  chat_completions_reasoning_overrides: { ...upstream.chatCompletionsReasoningOverrides },
+  chat_completions_reasoning_defaults: reasoningDefaultsForKind(upstream.kind),
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined
     ? { id: entry.id }
@@ -189,6 +191,8 @@ const blueprintBase = (kind: UpstreamProviderKind) => ({
   updated_at: '',
   flag_overrides: {} as FlagOverrides,
   flag_defaults: flagDefaultsForKind(kind),
+  chat_completions_reasoning_overrides: {},
+  chat_completions_reasoning_defaults: reasoningDefaultsForKind(kind),
   disabled_public_model_ids: [] as string[],
   proxy_fallback_list: [] as ProxyFallbackEntry[],
   model_prefix: null,

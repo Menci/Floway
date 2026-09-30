@@ -42,11 +42,13 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 // because a kind alone cannot select their target wire. Unknown kinds use the
 // id heuristic, then fall back to the configured endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
-  if (model.kind === 'embedding') return { openaiEmbeddings: {} };
-  if (model.kind === 'image') return { openaiImagesGenerations: {}, openaiImagesEdits: {} };
-  if (model.kind === 'transcription') return { openaiAudioTranscriptions: {} };
-  if (model.kind === 'chat') return configured;
-  return inferEndpointsFromModelId(model.id) ?? configured;
+  const endpoints = model.kind === 'embedding' ? { openaiEmbeddings: {} }
+    : model.kind === 'image' ? { openaiImagesGenerations: {}, openaiImagesEdits: {} }
+      : model.kind === 'transcription' ? { openaiAudioTranscriptions: {} }
+        : model.kind === 'chat' ? configured : inferEndpointsFromModelId(model.id) ?? configured;
+  const reasoning = model.endpoints?.openaiChatCompletions?.reasoning;
+  return endpoints.openaiChatCompletions !== undefined && reasoning !== undefined
+    ? { ...endpoints, openaiChatCompletions: { reasoning } } : endpoints;
 };
 
 export const projectCustomDiscoveredModels = (

@@ -490,6 +490,16 @@ const zhHansCN = {
         },
       },
       upstreamEditor: {
+        reasoningFormat: {
+          title: 'Chat Completions reasoning 格式',
+          text: '文本标准',
+          data: '数据标准',
+          inherit: '继承：{{value}}（{{source}}）',
+          flowayDefault: 'Floway 默认值',
+          upstreamDefault: '上游覆盖值',
+          providerDecision: 'Auto 模型的选项由 provider 决定。',
+          hint: '网关边界会规范化上游消息。客户端统一收到 reasoning + reasoning_opaque。文本和数据可以分别覆盖。',
+        },
         readyToSave: {
           title: '可以保存了',
           description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
@@ -596,7 +606,7 @@ const zhHansCN = {
             'vendor-deepseek': {
               label: 'DeepSeek 兼容',
               description:
-                  'DeepSeek 的“OpenAI 兼容 API”在思考字段和结构化输出等方面采用了非标准格式。\n开启此开关，以在 OpenAI 规范格式与 DeepSeek 非标准格式之间双向转换请求和响应，包括转换思考开关 (`thinking`) 与思考内容 (`reasoning_text`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
+                  'DeepSeek API 的思考开关、缓存 Token 用量和结构化输出采用了非标准格式。\n开启此开关，以转换思考开关 (`thinking`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。思考文本和数据应在 Chat Completions reasoning 格式中单独配置。\n当上游为 **DeepSeek chat completions API** 时应开启。',
             },
             'vendor-qwen': {
               label: '阿里云百炼兼容',

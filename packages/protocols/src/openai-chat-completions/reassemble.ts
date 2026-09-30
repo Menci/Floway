@@ -1,11 +1,13 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall } from './index.ts';
+import { FlowayOpenAIChatCompletionsReasoning } from './reasoning-format.ts';
+import { mergeReasoningStreamItems, type ReasoningRecord } from './reasoning.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
 // unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'refusal', 'tool_calls']);
+const KNOWN_DELTA_KEYS = new Set(['content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'thinking_blocks', 'refusal', 'tool_calls']);
 const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
 
@@ -20,6 +22,9 @@ interface ChoiceAccumulator {
   content: string;
   reasoningText: string;
   reasoningOpaque?: string;
+  canonicalReasoning: boolean;
+  reasoningDetails?: ReasoningRecord[];
+  thinkingBlocks?: ReasoningRecord[];
   refusal?: string;
   readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
@@ -32,6 +37,7 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   index,
   content: '',
   reasoningText: '',
+  canonicalReasoning: false,
   reasoningItems: [],
   finishReason: 'stop',
   toolCalls: new Map(),
@@ -69,8 +75,12 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
       role: 'assistant',
       content: choice.content || null,
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
-      ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
+      ...(choice.canonicalReasoning ? { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: choice.reasoningText, reasoning_opaque: choice.reasoningOpaque ?? '' }) } : {
+        ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
+        ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
+      }),
+      ...(choice.reasoningDetails !== undefined ? { reasoning_details: choice.reasoningDetails } : {}),
+      ...(choice.thinkingBlocks !== undefined ? { thinking_blocks: choice.thinkingBlocks } : {}),
       ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
       ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
       ...choice.messageExtras,
@@ -116,12 +126,20 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       const delta = streamed.delta;
       captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
       if (typeof delta.content === 'string') choice.content += delta.content;
+      const canonical = delta[FlowayOpenAIChatCompletionsReasoning];
+      if (canonical !== undefined) {
+        choice.canonicalReasoning = true;
+        choice.reasoningText += canonical.reasoning;
+        if (canonical.reasoning_opaque !== '') choice.reasoningOpaque = canonical.reasoning_opaque;
+      }
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
       if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
       if (Array.isArray(delta.reasoning_items)) {
         choice.reasoningItems.push(...delta.reasoning_items);
       }
+      if (Array.isArray(delta.reasoning_details)) choice.reasoningDetails = mergeReasoningStreamItems(choice.reasoningDetails ?? [], delta.reasoning_details, 'openrouter-reasoning-details');
+      if (Array.isArray(delta.thinking_blocks)) choice.thinkingBlocks = mergeReasoningStreamItems(choice.thinkingBlocks ?? [], delta.thinking_blocks, 'litellm-thinking-blocks');
       accumulateToolCalls(choice, delta.tool_calls);
       if (streamed.finish_reason !== null) choice.finishReason = streamed.finish_reason;
     }

@@ -1,27 +1,26 @@
 import { klona } from 'klona/json';
 
-import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
+import { encodeReasoningData, decodeReasoningData } from '@floway-dev/protocols/common';
+import { type OpenAIChatCompletionsReasoningItem, flowayReasoningFields, FlowayOpenAIChatCompletionsReasoning, type FlowayOpenAIChatCompletionsReasoningCarrier  } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
 
-// OpenAI's Chat Completions spec has no reasoning-text field; upstreams expose
-// the same quantity as `reasoning_content` or `reasoning`. Treat both as
-// aliases of the gateway's canonical `reasoning_text`, preferring the canonical
-// name when an upstream emits more than one.
+export const openAIChatCompletionsScalarReasoningText = (message: FlowayOpenAIChatCompletionsReasoningCarrier): string | undefined => {
+  const value = message[FlowayOpenAIChatCompletionsReasoning]?.reasoning;
+  return value === '' ? undefined : value;
+};
 
-export interface OpenAIChatCompletionsReasoningDeltaAliases {
-  reasoning_text?: string | null;
-  reasoning_content?: string | null;
-  reasoning?: string | null;
-}
+export const openAIChatCompletionsReasoningOpaque = (message: FlowayOpenAIChatCompletionsReasoningCarrier): string | undefined => {
+  const value = message[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque;
+  return value === '' ? undefined : value;
+};
 
-// Precedence: `reasoning_text` > `reasoning_content` > `reasoning`. Only a
-// non-empty string carries reasoning; a `null` field (an upstream filler
-// between reasoning and content chunks) is not reasoning.
-export const openAIChatCompletionsScalarReasoningText = (delta: OpenAIChatCompletionsReasoningDeltaAliases): string | undefined => {
-  if (typeof delta.reasoning_text === 'string' && delta.reasoning_text.length > 0) return delta.reasoning_text;
-  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) return delta.reasoning_content;
-  if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) return delta.reasoning;
-  return undefined;
+export const openAIChatCompletionsReasoningItems = (message: FlowayOpenAIChatCompletionsReasoningCarrier): OpenAIChatCompletionsReasoningItem[] | undefined => {
+  const opaque = openAIChatCompletionsReasoningOpaque(message);
+  if (opaque === undefined) return undefined;
+  const envelope = decodeReasoningData(opaque);
+  if (envelope?.type !== 'openai-responses-reasoning-items') return undefined;
+  if (!Array.isArray(envelope.value)) throw new TypeError('Malformed Floway Responses reasoning items');
+  return envelope.value as OpenAIChatCompletionsReasoningItem[];
 };
 
 export type OpenAIChatCompletionsReasoningSourceItem = Extract<OpenAIResponsesInputItem, { type: 'reasoning' }> | OpenAIResponsesOutputReasoning;
@@ -29,32 +28,31 @@ export type OpenAIChatCompletionsReasoningSourceItem = Extract<OpenAIResponsesIn
 export interface OpenAIChatCompletionsReasoningProjection {
   items: OpenAIChatCompletionsReasoningItem[];
   text?: string;
+  opaque?: string;
 }
 
 export const createOpenAIChatCompletionsReasoningProjection = (): OpenAIChatCompletionsReasoningProjection => ({
   items: [],
 });
 
-export const toOpenAIChatCompletionsReasoningItem = (item: OpenAIChatCompletionsReasoningSourceItem): OpenAIChatCompletionsReasoningItem => ({
-  type: 'reasoning',
-  id: item.id,
-  summary: item.summary,
-});
-
 export const addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection = (projection: OpenAIChatCompletionsReasoningProjection, item: OpenAIChatCompletionsReasoningSourceItem): void => {
-  projection.items.push({ ...toOpenAIChatCompletionsReasoningItem(item), summary: klona(item.summary) });
+  const encrypted = 'encrypted_content' in item ? item.encrypted_content : undefined;
+  const bridge = typeof encrypted === 'string' ? decodeReasoningData(encrypted) : undefined;
+  if (bridge?.type === 'chat-completions-reasoning') {
+    if (typeof bridge.value !== 'string') throw new TypeError('Malformed Floway Chat Completions reasoning bridge');
+    projection.opaque = bridge.value;
+  } else projection.items.push(klona(item));
 
   const text = item.summary.map(part => part.text).join('');
   if (projection.text === undefined && text) projection.text = text;
 };
 
-export const openaiChatCompletionsReasoningProjectionFields = (projection: OpenAIChatCompletionsReasoningProjection) => ({
-  ...(projection.text !== undefined ? { reasoning_text: projection.text } : {}),
-  ...(projection.items.length > 0 ? { reasoning_items: projection.items } : {}),
-});
+export const openaiChatCompletionsReasoningProjectionFields = (projection: OpenAIChatCompletionsReasoningProjection) =>
+  flowayReasoningFields(projection.text ?? '', projection.opaque ?? (projection.items.length > 0 ? encodeReasoningData('openai-responses-reasoning-items', projection.items) : ''));
 
 export const toOpenAIResponsesReasoningItem = <T extends OpenAIResponsesReasoningItem>(item: OpenAIChatCompletionsReasoningItem): T =>
   ({
+    ...item,
     type: 'reasoning',
     id: item.id ?? createRandomOpenAIResponsesItemId('reasoning'),
     summary: item.summary ?? [],
@@ -75,13 +73,7 @@ export const hasReadableSummary = (item: OpenAIChatCompletionsReasoningItem): bo
 export const translateOpenAIChatCompletionsReasoningItems = <T extends OpenAIResponsesReasoningItem>(reasoningItems: OpenAIChatCompletionsReasoningItem[] | null | undefined): T[] | null => {
   if (!reasoningItems?.length) return null;
 
-  // `reasoning_items[]` is a LiteLLM-inspired compatibility workaround for
-  // carrying multiple readable OpenAI Responses reasoning summaries through OpenAI Chat Completions.
-  // Scalars remain first-group only.
-  // References:
-  // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L59-L104
-  // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1322-L1355
-  const translated = reasoningItems.flatMap(item => (hasReadableSummary(item)
+  const translated = reasoningItems.flatMap(item => (hasReadableSummary(item) || ('encrypted_content' in item && typeof item.encrypted_content === 'string')
     ? [{ ...toOpenAIResponsesReasoningItem<T>(item), summary: klona(item.summary ?? []) } as T]
     : []));
   return translated.length > 0 ? translated : null;

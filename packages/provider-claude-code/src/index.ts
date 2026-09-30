@@ -4,6 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const claudeCodeProviderModule: ProviderModule = {
   create: createClaudeCodeProvider,
+  defaultChatCompletionsReasoning: { text: 'reasoning', data: 'none' },
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
 };
 

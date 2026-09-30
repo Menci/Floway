@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-openai-chat-completions/events.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -73,9 +74,9 @@ test('translateToSourceEvents maps text chunks and stop finish without emitting 
 
 test('translateToSourceEvents maps reasoning text and attaches opaque signature to next action', async () => {
   const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_text: 'trace' })),
-    eventFrame(chunk({ reasoning_opaque: 'sig_old' })),
-    eventFrame(chunk({ reasoning_opaque: 'sig_1' })),
+    eventFrame(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') })),
+    eventFrame(chunk({ ...flowayReasoningFields('', 'sig_old') })),
+    eventFrame(chunk({ ...flowayReasoningFields('', 'sig_1') })),
     eventFrame(chunk({ content: 'answer' })),
     eventFrame(chunk({}, 'stop')),
     doneFrame(),
@@ -115,8 +116,8 @@ test('translateToSourceEvents maps reasoning text and attaches opaque signature 
 
 test('translateToSourceEvents maps reasoning_content to a thought part', async () => {
   const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_content: null })),
-    eventFrame(chunk({ reasoning_content: 'trace' })),
+    eventFrame(chunk({ role: 'assistant', ...flowayReasoningFields('', '') })),
+    eventFrame(chunk({ ...flowayReasoningFields('trace', '') })),
     eventFrame(chunk({ content: 'answer' })),
     eventFrame(chunk({}, 'stop')),
     doneFrame(),
@@ -133,7 +134,7 @@ test('translateToSourceEvents maps reasoning_content to a thought part', async (
 });
 
 test('translateToSourceEvents flushes unclaimed opaque signature in the finish chunk', async () => {
-  const frames = await collect([eventFrame(chunk({ role: 'assistant', reasoning_opaque: 'sig_only' })), eventFrame(chunk({}, 'stop')), doneFrame()]);
+  const frames = await collect([eventFrame(chunk({ role: 'assistant', ...flowayReasoningFields('', 'sig_only') })), eventFrame(chunk({}, 'stop')), doneFrame()]);
 
   assertEquals(frames, [
     geminiGenerateContentFrame({

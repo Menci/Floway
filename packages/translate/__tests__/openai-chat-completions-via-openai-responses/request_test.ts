@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
+import { encodeReasoningData } from '@floway-dev/protocols/common';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
@@ -27,8 +29,8 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
       {
         role: 'assistant',
         content: 'answer',
-        reasoning_text: 'trace',
-        reasoning_opaque: 'enc',
+        ...flowayReasoningFields('trace', 'enc'),
+
       },
     ],
   });
@@ -46,7 +48,7 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
       {
         role: 'assistant',
         content: 'answer',
-        reasoning_text: 'visible trace',
+        ...flowayReasoningFields('visible trace', ''),
       },
     ],
   });
@@ -59,16 +61,14 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
   });
 });
 
-test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
+test('buildTargetRequest prefers reasoning envelope over scalar reasoning', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
         role: 'assistant',
         content: 'answer',
-        reasoning_text: 'legacy trace',
-        reasoning_opaque: 'legacy_enc',
-        reasoning_items: [
+        ...flowayReasoningFields('legacy trace', (encodeReasoningData('openai-responses-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_existing',
@@ -78,7 +78,8 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
             type: 'reasoning',
             summary: [],
           },
-        ],
+        ])) ?? ''),
+
       },
     ],
   });

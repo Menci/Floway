@@ -1,7 +1,8 @@
 import { getRepo } from '../../repo/index.ts';
 import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ChatCompletionsReasoningFormat } from '@floway-dev/protocols/openai-chat-completions';
+import type { FlagDefaults, ProviderModel, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
 import { codexProviderModule } from '@floway-dev/provider-codex';
@@ -26,7 +27,7 @@ export type GatewayProvider = Provider & {
 export const createProvider = (
   record: StoredUpstreamRecord,
 ): GatewayProvider => {
-  const provider = providersByKind[record.kind].create(record);
+  const provider = createPreviewProvider(record);
   return {
     ...provider,
     configVersion: record.configVersion,
@@ -34,8 +35,39 @@ export const createProvider = (
   };
 };
 
-export const createPreviewProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
+export const createPreviewProvider = (record: UpstreamRecord): Provider => {
+  const provider = providersByKind[record.kind].create(record);
+  const nativeGetModels = provider.instance.getProvidedModels;
+  return {
+    ...provider,
+    instance: {
+      ...provider.instance,
+      getProvidedModels: async fetcher => (await nativeGetModels(fetcher)).map(model => resolveProviderModelEndpoints(record, model)),
+    },
+  };
+};
+
+export const resolveProviderModelEndpoints = (record: UpstreamRecord, model: ProviderModel): ProviderModel => {
+  const endpointOverrides = model.endpoints;
+  if (endpointOverrides.openaiChatCompletions === undefined) return model;
+  return {
+    ...model,
+    endpointOverrides,
+    endpoints: {
+      ...endpointOverrides,
+      openaiChatCompletions: {
+        reasoning: {
+          ...reasoningDefaultsForKind(record.kind),
+          ...record.chatCompletionsReasoningOverrides,
+          ...endpointOverrides.openaiChatCompletions.reasoning,
+        },
+      },
+    },
+  };
+};
+
+export const reasoningDefaultsForKind = (kind: UpstreamProviderKind): ChatCompletionsReasoningFormat =>
+  providersByKind[kind].defaultChatCompletionsReasoning;
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;

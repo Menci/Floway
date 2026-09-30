@@ -516,6 +516,16 @@ const en = {
         },
       },
       upstreamEditor: {
+        reasoningFormat: {
+          title: 'Chat Completions reasoning format',
+          text: 'Text standard',
+          data: 'Data standard',
+          inherit: 'Inherit: {{value}} ({{source}})',
+          flowayDefault: 'Floway default',
+          upstreamDefault: 'upstream override',
+          providerDecision: 'Auto model options are determined by the provider.',
+          hint: 'Upstream messages are normalized at the gateway boundary. Clients receive reasoning + reasoning_opaque. Overrides apply independently to text and data.',
+        },
         readyToSave: {
           title: 'Ready to save',
           description: 'Save this {{provider}} upstream to load its model catalog.',
@@ -626,7 +636,7 @@ const en = {
             'vendor-deepseek': {
               label: 'DeepSeek Compatibility',
               description:
-                  "DeepSeek's “OpenAI-compatible API” uses non-standard formats for reasoning fields and structured outputs.\nEnable this option to translate requests and responses bidirectionally between the OpenAI canonical format and DeepSeek's non-standard format, including translating reasoning controls (`thinking`) and reasoning content (`reasoning_text`), normalizing cached-token usage, and downgrading the unsupported `json_schema` response format to `json_object`.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
+                  "DeepSeek's API uses non-standard reasoning controls, cached-token usage, and structured outputs.\nEnable this option to translate reasoning controls (`thinking`), normalize cached-token usage, and downgrade the unsupported `json_schema` response format to `json_object`. Configure reasoning text and data separately under Chat Completions reasoning format.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
             },
             'vendor-qwen': {
               label: 'Alibaba Cloud Model Studio Compatibility',

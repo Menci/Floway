@@ -4,6 +4,7 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-deepseek-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { flowayReasoningFields, FlowayOpenAIChatCompletionsReasoning } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -51,87 +52,11 @@ const usageRecord = (usage: NonNullable<OpenAIChatCompletionsStreamEvent['usage'
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 
-// ── Outbound: assistant reasoning field rewrite ──
-
-test('renames outbound reasoning_text to reasoning_content on assistant messages', async () => {
-  const ctx = invocation(baseRequest());
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
-  assertEquals(assistant.reasoning_content, 'let me check the docs');
-  assertEquals(assistant.reasoning_text, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
-  assertEquals((assistant.tool_calls as unknown[]).length, 1);
-});
-
-test('synthesizes reasoning_content from reasoning_items when reasoning_text is absent', async () => {
-  const ctx = invocation({
-    model: 'deepseek-reasoner',
-    messages: [
-      { role: 'user', content: 'first turn' },
-      {
-        role: 'assistant',
-        content: null,
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_1',
-            summary: [
-              { type: 'summary_text', text: 'step one. ' },
-              { type: 'summary_text', text: 'step two.' },
-            ],
-          },
-        ],
-        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{}' } }],
-      },
-      { role: 'tool', tool_call_id: 'call_1', content: 'result' },
-    ],
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
-  assertEquals(assistant.reasoning_content, 'step one. step two.');
-  assertEquals(assistant.reasoning_text, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
-});
-
-test('strips reasoning_items even when no summaries are available', async () => {
-  const ctx = invocation({
-    model: 'deepseek-reasoner',
-    messages: [
-      { role: 'user', content: 'first turn' },
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_items: [{ type: 'reasoning' }],
-        reasoning_opaque: 'opaque-chain',
-      },
-    ],
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
-  assertEquals(assistant.reasoning_content, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.content, 'answer');
+test('preserves internal reasoning for the upstream format codec', async () => {
+  const fields = flowayReasoningFields('trace', 'opaque');
+  const ctx = invocation({ model: 'deepseek-reasoner', messages: [{ role: 'assistant', content: null, ...fields }] });
+  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, okEvents);
+  assertEquals(ctx.payload.messages[0][FlowayOpenAIChatCompletionsReasoning], fields[FlowayOpenAIChatCompletionsReasoning]);
 });
 
 // ── Outbound: reasoning_effort === 'none' canonical sentinel ──
@@ -213,9 +138,9 @@ test('leaves an already-json_object response_format untouched', async () => {
   assertEquals(observed!.response_format, { type: 'json_object' });
 });
 
-// ── Inbound: delta reasoning_content → reasoning_text ──
+// ── Inbound: reasoning belongs to the format codec ──
 
-test('renames inbound protocol reasoning_content deltas to reasoning_text', async () => {
+test('leaves incoming reasoning fields to the format codec', async () => {
   const ctx = invocation(baseRequest());
   const upstreamChunk: OpenAIChatCompletionsStreamEvent = {
     id: 'chunk_1',
@@ -242,8 +167,8 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
   const frame = frames[0];
   if (frame.type !== 'event') throw new Error('expected event frame');
   const delta = frame.event.choices[0].delta as Record<string, unknown>;
-  assertEquals(delta.reasoning_text, 'thinking...');
-  assertEquals(delta.reasoning_content, undefined);
+  assertEquals(delta.reasoning_content, 'thinking...');
+  assertEquals(delta.reasoning_text, undefined);
 });
 
 test('preserves reasoning_content from non-stream JSON responses', async () => {
@@ -271,8 +196,8 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
     )));
 
   const frames = await collectFrames(result);
-  const reasoningFrame = frames.find(frame => frame.type === 'event' && frame.event.choices[0]?.delta.reasoning_text !== undefined);
-  assertEquals(reasoningFrame?.type === 'event' ? reasoningFrame.event.choices[0]?.delta.reasoning_text : undefined, 'json thinking');
+  const reasoningFrame = frames.find(frame => frame.type === 'event' && frame.event.choices[0]?.delta.reasoning_content !== undefined);
+  assertEquals(reasoningFrame?.type === 'event' ? reasoningFrame.event.choices[0]?.delta.reasoning_content : undefined, 'json thinking');
 });
 
 // ── Inbound: usage cache-token field rewrite ──

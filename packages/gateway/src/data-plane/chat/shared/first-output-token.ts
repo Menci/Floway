@@ -1,4 +1,5 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { FlowayOpenAIChatCompletionsReasoning, type FlowayOpenAIChatCompletionsReasoningCarrier } from '@floway-dev/protocols/openai-chat-completions';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
 // True when the frame carries any model-generated token — text, tool-call
@@ -52,6 +53,7 @@ const isOpenAIChatCompletionsOutputEvent = (event: Record<string, unknown> & { c
   if (nonEmptyString(delta.content)) return true;
   if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) return true;
   if (nonEmptyString(delta.refusal)) return true;
+  if (nonEmptyString((delta as FlowayOpenAIChatCompletionsReasoningCarrier)[FlowayOpenAIChatCompletionsReasoning]?.reasoning)) return true;
   if (nonEmptyString(delta.reasoning)) return true;
   if (nonEmptyString(delta.reasoning_content)) return true;
   if (nonEmptyString(delta.reasoning_text)) return true;

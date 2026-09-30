@@ -21,6 +21,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
+import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, CHAT_COMPLETIONS_REASONING_DATA_STANDARDS } from '@floway-dev/protocols/openai-chat-completions';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -47,9 +48,11 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 // custom upstream-level fallback. A present key declares the endpoint is served.
 // One concept, all endpoints — the runtime validators enforce presence/emptiness
 // rules.
+export const chatCompletionsReasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+
 const modelEndpointsSchema = z.object({
   openaiCompletions: z.object({}).optional(),
-  openaiChatCompletions: z.object({}).optional(),
+  openaiChatCompletions: z.object({ reasoning: chatCompletionsReasoningOverridesSchema.optional() }).strict().optional(),
   openaiResponses: z.object({}).optional(),
   anthropicMessages: z.object({}).optional(),
   openaiEmbeddings: z.object({}).optional(),
@@ -350,6 +353,7 @@ const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
+  chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -389,6 +393,7 @@ export const updateUpstreamBody = z.object({
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
+  chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -528,6 +533,7 @@ export const previewModelsBody = z.object({
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
     hue: upstreamHueSchema.optional(),
+    chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
     flag_overrides: flagOverridesSchema.optional(),
     disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
     model_prefix: modelPrefixSchema.optional(),

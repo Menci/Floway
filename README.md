@@ -79,8 +79,52 @@ optional key defaults to the immediate upstream model ID, and
 in the compatibility identity. A downstream Floway reads the same metadata and
 materializes the identity at its own upstream boundary.
 
+Chat Completions reasoning formats are configured independently for text and
+opaque data. Upstream-wide `chat_completions_reasoning_overrides` and manual
+model `endpoints.openaiChatCompletions.reasoning` are sparse overrides; absent
+members inherit the provider default or the current upstream setting. Auto
+models use provider-owned per-model choices. The dashboard shows inherited
+values and their source.
+
+```json
+{
+  "chat_completions_reasoning_overrides": {
+    "text": "reasoning-content",
+    "data": "openrouter-reasoning-details"
+  },
+  "config": {
+    "models": [{
+      "upstreamModelId": "example-model",
+      "kind": "chat",
+      "endpoints": {
+        "openaiChatCompletions": {
+          "reasoning": { "text": "reasoning-text" }
+        }
+      }
+    }]
+  }
+}
+```
+
+Text standards are `reasoning-content`, `reasoning-text`, and `reasoning`.
+Data standards are `none`, `reasoning-opaque`, `openrouter-reasoning-details`,
+and `litellm-thinking-blocks`. These select complete conversion behavior.
+Structured arrays retain their members and metadata in reversible Floway
+opaque envelopes. Malformed selected formats fail the request; recognized
+unselected formats produce a warning and are ignored.
+
+Clients currently receive `reasoning` and `reasoning_opaque` for every Chat
+Completions model. The public `endpoints` map describes this client surface,
+including translated chat routes. Native dispatch continues to use the chosen
+upstream's own endpoint map. Normalization also applies to native Chat
+Completions passthrough and client history replay.
+
 Floway wraps natural reasoning signatures, encrypted content, fingerprints,
-and other supported opaque blobs with authenticated routing metadata. New
+and other supported opaque blobs with authenticated routing metadata. Chat
+Completions affinity processing supports `reasoning_opaque`, encrypted or
+signed OpenRouter reasoning details, and signed or redacted LiteLLM thinking
+blocks. It wraps existing opaque members and removes synthetic carriers during
+replay, outside the reasoning-format converters. New
 carriers record both their exact source target and their compatibility identity.
 Compatible targets receive the original blob; incompatible optional blobs are
 removed, while incompatible required Responses state fails routing. Existing v1
