@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { failover } from '../../src/data-plane/pipeline/stages.ts';
+import { failover } from '../../src/data-plane/pipeline/failover.ts';
 import { rerankServePipeline } from '../../src/data-plane/rerank/pipeline.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';

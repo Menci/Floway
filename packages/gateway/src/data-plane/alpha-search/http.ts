@@ -12,8 +12,10 @@
 
 import type { Context } from 'hono';
 
-import { searchServePipeline, type SearchExecution, type SearchServices } from './pipeline.ts';
+import { type SearchExecution } from './facts.ts';
+import { searchServePipeline } from './pipeline.ts';
 import { alphaSearchRequestSchema, type AlphaSearchRequest } from './protocol.ts';
+import { type SearchServices } from './services.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import { openPrologue, readIngress, serveThrough, type Prologue } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
