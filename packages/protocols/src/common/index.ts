@@ -4,6 +4,7 @@ export * from './endpoints.ts';
 export * from './decimal.ts';
 export * from './data-plane-routes.ts';
 export * from './models.ts';
+export * from './model-metadata.ts';
 export * from './media-type.ts';
 export * from './pricing.ts';
 export * from './usage.ts';

@@ -446,10 +446,12 @@ export function SettingsCard({ action, description, header, icon }: {
 // switch. In the toolkit that falls out of routed events, which the DOM does
 // not do on its own.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
-export function SettingsExpander({ action, children, defaultOpen = false, description, disclosureDisabled = false, header, icon, revealOn, toggledOn }: {
+export function SettingsExpander({ action, children, defaultOpen = false, deferContent = false, description, disclosureDisabled = false, header, icon, revealOn, toggledOn }: {
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Mount on first expansion and retain for subsequent collapse animations. */
+  deferContent?: boolean;
   description?: string;
   /** Disable the disclosure while leaving a trailing action operable. */
   disclosureDisabled?: boolean;
@@ -481,6 +483,8 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
     setRevealWas(revealOn);
     if (revealOn === true) setOpen(true);
   }
+  const [hasOpened, setHasOpened] = useState(defaultOpen);
+  if (open && !hasOpened) setHasOpened(true);
   const contentId = useId();
   const headerId = useId();
   // The toolkit nests the trailing control inside the header's own click target,
@@ -516,7 +520,7 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
             `display: none`, which takes the content out of flow in the same
             frame the row starts collapsing, leaving nothing to animate
             towards. `inert` withdraws it without touching layout. */}
-        <div aria-labelledby={headerId} className={styles.content} id={contentId} inert={!open} role="group">{children}</div>
+        <div aria-labelledby={headerId} className={styles.content} id={contentId} inert={!open} role="group">{!deferContent || hasOpened || open ? children : null}</div>
       </div>
     </div>
   </div>;

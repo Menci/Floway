@@ -7,6 +7,7 @@ import {
   parseStoredJson,
   preserveDecodedStoredJsonProperties,
 } from './stored-json.ts';
+import { codexMetadataSchema, verbosityMetadataSchema } from '../shared/model-metadata-schemas.ts';
 import { BILLING_METRICS, MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamModelsCache } from '@floway-dev/provider';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
@@ -35,6 +36,8 @@ const limitsSchema = z.object({
 }).passthrough();
 
 const chatSchema = z.object({
+  codex: codexMetadataSchema.optional(),
+  verbosity: verbosityMetadataSchema.optional(),
   modalities: z.object({
     input: z.array(z.enum(['text', 'image'])),
     output: z.array(z.enum(['text', 'image'])),

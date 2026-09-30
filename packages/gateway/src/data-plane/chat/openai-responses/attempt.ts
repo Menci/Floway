@@ -20,6 +20,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
+import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER, decodeCodexResponsesLiteRequest, foldCodexReasoningUpdates } from '@floway-dev/provider-codex';
 import { translateOpenAIResponsesViaOpenAIChatCompletions, translateOpenAIResponsesViaAnthropicMessages } from '@floway-dev/translate';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
@@ -85,7 +86,16 @@ export const openaiResponsesAttempt = {
     const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
     const targetApi = openaiResponsesTarget.pick(candidate.model.endpoints);
-    const payload = { ...klona(args.payload), model: candidate.model.id };
+    let payload = { ...klona(args.payload), model: candidate.model.id };
+    const clientMetadata = typeof payload.client_metadata === 'object' && payload.client_metadata !== null && !Array.isArray(payload.client_metadata)
+      ? payload.client_metadata as Record<string, unknown>
+      : undefined;
+    const lite = headers.get(CODEX_RESPONSES_LITE_HEADER) === 'true'
+      || clientMetadata?.[CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY] === 'true';
+    headers.delete(CODEX_RESPONSES_LITE_HEADER);
+    if (clientMetadata !== undefined) delete clientMetadata[CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY];
+    if (lite) payload = decodeCodexResponsesLiteRequest(payload);
+    if (targetApi !== 'openaiResponses') payload = foldCodexReasoningUpdates(payload);
     ctx.store.beginAttempt(args.sourceState?.privatePayloads ?? new Map());
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse

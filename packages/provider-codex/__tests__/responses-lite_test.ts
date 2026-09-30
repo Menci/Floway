@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  decodeCodexResponsesLiteRequest,
+  foldCodexReasoningUpdates,
   encodeCodexResponsesLiteRequest,
   restoreCodexResponsesCompactionResult,
   restoreCodexResponsesEvent,
@@ -36,6 +38,42 @@ const itemId = (item: OpenAIResponsesInputItem | undefined): string | null | und
 const response = (overrides: Partial<OpenAIResponsesResult> = {}): OpenAIResponsesResult => ({
   id: 'resp_1', object: 'response', model: 'model', output: [], status: 'completed', incomplete_details: null, error: null,
   ...overrides,
+});
+
+test('Lite ingress hoists declarations without changing callable namespaces, chronology or reasoning context', () => {
+  const namespace: OpenAIResponsesTool = { type: 'namespace', name: 'functions', description: '', tools: [functionTool('read')] };
+  const discovered: OpenAIResponsesInputItem = { type: 'tool_search_output', call_id: 'search', tools: [functionTool('discovered')] };
+  const body = requestBody({
+    tools: [customTool('shell')],
+    input: [additionalTools('at_1', [namespace]), { type: 'message', role: 'developer', content: 'Base instructions' }, discovered, additionalTools('at_2', [functionTool('later')])],
+    reasoning: { effort: 'high', context: 'all_turns' },
+  });
+  const original = structuredClone(body);
+  const decoded = decodeCodexResponsesLiteRequest(body);
+  expect(decoded.tools).toEqual([customTool('shell'), namespace, functionTool('later')]);
+  expect(decoded.input).toEqual([body.input[1], discovered]);
+  expect(decoded.reasoning).toEqual(body.reasoning);
+  expect(body).toEqual(original);
+});
+
+test('Lite ingress exposes conflicting callable identities before dispatch', () => {
+  expect(() => decodeCodexResponsesLiteRequest(requestBody({ input: [additionalTools('at_conflict', [functionTool('same'), customTool('same')])] }))).toThrow(/distinct callable identities/);
+});
+
+test('translated Codex effort controls replace the pinned baseline with the last chronological update', () => {
+  const body = requestBody({
+    reasoning: { effort: 'medium', summary: 'concise', context: 'all_turns' },
+    input: [
+      { type: 'configuration_update', reasoning: { effort: 'high' } },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'configuration_update', reasoning: { effort: 'future_effort' } },
+    ] as unknown as OpenAIResponsesInputItem[],
+  });
+  const original = structuredClone(body);
+  expect(foldCodexReasoningUpdates(body)).toEqual({ ...body, input: [body.input[1]], reasoning: { ...body.reasoning, effort: 'future_effort' } });
+  expect(body).toEqual(original);
+  expect(foldCodexReasoningUpdates(requestBody()).reasoning).toBeUndefined();
+  expect(() => foldCodexReasoningUpdates(requestBody({ input: [{ type: 'configuration_update', reasoning: { effort: '' } }] as unknown as OpenAIResponsesInputItem[] }))).toThrow(/requires/);
 });
 
 describe('Standard to Responses Lite encoder', () => {

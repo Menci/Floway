@@ -18,7 +18,7 @@ const makeEffects = (): CodexCallEffects => ({
 const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null };
 const accessOnlyAccount: CodexAccountCredential = { ...activeAccount, refresh_token: null };
 const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
-const liteModel = stubProviderModel({ id: 'future-lite-model', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+const liteModel = stubProviderModel({ id: 'future-lite-model', endpoints: { openaiResponses: {} }, chat: { codex: { use_responses_lite: true } } });
 const imageModel = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
 
 const upstreamId = 'up_a';
@@ -253,7 +253,7 @@ describe('Codex terminal output recovery', () => {
       ]));
       const effects = makeEffects();
       const result = await callCodexOpenAIResponses({
-        upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+        upstreamId, account: activeAccount, model: { ...model, chat: { codex: { use_responses_lite: useResponsesLite } } },
         body: { input: [{ type: 'compaction_trigger' } as unknown as OpenAIResponsesInputItem], stream },
         headers: new Headers(), effects, call: noopUpstreamCallOptions(),
       });
@@ -297,7 +297,7 @@ describe('Codex terminal output recovery', () => {
       { type: 'response.completed', response: terminal },
     ]));
     const result = await callCodexOpenAIResponses({
-      upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+      upstreamId, account: activeAccount, model: { ...model, chat: { codex: { use_responses_lite: useResponsesLite } } },
       body: { input: [], tools: [{ type: 'function', name: 'lookup', parameters: {} }], stream: false },
       headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
@@ -337,7 +337,7 @@ describe('Codex private Responses wire selection', () => {
         const call = action === 'generate' ? callCodexOpenAIResponses : callCodexOpenAIResponsesCompact;
         const result = await call({
           upstreamId, account: activeAccount,
-          model: { ...model, providerData: useResponsesLite === undefined ? undefined : { useResponsesLite } },
+          model: { ...model, chat: useResponsesLite === undefined ? undefined : { codex: { use_responses_lite: useResponsesLite } } },
           body, headers, effects: makeEffects(), call: noopUpstreamCallOptions(),
         });
         if (!result.ok) throw new Error('expected a successful response');
@@ -390,7 +390,7 @@ describe('Codex private Responses wire selection', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const call = action === 'generate' ? callCodexOpenAIResponses : callCodexOpenAIResponsesCompact;
     const opts = { upstreamId, account: activeAccount, body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions() };
-    await expect(call({ ...opts, model: { ...model, providerData: { useResponsesLite: 'false' } } })).rejects.toThrow('useResponsesLite is not a boolean');
+    await expect(call({ ...opts, model: { ...model, chat: { codex: { use_responses_lite: 'false' as unknown as boolean } } } })).rejects.toThrow('use_responses_lite is not a boolean');
     await expect(call({
       ...opts, model: liteModel,
       body: {
@@ -468,7 +468,7 @@ describe('Codex private Responses wire selection', () => {
       ]));
       const requested = { effort: 'low', context: 'current_turn' };
       const result = await callCodexOpenAIResponses({
-        upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+        upstreamId, account: activeAccount, model: { ...model, chat: { codex: { use_responses_lite: useResponsesLite } } },
         body: { input: [], ...(omitted ? {} : { reasoning: requested, parallel_tool_calls: true }) },
         headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
       });
@@ -550,7 +550,7 @@ describe('Codex private Responses wire selection', () => {
 
   test.each(['generate', 'compact'] as const)('%s reuses prepared bytes, metadata choice, identities and inverse map across 401 retry', async action => {
     seedFreshAccessToken();
-    const selectedModel = { ...liteModel, providerData: { useResponsesLite: true } };
+    const selectedModel = { ...liteModel, chat: { codex: { use_responses_lite: true } } };
     const encode = vi.spyOn(responsesLite, 'encodeCodexResponsesLiteRequest');
     const bodies: string[] = [];
     const headers: Headers[] = [];
@@ -559,7 +559,7 @@ describe('Codex private Responses wire selection', () => {
       bodies.push(await new Response(init?.body).text());
       headers.push(new Headers(init?.headers));
       if (bodies.length === 1) {
-        selectedModel.providerData.useResponsesLite = false;
+        selectedModel.chat.codex.use_responses_lite = false;
         return errorJson(401, { error: { code: 'expired_token', message: 'expired' } });
       }
       return action === 'generate' ? sseEventsResponse([]) : compactJsonResponse();

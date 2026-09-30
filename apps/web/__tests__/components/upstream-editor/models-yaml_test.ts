@@ -6,6 +6,15 @@ const CHAT_MODEL = { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openai
 const RERANK_MODEL = { upstreamModelId: 'rerank-v2', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } } as const;
 
 describe('models YAML round trip', () => {
+  it('preserves Codex defaults independently of the standard maximum and keeps opaque instruction sections', () => {
+    const model = {
+      ...CHAT_MODEL, limits: { max_context_window_tokens: 872000 }, chat: {
+        verbosity: { supported: false },
+        codex: { default_context_window_tokens: 272000, auto_compact_token_limit: null, use_responses_lite: false, tool_mode: null, model_messages: { instructions_template: '', future_section: { enabled: false, instructions: 'Keep this section.' } } },
+      },
+    };
+    expect(parseModels(serializeModels([model]), { allowRerank: false })).toEqual({ ok: true, models: [model] });
+  });
   it('parses back what it serialized', () => {
     const parsed = parseModels(serializeModels([{ ...CHAT_MODEL }]), { allowRerank: false });
     expect(parsed).toEqual({ ok: true, models: [CHAT_MODEL] });

@@ -22,6 +22,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER } from '@floway-dev/provider-codex';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -113,6 +114,70 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredOpe
   await repo.openaiResponsesItems.insertMany([row], 0);
   return row;
 };
+
+test.each(['http', 'websocket', 'standard'] as const)('native Custom Responses consumes %s Lite markers and preserves unmarked positional tools', async transport => {
+  installRepo();
+  const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
+  const carrier = { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] };
+  const payload = makePayload({ input: [carrier, { type: 'message', role: 'user', content: 'hello' }], reasoning: { context: 'all_turns' } });
+  if (transport === 'websocket') payload.client_metadata = { [CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true', other: 'retained' };
+  const original = structuredClone(payload);
+  const callOpenAIResponses = vi.fn<ModelCandidate['provider']['instance']['callOpenAIResponses']>(async (_model, body, _action, _signal, opts): Promise<ProviderOpenAIResponsesResult> => {
+    assertEquals(body.input, transport === 'standard' ? payload.input : [payload.input[1]]);
+    assertEquals(body.tools, transport === 'standard' ? undefined : [tool]);
+    assertEquals(body.reasoning, { context: 'all_turns' });
+    assertEquals(opts.headers.has(CODEX_RESPONSES_LITE_HEADER), false);
+    if (transport === 'websocket') assertEquals(body.client_metadata, { other: 'retained' });
+    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model' };
+  });
+  const headers = new Headers(transport === 'http' ? { [CODEX_RESPONSES_LITE_HEADER]: 'true' } : {});
+  const candidate = makeCandidate(callOpenAIResponses);
+  candidate.provider.inboundHeaderAllowlist = [CODEX_RESPONSES_LITE_HEADER];
+  const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers });
+  assertEquals(result.type, 'events');
+  assertEquals(callOpenAIResponses.mock.calls.length, 1);
+  assertEquals(payload, original);
+  assertEquals(headers.has(CODEX_RESPONSES_LITE_HEADER), transport === 'http');
+});
+
+test.each(['openaiChatCompletions', 'anthropicMessages'] as const)('Lite declarations and durable effort updates reach %s with alias rules applied last', async targetApi => {
+  installRepo();
+  const endpoints = { [targetApi]: {} };
+  const candidate: ModelCandidate = {
+    ...makeCandidate(async () => { throw new Error('Native Responses must not be called'); }),
+    model: stubInternalModel({ endpoints, providerModels: { up_test: stubProviderModel({ endpoints }) } }, 'up_test'),
+    rules: { reasoning: { effort: 'xhigh' } },
+  };
+  let calls = 0;
+  candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
+    assertEquals(body.reasoning_effort, 'xhigh');
+    assertEquals(body.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.type), ['lookup']);
+    assertEquals(body.messages.map(message => message.role), ['user']);
+    calls++;
+    return { ok: true, modelKey: 'test-model', events: (async function* () { yield doneFrame(); })() };
+  };
+  candidate.provider.instance.callAnthropicMessages = async (_model, body) => {
+    assertEquals(body.output_config?.effort, 'xhigh');
+    assertEquals(body.tools?.map(tool => tool.name), ['lookup']);
+    assertEquals(body.messages.map(message => message.role), ['user']);
+    calls++;
+    return { ok: true, modelKey: 'test-model', events: (async function* () { yield doneFrame(); })() };
+  };
+  const payload = makePayload({
+    reasoning: { effort: 'medium', summary: 'concise' },
+    input: [
+      { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] },
+      { type: 'configuration_update', reasoning: { effort: 'high' } },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'configuration_update', reasoning: { effort: 'low' } },
+    ] as unknown as CanonicalOpenAIResponsesPayload['input'],
+  });
+  const original = structuredClone(payload);
+  const result = await openaiResponsesAttempt.generate({ payload, candidate, ctx: makeGatewayCtx(), headers: new Headers({ [CODEX_RESPONSES_LITE_HEADER]: 'true' }) });
+  assertEquals(result.type, 'events');
+  assertEquals(calls, 1);
+  assertEquals(payload, original);
+});
 
 test('generate native success leaves source-edge state ownership to the caller', async () => {
   installRepo();

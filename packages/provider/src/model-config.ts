@@ -1,4 +1,6 @@
+import { assertCodexContextWindow, codexChatField } from './codex-model-config.ts';
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
+export { assertCodexContextWindow, codexChatField } from './codex-model-config.ts';
 import { validateUpstreamPath } from './join.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
@@ -235,6 +237,11 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const out: UpstreamChatModelConfig = {};
+  if (value.codex !== undefined) out.codex = codexChatField(value.codex, `${label}.codex`);
+  if (value.verbosity !== undefined) {
+    if (!isRecord(value.verbosity) || typeof value.verbosity.supported !== 'boolean') throw new TypeError(`${label}.verbosity.supported must be a boolean`);
+    out.verbosity = { supported: value.verbosity.supported };
+  }
   if (value.modalities !== undefined) {
     if (!isRecord(value.modalities)) throw new Error(`Malformed ${label}.modalities: must be an object`);
     out.modalities = {
@@ -251,7 +258,7 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
     out.image_detail_original = value.image_detail_original;
   }
   if (value.reasoning !== undefined) out.reasoning = reasoningField(value.reasoning, `${label}.reasoning`);
-  if (out.modalities === undefined && out.image_detail_original === undefined && out.reasoning === undefined) return undefined;
+  if (Object.keys(out).length === 0) return undefined;
   return out;
 };
 
@@ -302,6 +309,8 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
+  const limits = limitsField(value.limits, `${label}.limits`);
+  assertCodexContextWindow(chat?.codex, limits, label);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
@@ -316,7 +325,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     kind,
     endpoints,
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
-    ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
+    ...(limits !== undefined ? { limits } : {}),
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     ...(rerankTarget ? { rerankTarget } : {}),

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decodeStoredJsonPreservingProperties } from './stored-json.ts';
+import { codexMetadataSchema, verbosityMetadataSchema } from '../shared/model-metadata-schemas.ts';
 import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const reasoningSchema = z.object({
@@ -27,6 +28,8 @@ const limitsSchema = z.object({
 const announcedMetadataSchema = z.object({
   limits: limitsSchema.optional(),
   chat: z.object({
+    codex: codexMetadataSchema.optional(),
+    verbosity: verbosityMetadataSchema.optional(),
     modalities: z.object({
       input: z.array(z.enum(['text', 'image'])),
       output: z.array(z.enum(['text', 'image'])),

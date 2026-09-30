@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
+import { codexMetadataSchema, refineCodexContextWindow, verbosityMetadataSchema } from '../shared/model-metadata-schemas.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
@@ -125,6 +126,8 @@ const reasoningSchema = z.object({
 );
 
 const chatSchema = z.object({
+  codex: codexMetadataSchema.optional(),
+  verbosity: verbosityMetadataSchema.optional(),
   modalities: modalitiesSchema.optional(),
   // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
   // the upstream stating it rejects detail 'original', not the absence of a
@@ -668,7 +671,7 @@ const aliasTargetSchema = z.object({
 const announcedMetadataSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
-});
+}).superRefine(refineCodexContextWindow);
 
 const aliasBaseShape = {
   name: z.string().min(1),

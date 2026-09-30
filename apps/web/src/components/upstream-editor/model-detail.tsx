@@ -13,10 +13,12 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
+import { CodexEditor } from '../models/codex-editor';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
+import { OptionalBooleanField } from '../ui/optional-field';
 import { SectionHeader } from '../ui/section-header';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
@@ -217,6 +219,7 @@ export function ModelDetail({
             <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
           </div>
           {row.config.kind === 'chat' && <>
+            <OptionalBooleanField label={t('dashboard.upstreamEditor.models.verbositySupported')} readOnly={fieldsReadOnly} value={row.config.chat?.verbosity?.supported} onChange={supported => patch({ chat: cleanChat({ ...row.config.chat, verbosity: supported === undefined ? undefined : { supported } }) })} />
             <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
               <Text id={imageInputLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
               <div className="flex flex-wrap gap-4">
@@ -254,6 +257,8 @@ export function ModelDetail({
             </div>
           </>}
         </EditorSection>}
+
+        {row.config.kind === 'chat' && <CodexEditor key={row.key} maxContextWindowTokens={row.config.limits?.max_context_window_tokens} readOnly={fieldsReadOnly} value={row.config.chat?.codex} onChange={codex => patch({ chat: cleanChat({ ...row.config.chat, codex }) })} />}
 
         <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
           <PricingEditor
@@ -315,7 +320,10 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.image_detail_original !== undefined || chat.reasoning ? chat : undefined;
+const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => {
+  const cleaned = cleanObject(chat);
+  return Object.keys(cleaned).length ? cleaned : undefined;
+};
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);

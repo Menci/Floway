@@ -1,4 +1,5 @@
 import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
+import { assertCodexContextWindow, codexChatField } from '@floway-dev/provider/model-config';
 
 const isTokenCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -21,6 +22,7 @@ export const ANNOUNCED_METADATA_FIELDS = [
   'max_output_tokens',
   'budgetMin',
   'budgetMax',
+  'codex',
 ] as const;
 
 export type AnnouncedMetadataField = typeof ANNOUNCED_METADATA_FIELDS[number];
@@ -29,6 +31,12 @@ export type AnnouncedMetadataIssues = Partial<Record<AnnouncedMetadataField, str
 
 export const announcedMetadataIssues = (metadata: AnnouncedMetadata): AnnouncedMetadataIssues => {
   const issues: AnnouncedMetadataIssues = {};
+  try {
+    if (metadata.chat?.codex !== undefined) codexChatField(metadata.chat.codex, 'chat.codex');
+    assertCodexContextWindow(metadata.chat?.codex, metadata.limits, 'metadata');
+  } catch {
+    issues.codex = 'dashboard.upstreamEditor.models.invalidConfiguration';
+  }
   for (const [key, value] of Object.entries(metadata.limits ?? {})) {
     if (!isTokenCount(value)) issues[key as AnnouncedMetadataField] = 'dashboard.modelAliases.validation.metadataNumber';
   }

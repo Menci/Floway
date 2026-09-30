@@ -7,19 +7,12 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
-
-interface CodexProviderData {
-  contextWindow: number;
-  useResponsesLite: boolean;
-}
-
-export interface CodexContextWindow {
-  context_window: number;
-  max_context_window?: number;
-}
+import type { CodexChatModelInfo } from '@floway-dev/protocols/common';
+import { codexChatField, ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
+  codex?: CodexChatModelInfo;
+  support_verbosity?: boolean;
   id: string;
   display_name: string;
   // The default and config-override ceiling are separate client settings.
@@ -81,6 +74,32 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   const context_window = assertContextWindow(value.context_window, slug, 'context_window');
 
   const raw: CodexRawModel = { id: slug, display_name, context_window };
+  // Resolve Codex's serde defaults at the provider boundary, so the public
+  // profile describes the backend rather than a same-named client snapshot.
+  // https://github.com/openai/codex/blob/d42056091aded7feb1d88ac7e83972108b2aa478/codex-rs/protocol/src/openai_models.rs#L404-L510
+  const profile: Record<string, unknown> = {
+    default_context_window_tokens: context_window,
+    effective_context_window_percent: value.effective_context_window_percent === undefined ? 95 : value.effective_context_window_percent,
+    use_responses_lite: value.use_responses_lite === undefined ? false : value.use_responses_lite,
+    supports_reasoning_effort_updates: value.supports_reasoning_effort_updates === undefined ? false : value.supports_reasoning_effort_updates,
+    supports_search_tool: value.supports_search_tool === undefined ? false : value.supports_search_tool,
+    include_skills_usage_instructions: value.include_skills_usage_instructions === undefined ? false : value.include_skills_usage_instructions,
+    include_plugin_usage_instructions: value.include_plugin_usage_instructions === undefined ? false : value.include_plugin_usage_instructions,
+    include_apps_usage_instructions: value.include_apps_usage_instructions === undefined ? true : value.include_apps_usage_instructions,
+    default_reasoning_summary: value.default_reasoning_summary === undefined ? 'auto' : value.default_reasoning_summary,
+  };
+  for (const key of ['auto_compact_token_limit', 'truncation_policy', 'shell_type', 'apply_patch_tool_type', 'default_verbosity', 'web_search_tool_type', 'tool_mode', 'multi_agent_version', 'multi_agent_reasoning_effort'] as const) {
+    if (value[key] !== undefined) profile[key] = value[key];
+  }
+  if (value.model_messages !== undefined && value.model_messages !== null) profile.model_messages = value.model_messages;
+  if (value.base_instructions !== undefined && (profile.model_messages === undefined || (profile.model_messages as Record<string, unknown>).instructions_template === undefined)) {
+    profile.model_messages = { ...(profile.model_messages as Record<string, unknown> | undefined), instructions_template: value.base_instructions };
+  }
+  raw.codex = codexChatField(profile, `Codex model ${slug}`);
+  if (value.support_verbosity !== undefined) {
+    if (typeof value.support_verbosity !== 'boolean') throw new TypeError(`Codex model ${slug} support_verbosity must be a boolean`);
+    raw.support_verbosity = value.support_verbosity;
+  }
   if (value.max_context_window !== undefined && value.max_context_window !== null) {
     raw.max_context_window = assertContextWindow(value.max_context_window, slug, 'max_context_window');
   }
@@ -131,26 +150,11 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   return raw;
 };
 
-export const codexModelContextWindow = (model: ProviderModel): CodexContextWindow => {
-  if (!isPlainRecord(model.providerData)) {
-    throw new TypeError(`Codex model ${model.id} providerData is not an object`);
-  }
-  return {
-    context_window: assertContextWindow(model.providerData.contextWindow, model.id, 'providerData.contextWindow'),
-    ...(model.limits.max_context_window_tokens === undefined ? {} : { max_context_window: model.limits.max_context_window_tokens }),
-  };
-};
-
 export const codexModelUsesResponsesLite = (model: ProviderModel): boolean => {
-  const providerData = model.providerData;
-  if (providerData === undefined) return false;
-  if (!isPlainRecord(providerData)) {
-    throw new TypeError(`Codex model ${model.id} providerData is not an object`);
-  }
-  const value = providerData.useResponsesLite;
+  const value = model.chat?.codex?.use_responses_lite;
   if (value === undefined) return false;
   if (typeof value !== 'boolean') {
-    throw new TypeError(`Codex model ${model.id} providerData.useResponsesLite is not a boolean`);
+    throw new TypeError(`Codex model ${model.id} chat.codex.use_responses_lite is not a boolean`);
   }
   return value;
 };
@@ -176,7 +180,10 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
     throw new TypeError(`Codex model entry ${raw.id} use_responses_lite not a boolean`);
   }
   const pricing = pricingForCodexModelKey(raw.id);
-  const chat: UpstreamChatModelConfig = {};
+  const chat: UpstreamChatModelConfig = {
+    codex: { ...raw.codex, default_context_window_tokens: contextWindow, use_responses_lite: raw.use_responses_lite ?? raw.codex?.use_responses_lite ?? false },
+    ...(raw.support_verbosity === undefined ? {} : { verbosity: { supported: raw.support_verbosity } }),
+  };
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
@@ -209,10 +216,6 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
       ...(maxContextWindow === undefined ? {} : { max_context_window_tokens: maxContextWindow }),
     },
     endpoints: { openaiResponses: {} },
-    providerData: {
-      contextWindow,
-      useResponsesLite: raw.use_responses_lite ?? false,
-    } satisfies CodexProviderData,
     enabledFlags,
     opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
     ...(pricing ? { pricing } : {}),
