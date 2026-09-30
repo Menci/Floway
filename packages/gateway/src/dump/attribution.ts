@@ -107,8 +107,9 @@ export class DumpAttribution {
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
-    this.inputTokens = tokenUsageInput(usage);
-    this.outputTokens = usage?.output ?? null;
+    const input = tokenUsageInput(usage);
+    if (input !== null) this.inputTokens = (this.inputTokens ?? 0) + input;
+    if (usage?.output !== undefined) this.outputTokens = (this.outputTokens ?? 0) + usage.output;
   }
 
   async metadata(outcome: DumpTurnOutcome): Promise<DumpMetadata> {

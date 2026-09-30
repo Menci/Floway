@@ -32,7 +32,7 @@ const PERFORMANCE_OPERATION = {
  */
 export const callOpenAIImagesUpstream = defineStage<
   Fields<'ingress.openaiImages.wantsStream' | 'request.openaiImages.canonical' | 'route.attempt' | 'ingress.http.headers'>,
-  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.headers'
+  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.http.headers'
     | 'response.http.body' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -41,6 +41,7 @@ export const callOpenAIImagesUpstream = defineStage<
     provides: [
       'response.openaiImages.canonical',
       'response.openaiImages.streamedUsage',
+      'response.http.status',
       'response.http.headers',
       'response.http.body',
       'response.usage.billable',
@@ -79,6 +80,7 @@ export const callOpenAIImagesUpstream = defineStage<
         ...facts,
         'response.openaiImages.canonical': dialFailure(error),
         'response.openaiImages.streamedUsage': null,
+        'response.http.status': 502,
         'response.http.headers': [],
         'response.http.body': spentBody(null),
         'response.usage.billable': [],
@@ -95,6 +97,7 @@ export const callOpenAIImagesUpstream = defineStage<
       ...facts,
       'response.openaiImages.canonical': canonical,
       'response.openaiImages.streamedUsage': null,
+      'response.http.status': result.response.status,
       'response.http.headers': headers,
       'response.http.body': spentBody(result.response.body),
       'response.usage.billable': billable,
@@ -132,6 +135,7 @@ export const callOpenAIImagesUpstream = defineStage<
         // told how one becomes a frame instead of being left to assume.
         'response.openaiImages.canonical': recordStream(metered.frames, use.gateway.dump, eventFrame),
         'response.openaiImages.streamedUsage': metered.outcome,
+        'response.http.status': result.response.status,
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over one
         // connection, and a second reader is not something a `ReadableStream` allows.

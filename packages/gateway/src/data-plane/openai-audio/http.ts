@@ -8,13 +8,13 @@
 
 import type { Context } from 'hono';
 
+import type { AudioFormEntry } from './facts.ts';
 import { openaiAudioTranscriptionServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { move } from '@floway-dev/pipeline';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import { parseOpenAIAudioTranscriptionResponseFormat, type OpenAIAudioTranscriptionResponseFormat } from '@floway-dev/protocols/openai-audio';
-import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedOpenAIAudioTranscription =
   | {
@@ -22,7 +22,7 @@ type PreparedOpenAIAudioTranscription =
     readonly model: string;
     readonly responseFormat: OpenAIAudioTranscriptionResponseFormat;
     readonly wantsStream: boolean;
-    readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
+    readonly entries: readonly AudioFormEntry[];
   }
   | { readonly type: 'invalid'; readonly message: string };
 
@@ -57,9 +57,16 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
     return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
 
-  const entries: OpenAIAudioTranscriptionFormEntry[] = [];
+  const entries: AudioFormEntry[] = [];
   for (const [name, value] of form.entries()) {
-    entries.push({ name, value });
+    entries.push({
+      name, value: typeof value === 'string' ? value : {
+        name: value.name,
+        type: value.type,
+        lastModified: value.lastModified,
+        bytes: new Uint8Array(await value.arrayBuffer()),
+      },
+    });
   }
   return {
     type: 'ok',

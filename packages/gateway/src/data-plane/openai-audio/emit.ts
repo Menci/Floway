@@ -21,7 +21,7 @@ export const emitOpenAIAudioTranscription = defineStage<
   Fields<'ingress.openaiAudioTranscription.responseFormat'>,
   Fields<'ingress.openaiAudioTranscription.responseFormat'>,
   Fields<'ingress.openaiAudioTranscription.responseFormat' | 'response.openaiAudioTranscription.canonical' | 'response.openaiAudioTranscription.mediaType'>
-    & { 'response.http.headers': readonly (readonly [string, string])[] },
+    & { 'response.http.status': number; 'response.http.headers': readonly (readonly [string, string])[] },
   Fields<'response.openaiAudioTranscription.rendered' | 'response.openaiAudioTranscription.mediaType'>
     & { 'response.http.status': number; 'response.http.headers': readonly (readonly [string, string])[] }
 >({
@@ -33,7 +33,7 @@ export const emitOpenAIAudioTranscription = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.openaiAudioTranscription.canonical', 'response.openaiAudioTranscription.mediaType', 'response.http.headers'],
+      needs: ['response.openaiAudioTranscription.canonical', 'response.openaiAudioTranscription.mediaType', 'response.http.headers', 'response.http.status'],
       consumes: ['response.openaiAudioTranscription.canonical', 'response.http.headers'],
       provides: ['response.openaiAudioTranscription.rendered', 'response.openaiAudioTranscription.mediaType', 'response.http.status', 'response.http.headers'],
     },
@@ -56,13 +56,10 @@ export const emitOpenAIAudioTranscription = defineStage<
         'response.openaiAudioTranscription.rendered': move(renderFailure(answer, mintedErrorEnvelope).body),
       };
     }
-    // Everything that reaches here answered. The same key carried the upstream's own status
-    // further down; re-providing it is what makes the top of the record the response the
-    // client gets rather than the one the upstream gave.
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.http.status': 200,
+      'response.http.status': back['response.http.status'],
       'response.openaiAudioTranscription.rendered': move(isEvents(answer)
         ? answer
         : renderOpenAIAudioTranscription(back['ingress.openaiAudioTranscription.responseFormat'], answer)),

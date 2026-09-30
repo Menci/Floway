@@ -13,7 +13,7 @@ import { renderRerankResponse } from '@floway-dev/protocols/rerank';
 export const emitRerank = defineStage<
   Fields<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
   Fields<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
-  Fields<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.headers'>,
+  Fields<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.status' | 'response.http.headers'>,
   Fields<'response.rerank.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitRerank',
@@ -24,7 +24,7 @@ export const emitRerank = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.rerank.canonical', 'response.http.headers'],
+      needs: ['response.rerank.canonical', 'response.http.headers', 'response.http.status'],
       consumes: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.headers'],
       provides: ['response.rerank.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -71,7 +71,7 @@ export const emitRerank = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.http.status': 200,
+      'response.http.status': back['response.http.status'],
       'response.rerank.rendered': move(rendered),
     };
   },

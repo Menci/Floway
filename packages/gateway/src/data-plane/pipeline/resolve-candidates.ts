@@ -38,9 +38,9 @@ export interface Narrowing<Refusal extends object> {
 export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<Refusal>) => defineStage<
   Slice<'serve.model'>,                                  // what arrives
   Slice<'serve.model' | 'serve.candidates'>,                            // what it hands down
-  Slice<'response.usage.billable' | 'response.http.headers'>,           // what comes back
-  Slice<'response.usage.billable' | 'response.http.headers'>,           // what it hands up, having descended
-  Slice<'response.usage.billable' | 'response.http.headers'> & Refusal, // and what it answers with instead
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,           // what comes back
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.status'>,           // what it hands up, having descended
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.status'> & Refusal, // and what it answers with instead
   GatewayServices
 >({
   name: 'resolveCandidates',
@@ -48,7 +48,7 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
     request: { needs: ['serve.model'], consumes: [], provides: ['serve.candidates'] },
     response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
+  return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.status', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -67,6 +67,7 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
         ...facts,
         'response.usage.billable': [],
         'response.http.headers': [],
+        'response.http.status': status,
         ...narrowing.refuse(status, message),
       });
 

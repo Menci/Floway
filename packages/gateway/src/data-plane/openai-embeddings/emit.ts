@@ -13,7 +13,7 @@ import { renderOpenAIEmbeddingsResponse } from '@floway-dev/protocols/openai-emb
 export const emitOpenAIEmbeddings = defineStage<
   Fields<'ingress.openaiEmbeddings.encodingFormat'>,
   Fields<'ingress.openaiEmbeddings.encodingFormat'>,
-  Fields<'ingress.openaiEmbeddings.encodingFormat' | 'response.openaiEmbeddings.canonical' | 'response.http.headers'>,
+  Fields<'ingress.openaiEmbeddings.encodingFormat' | 'response.openaiEmbeddings.canonical' | 'response.http.status' | 'response.http.headers'>,
   Fields<'response.openaiEmbeddings.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitOpenAIEmbeddings',
@@ -24,7 +24,7 @@ export const emitOpenAIEmbeddings = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.openaiEmbeddings.canonical', 'response.http.headers'],
+      needs: ['response.openaiEmbeddings.canonical', 'response.http.headers', 'response.http.status'],
       consumes: ['response.openaiEmbeddings.canonical', 'response.http.headers'],
       provides: ['response.openaiEmbeddings.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -51,7 +51,7 @@ export const emitOpenAIEmbeddings = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.http.status': 200,
+      'response.http.status': back['response.http.status'],
       'response.openaiEmbeddings.rendered': move(renderOpenAIEmbeddingsResponse(back['ingress.openaiEmbeddings.encodingFormat'], answer)),
     };
   },

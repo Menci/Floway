@@ -21,7 +21,7 @@ const isFrames = (answer: OpenAICompletionsFacts['response.openaiCompletions.pay
 export const emitOpenAICompletions = defineStage<
   Fields<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
   Fields<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
-  Fields<'ingress.openaiCompletions.wantsUsageChunk' | 'response.openaiCompletions.payload' | 'response.http.headers'>,
+  Fields<'ingress.openaiCompletions.wantsUsageChunk' | 'response.openaiCompletions.payload' | 'response.http.status' | 'response.http.headers'>,
   Fields<'response.openaiCompletions.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitOpenAICompletions',
@@ -32,7 +32,7 @@ export const emitOpenAICompletions = defineStage<
       provides: ['request.openaiCompletions.payload'],
     },
     response: {
-      needs: ['response.openaiCompletions.payload', 'response.http.headers'],
+      needs: ['response.openaiCompletions.payload', 'response.http.headers', 'response.http.status'],
       consumes: ['response.openaiCompletions.payload', 'response.http.headers'],
       provides: ['response.openaiCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -51,13 +51,10 @@ export const emitOpenAICompletions = defineStage<
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
-    // A refusal keeps the status the upstream gave it. Anything that answered is a 200 the
-    // gateway says itself, because what the client receives is serialized here rather than
-    // relayed — the upstream's own status is a fact further down for whoever wants it.
     return {
       ...rest,
       'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
-      'response.http.status': isFailure(answer) ? answer.status : 200,
+      'response.http.status': isFailure(answer) ? answer.status : back['response.http.status'],
       'response.openaiCompletions.rendered': move(rendered(answer, back['ingress.openaiCompletions.wantsUsageChunk'])),
     };
   },

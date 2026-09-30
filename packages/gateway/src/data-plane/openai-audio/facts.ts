@@ -2,7 +2,18 @@ import type { BillableEntity, GatewayFacts, Failure } from '../pipeline/facts.ts
 import type { Deferred } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIAudioTranscriptionResponseFormat, CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
-import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
+
+export interface AudioUpload {
+  readonly name: string;
+  readonly type: string;
+  readonly lastModified: number;
+  readonly bytes: Uint8Array<ArrayBuffer>;
+}
+
+export interface AudioFormEntry {
+  readonly name: string;
+  readonly value: string | AudioUpload;
+}
 
 /** The answer while it is still the upstream's, one event at a time. It is a view and not a
  *  resource: what owns the connection is `response.http.body`, which is where release and
@@ -32,9 +43,8 @@ export interface OpenAIAudioTranscriptionFacts extends GatewayFacts {
   'ingress.openaiAudioTranscription.responseFormat': OpenAIAudioTranscriptionResponseFormat;
   /** The multipart form as ordered semantic entries. The body is parsed before routing
    *  because field order is unconstrained, and every candidate builds a fresh body from
-   *  these, so a retry never reuses a consumed one. The bytes the client sent are recorded
-   *  at `ingress.http.body`, which is where a dump reads the upload itself. */
-  'request.openaiAudioTranscription.form': readonly OpenAIAudioTranscriptionFormEntry[];
+   *  these, so a retry never reuses a consumed one. Uploaded files carry their metadata and bytes as portable content values. */
+  'request.openaiAudioTranscription.form': readonly AudioFormEntry[];
   /** The one transcription, whichever rendering carried it — or the events it is arriving
    *  as, or the failure that came instead. A stream, a value and a failure sit at one key:
    *  telling them apart is reading a value, and each stage does that where it needs to. */
