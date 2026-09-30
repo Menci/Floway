@@ -7,7 +7,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { compose, defer, defineStage, isDeferred, move, run } from '../src/index.ts';
-import type { Logger } from '../src/index.ts';
 
 const ending = (produce: () => unknown) => defineStage<Record<string, never>, { readonly 'x.settled': unknown }>({
   name: 'ending',
@@ -16,15 +15,6 @@ const ending = (produce: () => unknown) => defineStage<Record<string, never>, { 
 });
 
 const pipelineOf = (produce: () => unknown) => compose('deferring', [ending(produce)]);
-
-const logger = (): Logger & { readonly errors: { message: string; fields?: Readonly<Record<string, unknown>> }[] } => {
-  const errors: { message: string; fields?: Readonly<Record<string, unknown>> }[] = [];
-  return {
-    errors,
-    debug: () => {}, info: () => {}, warn: () => {},
-    error: (message, fields) => { errors.push({ message, ...(fields === undefined ? {} : { fields }) }); },
-  };
-};
 
 describe('a deferred fact', () => {
   it('is a claim on the value, not a promise the runner went looking for', () => {
@@ -56,34 +46,28 @@ describe('a deferred fact', () => {
 
   // A failure that nobody hears about is a row nobody writes and nobody misses.
   it('reports a failure rather than swallowing it', async () => {
-    const log = logger();
+    const error = new Error('the write failed');
     const { drain } = await run(
-      pipelineOf(() => defer(Promise.reject(new Error('the write failed')))),
+      pipelineOf(() => defer(Promise.reject(error))),
       move({}),
-      { log },
+      {},
     );
-
-    await drain();
-
-    expect(log.errors).toHaveLength(1);
-    expect(log.errors[0]!.message).toBe('a deferred fact failed');
-    expect(String(log.errors[0]!.fields?.error)).toContain('the write failed');
+    await expect(drain()).rejects.toBe(error);
   });
 
-  // A value that never settles would otherwise hold teardown open forever. Giving up is
-  // itself an event: an error a reader can act on, not silence.
-  it('gives up loudly rather than waiting forever', async () => {
+  it('does not fail declared work after an arbitrary wall-clock deadline', async () => {
     vi.useFakeTimers();
     try {
-      const log = logger();
-      const { drain } = await run(pipelineOf(() => defer(new Promise(() => { /* never */ }))), move({}), { log });
-
-      const settled = drain();
-      await vi.advanceTimersByTimeAsync(30_000);
-      await settled;
-
-      expect(log.errors).toHaveLength(1);
-      expect(log.errors[0]!.message).toBe('teardown deadline exceeded');
+      let finish!: () => void;
+      const work = new Promise<void>(resolve => { finish = resolve; });
+      const { drain } = await run(pipelineOf(() => defer(work)), move({}), {});
+      let completed = false;
+      const draining = drain().then(() => { completed = true; });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(completed).toBe(false);
+      finish();
+      await draining;
+      expect(completed).toBe(true);
     } finally {
       vi.useRealTimers();
     }

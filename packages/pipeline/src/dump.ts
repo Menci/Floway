@@ -21,6 +21,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { base64 } from '@scure/base';
 
 import type { Facts } from './facts.ts';
+import { isDeferred } from './run.ts';
 import type { LogEntry, LogLevel } from './stage.ts';
 
 /** What the runner produces, with facts still as live objects. */
@@ -32,7 +33,8 @@ export type Event =
    *  lines are stored into that stage's record as well as going to the global sink. */
   | ({ readonly type: 'stage.log'; readonly stageId: number } & LogEntry)
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly unknown[] }
-  | { readonly type: 'stream.end'; readonly streamId: number };
+  | { readonly type: 'stream.end'; readonly streamId: number }
+  | { readonly type: 'deferred.settled'; readonly deferred: import('./run.ts').Deferred<unknown>; readonly outcome: PromiseSettledResult<unknown> };
 
 // --- Value kinds the space cannot hold as plain data -------------------------------
 
@@ -98,13 +100,8 @@ export const storedSecret = (value: Secret<unknown>): StoredSecret => {
   };
 };
 
-const REDACT_KEEP = 8;
-const REDACT_MINIMUM = REDACT_KEEP * 3;
-
 const redact = (rendered: string): string =>
-  rendered.length < REDACT_MINIMUM
-    ? '*'.repeat(rendered.length)
-    : `${rendered.slice(0, REDACT_KEEP)}****${rendered.slice(-REDACT_KEEP)}`;
+  '*'.repeat(rendered.length);
 
 export interface StoredSecret {
   readonly length: number;
@@ -119,6 +116,9 @@ export type Stored =
   | null | boolean | number | string
   | Ref
   | { readonly $stream: number }
+  | { readonly $readableStream: true }
+  | { readonly $deferred: true }
+  | { readonly $error: { readonly [key: string]: Stored } }
   | { readonly $secret: StoredSecret }
   | { readonly $bytes: string }
   | { readonly $undefined: true }
@@ -133,7 +133,8 @@ export type DumpEvent =
   | { readonly type: 'stage.log'; readonly stageId: number; readonly level: LogLevel; readonly context: string; readonly message: string; readonly fields?: Record<string, Stored> }
   | { readonly type: 'object'; readonly fromObjectId: number; readonly nodes: readonly Stored[] }
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly Stored[] }
-  | { readonly type: 'stream.end'; readonly streamId: number };
+  | { readonly type: 'stream.end'; readonly streamId: number }
+  | { readonly type: 'deferred.settled'; readonly deferred: Stored; readonly outcome: Stored };
 
 /**
  * A key that begins with `$` is written with one more, and a reader strips one back off.
@@ -205,11 +206,19 @@ const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => 
 
     // A buffer is atomic and records its full content, the way a string does — walking it
     // by index would turn one image into a JSON object with a key per byte.
-    const body = (value: object): Stored =>
-      isSecret(value) ? { $secret: storedSecret(value) }
-        : ArrayBuffer.isView(value) ? { $bytes: base64.encode(bytesOf(value)) }
-          : Array.isArray(value) ? value.map(write)
-            : Object.fromEntries(Object.entries(value).map(([key, child]) => [encodeKey(key), write(child)]));
+    const body = (value: object): Stored => {
+      if (isSecret(value)) return { $secret: storedSecret(value) };
+      if (value instanceof Blob) throw new TypeError('Pipeline facts must represent Blob and File content as bytes and metadata before recording');
+      if (value instanceof ReadableStream) return { $readableStream: true };
+      if (isDeferred(value)) return { $deferred: true };
+      if (value instanceof Error) {
+        const keys = new Set(['name', 'message', ...Object.getOwnPropertyNames(value)]);
+        return { $error: Object.fromEntries([...keys].map(key => [encodeKey(key), write((value as unknown as Record<string, unknown>)[key])])) };
+      }
+      if (ArrayBuffer.isView(value)) return { $bytes: base64.encode(bytesOf(value)) };
+      if (Array.isArray(value)) return value.map(write);
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [encodeKey(key), write(child)]));
+    };
 
     const encoded = Object.fromEntries(Object.entries(facts).map(([key, value]) => [encodeKey(key), write(value)]));
     if (nodes.length > 0) emit({ type: 'object', fromObjectId, nodes });
@@ -281,6 +290,12 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
     if (event.type === 'stream.frame') {
       const frames = event.frames.map(frame => encoder.encodeFacts({ frame }, emit)['frame']!);
       emit({ type: 'stream.frame', streamId: event.streamId, frames });
+      return out;
+    }
+
+    if (event.type === 'deferred.settled') {
+      const fields = encoder.encodeFacts({ deferred: event.deferred, outcome: event.outcome }, emit);
+      emit({ type: 'deferred.settled', deferred: fields['deferred']!, outcome: fields['outcome']! });
       return out;
     }
 
