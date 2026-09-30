@@ -50,9 +50,10 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.web_search_tool_type).toBe('text');
     expect(entry.shell_type).toBe('shell_command');
     expect(entry.support_verbosity).toBe(false);
-    expect(entry.prefer_websockets).toBe(true);
+    expect(entry).not.toHaveProperty('prefer_websockets');
     expect(entry.supports_parallel_tool_calls).toBe(true);
     expect(entry.supports_reasoning_summaries).toBe(false);
+    expect(entry.supports_reasoning_summary_parameter).toBe(false);
     expect(entry.apply_patch_tool_type).toBeNull();
     expect(entry.supported_reasoning_levels).toEqual([]);
     expect(entry.default_reasoning_level).toBeUndefined();
@@ -69,6 +70,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.base_instructions as string).toContain('You are Codex, a coding agent running in the Codex CLI.');
     expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
     expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+    expect(entry.model_messages?.instructions_template).toBe(entry.base_instructions);
   });
 
   test('base_instructions collapses to a single identity sentence when display_name equals id', () => {
@@ -85,13 +87,30 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   test('defaults context_window to 128k when registry omits max_context_window_tokens', () => {
-    // Without a value here, codex's `(cw * 9) / 10` auto-compact trigger
-    // would divide against an absent/zero window. The conservative default
-    // gives every synthesized entry a safe, low ceiling that an operator
-    // can raise by filling in the registry.
     const entry = synthesizeCatalogEntry({ ...base, limits: {} });
     expect(entry.context_window).toBe(128_000);
     expect(entry.max_context_window).toBe(128_000);
+  });
+
+  test.each([
+    { max_context_window_tokens: 1000000, max_prompt_tokens: 936000 },
+    { max_prompt_tokens: 936000 },
+  ])('uses the provider input cap for both windows: %j', limits => {
+    const entry = synthesizeCatalogEntry({ ...base, limits });
+    expect(entry.context_window).toBe(936000);
+    expect(entry.max_context_window).toBe(936000);
+  });
+
+  test('never expands beyond a smaller provider context cap', () => {
+    const entry = synthesizeCatalogEntry({ ...base, limits: { max_context_window_tokens: 100000, max_prompt_tokens: 120000 } });
+    expect(entry.context_window).toBe(100000);
+    expect(entry.max_context_window).toBe(100000);
+  });
+
+  test('preserves canonical model messages and opaque instruction sections from a matched catalog', () => {
+    const model_messages = { instructions_template: 'CURRENT PROMPT', tools: { custom: 'tool guidance' } };
+    const entry = synthesizeCatalogEntry(base, { ...bundledBase, model_messages });
+    expect(entry.model_messages).toEqual(model_messages);
   });
 
   test('derives image-aware web_search when modalities include image', () => {
