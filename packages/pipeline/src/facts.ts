@@ -13,7 +13,8 @@
 //   freeze(ReadableStream)               OK
 //
 // An HTTP body is a `Uint8Array`, so the freeze walk has to skip typed arrays — and a
-// value it skipped can never satisfy `Object.isFrozen`. The last row is the other half:
+// value it skipped can never satisfy `Object.isFrozen`. Native streams and blobs are also
+// registered without freezing their platform-owned implementation. The last row is the other half:
 // a shallow builtin freeze satisfies `Object.isFrozen` while its children stay mutable.
 // So membership in a `WeakSet` of handed-over roots is the gate, and `Object.freeze` is
 // what makes a later in-place write throw.
@@ -25,17 +26,17 @@
 const handedOver = new WeakSet<object>();
 
 /**
- * Hand a value to the record. Deep freezes it and registers every object inside, so the
- * gate can be read off the root alone: deep freezing implies frozen children, and a
- * value already handed over is not walked again.
+ * Hand a value to the record. Registers every object and freezes ordinary data, including
+ * non-enumerable error causes. Platform resources keep their native implementation mutable.
+ * A value already handed over is not walked again.
  */
 export const move = <T>(value: T): T => {
   const walk = (v: unknown): void => {
     if (v === null || typeof v !== 'object' || handedOver.has(v)) return;
     handedOver.add(v);
-    if (ArrayBuffer.isView(v)) return;
+    if (ArrayBuffer.isView(v) || v instanceof ReadableStream || v instanceof Blob) return;
     Object.freeze(v);
-    for (const child of Object.values(v)) walk(child);
+    for (const name of Object.getOwnPropertyNames(v)) walk((v as Record<string, unknown>)[name]);
   };
   walk(value);
   return value;

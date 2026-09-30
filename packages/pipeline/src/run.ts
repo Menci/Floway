@@ -13,7 +13,7 @@
 
 import type { Event } from './dump.ts';
 import type { Facts } from './facts.ts';
-import { assertHandedOver } from './facts.ts';
+import { assertHandedOver, move } from './facts.ts';
 import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
 
 /** Ownership is claimed, never sniffed.
@@ -41,10 +41,32 @@ const OWNED = Symbol('floway.owned');
 
 export type Owned = AsyncDisposable & { readonly [OWNED]: true };
 
+interface Ownership {
+  release: () => Promise<void>;
+  disposal: Promise<void> | undefined;
+}
+
+const ownership = new WeakMap<object, Ownership>();
+
 /** Marks a value the run must release, and gives it the release the runner will call.
  *  A value that owns nothing is never marked, so it rides through untouched. */
-export const own = <T extends object>(value: T, release: () => Promise<void>): T & Owned =>
-  Object.assign(value, { [OWNED]: true as const, [Symbol.asyncDispose]: release });
+export const own = <T extends object>(value: T, release: () => Promise<void>): T & Owned => {
+  if (ownership.has(value)) throw new Error('Resource is already owned; use setRelease to change its release action');
+  const state: Ownership = { release, disposal: undefined };
+  const releaseOnce = (): Promise<void> => {
+    state.disposal ??= (async () => { await state.release(); })();
+    return state.disposal;
+  };
+  const resource = Object.assign(value, { [OWNED]: true as const, [Symbol.asyncDispose]: releaseOnce });
+  ownership.set(resource, state);
+  return resource;
+};
+
+export const setRelease = (value: Owned, release: () => Promise<void>): void => {
+  const state = ownership.get(value)!;
+  if (state.disposal !== undefined) throw new Error('Cannot change a resource release action after disposal has started');
+  state.release = release;
+};
 
 export const isOwned = (value: unknown): value is Owned =>
   typeof value === 'object' && value !== null && OWNED in value;
@@ -52,11 +74,7 @@ export const isOwned = (value: unknown): value is Owned =>
 const DEFERRED = Symbol('floway.deferred');
 
 /** A value the run has started and has not finished. It is a property of the value, not a
- *  capability a stage was handed: what a run must wait for is legible from its own record.
- *
- *  A `Promise` rather than a `PromiseLike`, because branding one is all `defer` does — what
- *  comes back is the same object, and narrowing it to the smaller interface would make a
- *  caller reach for `Promise.resolve` to get back what it already had. */
+ *  capability a stage was handed: what a run must wait for is legible from its own record. */
 export type Deferred<T> = Promise<T> & { readonly [DEFERRED]: true };
 
 /**
@@ -89,8 +107,7 @@ export const isDeferred = (value: unknown): value is Deferred<unknown> =>
 const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'up', scope: RunScope): Facts => {
   for (const [key, value] of Object.entries(record)) {
     assertHandedOver(`${stage} handing ${way} ${key}`, value);
-    if (isOwned(value)) scope.outstanding.add(value);
-    if (isDeferred(value)) scope.deferred.add(value);
+    registerFact(value, record, scope);
   }
   for (const key of decl.provides) {
     if (!(key in record)) throw new Error(`${stage}: declared providing ${key} but did not`);
@@ -102,7 +119,35 @@ const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'u
   return Object.freeze(record);
 };
 
+const registerFact = (value: unknown, facts: Facts, scope: RunScope): void => {
+  if (isOwned(value)) scope.outstanding.add(value);
+  if (isDeferred(value) && !scope.deferred.has(value)) {
+    const settled = value.then(result => {
+      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'fulfilled', value: result }) });
+    }, error => {
+      captureFailure(error, facts, scope);
+      scope.emit({ type: 'deferred.settled', deferred: value, outcome: move({ status: 'rejected', reason: error }) });
+      throw error;
+    });
+    scope.deferred.set(value, settled);
+    // Teardown observes the original rejection; marking it handled now prevents
+    // a streamed answer from making that rejection unhandled before drain runs.
+    void settled.catch(() => {});
+  }
+};
+
 const NONE: readonly string[] = [];
+
+const failureFacts = new WeakMap<object, Facts>();
+
+export const getFailureFacts = (error: unknown): Facts | undefined =>
+  typeof error === 'object' && error !== null ? failureFacts.get(error) : undefined;
+
+const captureFailure = (error: unknown, facts: Facts, scope: RunScope): void => {
+  if (typeof error !== 'object' || error === null || scope.failures.has(error)) return;
+  scope.failures.add(error);
+  failureFacts.set(error, facts);
+};
 
 export const walk = async (
   pipeline: string,
@@ -118,84 +163,94 @@ export const walk = async (
   const parentStageId = scope.parentStageId;
   const pass = stage.through ?? stage.into;
   const branches: Facts[] = [];
+  let current = facts;
 
+  try {
   // Once, on the way in: what this stage initially saw. A fork is not this event
   // repeating — it is several *children* naming this stage as their parent, each entered
   // by its own descent, so the shape of a run is in the ids.
-  scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
+    scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
+    if (pass !== undefined) requireFacts(facts, pass.request.needs, `${stage.name} entering:`);
 
-  const descend: Descend = async (produced, target) => {
-    const handed = handOn(produced, pass!.request, stage.name, 'down', scope);
-    const outerParent = scope.parentStageId;
-    scope.parentStageId = stageId;
-    try {
-      if (target !== undefined) requireEntry(target, handed, `${stage.name} handing off`);
-      const out = target === undefined
-        ? await walk(pipeline, stages, index + 1, handed, services, scope)
-        : (await target.enter(handed as object, services, scope)) as Facts;
-      branches.push(out);
-      return out;
-    } finally {
-      scope.parentStageId = outerParent;
+    const descend: Descend = async (produced, target) => {
+      const handed = handOn(produced, pass!.request, stage.name, 'down', scope);
+      current = handed;
+      const outerParent = scope.parentStageId;
+      scope.parentStageId = stageId;
+      try {
+        if (target !== undefined) requireEntry(target, handed, `${stage.name} handing off`);
+        const out = target === undefined
+          ? await walk(pipeline, stages, index + 1, handed, services, scope)
+          : (await target.enter(handed as object, services, scope)) as Facts;
+        current = out;
+        requireFacts(out, pass!.response.needs, `${stage.name} receiving response:`);
+        branches.push(out);
+        return out;
+      } finally {
+        scope.parentStageId = outerParent;
+      }
+    };
+
+    // A stage that declared no way down is handed no continuation at all, which is the
+    // whole of what shape 1 means, so it is called with one fewer argument.
+    const use = { ...services, log: loggerFor(services, stage.name, stageId, scope) };
+    const call = stage.execute as unknown as (...args: readonly unknown[]) => Promise<Facts>;
+    const produced = pass === undefined
+      ? await call(facts, use)
+      : await call(facts, descend, use);
+
+    // Trait one fired: it never went down, so there is no response side to check — only the
+    // closed set it declared it would answer with. Answering is the same rule as handing
+    // down: the stage returns the whole record, and nothing is merged on its behalf.
+    if (branches.length === 0) {
+      if (stage.return === undefined) {
+        throw new Error(pass === undefined
+          ? `${stage.name}: answered without declaring 'return'`
+          : `${stage.name}: returned without calling next, and declares no 'return'`);
+      }
+      const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
+      scope.emit({ type: 'stage.leaved', stageId, facts: answer });
+      return answer;
     }
-  };
 
-  // A stage that declared no way down is handed no continuation at all, which is the
-  // whole of what shape 1 means, so it is called with one fewer argument.
-  const use = { ...services, log: loggerFor(services, stage.name, stageId, scope) };
-  const call = stage.execute as unknown as (...args: readonly unknown[]) => Promise<Facts>;
-  const produced = pass === undefined
-    ? await call(facts, use)
-    : await call(facts, descend, use);
-
-  // Trait one fired: it never went down, so there is no response side to check — only the
-  // closed set it declared it would answer with. Answering is the same rule as handing
-  // down: the stage returns the whole record, and nothing is merged on its behalf.
-  if (branches.length === 0) {
-    if (stage.return === undefined) {
-      throw new Error(pass === undefined
-        ? `${stage.name}: answered without declaring 'return'`
-        : `${stage.name}: returned without calling next, and declares no 'return'`);
-    }
-    const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
-    scope.emit({ type: 'stage.leaved', stageId, facts: answer });
-    return answer;
-  }
-
-  // It forked: every releasable it received must have been declared, because the branches
-  // it did not adopt are its own. This is checked at runtime because that is the level the
-  // property lives at — whether a stage branches is invisible in its signature.
-  if (branches.length > 1) {
-    const received = new Set<string>();
-    for (const branch of branches) {
-      for (const [key, value] of Object.entries(branch)) if (isOwned(value)) received.add(key);
-    }
-    const undeclared = [...received].filter(key => !pass!.response.consumes.includes(key));
-    if (undeclared.length > 0) {
-      throw new Error(
-        `${stage.name}: called next ${branches.length} times and received releasables `
+    // It forked: every releasable it received must have been declared, because the branches
+    // it did not adopt are its own. This is checked at runtime because that is the level the
+    // property lives at — whether a stage branches is invisible in its signature.
+    if (branches.length > 1) {
+      const received = new Set<string>();
+      for (const branch of branches) {
+        for (const [key, value] of Object.entries(branch)) if (isOwned(value)) received.add(key);
+      }
+      const undeclared = [...received].filter(key => !pass!.response.consumes.includes(key));
+      if (undeclared.length > 0) {
+        throw new Error(
+          `${stage.name}: called next ${branches.length} times and received releasables `
         + `it did not declare consuming: ${undeclared.join(', ')}`,
-      );
+        );
+      }
     }
-  }
 
-  const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
+    const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
 
-  // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
-  // consumes is one it took ownership of, so what it received there and did not hand on is
-  // released now — whether it descended once or many times, since ownership is a
-  // declaration and not an arity. The test is over *values*, not keys, so a releasable that
-  // came back under one key and rides up under another survives.
-  const kept = new Set(Object.values(handedUp).filter(isOwned));
-  for (const branch of branches) {
-    for (const key of pass!.response.consumes) {
-      const value = branch[key];
-      if (isOwned(value) && !kept.has(value)) await release(value, scope);
+    // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
+    // consumes is one it took ownership of, so what it received there and did not hand on is
+    // released now — whether it descended once or many times, since ownership is a
+    // declaration and not an arity. The test is over *values*, not keys, so a releasable that
+    // came back under one key and rides up under another survives.
+    const kept = new Set(Object.values(handedUp).filter(isOwned));
+    for (const branch of branches) {
+      for (const key of pass!.response.consumes) {
+        const value = branch[key];
+        if (isOwned(value) && !kept.has(value)) await release(value, scope);
+      }
     }
-  }
 
-  scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
-  return handedUp;
+    scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
+    return handedUp;
+  } catch (error) {
+    captureFailure(error, current, scope);
+    throw error;
+  }
 };
 
 /** Released once, by whoever gets there first. A stage may release in its own body with
@@ -206,10 +261,6 @@ const release = async (value: Owned, scope: RunScope): Promise<void> => {
   await value[Symbol.asyncDispose]();
 };
 
-/** How long teardown waits for what the run started. A value that never settles would hang
- *  teardown forever, so exceeding this is reported rather than waited through. */
-const TEARDOWN_DEADLINE_MS = 30_000;
-
 /**
  * Waits for what this run started, and says so loudly when something does not finish.
  *
@@ -217,41 +268,27 @@ const TEARDOWN_DEADLINE_MS = 30_000;
  * unreachable from the root's record, so a root-level sweep could never see them. Each run
  * tears down its own, and a branch nobody adopted still finishes what it began.
  */
-const settleDeferred = async (scope: RunScope, services: RunServices): Promise<void> => {
-  const pending = [...scope.deferred];
+const settleDeferred = async (scope: RunScope): Promise<void> => {
+  const pending = [...scope.deferred.values()];
   if (pending.length === 0) return;
   scope.deferred.clear();
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<'deadline'>(resolve => {
-    timer = setTimeout(() => { resolve('deadline'); }, TEARDOWN_DEADLINE_MS);
-  });
-  try {
-    const outcome = await Promise.race([
-      Promise.allSettled(pending).then(results => results),
-      deadline,
-    ]);
-    if (outcome === 'deadline') {
-      services.log?.error('teardown deadline exceeded', { pending: pending.length });
-      return;
+  const outcome = await Promise.allSettled(pending);
+  const errors = outcome.filter(result => result.status === 'rejected').map(result => result.reason as unknown);
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, 'Pipeline deferred facts failed');
+};
+
+const requireFacts = (facts: Facts, keys: readonly string[], who: string): void => {
+  for (const key of keys) {
+    if (!(key in facts)) {
+      throw new Error(`${who} needs ${key}, which it was not given`);
     }
-    for (const result of outcome) {
-      if (result.status === 'rejected') {
-        services.log?.error('a deferred fact failed', { error: String(result.reason) });
-      }
-    }
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
   }
 };
 
-const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: string): void => {
-  for (const key of target.entryNeeds) {
-    if (!(String(key) in handed)) {
-      throw new Error(`${who}: ${target.name} needs ${String(key)}, which it was not given`);
-    }
-  }
-};
+const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: string): void =>
+  requireFacts(handed, target.entryNeeds.map(String), `${who}: ${target.name}`);
 
 /** Each stage gets its own logger — the one capability the framework specializes by
  *  position. With a dump open its lines land in that stage's record as well as going to
@@ -314,7 +351,8 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   const scope: RunScope = {
     emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
     outstanding: new Set<Owned>(),
-    deferred: new Set<PromiseLike<unknown>>(),
+    deferred: new Map<Promise<unknown>, Promise<void>>(),
+    failures: new WeakSet<object>(),
     parentStageId: null,
     nextStageId: 1,
   };
@@ -322,9 +360,23 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   // so it cannot be rewritten after the run has recorded it.
   Object.freeze(initial);
 
-  const drain = async (): Promise<void> => {
-    for (const value of [...scope.outstanding]) await release(value, scope);
-    await settleDeferred(scope, services);
+  for (const value of Object.values(initial)) {
+    registerFact(value, initial as Facts, scope);
+  }
+
+  let draining: Promise<void> | undefined;
+  const drain = (): Promise<void> => {
+    if (draining !== undefined) return draining;
+    draining = (async () => {
+      const errors: unknown[] = [];
+      for (const value of scope.outstanding) {
+        try { await release(value, scope); } catch (error) { errors.push(error); }
+      }
+      try { await settleDeferred(scope); } catch (error) { errors.push(error); }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Pipeline resource cleanup failed');
+    })();
+    return draining;
   };
 
   try {
@@ -334,7 +386,14 @@ export const run = async <Entry extends object, Exit extends object, S extends R
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.
-    await drain();
+    try {
+      await drain();
+    } catch (cleanupError) {
+      if (cleanupError === error) throw error;
+      const combined = new AggregateError([error, cleanupError], 'Pipeline failed and resource cleanup also failed', { cause: error });
+      failureFacts.set(combined, getFailureFacts(error) ?? initial as Facts);
+      throw combined;
+    }
     throw error;
   }
 };
