@@ -3,6 +3,7 @@ import { test, vi } from 'vitest';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { openaiResponsesAttempt } from '../../../../src/data-plane/chat/openai-responses/attempt.ts';
+import { withOpenAIResponsesCompactShim } from '../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { openaiResponsesInterceptors } from '../../../../src/data-plane/chat/openai-responses/interceptors/index.ts';
 import type { OpenAIResponsesInterceptor } from '../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
@@ -721,7 +722,9 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
   // loop. Dispatch twice like that loop does; both invocations must start from
   // Standard rather than the first call's ephemeral names.
   const chain = openaiResponsesInterceptors as OpenAIResponsesInterceptor[];
-  chain.splice(1, 0, observer);
+  const compactIndex = chain.indexOf(withOpenAIResponsesCompactShim);
+  assert(compactIndex >= 0, 'expected the compaction interceptor in the dispatch chain');
+  chain.splice(compactIndex + 1, 0, observer);
   try {
     const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers: new Headers() });
     assert(result.type === 'events');
