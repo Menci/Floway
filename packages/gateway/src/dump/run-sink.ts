@@ -275,7 +275,7 @@ export interface StreamRecording {
  * family whose stream is bare protocol events says how one becomes a frame, because the record
  * cannot guess and a cast would be it guessing.
  */
-export function recordStream<T>(stream: AsyncIterable<ProtocolFrame<T>>, dump: RunDump | null): AsyncIterable<ProtocolFrame<T>>;
+export function recordStream<T extends ProtocolFrame<unknown>>(stream: AsyncIterable<T>, dump: RunDump | null): AsyncIterable<T>;
 export function recordStream<T>(stream: AsyncIterable<T>, dump: RunDump | null, asFrame: (value: T) => ProtocolFrame<unknown>): AsyncIterable<T>;
 export function recordStream<T>(
   stream: AsyncIterable<T>,

@@ -397,5 +397,5 @@ export const parseAnthropicBetaHeader = (raw: string | null | undefined): readon
 export { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from './to-result.ts';
 export { generateAnthropicId } from './id.ts';
 export { reassembleAnthropicMessagesEvents } from './reassemble.ts';
-export { anthropicMessagesProtocolFrameToSSEFrame } from './to-sse.ts';
+export { anthropicMessagesEventToSsePayload, anthropicMessagesProtocolFrameToSSEFrame } from './to-sse.ts';
 export { PROMPT_TOO_LONG_MESSAGE, buildPromptTooLongBody } from './context-window-error.ts';

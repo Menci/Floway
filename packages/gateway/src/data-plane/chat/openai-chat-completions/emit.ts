@@ -6,7 +6,7 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -71,11 +71,13 @@ export const emitOpenAIChatCompletions = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
+    const egress = wrapOpenAIChatCompletionsAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+      affinityEgressOptions(use.gateway),
+    );
     const frames = recordStream(
-      wrapOpenAIChatCompletionsAffinityEgress(
-        answer.frames as AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-        affinityEgressOptions(use.gateway),
-      ),
+      back['ingress.chat.openaiChatCompletions.wantsStream']
+        ? clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk']) : egress,
       use.gateway.dump,
     );
     if (!back['ingress.chat.openaiChatCompletions.wantsStream']) {
@@ -93,26 +95,30 @@ export const emitOpenAIChatCompletions = defineStage<
       ...rest,
       'response.chat.clientFrames': move(frames),
       'response.http.headers': forClient,
-      'response.chat.openaiChatCompletions.rendered': move(renderSSE(frames, back['ingress.chat.openaiChatCompletions.wantsUsageChunk'])),
+      'response.chat.openaiChatCompletions.rendered': move(renderSSE(frames)),
       'response.http.status': 200,
     };
   },
 });
 
-/** Metering asks the upstream for a usage chunk on every streaming turn; whether the client
- *  is shown it is the client's own question. The protocol owns which frame that is, and says
- *  so by writing no frame at all. */
+// Metering reads every usage chunk below this edge. A streaming client opts into seeing it,
+// so that protocol selection precedes the record of what the client is served.
+const clientFrames = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => includeUsageChunk ? frames : ({
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) {
+      if (frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
+      yield frame;
+    }
+  })(),
+});
+
 const renderSSE = (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  includeUsageChunk: boolean,
 ): AsyncIterable<SseFrame> => ({
   // The frames the client reads are a reframing of the ones the record holds, so this key
   // points at that same stream rather than at nothing.
   ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) {
-      const written = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
-      if (written !== null) yield written;
-    }
+    for await (const frame of frames) yield openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true });
   })(),
 });

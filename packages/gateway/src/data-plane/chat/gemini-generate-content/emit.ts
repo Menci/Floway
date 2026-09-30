@@ -7,8 +7,8 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
-import { collectGeminiGenerateContentProtocolEventsToResult, geminiGenerateContentProtocolFrameToSSEFrame, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { sseFrame, type EventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
  * The outermost edge. A Gemini generateContent answer is always a stream by the time it reaches
@@ -72,14 +72,12 @@ export const emitGeminiGenerateContent = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = recordStream(
-      wrapGeminiGenerateContentAffinityEgress(
-        answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
-        affinityEgressOptions(use.gateway),
-      ),
-      use.gateway.dump,
+    const egress = wrapGeminiGenerateContentAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
+      affinityEgressOptions(use.gateway),
     );
     if (!back['ingress.chat.geminiGenerateContent.wantsStream']) {
+      const frames = recordStream(egress, use.gateway.dump);
       return {
         ...rest,
         'response.chat.clientFrames': move(frames),
@@ -90,6 +88,7 @@ export const emitGeminiGenerateContent = defineStage<
         'response.http.status': 200,
       };
     }
+    const frames = recordStream(clientFrames(egress), use.gateway.dump);
     return {
       ...rest,
       'response.chat.clientFrames': move(frames),
@@ -100,16 +99,15 @@ export const emitGeminiGenerateContent = defineStage<
   },
 });
 
-/** Gemini generateContent streams one JSON object per `data:` line and has no sentinel to write, which the
- *  protocol says by writing no frame at all for the one that ends the stream. */
-const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<SseFrame> => ({
-  // The frames the client reads are a reframing of the ones the record holds, so this key
-  // points at that same stream rather than at nothing.
+const clientFrames = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<EventFrame<GeminiGenerateContentStreamEvent>> => ({
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) if (frame.type === 'event') yield frame;
+  })(),
+});
+
+const renderSSE = (frames: AsyncIterable<EventFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<SseFrame> => ({
   ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) {
-      const written = geminiGenerateContentProtocolFrameToSSEFrame(frame);
-      if (written !== null) yield written;
-    }
+    for await (const frame of frames) yield sseFrame(JSON.stringify(frame.event));
   })(),
 });

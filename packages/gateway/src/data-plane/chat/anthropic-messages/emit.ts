@@ -7,8 +7,8 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesProtocolFrameToSSEFrame, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { sseFrame, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
+import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 
 /**
  * The outermost edge. An Anthropic Messages answer is always a stream by the time it reaches here —
@@ -69,14 +69,12 @@ export const emitAnthropicMessages = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = recordStream(
-      wrapAnthropicMessagesAffinityEgress(
-        answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
-        affinityEgressOptions(use.gateway),
-      ),
-      use.gateway.dump,
+    const egress = wrapAnthropicMessagesAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+      affinityEgressOptions(use.gateway),
     );
     if (!back['ingress.chat.anthropicMessages.wantsStream']) {
+      const frames = recordStream(egress, use.gateway.dump);
       return {
         ...rest,
         'response.chat.clientFrames': move(frames),
@@ -87,6 +85,7 @@ export const emitAnthropicMessages = defineStage<
         'response.http.status': 200,
       };
     }
+    const frames = recordStream(clientFrames(egress), use.gateway.dump);
     return {
       ...rest,
       'response.chat.clientFrames': move(frames),
@@ -97,19 +96,22 @@ export const emitAnthropicMessages = defineStage<
   },
 });
 
-/** Anthropic names its own SSE events, and every frame that has one is the client's. Which
- *  frames have an SSE form at all is the protocol's to say, and it says so by writing no
- *  frame — a stream terminator is an OpenAI Chat Completions idea and there is nothing to send for
- *  it here. */
-const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncIterable<SseFrame> => ({
-  // The frames the client reads are a reframing of the ones the record holds, so this key
-  // points at that same stream rather than at nothing.
-  ...streamReferenceOf(frames),
+type ClientEvent = ReturnType<typeof anthropicMessagesEventToSsePayload>;
+
+// SSE citations have their wire spelling before recording; the protocol's synthetic done
+// frame has no Anthropic client form. Nonstream reassembly retains its canonical events.
+const clientFrames = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncIterable<EventFrame<ClientEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
-      const written = anthropicMessagesProtocolFrameToSSEFrame(frame);
-      if (written !== null) yield written;
+      if (frame.type === 'event') yield eventFrame(anthropicMessagesEventToSsePayload(frame.event));
     }
+  })(),
+});
+
+const renderSSE = (frames: AsyncIterable<EventFrame<ClientEvent>>): AsyncIterable<SseFrame> => ({
+  ...streamReferenceOf(frames),
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) yield sseFrame(JSON.stringify(frame.event), frame.event.type);
   })(),
 });
 

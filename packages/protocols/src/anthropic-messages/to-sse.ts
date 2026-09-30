@@ -51,7 +51,7 @@ const citationToSsePayload = (citation: AnthropicMessagesTextCitation): Anthropi
       }
     : citation;
 
-const anthropicMessagesEventToSsePayload = (event: AnthropicMessagesStreamEvent): AnthropicMessagesSseEventPayload => {
+export const anthropicMessagesEventToSsePayload = (event: AnthropicMessagesStreamEvent): AnthropicMessagesSseEventPayload => {
   if (event.type === 'content_block_start') {
     const { content_block } = event;
     if (content_block.type !== 'text' || !content_block.citations) return event as AnthropicMessagesSseEventPayload;
