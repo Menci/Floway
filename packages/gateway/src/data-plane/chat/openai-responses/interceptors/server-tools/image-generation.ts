@@ -323,7 +323,6 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
 // declaration before selecting the last config, so an earlier invalid entry
 // fails. toolPath identifies its source carrier in the error.
 // https://developers.openai.com/api/docs/guides/tools-image-generation
-// https://github.com/Menci/Floway/pull/24
 const validateHostedImageGenerationEntry = (
   tool: OpenAIResponsesHostedTool,
   toolPath: string,

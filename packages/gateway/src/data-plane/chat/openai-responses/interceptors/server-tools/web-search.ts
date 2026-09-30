@@ -378,10 +378,8 @@ const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError
   return null;
 };
 
-// Validate every hosted declaration; the last one in collected order supplies
-// runtime filters. Azure and Copilot probes found last-entry precedence for
-// repeated web_search declarations within a tools array.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+// Validate every hosted declaration before selecting the last one's runtime
+// filters, so an earlier invalid declaration cannot be masked.
 export const prepareToolsForShim = (
   tools: OpenAIResponsesTool[],
   paths?: readonly string[],

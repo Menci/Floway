@@ -365,11 +365,9 @@ const historicalClientCallableUsesName = (name: string, input: readonly OpenAIRe
       && item.namespace === undefined && item.name === name;
   });
 
-// Within one tools array, use the last matching declaration's configuration
-// at the first matching slot so unrelated tools retain their order. Azure and
-// Copilot probes found last-entry precedence for repeated web_search; Azure
-// also grouped web_search aliases.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+// Collapse matching hosted declarations within each tools array. Keep the
+// last declaration's configuration at the first matching slot so unrelated
+// tools retain their relative order.
 const rewriteToolsForHostedShim = (
   tools: readonly OpenAIResponsesTool[],
   hosted: ServerToolHostedDispatch,
