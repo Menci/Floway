@@ -14,7 +14,7 @@ const registerOpenAIEmbeddingsUpstream = async (
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await saveUpstreamForTest(repo.upstreams,buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embeddings',
     name: 'Embedding Provider',
     sortOrder: 100,
@@ -124,7 +124,7 @@ test('when every candidate refuses the client gets the last upstream-s own refus
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   for (const [id, host, order] of [['up_a', 'up-a.example.com', 100], ['up_b', 'up-b.example.com', 200]] as const) {
-    await saveUpstreamForTest(repo.upstreams,buildCustomUpstreamRecord({
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id, name: id, sortOrder: order,
       config: { baseUrl: `https://${host}`, authStyle: 'bearer', ingressHeadersRules: [], apiKey: 'sk-x', endpoints: {} },
     }));

@@ -12,7 +12,7 @@ import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-ut
 const registerOpenAIImagesModel = async (repo: InMemoryRepo): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await saveUpstreamForTest(repo.upstreams,buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_images',
     name: 'Image Provider',
     sortOrder: 100,
