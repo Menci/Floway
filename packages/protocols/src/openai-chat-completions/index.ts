@@ -1,4 +1,8 @@
 // OpenAI Chat Completions type definitions (subset needed for translation)
+import type { FlowayOpenAIChatCompletionsReasoningCarrier } from './reasoning-format.ts';
+
+export * from './reasoning-format.ts';
+export * from './reasoning.ts';
 
 export interface OpenAIChatCompletionsPayload {
   model: string;
@@ -45,7 +49,7 @@ export interface OpenAIChatCompletionsTool {
   };
 }
 
-export interface OpenAIChatCompletionsMessage {
+export interface OpenAIChatCompletionsMessage extends FlowayOpenAIChatCompletionsReasoningCarrier {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'developer';
   content: string | OpenAIChatCompletionsContentPart[] | null;
   name?: string;
@@ -136,7 +140,7 @@ interface OpenAIChatCompletionsUsage {
 
 export interface OpenAIChatCompletionsChoiceNonStreaming {
   index: number;
-  message: {
+  message: FlowayOpenAIChatCompletionsReasoningCarrier & {
     role: 'assistant';
     content: string | null;
     tool_calls?: OpenAIChatCompletionsToolCall[];
@@ -154,7 +158,7 @@ interface OpenAIChatCompletionsChoiceStreaming {
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
 }
 
-export interface OpenAIChatCompletionsDelta {
+export interface OpenAIChatCompletionsDelta extends FlowayOpenAIChatCompletionsReasoningCarrier {
   content?: string | null;
   role?: string;
   tool_calls?:
