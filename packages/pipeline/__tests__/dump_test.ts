@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { attemptPipeline, makeProvider, servePipeline } from './fixtures.ts';
-import { createRunEncoder, encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
+import { compose, createRunEncoder, defer, defineStage, encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
 import type { DumpEvent, Event, Stored } from '../src/index.ts';
 
 /** The dump only records when the prologue resolved a sink, so these runs bring one. */
@@ -89,7 +89,7 @@ describe('the dump encoding', () => {
     const token = secret('eyJhbGciOiJIUzI1NiJ9.super-secret-payload.qJp-QV30');
     expect(isSecret(token)).toBe(true);
     const stored = storedSecret(token);
-    expect(stored.redacted).toBe('eyJhbGci****qJp-QV30');
+    expect(stored.redacted).toBe('*'.repeat(50));
     expect(stored.length).toBe(50);
     expect(stored.hash).toMatch(/^0x[0-9a-f]{16}$/);
     const written = JSON.stringify(encodeFacts(move({ auth: token })));
@@ -109,6 +109,51 @@ describe('the dump encoding', () => {
 
   it('masks a short secret entirely rather than showing most of it', () => {
     expect(storedSecret(secret('short')).redacted).toBe('*****');
+  });
+
+  it('records portable file metadata and bytes exactly', () => {
+    const events = encodeFacts(move({ upload: { name: 'voice.wav', type: 'audio/wav', lastModified: 42, bytes: new Uint8Array([65, 66, 67]) } }));
+    const nodes = events.filter(event => event.type === 'object').flatMap(event => event.nodes);
+    expect(nodes).toContainEqual({ name: 'voice.wav', type: 'audio/wav', lastModified: 42, bytes: { $: 2 } });
+    expect(nodes).toContainEqual({ $bytes: 'QUJD' });
+    expect(() => encodeFacts(move({ upload: new File(['ABC'], 'voice.wav') }))).toThrow('bytes and metadata');
+  });
+
+  it('distinguishes a native body from a recorded protocol stream', () => {
+    const body = new ReadableStream<Uint8Array>({ start: controller => controller.close() });
+    const events = encodeFacts(move({ body, frames: streamFact(7) }));
+    expect(events.filter(event => event.type === 'object').flatMap(event => event.nodes)).toContainEqual({ $readableStream: true });
+    expect(events.find(event => event.type === 'stage.entered')?.facts?.['frames']).toEqual({ $stream: 7 });
+  });
+
+  it('retains non-enumerable error details and shared causes', () => {
+    const cause = new TypeError('provider fault');
+    const error = new AggregateError([cause], 'failed', { cause });
+    const events = encodeFacts(move({ error }));
+    const nodes = events.filter(event => event.type === 'object').flatMap(event => event.nodes);
+    const stored = nodes[0] as { $error: Record<string, Stored> };
+    expect(stored.$error['name']).toBe('AggregateError');
+    expect(stored.$error['message']).toBe('failed');
+    const stack = stored.$error['stack'];
+    const stackValue = typeof stack === 'object' && stack !== null && '$' in stack && typeof stack.$ === 'number' ? nodes[stack.$ - 1] : stack;
+    expect(stackValue).toBe(error.stack);
+    const errors = nodes[Number((stored.$error['errors'] as { $: number }).$) - 1] as Stored[];
+    expect(errors[0]).toEqual(stored.$error['cause']);
+  });
+
+  it('records deferred content when the original fact settles', async () => {
+    const pending = defer(Promise.resolve({ count: 3 }));
+    const seen: Event[] = [];
+    const ending = compose('deferredDump', [defineStage<Record<string, never>, { pending: typeof pending }>({
+      name: 'ending', return: { provides: ['pending'] }, execute: async facts => move({ ...facts, pending }),
+    })]);
+    const result = await run(ending, move({}), { dump: event => { seen.push(event); } });
+    await result.drain();
+    expect(seen.filter(event => event.type === 'deferred.settled')).toHaveLength(1);
+    const encoded = encodeRun(seen);
+    expect(encoded.filter(event => event.type === 'object').flatMap(event => event.nodes)).toContainEqual({ $deferred: true });
+    expect(encoded.find(event => event.type === 'deferred.settled')).toHaveProperty('deferred');
+    expect(JSON.stringify(encoded)).toContain('"count":3');
   });
 
   it('shares a large string by value, which reference sharing cannot reach', () => {

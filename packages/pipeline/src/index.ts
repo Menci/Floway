@@ -28,7 +28,7 @@ export type {
 
 export { compose } from './compose.ts';
 
-export { defer, isDeferred, isOwned, own, run } from './run.ts';
+export { defer, getFailureFacts, isDeferred, isOwned, own, run, setRelease } from './run.ts';
 export type { Deferred, Owned, RunResult } from './run.ts';
 
 export {

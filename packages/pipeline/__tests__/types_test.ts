@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CoreFacts } from './fixtures.ts';
 import { decodeKey, defineStage, encodeKey } from '../src/index.ts';
-import type { Pipeline, Slice } from '../src/index.ts';
+import type { IntoNext, Pipeline, Slice } from '../src/index.ts';
 
 type Core<K extends keyof CoreFacts> = Slice<CoreFacts, K>;
 
@@ -38,6 +38,18 @@ const leakCheck = (): void => gatewayOnly({
   },
 });
 void leakCheck;
+
+type ImageEntry = { payload: { operation: 'generate'; prompt: string } | { operation: 'edit'; image: string } };
+type GeneratedImageEntry = { payload: Extract<ImageEntry['payload'], { operation: 'generate' }> };
+declare const dispatchImage: IntoNext<ImageEntry, { image: string }>;
+declare const generateImage: Pipeline<GeneratedImageEntry, { image: string }>;
+
+const narrowTargetCheck = (): void => {
+  void dispatchImage({ payload: { operation: 'generate', prompt: 'hello' } }, generateImage);
+  // @ts-expect-error an edit payload cannot enter a generation-only target
+  void dispatchImage({ payload: { operation: 'edit', image: 'bytes' } }, generateImage);
+};
+void narrowTargetCheck;
 
 // The two `@ts-expect-error` markers above are the assertions: each fails the build if the
 // error it names stops occurring. What is left for runtime is the reader's half of the key

@@ -90,7 +90,7 @@ export type ThroughNext<Down extends object, Up extends object> =
  *  stage that declared `through` cannot name a target: a second argument is a compile
  *  error at the definition site. */
 export type IntoNext<Entry extends object, Up extends object> =
-  (handed: Handed<Entry>, target: Pipeline<Entry, Up>) => Promise<Up>;
+  <Target extends Entry>(handed: Handed<Target>, target: Pipeline<Target, Up>) => Promise<Up>;
 
 /** What one run holds, threaded rather than ambient. A module-level context saved and
  *  restored around an `await` interleaves two concurrent runs — one dump lost, the other
@@ -99,14 +99,13 @@ export type IntoNext<Entry extends object, Up extends object> =
 export interface RunScope {
   /** What this run started and has not finished. Filled at handover, the same moment
    *  ownership is, because a value only becomes the run's when it enters the record. */
-  readonly deferred: Set<PromiseLike<unknown>>;
+  readonly deferred: Map<Promise<unknown>, Promise<void>>;
   /** A no-op when the prologue resolved no dump sink, which is what makes recording
    *  conditional rather than a mode flag. */
   readonly emit: (event: import('./dump.ts').Event) => void;
-  /** Every owned value the run has accepted and nobody has released. Tracked where it is
-   *  created rather than where it lands, so a body opened below a throw is already known
-   *  before the stack unwinds past it. */
+  /** Every owned value accepted at entry or handover and not yet released. */
   readonly outstanding: Set<import('./run.ts').Owned>;
+  readonly failures: WeakSet<object>;
   parentStageId: number | null;
   nextStageId: number;
 }
