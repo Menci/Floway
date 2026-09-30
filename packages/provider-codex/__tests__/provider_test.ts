@@ -4,8 +4,10 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER } from '../src/constants.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
+import { exchangeResponse } from '@floway-dev/http/pipeline';
+import { move, run, setRelease, type Event } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, providerModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { callProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -91,6 +93,68 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createCodexProvider', () => {
+  test('Codex Images records the complete parsed 401 body and preserves its preceding endpoint observation', async () => {
+    const refusal = { error: { code: 'invalid_token', message: 'expired bearer' }, diagnostic: 'x'.repeat(600) };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse();
+      return new Headers(init?.headers).get('authorization') === 'Bearer at'
+        ? Response.json(refusal, { status: 401 })
+        : Response.json({ created: 1, data: [] });
+    });
+    const provider = createCodexProvider(current!);
+    const model = stubProviderModel({ id: 'gpt-image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const events: Event[] = [];
+    const options = noopUpstreamCallOptions();
+    const executed = await run(provider.pipelines.openaiImagesGenerations!, move({
+      'request.provider.model': providerModelFacts(model),
+      'request.provider.payload': { prompt: 'circle' },
+      'request.http.callId': 0,
+      'request.http.headers': [],
+    }), { httpCall: () => ({ ...options, signal: undefined }), dump: (event: Event) => { events.push(event); } });
+    expect(events.some(event => event.type === 'stage.leaved' && JSON.stringify(event.facts['response.codex.failureBody']) === JSON.stringify(refusal))).toBe(true);
+    expect(executed.facts['response.provider.previousCalls']).toEqual([{ modelKey: 'gpt-image-2' }]);
+    const exchange = executed.facts['response.http.exchange'];
+    if (exchange.type !== 'response') throw new Error('expected final model reply');
+    await exchangeResponse(exchange).arrayBuffer();
+    if (exchange.body !== null) setRelease(exchange.body, async () => {});
+    await executed.drain();
+  });
+
+  test('Codex Images pipeline preserves the image turn and payload across a renewable 401 retry', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse();
+      const headers = new Headers(init?.headers);
+      return headers.get('authorization') === 'Bearer at'
+        ? new Response(JSON.stringify({ error: { code: 'invalid_token', message: 'expired bearer' } }), { status: 401 })
+        : new Response(JSON.stringify({ created: 1, data: [{ b64_json: 'image' }] }), { status: 201, headers: { 'x-upstream': 'retained' } });
+    });
+    const provider = createCodexProvider(current!);
+    const model = stubProviderModel({ id: 'gpt-image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const options = noopUpstreamCallOptions();
+    options.headers.set('x-codex-image-turn-id', 'stable-image-turn');
+    const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'blue circle' }, undefined, options);
+    expect(result.called).toBe(true);
+    expect(result.previousCalls).toEqual([{ modelKey: 'gpt-image-2' }]);
+    expect(result.response.status).toBe(201);
+    expect(result.response.headers.get('x-upstream')).toBe('retained');
+    const imageCalls = fetchSpy.mock.calls.filter(([input]) => String(input).endsWith('/codex/images/generations'));
+    expect(imageCalls).toHaveLength(2);
+    expect(imageCalls.map(([, init]) => new Headers(init?.headers).get('x-codex-image-turn-id'))).toEqual(['stable-image-turn', 'stable-image-turn']);
+    expect(await Promise.all(imageCalls.map(([, init]) => readJsonRequest(init!)))).toEqual([{ prompt: 'blue circle', model: 'gpt-image-2' }, { prompt: 'blue circle', model: 'gpt-image-2' }]);
+  });
+
+  test('Codex Images pipeline marks a preflight Free-plan refusal as an uncalled model endpoint', async () => {
+    current = { ...current!, state: { accounts: [{ ...(current!.state as CodexUpstreamState).accounts[0], accessToken: { ...freshAccessToken, planType: 'free' } }] } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const provider = createCodexProvider(current);
+    const model = stubProviderModel({ id: 'gpt-image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'blue circle' });
+    expect(result.response.status).toBe(403);
+    expect(result.called).toBe(false);
+    expect(result.previousCalls).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   test('owns request identity and turn metadata headers on the instance', () => {
     const provider = createCodexProvider(baseRecord);
 
@@ -338,7 +402,7 @@ describe('createCodexProvider', () => {
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const options = noopUpstreamCallOptions();
     options.headers.set('x-codex-image-turn-id', 'turn-image');
-    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
+    const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
     expect(result.response.status).toBe(200);
     expect(result.modelKey).toBe('gpt-image-2');
     const [url, init] = fetchSpy.mock.calls[0];
@@ -358,7 +422,7 @@ describe('createCodexProvider', () => {
     };
     const instance = createCodexProvider(freeRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
+    const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
     expect(result.response.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -370,7 +434,7 @@ describe('createCodexProvider', () => {
     };
     const instance = createCodexProvider(freeRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const result = await instance.instance.callOpenAIImagesEdits(model, {
+    const result = await callProviderPipeline(instance, 'openaiImagesEdits', model, {
       images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
       parameters: { prompt: 'edit' },
     }, undefined, noopUpstreamCallOptions());
@@ -389,8 +453,8 @@ describe('createCodexProvider', () => {
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const options = noopUpstreamCallOptions();
     options.headers.set('originator', 'chatgpt_cca');
-    const result = await instance.instance.callOpenAIImagesEdits(model, {
-      images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
+    const result = await callProviderPipeline(instance, 'openaiImagesEdits', model, {
+      images: [{ type: 'upload', file: { bytes: new TextEncoder().encode('image'), name: 'image.png', type: 'image/png' } }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
     expect(result.response.status).toBe(200);

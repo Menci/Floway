@@ -52,10 +52,10 @@ export interface CodexCallEffects {
 // Account selection shared by Codex backend calls. Every surface uses the same
 // OAuth credential, quota state, terminal-session classification, and refresh
 // retry contract; each operation owns its wire body and response decoding.
-interface CodexBackendCallBase {
+export interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
-  model: ProviderModel;
+  model: Pick<ProviderModel, 'id' | 'providerData'>;
   headers: Headers;
   signal?: AbortSignal;
   effects: CodexCallEffects;
@@ -142,7 +142,7 @@ export const callCodexOpenAIImagesEdits = async (opts: CallCodexOpenAIImagesEdit
   return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
 };
 
-const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
+export const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   if (opts.account.state !== 'active') {
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
@@ -548,7 +548,7 @@ const dispatchCodexHttpCall = async (
   return await classifyCodexHttpResponse(opts, response);
 };
 
-const classifyCodexHttpResponse = async (
+export const classifyCodexHttpResponse = async (
   opts: CodexBackendCallBase,
   response: Response,
   quotaPolicy: 'always' | 'when-present' = 'always',
@@ -564,25 +564,7 @@ const classifyCodexHttpResponse = async (
   }
 
   if (response.status === 401) {
-    const bodyText = await response.text();
-    const { code, message } = parseUpstreamError(bodyText);
-    if (opts.account.refresh_token === null) {
-      // An access-only credential cannot recover from a rejected bearer, so
-      // the row is marked best-effort — but a storage failure must never
-      // replace the upstream status, headers, or body the caller needs to
-      // diagnose what happened.
-      try {
-        await opts.effects.persistTerminalState('session_terminated', message);
-      } catch {
-        // The upstream response remains authoritative.
-      }
-      return new Response(bodyText, { status: 401, statusText: response.statusText, headers: response.headers });
-    }
-    if (code === 'token_invalidated') {
-      await opts.effects.persistTerminalState('session_terminated', message);
-      return synthetic503(`Codex session terminated: ${message}`);
-    }
-    return new Response(bodyText, { status: 401, statusText: response.statusText, headers: response.headers });
+    return await classifyCodexUnauthorizedResponse(opts, response, decodeCodexUpstreamError(await response.text()));
   }
 
   return response;
@@ -624,7 +606,7 @@ const dispatchCodexImageCall = async (
 // credential has nothing to re-mint from, its 401 was already classified as
 // terminal in `classifyCodexHttpResponse`, and the verbatim upstream response
 // is what reaches the client.
-const refreshAccessTokenForRetry = async (
+export const refreshAccessTokenForRetry = async (
   opts: CodexBackendCallBase,
   failedEntry: CodexAccessTokenEntry,
   fallbackPlan?: CodexPlanObservation,
@@ -862,17 +844,45 @@ const performImageCall = async (
   return { modelKey: opts.model.id, response };
 };
 
-const parseUpstreamError = (rawText: string): { code: string | null; message: string } => {
+export interface CodexUpstreamError {
+  readonly rawText: string;
+  readonly body: unknown;
+  readonly code: string | null;
+  readonly message: string;
+}
+
+export const decodeCodexUpstreamError = (rawText: string): CodexUpstreamError => {
+  let body: unknown;
   try {
-    const obj = JSON.parse(rawText) as { error?: { code?: unknown; message?: unknown }; detail?: unknown };
-    const code = obj.error && typeof obj.error === 'object' && typeof obj.error.code === 'string' ? obj.error.code : null;
-    const message = obj.error && typeof obj.error === 'object' && typeof obj.error.message === 'string'
-      ? obj.error.message
-      : typeof obj.detail === 'string' ? obj.detail : rawText.slice(0, 256);
-    return { code, message };
+    body = JSON.parse(rawText);
   } catch {
-    return { code: null, message: rawText.slice(0, 256) };
+    return { rawText, body: rawText, code: null, message: rawText.slice(0, 256) };
   }
+  const obj = typeof body === 'object' && body !== null ? body as { error?: { code?: unknown; message?: unknown }; detail?: unknown } : undefined;
+  const code = obj?.error && typeof obj.error === 'object' && typeof obj.error.code === 'string' ? obj.error.code : null;
+  const message = obj?.error && typeof obj.error === 'object' && typeof obj.error.message === 'string'
+    ? obj.error.message
+    : typeof obj?.detail === 'string' ? obj.detail : rawText.slice(0, 256);
+  return { rawText, body, code, message };
+};
+
+export const classifyCodexUnauthorizedResponse = async (opts: CodexBackendCallBase, response: Response, parsed: CodexUpstreamError): Promise<Response> => {
+  const { rawText, code, message } = parsed;
+  if (opts.account.refresh_token === null) {
+    // Access-only credentials retain the authoritative upstream reply even when
+    // the terminal-state write fails.
+    try {
+      await opts.effects.persistTerminalState('session_terminated', message);
+    } catch {
+      // The upstream response remains authoritative.
+    }
+    return new Response(rawText, { status: 401, statusText: response.statusText, headers: response.headers });
+  }
+  if (code === 'token_invalidated') {
+    await opts.effects.persistTerminalState('session_terminated', message);
+    return synthetic503(`Codex session terminated: ${message}`);
+  }
+  return new Response(rawText, { status: 401, statusText: response.statusText, headers: response.headers });
 };
 
 const imageUnavailableResult = (modelKey: string): ProviderCallResult => ({

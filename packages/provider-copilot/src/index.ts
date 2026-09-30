@@ -1,6 +1,7 @@
 import { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
 import { createCopilotProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
+export { createCopilotPipelines } from './pipelines.ts';
 
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,

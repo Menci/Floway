@@ -3,6 +3,7 @@ import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
 import { azureFetchOpenAIAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchOpenAICompletions, azureFetchOpenAIEmbeddings, azureFetchOpenAIImagesEdits, azureFetchOpenAIImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
 import { AZURE_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
+import { createAzurePipelines } from './pipelines.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
@@ -131,6 +132,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: azure.disabledPublicModelIds,
     modelPrefix: azure.modelPrefix,
     modelsCache: azure.modelsCache,
+    pipelines: createAzurePipelines(azure.config),
     instance,
   };
 };

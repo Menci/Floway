@@ -1,14 +1,15 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
 import { jsonRequestBody } from './json-request.ts';
 import type { ReplayableBody } from './options.ts';
+import { multipartBody as httpMultipartBody, type HttpFile, type HttpFormEntry, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
 
 // Each source stores one authoritative representation. Multipart requires
 // upload-like sources with no extra reference fields plus scalar parameters;
-// every other request uses JSON and encodes File uploads as data URLs.
+// every other request uses JSON and encodes upload bytes as data URLs.
 interface UploadedOpenAIImagesEditsSource {
   type: 'upload';
-  file: File;
+  file: HttpFile;
 }
 
 interface InlineOpenAIImagesEditsSource {
@@ -29,7 +30,7 @@ export interface OpenAIImagesEditsRequest {
   parameters: Record<string, unknown>;
 }
 
-const uploadedFile = (source: OpenAIImagesEditsSource, index: number): File | null => {
+const uploadedFile = (source: OpenAIImagesEditsSource, index: number): HttpFile | null => {
   if (source.type === 'upload') return source.file;
   if (source.type === 'reference') return null;
   const parsed = parseBase64ImageDataUrl(source.reference.image_url);
@@ -40,13 +41,12 @@ const uploadedFile = (source: OpenAIImagesEditsSource, index: number): File | nu
   } catch {
     return null;
   }
-  return new File([bytes], `image-${index}`, { type: parsed.mimeType });
+  return { bytes, name: `image-${index}`, type: parsed.mimeType };
 };
 
 const jsonReference = async (source: OpenAIImagesEditsSource): Promise<OpenAIImageEditReference> => {
   if (source.type === 'inline' || source.type === 'reference') return source.reference;
-  const bytes = new Uint8Array(await source.file.arrayBuffer());
-  return { image_url: `data:${source.file.type};base64,${bytesToBase64(bytes)}` };
+  return { image_url: `data:${source.file.type};base64,${bytesToBase64(source.file.bytes)}` };
 };
 
 const jsonBody = async (request: OpenAIImagesEditsRequest): Promise<Record<string, unknown>> => {
@@ -64,7 +64,7 @@ export const serializeOpenAIImagesEditsJsonPayload = async (
   model: string,
 ): Promise<Record<string, unknown>> => ({ ...await jsonBody(request), model });
 
-const multipartBody = (request: OpenAIImagesEditsRequest, model: string): FormData | null => {
+const multipartEntries = (request: OpenAIImagesEditsRequest, model: string): readonly HttpFormEntry[] | null => {
   const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
   const compatibleSources = sources.every(source =>
     source.type === 'upload'
@@ -73,7 +73,7 @@ const multipartBody = (request: OpenAIImagesEditsRequest, model: string): FormDa
     typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
   if (!compatibleSources || !compatibleParameters) return null;
 
-  const images: File[] = [];
+  const images: HttpFile[] = [];
   for (const [index, source] of request.images.entries()) {
     const file = uploadedFile(source, index);
     if (file === null) return null;
@@ -82,17 +82,30 @@ const multipartBody = (request: OpenAIImagesEditsRequest, model: string): FormDa
   const mask = request.mask === undefined ? undefined : uploadedFile(request.mask, images.length);
   if (mask === null) return null;
 
-  const form = new FormData();
-  for (const [name, value] of Object.entries(request.parameters)) form.append(name, String(value));
+  const entries: HttpFormEntry[] = Object.entries(request.parameters).map(([name, value]) => ({ name, value: String(value) }));
   const imageField = images.length === 1 ? 'image' : 'image[]';
-  for (const image of images) form.append(imageField, image);
-  if (mask !== undefined) form.append('mask', mask);
-  form.append('model', model);
-  return form;
+  for (const image of images) entries.push({ name: imageField, value: image });
+  if (mask !== undefined) entries.push({ name: 'mask', value: mask });
+  entries.push({ name: 'model', value: model });
+  return entries;
+};
+
+export const prepareOpenAIImagesEditsBody = async (request: OpenAIImagesEditsRequest, model: string): Promise<{ body: HttpBody; encoding: HttpBodyEncoding }> => {
+  const entries = multipartEntries(request, model);
+  return entries === null
+    ? { body: await serializeOpenAIImagesEditsJsonPayload(request, model), encoding: 'json' }
+    : { body: httpMultipartBody(entries), encoding: 'multipart' };
 };
 
 export const serializeOpenAIImagesEditsRequest = async (request: OpenAIImagesEditsRequest, model: string): Promise<FormData | ReplayableBody> => {
-  const multipart = multipartBody(request, model);
-  if (multipart !== null) return multipart;
+  const entries = multipartEntries(request, model);
+  if (entries !== null) {
+    const form = new FormData();
+    for (const { name, value } of entries) {
+      if (typeof value === 'string') form.append(name, value);
+      else form.append(name, new File([value.bytes as Uint8Array<ArrayBuffer>], value.name, { type: value.type, lastModified: value.lastModified }));
+    }
+    return form;
+  }
   return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
 };
