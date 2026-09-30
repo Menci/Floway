@@ -79,3 +79,15 @@ it('switches upstream attempts without showing the last attempt’s payload', as
   fireEvent.click(screen.getAllByRole('option')[0]!);
   expect((await screen.findByTestId('body-content')).textContent).toContain('first attempt');
 });
+
+it('masks credential headers in rendered run facts', () => {
+  const secret = 'Bearer private-request-token-1234567890';
+  const events = [
+    { type: 'object', fromObjectId: 1, nodes: [[['authorization', secret]]] },
+    { type: 'stage.entered', stageId: 1, name: 'serve', parentStageId: null, facts: { 'ingress.http.headers': { $: 1 } } },
+  ].map(event => `${JSON.stringify(event)}\n`).join('');
+  const view = renderInApp(<RequestDetailPanel record={{ shape: 'run', meta: record.meta, events }} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+  expect(view.container.textContent).not.toContain(secret);
+  expect(view.container.textContent).toContain('authorization');
+  expect(view.container.textContent).toContain('••••');
+});

@@ -6,6 +6,7 @@ import { EventList, RenderedEventList } from './events';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
+import { redactRunHeaders } from './run-redact';
 import { renderRunEvents } from './run-render';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
@@ -178,9 +179,10 @@ function RecordTiming({ meta }: { meta: DumpMetadata }) {
 
 function RunRecordDetail({ record }: { record: DumpRunRecord }) {
   const { t } = useTranslation();
-  const events = useMemo(() => renderRunEvents(record.events).map(event => ({
+  const redacted = useMemo(() => redactRunHeaders(record.events), [record.events]);
+  const events = useMemo(() => renderRunEvents(redacted).map(event => ({
     event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
-  })), [record.events]);
+  })), [redacted]);
   const failure = errorLabel(record.meta.error);
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
@@ -191,7 +193,7 @@ function RunRecordDetail({ record }: { record: DumpRunRecord }) {
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
-      <RenderedEventList events={events} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
+      <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
     </div>
   </div>;
 }
