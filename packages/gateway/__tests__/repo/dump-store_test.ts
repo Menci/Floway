@@ -159,7 +159,7 @@ test('FileDumpStore refuses a row that points at no run stream', async () => {
     .run();
 
   await expect(store.get('key_x', record.meta.id))
-    .rejects.toThrow(/dump record 01HZZ000000000000000000NORUN has no run stream to read/u);
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000NORUN response body descriptor.*type/su);
 });
 
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {
@@ -348,4 +348,20 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO', async ()
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('FileDumpStore filters all retained history before applying the page limit', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const now = Date.now();
+  for (let i = 0; i < 5; i++) {
+    const record = runRecord(`filter-${i}`, now - i);
+    record.meta.model = i === 4 ? 'needle-model' : 'other';
+    record.meta.error = i === 4 ? { kind: 'failed', reason: 'socket reset' } : null;
+    await store.put('key_x', record);
+  }
+  expect((await store.list('key_x', { q: 'needle', limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
+  expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
+  expect(await store.list('key_x', { q: "' OR 1=1 --", limit: 1 })).toEqual([]);
+  expect(await store.list('other-key', { q: 'needle', limit: 1 })).toEqual([]);
 });

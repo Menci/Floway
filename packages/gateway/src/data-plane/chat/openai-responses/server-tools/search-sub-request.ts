@@ -1,16 +1,5 @@
-// The search a shim runs, as a run of its own.
-//
-// Ruling 2-and-6: a server tool's backend call is not part of the turn that asked for it — it is
-// an independent run, with its own prologue, its own settlement and its own record. Its stages
-// number from 1 like any run's, which is why the record has to be its own: events landing in the
-// parent's would collide with the parent's ids and read as one turn entering a stage twice.
-//
-// A search settles differently from an image, and the difference is real rather than an
-// omission. What the search backend charges is accounted per api key in units no model prices,
-// so this run bills no entity — the row it writes names none, which is the settlement stage's
-// own statement that a run which measured rather than generated still writes. And no
-// `PerformanceOperation` names search, so there is no sample for the performance half to land on.
-// What the run buys, then, is the record: a search that ran inside a turn is legible as its own.
+// Search backends run independently from the hosted-tool turn. The operations account for
+// their own API-key charges; the run records the search result without inventing model usage.
 
 import type { GatewayFacts } from '../../../pipeline/facts.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
@@ -22,31 +11,33 @@ import { compose, defineStage, move, run, type Pipeline } from '@floway-dev/pipe
 
 /** What one search call is, and what it came to. */
 export interface WebSearchSubRequestFacts extends GatewayFacts {
-  /** The call, already planned: the operations to run and nothing about the turn that asked. */
-  'request.webSearch.call': () => Promise<WebSearchCallIR>;
+  'request.webSearch.action': 'search';
   /** What the backend answered, in the shape the hosted-tool item is built from. */
   'response.webSearch.ir': WebSearchCallIR;
 }
 
 type W<K extends keyof WebSearchSubRequestFacts> = { [P in K]: WebSearchSubRequestFacts[P] };
 
+type SearchCall = () => Promise<WebSearchCallIR>;
+interface SearchServices extends GatewayServices { readonly searchCall: SearchCall }
+
 const runWebSearchCall = defineStage<
-  W<'request.webSearch.call'>,
+  W<'request.webSearch.action'>,
   W<'response.webSearch.ir'> & { 'response.usage.billable': readonly never[] },
-  GatewayServices
+  SearchServices
 >({
   name: 'runWebSearchCall',
   return: { provides: ['response.webSearch.ir', 'response.usage.billable'] },
-  execute: async facts => move({
+  execute: async (facts, use) => move({
     ...facts,
-    'response.webSearch.ir': await facts['request.webSearch.call'](),
+    'response.webSearch.ir': await use.searchCall(),
     // No model was called, so there is no entity to bill: what the backend charges is accounted
     // per api key by the operations as they run.
     'response.usage.billable': [],
   }) as never,
 });
 
-const webSearchSubRequestPipeline: Pipeline<W<'request.webSearch.call'>, W<'response.webSearch.ir'>> =
+const webSearchSubRequestPipeline: Pipeline<W<'request.webSearch.action'>, W<'response.webSearch.ir'>> =
   compose('webSearchSubRequest', [
     writeSettlement(() => false),
     runWebSearchCall,
@@ -61,7 +52,7 @@ const webSearchSubRequestPipeline: Pipeline<W<'request.webSearch.call'>, W<'resp
  */
 export const runWebSearchSubRequest = async (
   parent: GatewayCtx,
-  call: WebSearchSubRequestFacts['request.webSearch.call'],
+  call: SearchCall,
 ): Promise<WebSearchCallIR> => {
   const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   const dump = parent.dump?.openSubRequest({ method: 'POST', path: '/alpha/search' }, false, attempt.timing) ?? null;
@@ -75,8 +66,8 @@ export const runWebSearchSubRequest = async (
 
   const { facts, drain } = await run(
     webSearchSubRequestPipeline,
-    move({ 'request.webSearch.call': call }) as never,
-    prologue.services as never,
+    move({ 'request.webSearch.action': 'search' }) as never,
+    { ...prologue.services, searchCall: call } as never,
   );
   // Nothing streams out of a search, so the run is over the moment it answers.
   await drain();

@@ -301,18 +301,17 @@ test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload byt
   );
 });
 
-/** How many frames a run record holds. The format writes each recorded frame as a
- *  `stream.frame` event, so counting them reads no object table. */
-const recordedFrameCount = (record: Parameters<typeof runRecordOf>[0]): number =>
-  eventsOf(runRecordOf(record))
-    .filter(event => event.type === 'stream.frame')
+const recordedFrameCount = (record: Parameters<typeof runRecordOf>[0]): number => {
+  const events = eventsOf(runRecordOf(record));
+  const selected = events.flatMap(event => {
+    const facts = event.facts as Record<string, { $stream: number }> | undefined;
+    return facts?.['response.chat.clientFrames'] === undefined ? [] : [facts['response.chat.clientFrames'].$stream];
+  }).at(-1);
+  assertExists(selected);
+  return events.filter(event => event.type === 'stream.frame' && event.streamId === selected)
     .reduce((total, event) => total + (event.frames as readonly unknown[]).length, 0);
+};
 
-// The record holds one frame per event the turn sent, and the count is what says so. Two
-// readers sit on the same iterable — the family's edge, which tees what a client is served
-// into the record, and this transport, which reads it to write each event to the socket — so a
-// second tee is invisible everywhere except here, and it would make the collected view the
-// dashboard replays show the whole turn twice.
 test('OpenAI Responses WebSocket records one frame per event it sent', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });

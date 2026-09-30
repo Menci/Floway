@@ -497,8 +497,7 @@ describe('the responses chain', () => {
     expect(answered.id).not.toBe('resp_1');
   });
 
-  // A compaction is one envelope rather than a stream: the upstream ran the turn, charged for
-  // it, and stated the counts in the body. It rides at the same key the frames would have.
+  // Native compaction counts pass through the same normalization and metering as generation.
   it('serves an upstream that answered with one envelope as that envelope', async () => {
     const compaction: OpenAIResponsesCompactionResult = {
       id: 'resp_compact_1',
@@ -520,7 +519,6 @@ describe('the responses chain', () => {
     expect(facts['response.http.status']).toBe(200);
     expect(facts['response.chat.openaiResponses.rendered']).toMatchObject({ object: 'response.compaction', usage: compaction.usage });
     expect(facts['response.chat.openaiResponses.streamedUsage']).not.toBeNull();
-    expect((facts['response.chat.openaiResponses.streamedUsage'] as Deferred<StreamOutcome> | null)).not.toBeNull();
     expect((await (facts['response.chat.openaiResponses.streamedUsage'] as Deferred<StreamOutcome>)).billable).toEqual([expect.objectContaining({ quantities: { input_tokens: '900', output_tokens: '40' } })]);
   });
 

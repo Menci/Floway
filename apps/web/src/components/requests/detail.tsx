@@ -4,6 +4,7 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { RenderedEventList } from './events';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
+import { redactRunHeaders } from './run-redact';
 import { renderRunEvents } from './run-render';
 import type { CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
@@ -57,9 +58,10 @@ function RecordTiming({ meta }: { meta: DumpMetadata }) {
 
 function RunRecordDetail({ record, collected }: { record: DumpRecord; collected: CollectedStream | null }) {
   const { t } = useTranslation();
-  const events = useMemo(() => renderRunEvents(record.events).map(event => ({
+  const redacted = useMemo(() => redactRunHeaders(record.events), [record.events]);
+  const events = useMemo(() => renderRunEvents(redacted).map(event => ({
     event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
-  })), [record.events]);
+  })), [redacted]);
   const failure = errorLabel(record.meta.error) ?? collected?.error;
   const [view, setView] = useState('run');
   return <div className="h-full min-h-0 flex flex-col">
@@ -74,7 +76,7 @@ function RunRecordDetail({ record, collected }: { record: DumpRecord; collected:
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
-      {view === 'run' ? <RenderedEventList events={events} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
+      {view === 'run' ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
         : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(collected!.result, null, 2)} json label={t('dashboard.requests.collected')} /></Suspense>}
     </div>
   </div>;

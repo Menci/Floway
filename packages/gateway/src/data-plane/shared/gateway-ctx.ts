@@ -95,6 +95,6 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 
 // Run the recording's finalize tee on the outgoing Response. Every inbound HTTP
 // wrapper returns its response through this seam so the dump applies uniformly
-// across happy-path, error, and passthrough paths.
+// across successful and failed turns.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
   ctx.dump?.finalize(response) ?? response;

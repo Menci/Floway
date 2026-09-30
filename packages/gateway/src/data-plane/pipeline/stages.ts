@@ -148,7 +148,7 @@ export const failover = ({ failed, owns, streamedUsage }: Forking) => defineStag
       // Owned on the way up and handed onward: every attempt's is this stage's to release,
       // and the one it adopts rides up with ownership going with it.
       consumes: owns as never,
-      provides: [...owns, 'response.usage.billable', ...(streamedUsage === undefined ? [] : [streamedUsage])] as never,
+      provides: [...owns, ...(streamedUsage === undefined ? [] : ['response.usage.billable', streamedUsage])] as never,
     },
   },
   execute: async (facts, next, use) => {

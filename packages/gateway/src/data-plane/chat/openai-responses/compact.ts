@@ -291,10 +291,7 @@ const callOpenAIResponsesCompactUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.openaiResponses': { kind: 'stream' as const, frames: syntheticEventsFromCompaction(result.result) },
-      // A compaction states its own counts, so what it billed is known before the frames are
-      // read. It travels as a reading still to come rather than as one already settled,
-      // because the verdict that goes with it is the edge's to add — and it is declared as
-      // this run's own, so the run waits for the verdict where it can see it.
+      // The outer meter reads the synthetic frames after this wire's usage normalizers.
       [OPENAI_RESPONSES_STREAMED_USAGE]: null,
       'response.usage.billable': billable,
       'response.http.headers': [],

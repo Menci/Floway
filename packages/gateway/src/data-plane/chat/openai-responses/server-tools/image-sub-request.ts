@@ -1,17 +1,8 @@
-// The image the shim generates, as a run of its own.
-//
-// Ruling 2-and-6: a server tool's backend call is not part of the turn that asked for it — it is
-// an independent run, with its own prologue, its own settlement and its own record. Its stages
-// number from 1 like any run's, which is why the record has to be its own: events landing in the
-// parent's would collide with the parent's ids and read as one turn entering a stage twice.
-//
-// What the ending does is unchanged — resolve the pinned image model, dial it with the rate-limit
-// retry the hosted tool needs, and produce the lifecycle events the caller splices. What changes
-// is where its cost lands: the reading it settles is the one `writeSettlement` writes both rows
-// from, so a shim call bills through the same seam every other upstream call does rather than
-// through two hand-rolled telemetry calls beside it.
+// Hosted backend calls have independent runs, timing and settlement. Their stage and stream
+// ids belong to their own object space, so they never enter the parent turn's record.
 
 import type { ServerToolLifecycleEvent, ServerToolTerminal } from './shim.ts';
+import type { RunDump } from '../../../../dump/run-sink.ts';
 import { consoleLogSink } from '../../../../runtime/log.ts';
 import type { BillableEntity, GatewayFacts } from '../../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../../pipeline/serve.ts';
@@ -21,12 +12,11 @@ import { settleBillable, writeSettlement } from '../../../pipeline/settlement.ts
 import type { AttemptState, GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
 import { compose, defer, defineStage, move, run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
+import { eventFrame } from '@floway-dev/protocols/common';
 
 /** What one image call is, and what it comes to. */
 export interface ImageSubRequestFacts extends GatewayFacts {
-  /** The call, already planned: everything the ending needs to dial and nothing about the turn
-   *  that asked for it. */
-  'request.imageGeneration.call': (settle: SettleImageCall) => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
+  'request.imageGeneration.action': 'generate' | 'edit';
   /** The lifecycle the caller splices into its own answer. */
   'response.imageGeneration.lifecycle': AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
   /** What the call turned out to cost, once its events have run out — which is after this run
@@ -40,15 +30,41 @@ type I<K extends keyof ImageSubRequestFacts> = { [P in K]: ImageSubRequestFacts[
  *  the backend's own response, long after this run handed up. */
 export type SettleImageCall = (billable: readonly BillableEntity[], failed: boolean, telemetry: PerformanceTelemetryContext | undefined) => void;
 
+type ImageCall = (settle: SettleImageCall) => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
+interface ImageServices extends GatewayServices { readonly imageCall: ImageCall }
+
+const recordLifecycle = (source: AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>, dump: RunDump | null): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> => {
+  if (dump === null) return source;
+  const recording = dump.openStream();
+  const generator = (async function* () {
+    let completed = false;
+    try {
+      for (;;) {
+        const step = await source.next();
+        recording.frame(eventFrame(step.value));
+        if (step.done) {
+          completed = true;
+          recording.end();
+          return step.value;
+        }
+        yield step.value;
+      }
+    } finally {
+      if (!completed) await source.return(undefined as never);
+    }
+  })();
+  return Object.assign(generator, recording.fact);
+};
+
 /**
  * The ending. It hands up the lifecycle the caller drives, and the reading that lifecycle
  * settles — the same shape every streaming family hands up, for the same reason: the numbers
  * arrive with the last event.
  */
 const dialImageGeneration = defineStage<
-  I<'request.imageGeneration.call'>,
+  I<'request.imageGeneration.action'>,
   I<'response.imageGeneration.lifecycle' | 'response.imageGeneration.streamedUsage'> & { 'response.usage.billable': readonly BillableEntity[] },
-  GatewayServices
+  ImageServices
 >({
   name: 'dialImageGeneration',
   return: {
@@ -59,15 +75,14 @@ const dialImageGeneration = defineStage<
     // Declared as this run's own unfinished work, so the runner waits for it at teardown where
     // it can see it rather than the reading being started and forgotten.
     const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
-    const call = facts['request.imageGeneration.call'];
     return move({
       ...facts,
-      'response.imageGeneration.lifecycle': call((billable, failed, telemetry) => {
+      'response.imageGeneration.lifecycle': recordLifecycle(use.imageCall((billable, failed, telemetry) => {
         // The sample is attributed to this run's own attempt slot, which is what keeps the
         // turn that asked for the image from having its upstream stamp overwritten.
         use.gateway.attempt.telemetry = telemetry;
         settle({ billable, failed });
-      }),
+      }), use.gateway.dump),
       'response.imageGeneration.streamedUsage': outcome,
       // Nothing has been reported when this hands up; what the call turns out to have cost
       // arrives through the reading above.
@@ -77,7 +92,7 @@ const dialImageGeneration = defineStage<
 });
 
 const imageGenerationSubRequestPipeline: Pipeline<
-  I<'request.imageGeneration.call'>,
+  I<'request.imageGeneration.action'>,
   I<'response.imageGeneration.lifecycle' | 'response.imageGeneration.streamedUsage'>
 > = compose('imageGenerationSubRequest', [
   writeSettlement(
@@ -97,7 +112,7 @@ const imageGenerationSubRequestPipeline: Pipeline<
 export const runImageGenerationSubRequest = async (
   parent: GatewayCtx,
   action: 'generate' | 'edit',
-  call: ImageSubRequestFacts['request.imageGeneration.call'],
+  call: ImageCall,
 ): Promise<{
   readonly lifecycle: AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
   readonly drain: () => Promise<void>;
@@ -115,8 +130,8 @@ export const runImageGenerationSubRequest = async (
 
   const { facts, drain } = await run(
     imageGenerationSubRequestPipeline,
-    move({ 'request.imageGeneration.call': call }) as never,
-    prologue.services as never,
+    move({ 'request.imageGeneration.action': action }) as never,
+    { ...prologue.services, imageCall: call } as never,
   );
   return {
     lifecycle: facts['response.imageGeneration.lifecycle'],

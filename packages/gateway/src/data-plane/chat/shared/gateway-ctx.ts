@@ -9,9 +9,8 @@ import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/sto
 // persisting factory, non-OpenAI-Responses sources a no-backing scratchpad store, so
 // the server-tool shim's request-private state always has a home. Every chat
 // HTTP/WS entry constructs this via `createChatGatewayCtxFromHono` and threads
-// it through serve → narrow → attempt. Passthrough endpoints (OpenAI
-// Embeddings / OpenAI Images / OpenAI Audio Transcriptions / OpenAI
-// Completions) have no stored-items concept and stay on plain `GatewayCtx`.
+// it through candidate selection and protocol stages. Non-chat endpoints
+// have no stored-items concept and use `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
   readonly store: OpenAIResponsesStatefulStore;

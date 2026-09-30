@@ -117,7 +117,7 @@ export class RunDump {
 
   // --- terminal point ---
 
-  // Two input shapes, matching the edge accumulator's seam:
+  // Two transport-owned completion shapes:
   //
   //   • `(status, responseBytes)` — the caller already knows what it wrote.
   //   • `(response)` — tees the answer so the client gets bytes flowing while a
@@ -213,7 +213,7 @@ export class RunDump {
  *
  * `method` and `path` are passed rather than read off a request so a transport
  * that carries several turns over one connection can name each one as what it
- * is — the same reason the edge accumulator takes its method explicitly.
+ * is.
  */
 export const openRunDump = (
   apiKey: ApiKey,
