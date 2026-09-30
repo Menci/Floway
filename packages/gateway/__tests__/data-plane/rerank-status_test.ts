@@ -1,10 +1,10 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 // The two families that read their answer to the end, driven end to end. Until the review,
 // neither could express a status at all: an upstream 429, a resolver's 404 and a 400 all
 // reached the client as a 200 carrying an error envelope, which is not a difference the
 // no-passthrough ruling asks for — declining to forward a body is not declining to forward
 // a status.
-
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
