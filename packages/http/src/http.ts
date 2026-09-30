@@ -24,7 +24,7 @@ export const http = defineStage<HttpRequestFacts, HttpResponseFacts, HttpService
       try {
         response = await call.fetcher(facts['request.http.url'], init);
       } catch (error) {
-        use.log.warn('upstream transport failed', { error });
+        await use.log.warn('upstream transport failed', { error });
         return { type: 'transportFailure' as const, error };
       }
       return takeHttpResponse(response);
