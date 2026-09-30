@@ -178,7 +178,7 @@ const tagged = (value: unknown): Stored | undefined => {
  */
 const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => {
   const shareStringsFrom = options.shareStringsFrom ?? 1024;
-  const objectIds = new Map<object, number>();
+  const objectIds = new WeakMap<object, number>();
   const stringIds = new Map<string, number>();
   const byteIds = new Map<string, number>();
   let nextObjectId = 1;
