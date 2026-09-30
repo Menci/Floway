@@ -8,6 +8,7 @@ import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import { redactRunHeaders } from './run-redact';
 import { renderRunEvents } from './run-render';
+import { RunStages } from './run-stages';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -179,21 +180,26 @@ function RecordTiming({ meta }: { meta: DumpMetadata }) {
 
 function RunRecordDetail({ record }: { record: DumpRunRecord }) {
   const { t } = useTranslation();
+  const [view, setView] = useState('stages');
   const redacted = useMemo(() => redactRunHeaders(record.events), [record.events]);
-  const events = useMemo(() => renderRunEvents(redacted).map(event => ({
+  const count = useMemo(() => redacted.split('\n').filter(Boolean).length, [redacted]);
+  const events = useMemo(() => view === 'events' ? renderRunEvents(redacted).map(event => ({
     event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
-  })), [redacted]);
+  })) : [], [redacted, view]);
   const failure = errorLabel(record.meta.error);
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
-      <Text className="flex-1">{t('dashboard.requests.run')}</Text>
+      <Dropdown clearable={false} size="small" className="flex-1" aria-label={t('dashboard.requests.run')} selectedOptions={[view]} value={t(view === 'stages' ? 'dashboard.requests.stages' : 'dashboard.requests.events', { count })} onOptionSelect={(_, data) => setView(data.optionValue!)}>
+        <Option value="stages">{t('dashboard.requests.stages')}</Option>
+        <Option value="events">{t('dashboard.requests.events', { count })}</Option>
+      </Dropdown>
       <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
       <RecordTiming meta={record.meta} />
       <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
-      <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
+      {view === 'stages' ? <RunStages ndjson={redacted} /> : <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />}
     </div>
   </div>;
 }

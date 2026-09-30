@@ -99,7 +99,10 @@ the upstream HTTP status.
 
 Billing records each actual upstream usage observation independently, including
 multiple model calls within one hosted-tool turn. Pricing uses each observation's
-model identity and pricing facts. Request diagnostics sum the observed token
+model identity and pricing facts. The request inspector shows the stage tree, both fact
+directions, changes at each descent and return, and stage logs. Repeated objects retain
+shared identities, while deferred outcomes and native content descriptions remain visible.
+Request diagnostics sum the observed token
 quantities; performance uses the observed output count for TPOT and partial
 output failures.
 

@@ -139,6 +139,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols

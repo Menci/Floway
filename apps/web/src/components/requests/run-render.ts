@@ -25,6 +25,7 @@ const subjectOf = (event: DumpEvent): string | null => {
   case 'object':        return `#${event.fromObjectId}`;
   case 'stream.frame':
   case 'stream.end':    return `#${event.streamId}`;
+  case 'deferred.settled': return 'deferred';
   }
 };
 
