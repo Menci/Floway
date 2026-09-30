@@ -139,6 +139,45 @@ test.each(['http', 'websocket', 'standard'] as const)('native Custom Responses c
   assertEquals(headers.has(CODEX_RESPONSES_LITE_HEADER), transport === 'http');
 });
 
+test.each(['openaiChatCompletions', 'anthropicMessages'] as const)('Lite declarations and durable effort updates reach %s with alias rules applied last', async targetApi => {
+  installRepo();
+  const endpoints = { [targetApi]: {} };
+  const candidate: ModelCandidate = {
+    ...makeCandidate(async () => { throw new Error('Native Responses must not be called'); }),
+    model: stubInternalModel({ endpoints, providerModels: { up_test: stubProviderModel({ endpoints }) } }, 'up_test'),
+    rules: { reasoning: { effort: 'xhigh' } },
+  };
+  let calls = 0;
+  candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
+    assertEquals(body.reasoning_effort, 'xhigh');
+    assertEquals(body.tools?.map(tool => tool.type === 'function' ? tool.function.name : tool.type), ['lookup']);
+    assertEquals(body.messages.map(message => message.role), ['user']);
+    calls++;
+    return { ok: true, modelKey: 'test-model', events: (async function* () { yield doneFrame(); })() };
+  };
+  candidate.provider.instance.callAnthropicMessages = async (_model, body) => {
+    assertEquals(body.output_config?.effort, 'xhigh');
+    assertEquals(body.tools?.map(tool => tool.name), ['lookup']);
+    assertEquals(body.messages.map(message => message.role), ['user']);
+    calls++;
+    return { ok: true, modelKey: 'test-model', events: (async function* () { yield doneFrame(); })() };
+  };
+  const payload = makePayload({
+    reasoning: { effort: 'medium', summary: 'concise' },
+    input: [
+      { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] },
+      { type: 'configuration_update', reasoning: { effort: 'high' } },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'configuration_update', reasoning: { effort: 'low' } },
+    ] as unknown as CanonicalOpenAIResponsesPayload['input'],
+  });
+  const original = structuredClone(payload);
+  const result = await openaiResponsesAttempt.generate({ payload, candidate, ctx: makeGatewayCtx(), headers: new Headers({ [CODEX_RESPONSES_LITE_HEADER]: 'true' }) });
+  assertEquals(result.type, 'events');
+  assertEquals(calls, 1);
+  assertEquals(payload, original);
+});
+
 test('generate native success leaves source-edge state ownership to the caller', async () => {
   installRepo();
 

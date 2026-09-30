@@ -17,6 +17,28 @@ test('Codex models share the upstream-bound OpenAI opaque blob scope', () => {
 });
 
 describe('fetchCodexCatalog', () => {
+  test('projects catalog policies and opaque instructions into public metadata with explicit false and null intact', async () => {
+    const profile = {
+      auto_compact_token_limit: null, effective_context_window_percent: 90,
+      truncation_policy: { mode: 'bytes', limit: 20000 }, shell_type: 'disabled', apply_patch_tool_type: null,
+      default_verbosity: null, default_reasoning_summary: 'none', use_responses_lite: true,
+      supports_reasoning_effort_updates: true, supports_search_tool: true, web_search_tool_type: 'text',
+      tool_mode: null, multi_agent_version: 'v2', multi_agent_reasoning_effort: null,
+      include_skills_usage_instructions: true, include_plugin_usage_instructions: false, include_apps_usage_instructions: false,
+      model_messages: { instructions_template: '', future: { instructions: 'Preserve.' } },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{
+        slug: 'catalog-profile', display_name: 'Catalog Profile', context_window: 272000, max_context_window: 872000,
+        support_verbosity: false, base_instructions: 'Legacy instructions do not replace an explicit empty template.', ...profile,
+      }],
+    }));
+    const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
+    const model = codexRawToProviderModel(raw, new Set());
+    expect(model.chat).toMatchObject({ codex: { ...profile, default_context_window_tokens: 272000 }, verbosity: { supported: false } });
+    expect(model.limits).toEqual({ max_context_window_tokens: 872000 });
+    expect(model.providerData).toBeUndefined();
+  });
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [
