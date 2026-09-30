@@ -108,7 +108,10 @@ export const meterChatWire = <Event>(spec: {
     return move({
       ...back,
       [spec.answer]: { kind: 'stream' as const, frames },
-      [spec.streamedUsage]: prior.length === 0 ? metered.outcome : defer(metered.outcome.then(outcome => ({ ...outcome, billable: [...prior, ...outcome.billable] }))),
+      [spec.streamedUsage]: prior.length === 0 && use.gateway.abortSignal === undefined ? metered.outcome : defer(metered.outcome.then(outcome => ({
+        ...outcome, billable: prior.length === 0 ? outcome.billable : [...prior, ...outcome.billable],
+        failed: outcome.failed || use.gateway.abortSignal?.aborted === true,
+      }))),
     }) as never;
   },
 });

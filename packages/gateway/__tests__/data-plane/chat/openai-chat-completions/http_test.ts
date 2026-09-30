@@ -1,5 +1,5 @@
 import { type Context, Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
@@ -465,4 +465,42 @@ test('POST /v1/chat/completions leaves TTFT absent on a failure before output', 
   assertEquals(dumpStubs.stored.length, 1);
   const meta = dumpStubs.stored[0]!.record.meta;
   assertEquals(meta.ttftMs, null);
+});
+
+test('actual HTTP cancellation before the first client frame releases the called provider and settles failure once', async () => {
+  const repo = installRepo();
+  let unblock!: () => void;
+  const gate = new Promise<void>(resolve => { unblock = resolve; });
+  let closed!: () => void;
+  const stopped = new Promise<void>(resolve => { closed = resolve; });
+  let started = false;
+  let signal: AbortSignal | undefined;
+  const call = vi.fn(async (_model: unknown, _body: unknown, calledSignal?: AbortSignal): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    signal = calledSignal;
+    return ({
+      ok: true, modelKey: 'called-model', events: (async function* () {
+        started = true;
+        try {
+          await gate;
+          yield eventFrame(makeOpenAIChatCompletionsEvents()[1]!);
+        } finally { closed(); }
+      })(),
+    });
+  });
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions: call })]);
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  expect(response.status).toBe(200);
+  expect(started).toBe(true);
+  if (response.body === null) throw new Error('Streaming response has no client body');
+  await response.body.cancel();
+  expect(signal?.aborted).toBe(true);
+  unblock();
+  await stopped;
+  await flushBackground();
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(await repo.usage.listAll()).toMatchObject([{ modelKey: 'called-model', requests: 1 }]);
+  expect(await repo.performance.listAll()).toMatchObject([{ requests: 1, errorsNoOutput: 1, errorsWithOutput: 0 }]);
 });
