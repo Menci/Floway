@@ -89,6 +89,38 @@ test('buildTargetRequest omits tool_choice when Anthropic Messages omits it', ()
   assertFalse('tool_choice' in result);
 });
 
+test('buildTargetRequest preserves inline Anthropic tool additions at their conversation position', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [{ name: 'existing', input_schema: { type: 'object' }, defer_loading: true }],
+    messages: [
+      { role: 'user', content: 'First turn' },
+      {
+        role: 'system', content: [
+          { type: 'text', text: 'The task now needs a database.' },
+          { type: 'tool_addition', tool: { type: 'tool_reference', name: 'existing' } },
+          {
+            type: 'tool_addition', tool: {
+              type: 'tool_definition', definition: {
+                name: 'db_query', description: 'Query the database.',
+                input_schema: { type: 'object', properties: { sql: { type: 'string' } }, required: ['sql'] },
+              },
+            },
+          },
+        ],
+      },
+      { role: 'user', content: 'Query it.' },
+    ],
+  });
+
+  expect(result.tools).toMatchObject([{ type: 'function', name: 'existing', defer_loading: true }]);
+  expect(result.input.map(item => item.type)).toEqual(['message', 'message', 'additional_tools', 'additional_tools', 'message']);
+  expect(result.input[1]).toMatchObject({ role: 'system', content: [{ type: 'input_text', text: 'The task now needs a database.' }] });
+  expect(result.input[2]).toMatchObject({ type: 'additional_tools', tools: [{ type: 'function', name: 'existing' }] });
+  expect(result.input[3]).toMatchObject({ type: 'additional_tools', tools: [{ type: 'function', name: 'db_query' }] });
+});
+
 test('buildTargetRequest omits tool_choice when Anthropic Messages carries no client tools to apply it to', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

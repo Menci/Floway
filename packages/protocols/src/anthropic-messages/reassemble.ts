@@ -8,6 +8,7 @@ import type {
   AnthropicMessagesStreamEvent,
   AnthropicMessagesTextCitation,
   AnthropicMessagesThinkingBlock,
+  AnthropicMessagesToolSearchResultBlock,
   AnthropicMessagesToolUseBlock,
   AnthropicMessagesUsage,
   AnthropicMessagesUsageDelta,
@@ -77,7 +78,11 @@ type AnthropicMessagesToolUseBlockAccumulator = AnthropicMessagesToolUseBlock & 
   inputJson: string;
 };
 
-type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | AnthropicMessagesServerToolUseBlock | AnthropicMessagesWebSearchToolResultBlock | AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock | AnthropicMessagesFallbackBlock) & { extras?: Record<string, unknown> };
+type AnthropicMessagesServerToolUseBlockAccumulator = AnthropicMessagesServerToolUseBlock & {
+  inputJson: string;
+};
+
+type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | AnthropicMessagesServerToolUseBlockAccumulator | AnthropicMessagesWebSearchToolResultBlock | AnthropicMessagesToolSearchResultBlock | AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock | AnthropicMessagesFallbackBlock) & { extras?: Record<string, unknown> };
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
 // emits on `message_start.message`, on a `content_block`, or on the assembled
@@ -90,6 +95,7 @@ const KNOWN_BLOCK_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
   redacted_thinking: new Set(['type', 'data']),
   server_tool_use: new Set(['type', 'id', 'name', 'input']),
   web_search_tool_result: new Set(['type', 'tool_use_id', 'content']),
+  tool_search_tool_result: new Set(['type', 'tool_use_id', 'content']),
   fallback: new Set(['type', 'from', 'to', 'trigger']),
 };
 const FALLBACK_BLOCK_KNOWN = new Set(['type']);
@@ -150,10 +156,17 @@ const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEvent, { t
       id: block.id,
       name: block.name,
       input: block.input,
+      inputJson: '',
     });
   case 'web_search_tool_result':
     return withExtras({
       type: 'web_search_tool_result',
+      tool_use_id: block.tool_use_id,
+      content: block.content,
+    });
+  case 'tool_search_tool_result':
+    return withExtras({
+      type: 'tool_search_tool_result',
       tool_use_id: block.tool_use_id,
       content: block.content,
     });
@@ -187,7 +200,7 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
     return;
   }
   case 'input_json_delta':
-    if (block.type !== 'tool_use') return;
+    if (block.type !== 'tool_use' && block.type !== 'server_tool_use') return;
     block.inputJson += event.delta.partial_json ?? '';
     return;
   case 'thinking_delta':
@@ -202,11 +215,14 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
 };
 
 const finalizeToolUseInput = (block: AnthropicMessagesBlockAccumulator | undefined): void => {
-  if (block?.type !== 'tool_use' || !block.inputJson) return;
+  if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || !block.inputJson) return;
 
   try {
-    block.input = JSON.parse(block.inputJson);
-  } catch {
+    const input: unknown = JSON.parse(block.inputJson);
+    if (!isJsonObject(input)) throw new TypeError('Anthropic tool input must be a JSON object.');
+    block.input = input;
+  } catch (error) {
+    if (block.type === 'server_tool_use') throw error;
     // Anthropic Messages requires `input` to be an object even when the
     // upstream streamed malformed JSON for a tool call. Failing the whole
     // response on a partial/garbage tool_use is more hostile to clients than
@@ -226,7 +242,8 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
     const { citations, extras: _extras, ...textBlock } = block;
     return withExtras(citations.length > 0 ? ({ ...textBlock, citations } as AnthropicMessagesAssistantContentBlock) : (textBlock as AnthropicMessagesAssistantContentBlock));
   }
-  case 'tool_use': {
+  case 'tool_use':
+  case 'server_tool_use': {
     const { inputJson: _inputJson, extras: _extras, ...toolUseBlock } = block;
     return withExtras(toolUseBlock as AnthropicMessagesAssistantContentBlock);
   }

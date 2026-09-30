@@ -31,6 +31,7 @@ export interface AnthropicMessagesAttemptArgs {
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
   readonly anthropicBeta: readonly string[];
+  readonly skipDynamicToolBridge?: boolean;
 }
 
 const buildAnthropicMessagesUpstreamCallOptions = (
@@ -45,7 +46,7 @@ const buildAnthropicMessagesUpstreamCallOptions = (
 
 export const anthropicMessagesAttempt = {
   generate: async (args: AnthropicMessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> => {
-    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta, skipDynamicToolBridge } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     headers.delete('anthropic-beta');
@@ -57,6 +58,20 @@ export const anthropicMessagesAttempt = {
       headers,
     };
     return await runInterceptors(invocation, ctx, anthropicMessagesInterceptors, async () => {
+      if (!skipDynamicToolBridge && (
+        targetApi === 'openaiChatCompletions'
+        || (targetApi === 'anthropicMessages' && providerModelOf(candidate).enabledFlags.has('dynamic-tool-shim'))
+      )) {
+        return await traverseTranslation(
+          invocation.payload,
+          p => translateAnthropicMessagesViaOpenAIResponses(p, { model: candidate.model.id }),
+          translated => openaiResponsesAttempt.generate({
+            payload: translated, ctx, candidate, headers: invocation.headers,
+            targetApiOverride: targetApi,
+          }),
+          captureFromDump(ctx.dump, targetApi),
+        );
+      }
       if (targetApi === 'anthropicMessages') {
         if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;

@@ -9,6 +9,6 @@ export const translateAnthropicMessagesViaOpenAIResponses: TranslateTrip<
   AnthropicMessagesPayload, AnthropicMessagesStreamEvent, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent
 > = async src => ({
   target: buildTargetRequest(src),
-  events: translateToSourceEvents,
+  events: frames => translateToSourceEvents(frames, src.tools?.find(tool => tool.type === 'tool_search_tool_regex_20251119' || tool.type === 'tool_search_tool_bm25_20251119')?.name),
   apiError: rewriteContextExceededToPromptTooLong,
 });

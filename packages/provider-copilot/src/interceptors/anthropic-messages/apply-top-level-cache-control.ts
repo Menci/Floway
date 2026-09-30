@@ -1,6 +1,7 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
+  AnthropicMessagesSystemContentBlock,
   AnthropicMessagesTextBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
@@ -28,11 +29,11 @@ import type {
  */
 
 type CacheableBlock = Extract<
-  AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock,
+  AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock | AnthropicMessagesSystemContentBlock,
   { cache_control?: unknown }
 >;
 
-const isCacheableBlock = (block: AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock): block is CacheableBlock =>
+const isCacheableBlock = (block: AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock | AnthropicMessagesSystemContentBlock): block is CacheableBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
 export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {

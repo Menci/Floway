@@ -208,6 +208,206 @@ test('generate does not carry Anthropic Messages beta metadata through translati
   assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
+test('Anthropic inline tool additions reach a Chat upstream through the stable dispatcher', async () => {
+  installRepo();
+  let upstreamBody: Record<string, unknown> | undefined;
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    upstreamBody = body as Record<string, unknown>;
+    return {
+      ok: true,
+      events: makeProtocolFrames([{
+        id: 'chatcmpl_dynamic', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+  const result = await anthropicMessagesAttempt.generate({
+    payload: makePayload({
+      messages: [
+        { role: 'user', content: 'Look up this customer.' },
+        {
+          role: 'system', content: [{
+            type: 'tool_addition', tool: {
+              type: 'tool_definition', definition: {
+                name: 'lookup_customer', description: 'Look up a customer.', input_schema: { type: 'object', properties: { id: { type: 'string' } } },
+              },
+            },
+          }],
+        },
+        { role: 'user', content: 'Use the new tool.' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } }),
+    headers: new Headers(),
+    anthropicBeta: ['inline-tools-2026-09-15'],
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  await collectEvents(result.events);
+  assertExists(upstreamBody);
+  const tools = upstreamBody.tools as Array<{ function: { name: string } }>;
+  assertEquals(tools.map(tool => tool.function.name), ['call_additional_tool']);
+  const messages = upstreamBody.messages as Array<{ role: string; content: string }>;
+  assertEquals(messages.map(message => message.role), ['user', 'system', 'user']);
+  assertEquals(messages[1].content.includes('lookup_customer'), true);
+});
+
+test('Anthropic sees the real dynamic tool while Chat history replays the dispatcher', async () => {
+  installRepo();
+  const calls: Array<Record<string, unknown>> = [];
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    calls.push(body as Record<string, unknown>);
+    return {
+      ok: true,
+      events: makeProtocolFrames(calls.length === 1
+        ? [{
+            id: 'chatcmpl_tool', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+            choices: [{
+              index: 0, delta: {
+                tool_calls: [{
+                  index: 0, id: 'call_lookup', type: 'function', function: {
+                    name: 'call_additional_tool', arguments: '{"handle":"tool/function//lookup_customer","arguments":{"id":"42"}}',
+                  },
+                }],
+              }, finish_reason: 'tool_calls',
+            }],
+          }]
+        : [{
+            id: 'chatcmpl_done', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+            choices: [{ index: 0, delta: { content: 'Done.' }, finish_reason: 'stop' }],
+          }]),
+      modelKey: 'k', headers: new Headers(),
+    };
+  });
+  const addition = {
+    role: 'system' as const, content: [{
+      type: 'tool_addition' as const, tool: {
+        type: 'tool_definition' as const, definition: {
+          name: 'lookup_customer', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+        },
+      },
+    }],
+  };
+  const candidate = makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } });
+  const first = await anthropicMessagesAttempt.generate({
+    payload: makePayload({ messages: [{ role: 'user', content: 'Look up customer 42.' }, addition] }),
+    ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta: [],
+  });
+  if (first.type !== 'events') throw new Error('Expected events');
+  const firstEvents = await collectEvents(first.events);
+  const toolStart = firstEvents.find(event => event.type === 'content_block_start' && event.content_block.type === 'tool_use');
+  if (toolStart?.type !== 'content_block_start' || toolStart.content_block.type !== 'tool_use') throw new Error('Expected real tool use');
+  assertEquals(toolStart.content_block.name, 'lookup_customer');
+  assertEquals(toolStart.content_block.id, 'call_lookup');
+  assertEquals(JSON.stringify(firstEvents).includes('call_additional_tool'), false);
+
+  const second = await anthropicMessagesAttempt.generate({
+    payload: makePayload({
+      messages: [
+        { role: 'user', content: 'Look up customer 42.' }, addition,
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'call_lookup', name: 'lookup_customer', input: { id: '42' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_lookup', content: 'Ada' }] },
+      ],
+    }),
+    ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta: [],
+  });
+  if (second.type !== 'events') throw new Error('Expected events');
+  await collectEvents(second.events);
+  const messages = calls[1].messages as Array<{ role: string; tool_calls?: Array<{ function: { name: string; arguments: string } }> }>;
+  const replayed = messages.find(message => message.tool_calls?.length);
+  assertExists(replayed?.tool_calls);
+  assertEquals(replayed.tool_calls[0].function.name, 'call_additional_tool');
+  assertEquals(JSON.parse(replayed.tool_calls[0].function.arguments), {
+    handle: 'tool/function//lookup_customer', arguments: { id: '42' },
+  });
+});
+
+test('the dynamic tool flag routes a native Anthropic target through the dispatcher once', async () => {
+  installRepo();
+  let upstreamBody: AnthropicMessagesPayload | undefined;
+  const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+    upstreamBody = body as AnthropicMessagesPayload;
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+  const result = await anthropicMessagesAttempt.generate({
+    payload: makePayload({
+      messages: [
+        { role: 'user', content: 'Use the added tool.' },
+        {
+          role: 'system', content: [{
+            type: 'tool_addition', tool: {
+              type: 'tool_definition', definition: {
+                name: 'lookup_customer', input_schema: { type: 'object' },
+              },
+            },
+          }],
+        },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callAnthropicMessages, endpoints: { openaiResponses: {}, anthropicMessages: {} }, enabledFlags: new Set(['dynamic-tool-shim']) }),
+    headers: new Headers(), anthropicBeta: [],
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  await collectEvents(result.events);
+  assertEquals(callAnthropicMessages.mock.calls.length, 1);
+  assertExists(upstreamBody);
+  assertEquals(upstreamBody.tools?.map(tool => tool.name), ['call_additional_tool']);
+  assertEquals(upstreamBody.messages.map(message => message.role), ['user', 'system']);
+  assertEquals(JSON.stringify(upstreamBody.messages).includes('tool_addition'), false);
+});
+
+test('Anthropic hosted tool search loads a deferred tool and continues on a Chat upstream', async () => {
+  installRepo();
+  const upstreamBodies: Array<Record<string, unknown>> = [];
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    upstreamBodies.push(body as Record<string, unknown>);
+    const search = upstreamBodies.length === 1;
+    const toolName = search ? 'search_additional_tools' : 'call_additional_tool';
+    const args = search
+      ? '{"paths":["lookup_customer"]}'
+      : '{"handle":"tool/function//lookup_customer","arguments":{"id":"42"}}';
+    return {
+      ok: true,
+      events: makeProtocolFrames([{
+        id: `chatcmpl_search_${upstreamBodies.length}`, object: 'chat.completion.chunk', created: 1, model: 'test-model',
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: `call_${upstreamBodies.length}`, type: 'function', function: { name: toolName, arguments: args } }] }, finish_reason: 'tool_calls' }],
+      }]),
+      modelKey: 'k', headers: new Headers(),
+    };
+  });
+  const result = await anthropicMessagesAttempt.generate({
+    payload: makePayload({
+      messages: [{ role: 'user', content: 'Find the customer tool and look up customer 42.' }],
+      tools: [
+        { type: 'tool_search_tool_regex_20251119', name: 'tool_search_tool_regex' },
+        {
+          name: 'lookup_customer', description: 'Look up customer by ID.', defer_loading: true, input_schema: {
+            type: 'object', properties: { id: { type: 'string' } }, required: ['id'],
+          },
+        },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } }),
+    headers: new Headers(), anthropicBeta: [],
+  });
+  if (result.type !== 'events') throw new Error('Expected events');
+  const events = await collectEvents(result.events);
+  assertEquals(upstreamBodies.length, 2);
+  const firstTools = upstreamBodies[0].tools as Array<{ function: { name: string } }>;
+  const secondTools = upstreamBodies[1].tools as Array<{ function: { name: string } }>;
+  assertEquals(firstTools.map(tool => tool.function.name), ['search_additional_tools', 'call_additional_tool']);
+  assertEquals(secondTools, firstTools);
+  const blocks = events.filter(event => event.type === 'content_block_start').map(event => event.content_block);
+  assertEquals(blocks.map(block => block.type), ['server_tool_use', 'tool_search_tool_result', 'tool_use']);
+  const invoked = blocks.at(-1);
+  if (invoked?.type !== 'tool_use') throw new Error('Expected client tool use');
+  assertEquals(invoked.name, 'lookup_customer');
+});
+
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayload, 'model'>[] = [];

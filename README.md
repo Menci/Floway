@@ -1,8 +1,8 @@
 # Floway
 
 Floway is a self-hosted LLM API gateway for coding agents and API clients. It
-puts subscription-backed and token-backed model providers behind one gateway,
-then routes each model through the API shape the client already speaks.
+puts subscription-backed and token-backed providers behind one gateway and
+routes each model through the API shape the client already speaks.
 
 ## Highlights
 
@@ -10,6 +10,8 @@ then routes each model through the API shape the client already speaks.
   configurable multi-protocol HTTP providers, and Ollama from one deployment.
 - Serve OpenAI, Anthropic, Gemini-compatible, audio transcription, and rerank
   APIs with cross-protocol translation where needed.
+- Introduce client tools during a conversation while retaining their history
+  position and a stable upstream tool prefix on supported compatibility paths.
 - Discover vendor model catalogs live while retaining manual model configuration
   for providers that require or permit it.
 - Preserve client-carried opaque blobs across models that advertise the same
@@ -17,8 +19,8 @@ then routes each model through the API shape the client already speaks.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
 - Generate one-command Claude Code and Codex configurations from an API key.
-- Run on Cloudflare Workers or Node.js, with Docker Compose provided for a
-  self-hosted server and dashboard.
+- Run on Cloudflare Workers or Node.js. Docker Compose provides a self-hosted
+  server and dashboard.
 
 ## Quick Start
 
@@ -38,18 +40,15 @@ the password. Then:
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
    Setup** to configure Claude Code or Codex.
 
-The data-plane and control-plane APIs are also exposed directly at
-<http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
-Stateful OpenAI Responses item payloads persist in the `floway-data` volume.
+The data-plane and control-plane APIs are exposed from the same gateway origin.
+The dashboard uses the control plane to manage users, keys, upstreams, routing,
+and telemetry. Coding agents and API clients call the data plane, which resolves
+models, dispatches upstream requests, and translates protocols as needed.
+SQLite, file-backed dump bodies, and oversized Stateful OpenAI Responses item
+payloads persist in the `floway-data` volume.
 
-The dashboard uses Floway's control plane to manage users, keys, upstreams,
-routing, and telemetry. Coding agents and API clients call the data plane,
-which performs model resolution, upstream dispatch, and any required protocol
-translation. Both planes are served by the same gateway process.
-
-**Upgrade notice:** Floway used to listen on both `0.0.0.0:8788` and
-`0.0.0.0:18088`. As a result of container image merging, Floway only listen on
-one single port now.
+**Upgrade notice:** Floway previously listened on both `0.0.0.0:8788` and
+`0.0.0.0:18088`. The merged container image now listens on one port, `8788`.
 
 ## Compatibility
 
@@ -85,6 +84,39 @@ carriers record both their exact source target and their compatibility identity.
 Compatible targets receive the original blob; incompatible optional blobs are
 removed, while incompatible required Responses state fails routing. Existing v1
 carriers resolve their current model metadata before applying the same rule.
+
+### Dynamic tools
+
+OpenAI Responses `additional_tools` and `tool_search_output` can add tools at a
+specific point in the conversation. Anthropic Messages can do the same with
+inline `tool_addition` blocks. For a translated target without native support,
+Floway announces each newly available client tool in a message at that point
+and gives the upstream a stable `call_additional_tool` function. It translates
+the model's call back into the actual client tool event, and restores the
+upstream dispatcher history when the client returns a result. The dispatcher
+schema does not change when later tools are added.
+
+The compatibility path supports client-executed JSON functions, freeform
+custom tools, namespace children, shell, local shell, apply-patch, and modern
+and preview computer calls. Client-executed tool search is projected back to a
+native `tool_search_call`; hosted tool search uses a stable
+`search_additional_tools` function, emits native search events, and continues
+generation after loading deferred tools. Searchable definitions remain out of
+the upstream top-level `tools` array.
+
+The `dynamic-tool-shim` provider flag enables this behavior on a native
+Responses or Anthropic Messages upstream. Translation to a protocol without
+native dynamic-tool support activates it automatically. Newly introduced
+tools use an inline `system` message; configure
+`rewrite-mid-conv-system-to-user` for upstreams whose wire format or chat
+template cannot keep that role in the middle of a conversation. Provider-hosted
+MCP connectors, file search, code interpreter, web search, image generation,
+and programmatic tooling still need their own execution adapters when added
+dynamically. Floway reports an unsupported dynamic declaration before sending
+it upstream. Anthropic tool removal is likewise reported as unsupported on a
+translated target.
+
+### Other translations
 
 Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
@@ -133,8 +165,8 @@ isolated binding-probe bootstrap and requires its `Hello World` response before
 publishing Floway.
 
 For a manual production update, configure the admin secret, then apply the
-remote migrations and deploy as one step — publishing the code that reads a
-migration's result is part of applying it, and stopping in between leaves the
+remote migrations and deploy as one step. Publishing the code that reads a
+migration's result is part of applying it; stopping in between leaves the
 previous build serving rewritten configuration:
 
 ```bash
