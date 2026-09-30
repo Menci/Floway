@@ -93,7 +93,7 @@ const sseResponse = (): Response => new Response(
 const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptions> = {}): AnthropicMessagesUpstreamCallOptions => ({
   ...noopAnthropicMessagesUpstreamCallOptions(),
   headers: new Headers({
-    'user-agent': 'claude-cli/2.1.181 (external, cli)',
+    'user-agent': 'claude-cli/2.1.280 (external, cli)',
     'x-app': 'cli',
     'anthropic-version': '2023-06-01',
   }),
@@ -230,7 +230,7 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     // Whitelisted inbound headers reach the wire so the operator's CC
     // fingerprint stays end-to-end consistent (sub2api allowedHeaders).
     const wireHeaders = new Headers(init.headers);
-    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
+    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.280 (external, cli)');
     expect(wireHeaders.get('x-app')).toBe('cli');
     expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20');
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
@@ -246,7 +246,7 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.280' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;

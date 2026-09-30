@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
 });
 
 test('appends IDENTITY_BLOCK after an existing system[0] block', async () => {
-  const billing = { type: 'text' as const, text: 'x-anthropic-billing-header: cc_version=2.1.181.abc;' };
+  const billing = { type: 'text' as const, text: 'x-anthropic-billing-header: cc_version=2.1.280.abc;' };
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: 16,

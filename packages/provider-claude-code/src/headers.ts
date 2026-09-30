@@ -1,7 +1,9 @@
 // Pinned mimicry header surface for the Anthropic /v1/messages?beta=true call
-// on a Claude Code subscription OAuth bearer. Lifted byte-for-byte from real
-// Claude Code traffic at v2.1.181 on 2026-06-19; bump together with the
-// CLI version whenever we refresh the mimicry constants.
+// on a Claude Code subscription OAuth bearer. Claude Code v2.1.280's CLI and
+// embedded SDK versions are verified from its
+// official Linux x64 package. The curated beta surface below remains grounded
+// in the last captured live request; bump each value only with evidence for
+// that surface.
 //
 // Anthropic's "third-party" detector keys on the full surface (UA, X-App,
 // X-Stainless-*, anthropic-beta, anthropic-version,
@@ -15,11 +17,12 @@
 // and the `X-Stainless-*` family. Both Cloudflare Workers and
 // @hono/node-server preserve the casing we set on a `Headers` instance.
 
-export const CLAUDE_CLI_VERSION = '2.1.181';
+export const CLAUDE_CLI_VERSION = '2.1.280';
 
-// `@anthropic-ai/sdk` version bundled inside Claude Code v2.1.181; surfaces
+// `@anthropic-ai/sdk` version bundled inside Claude Code v2.1.280; surfaces
 // on the wire as `X-Stainless-Package-Version`.
-const STAINLESS_PACKAGE_VERSION = '0.94.0';
+// https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.280.tgz
+const STAINLESS_PACKAGE_VERSION = '0.112.1';
 
 // Stable subset of `X-Stainless-*` headers shared across both model groups.
 // `X-Stainless-OS` keeps its uppercase 'Linux' value verbatim — the real CLI

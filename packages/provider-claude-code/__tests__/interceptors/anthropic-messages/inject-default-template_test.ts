@@ -16,7 +16,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   upstreamId: 'up_test',
 });
 
-const billingBlock: AnthropicMessagesTextBlock = { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.181.abc;' };
+const billingBlock: AnthropicMessagesTextBlock = { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.280.abc;' };
 
 test('appends DEFAULT_TEMPLATE_BLOCK as system[2] with ephemeral cache_control intact', async () => {
   const ctx = invocation({
