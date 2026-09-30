@@ -26,7 +26,7 @@ interface BackendStub {
   nextEdits: Response[];
   // When set, the next `enumerateModelCandidates` call returns this
   // shape verbatim instead of the default single in-test candidate; lets
-  // a test drive `resolveImageCandidate`'s failure branches.
+  // a test drive shared resolution failure branches.
   nextResolutionOverride: { candidates: readonly unknown[]; sawModel: boolean; failedUpstreams: readonly string[] } | null;
 }
 
@@ -43,6 +43,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
     upstreamId: 'u',
     kind: 'custom',
     name: 'mock-image',
+    inboundHeaderAllowlist: [],
     disabledPublicModelIds: [],
     modelPrefix: null,
     modelsCache: null,
@@ -192,10 +193,7 @@ const drain = async (result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEv
 
 beforeEach(async () => {
   repo = new InMemoryRepo();
-  // resolveImageCandidate still calls createPerRequestFetcher to satisfy the
-  // production code path. Seed the in-memory repo with the mocked candidate's
-  // upstream id so the fetcher mapper resolves it instead of throwing
-  // "unknown upstream id: u".
+  // Attribution resolves the candidate's upstream metadata while writing the child run.
   await saveUpstreamForTest(repo.upstreams, {
     id: 'u',
     kind: 'custom',
@@ -494,25 +492,27 @@ test('image transcoding failure becomes a terminal image tool failure', async ()
   assertStringIncludes(item.error.message, 'codec down');
 });
 
-test('retries on 429 and surfaces the eventual success', async () => {
-  // Two 429s then success; the orchestrator should see one completed image_generation_call.
+for (const stream of [false, true]) test(`retries on 429 and settles every actual call before its ${stream ? 'streamed' : 'single-body'} success`, async () => {
+  const usage = { input_tokens: 9, output_tokens: 4 };
   stub.nextGenerations = [
-    rateLimitResponse(1),
-    rateLimitResponse(1),
-    jsonResponse('T0s='),
+    rateLimitResponse(1), rateLimitResponse(1),
+    stream ? sseResponse([JSON.stringify({ type: 'image_generation.completed', b64_json: 'T0s=', usage })]) : jsonResponse('T0s=', usage),
   ];
-  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
-    callTurn(0, 'call_1', 'a cat'),
-    messageTurn('done'),
+  const pending: Promise<unknown>[] = [];
+  const ctx = mockChatGatewayCtx({ wantsStream: true, backgroundScheduler: work => { pending.push(work); } });
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }], 'auto', stream ? { partial_images: 1 } : {}), ctx, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'), messageTurn('done'),
   ]));
   const events = await drain(result);
-
+  await Promise.all(pending);
   assertEquals(stub.generationsCalls.length, 3);
   const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
   assert(igcDone !== undefined);
   const item = (igcDone as { item: { status: string; result: string } }).item;
   assertEquals(item.status, 'completed');
   assertEquals(item.result, 'T0s=');
+  const calls = (await repo.usage.listAll()).filter(row => row.model === 'gpt-image-2');
+  assertEquals(calls.reduce((total, row) => total + row.requests, 0), 3);
 });
 
 test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a failed item', async () => {
@@ -558,12 +558,12 @@ test('does not retry non-rate-limit upstream failures', async () => {
   assertEquals(item.error.code, 'invalid_value');
 });
 
-// resolveImageCandidate failure branches: each variant is normalized into
+// Shared image resolution failure branches: each variant is normalized into
 // a terminal `image_generation_call` item with `status: 'failed'` and a
 // specific error.code so the orchestrator can distinguish unknown-model
 // from existing-but-unsupported.
 
-test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
+test('shared image resolution renders model_not_found when no upstream knows the model id', async () => {
   stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
   const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
@@ -578,10 +578,10 @@ test('resolveImageCandidate renders model_not_found when no upstream knows the m
   const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_found');
-  assert(item.error.message.includes("No upstream provides model 'gpt-image-2'"), `unexpected message: ${item.error.message}`);
+  assert(item.error.message.includes('Model gpt-image-2 is not available on any configured upstream.'), `unexpected message: ${item.error.message}`);
 });
 
-test('resolveImageCandidate renders model_not_supported when sawModel=true but no candidate is an image kind', async () => {
+test('shared image resolution renders model_not_supported when sawModel=true but no candidate is an image kind', async () => {
   // Mirrors the resolver's "id exists in some catalog but the kind filter
   // dropped it" signal — sawModel=true, candidates=[].
   stub.nextResolutionOverride = { candidates: [], sawModel: true, failedUpstreams: [] };
@@ -597,10 +597,10 @@ test('resolveImageCandidate renders model_not_supported when sawModel=true but n
   const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_supported');
-  assert(item.error.message.includes("Model 'gpt-image-2' is not an image model."), `unexpected message: ${item.error.message}`);
+  assert(item.error.message.includes('Model gpt-image-2 does not support the /images/generations endpoint.'), `unexpected message: ${item.error.message}`);
 });
 
-test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
+test('shared image resolution renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
   // The resolver produced an image-kind candidate but its `endpoints` does
   // not include the per-endpoint key the request needs (openaiImagesGenerations).
   stub.nextResolutionOverride = {

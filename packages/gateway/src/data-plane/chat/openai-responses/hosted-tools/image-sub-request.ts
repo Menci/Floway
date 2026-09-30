@@ -1,5 +1,5 @@
 import { imageGenerationSubRequestPipeline } from './image-sub-request/pipeline.ts';
-import type { ImageCall } from './image-sub-request/services.ts';
+import type { ImageGenerationRequest } from './image-sub-request/request.ts';
 import type { HostedToolLifecycleEvent, HostedToolTerminal } from './types.ts';
 import { consoleLogSink } from '../../../../runtime/log.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
@@ -16,41 +16,53 @@ import { run, move } from '@floway-dev/pipeline';
  */
 export const runImageGenerationSubRequest = async (
   parent: GatewayCtx,
-  action: 'generate' | 'edit',
-  call: ImageCall,
+  request: ImageGenerationRequest,
 ): Promise<{
   readonly lifecycle: AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal>;
   readonly drain: () => Promise<void>;
 }> => {
-  const path = action === 'edit' ? '/images/edits' : '/images/generations';
+  const path = request.action === 'edit' ? '/images/edits' : '/images/generations';
   const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
-  const dump = parent.dump?.openSubRequest({ method: 'POST', path }, false, attempt.timing) ?? null;
+  const wantsStream = (request.config.partial_images ?? 0) > 0;
+  const dump = parent.dump?.openSubRequest({ method: 'POST', path }, wantsStream, attempt.timing) ?? null;
   const gateway: GatewayCtx = {
     ...parent,
+    wantsStream,
     requestStartedAt: Date.now(),
     attempt,
     dump,
   };
   const prologue = prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }, dump);
 
-  const { facts, drain } = await run(
-    imageGenerationSubRequestPipeline,
-    move({ 'request.imageGeneration.action': action }) as never,
-    { ...prologue.services, imageCall: call } as never,
-  );
-  return {
-    lifecycle: facts['response.imageGeneration.lifecycle'],
-    // The epilogue a served turn gets from the seam, which a sub-request has to be its own: the
-    // reading resolves when the lifecycle runs out, which is after this run answered, so the row
-    // is written here rather than in the chain.
-    drain: async () => {
-      const reading = facts['response.imageGeneration.streamedUsage'];
-      if (reading !== null) {
-        const outcome = await reading;
-        settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
-      }
-      await drain();
-      dump?.finalize(200, 0);
-    },
-  };
+  try {
+    const { facts, drain } = await run(
+      imageGenerationSubRequestPipeline(request),
+      move({ 'request.imageGeneration.canonical': request, 'ingress.http.headers': [] }),
+      { ...prologue.services },
+    );
+    return {
+      lifecycle: facts['response.imageGeneration.lifecycle'],
+      drain: async () => {
+        try {
+          // Releasing the native body also drives an unread image to its usage terminal.
+          // Waiting for that reading first would prevent the owner from ever starting it.
+          await drain();
+        } catch (error) {
+          dump?.failed(error);
+          throw error;
+        } finally {
+          const reading = facts['response.openaiImages.streamedUsage'];
+          if (reading !== null) {
+            const outcome = await reading;
+            settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
+          }
+          dump?.finalize(facts['response.http.status'], 0);
+        }
+      },
+    };
+  } catch (error) {
+    dump?.failed(error);
+    dump?.finalize(502, 0);
+    throw error;
+  }
 };

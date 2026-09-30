@@ -1,17 +1,11 @@
-import { type SettleImageCall } from './image-sub-request/services.ts';
+import { portableImageRequest, type ImageBackendConfig } from './image-sub-request/request.ts';
+import { imageTerminal, isRetryableImageError } from './image-sub-request/result.ts';
 import { runImageGenerationSubRequest } from './image-sub-request.ts';
-import type { HostedToolLifecycleEvent, HostedToolOutputItem, HostedToolRegistration, HostedToolTerminal } from './types.ts';
-import { sleep } from '../../../../shared/sleep.ts';
-import type { BillableEntity } from '../../../pipeline/facts.ts';
-import { enumerateModelCandidates } from '../../../providers/resolution.ts';
-import { stampUpstreamCallStart } from '../../../shared/attempt-timing.ts';
-import { appendFailedUpstreams } from '../../../shared/failed-upstreams.ts';
-import type { AttemptState, GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import type { PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
-import { tokenUsageFromOpenAIImagesBody, tokenUsageMeasurement } from '../../../shared/telemetry/usage.ts';
+import type { HostedToolLifecycleEvent, HostedToolRegistration, HostedToolTerminal } from './types.ts';
+import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../shared/external-image-loader.ts';
-import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
-import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
+import { dimensionsFromBytes } from '@floway-dev/platform';
+import { decodeForgivingBase64, isImageMediaType, mediaTypeEssence } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesToolEntries,
   createRandomOpenAIResponsesItemId,
@@ -22,10 +16,9 @@ import {
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
   type OpenAIResponsesInputItem,
-  type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf } from '@floway-dev/provider';
 
 export const FUNCTION_TOOL_NAME = 'image_generation';
 
@@ -54,30 +47,6 @@ const ALLOWED_MODERATIONS = new Set(['auto', 'low']);
 const ALLOWED_ACTIONS = new Set(['generate', 'edit', 'auto']);
 const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
 
-// gpt-image-* `/images/edits` accepts only these input image mimetypes; a live
-// Azure probe confirmed png/jpeg/webp succeed while gif is rejected with
-// `unsupported_file_mimetype`. Native OpenAI Responses accepts the same GIF and
-// re-encodes it before editing, so the dispatcher mirrors that behavior through the
-// platform image processor. Common aliases are folded onto the backend form.
-type EditMime = 'image/png' | 'image/jpeg' | 'image/webp';
-
-const EDIT_MIME_ALIASES: Record<string, EditMime> = {
-  'image/jpg': 'image/jpeg',
-  'image/pjpeg': 'image/jpeg',
-  'image/x-png': 'image/png',
-};
-// The canonical edit-supported mimetype for a source, or null when the
-// standalone endpoint requires local WebP transcoding first.
-const editSupportedMime = (mime: string): EditMime | null => {
-  const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
-  return canonical === 'image/png' || canonical === 'image/jpeg' || canonical === 'image/webp'
-    ? canonical
-    : null;
-};
-
-const editFileExt = (mime: EditMime): string =>
-  mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
-
 // The public `image_generation` tool-config surface. Azure rejects any other
 // field with `unknown_parameter`, so the dispatcher mirrors that strictness rather
 // than silently forwarding unknown fields (which would diverge from the
@@ -101,15 +70,9 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 export const canonicalizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
-// A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
 interface ImageSource {
   bytes: ArrayBuffer;
   mimeType: string;
-}
-
-interface PreparedImageSource extends ImageSource {
-  mimeType: EditMime;
 }
 
 interface RemoteImageSource {
@@ -122,39 +85,6 @@ type ImageSourceReference = ImageSource | RemoteImageSource;
 
 const isRemoteImageSource = (source: ImageSourceReference): source is RemoteImageSource =>
   'wireUrl' in source;
-
-const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly PreparedImageSource[]> => {
-  const keyBySource = new Map<ImageSource, Promise<string>>();
-  const preparedByContent = new Map<string, Promise<PreparedImageSource>>();
-  return await Promise.all(sources.map(async source => {
-    const mimeType = editSupportedMime(source.mimeType);
-    if (mimeType !== null) return { bytes: source.bytes, mimeType };
-
-    let keyPromise = keyBySource.get(source);
-    if (keyPromise === undefined) {
-      keyPromise = crypto.subtle.digest('SHA-256', source.bytes).then(buffer => {
-        const digest = encodeHex(new Uint8Array(buffer));
-        return `${source.mimeType}\u0000${digest}`;
-      });
-      keyBySource.set(source, keyPromise);
-    }
-    const key = await keyPromise;
-
-    let prepared = preparedByContent.get(key);
-    if (prepared === undefined) {
-      // Native OpenAI Responses accepts formats such as GIF through its multimodal
-      // preprocessing, while the standalone edits endpoint accepts only
-      // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
-      // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
-      prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
-        const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-        return { bytes, mimeType: 'image/webp' } satisfies PreparedImageSource;
-      });
-      preparedByContent.set(key, prepared);
-    }
-    return await prepared;
-  }));
-};
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   const bytes = decodeForgivingBase64(b64);
@@ -245,52 +175,11 @@ const decodeInputImageDataUrl = (
 // The orchestrator-visible tool config the dispatcher layers onto the backend
 // call. Mirrors Azure: the orchestrator only chooses `prompt`; everything
 // here is read from the client's hosted-tool entry and applied by the dispatcher.
-export interface ImageGenerationConfig {
-  model: string;
-  size?: string;
-  quality?: string;
-  output_format?: 'png' | 'jpeg';
-  background?: 'transparent' | 'opaque' | 'auto';
-  moderation?: 'auto' | 'low';
-  output_compression?: number;
-  // When > 0, the backend call is issued with `stream:true` and each
-  // progressively-rendered preview the backend emits is relayed as a native
-  // `image_generation_call.partial_image` frame. When 0/absent the backend
-  // is called non-streaming and no preview frames are produced.
-  partial_images?: number;
-  input_fidelity?: 'high' | 'low';
-  // Inpainting mask materialized once at validation, forwarded to
-  // /images/edits as the standalone `mask` part. `file_id` masks are not
-  // supported (rejected at validation) — resolving them needs the Files API.
+export interface ImageGenerationConfig extends ImageBackendConfig {
   mask?: ImageSourceReference;
-  action: 'generate' | 'edit' | 'auto';
 }
 
 type MaterializedImageGenerationConfig = Omit<ImageGenerationConfig, 'mask'> & { mask?: ImageSource };
-
-const prepareEditRequest = async (
-  sources: readonly ImageSource[],
-  config: MaterializedImageGenerationConfig,
-): Promise<{ sources: readonly PreparedImageSource[]; mask?: PreparedImageSource }> => {
-  const originals = [...sources];
-  if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
-  const prepared = await prepareEditSources(originals);
-  const bySource = new Map<ImageSource, PreparedImageSource>();
-  for (const [index, source] of originals.entries()) {
-    const wireSource = prepared[index];
-    if (wireSource === undefined) throw new Error('Missing prepared image edit source');
-    bySource.set(source, wireSource);
-  }
-  const wireSources = sources.map(source => {
-    const wireSource = bySource.get(source);
-    if (wireSource === undefined) throw new Error('Missing prepared image edit source');
-    return wireSource;
-  });
-  if (config.mask === undefined) return { sources: wireSources };
-  const mask = bySource.get(config.mask);
-  if (mask === undefined) throw new Error('Missing prepared image edit mask');
-  return { sources: wireSources, mask };
-};
 
 interface PrepareConfigError {
   message: string;
@@ -840,500 +729,11 @@ export const resolveImageOperation = (
 // continue. The full upstream error shape (type/code/message) is preserved so
 // the orchestrator can distinguish transient overload from a terminal
 // content-policy block.
-type ImageError = { type: string; code: string; message: string; retryable: boolean };
-
-// Server-resolved tool config echoed by the backend on both the partial_image
-// frames and the final result (`background:"auto"` becomes the concrete value
-// the server picked, etc.). Read straight off the backend rather than inferred
-// from the request, so what we surface matches what was actually rendered.
-interface EchoFields {
-  output_format?: 'png' | 'jpeg';
-  quality?: 'low' | 'medium' | 'high';
-  background?: 'transparent' | 'opaque';
-  size?: string;
-}
-
-export type ImageOutcome =
-  | { ok: true; b64: string; echo: EchoFields }
-  | { ok: false; error: ImageError };
-
-// Project the server-resolved echo fields out of a backend payload (a response
-// JSON body or an SSE event). Each field is validated against the public enum
-// so a surprising backend value is dropped rather than echoed verbatim.
-const extractEcho = (source: unknown): EchoFields => {
-  if (source === null || typeof source !== 'object') return {};
-  const s = source as Record<string, unknown>;
-  const echo: EchoFields = {};
-  if (s.output_format === 'png' || s.output_format === 'jpeg') echo.output_format = s.output_format;
-  if (s.quality === 'low' || s.quality === 'medium' || s.quality === 'high') echo.quality = s.quality;
-  if (s.background === 'transparent' || s.background === 'opaque') echo.background = s.background;
-  if (typeof s.size === 'string') echo.size = s.size;
-  return echo;
-};
-
-const RETRYABLE_IMAGE_ERROR_CODES = new Set([
-  'EngineOverloaded', 'server_error', 'image_generation_server_error', 'image_generation_failed',
-]);
-
-const isRetryableImageError = (code: string, type?: string): boolean =>
-  RETRYABLE_IMAGE_ERROR_CODES.has(code) || (type !== undefined && RETRYABLE_IMAGE_ERROR_CODES.has(type));
-
-const errorFromBody = (body: string, status: number): { type?: string; code: string; message: string } => {
-  try {
-    const parsed = JSON.parse(body) as { error?: { message?: unknown; code?: unknown; type?: unknown } };
-    const err = parsed.error;
-    if (err !== undefined && err !== null) {
-      return {
-        ...(typeof err.type === 'string' ? { type: err.type } : {}),
-        message: typeof err.message === 'string' ? err.message : `Image backend returned HTTP ${status}`,
-        code: typeof err.code === 'string' ? err.code : `upstream_${status}`,
-      };
-    }
-  } catch (e) {
-    if (!(e instanceof SyntaxError)) throw e;
-  }
-  return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
-};
-
-// Per-request inputs the dispatcher's backend call needs. Captured in the
-// registration closure so the dispatcher reads none of the turn it was
-// registered for. Edit sources are NOT captured here — they are re-collected
-// from the payload the current descent is sending, so an image generated in an
-// earlier turn (fed back as an `input_image`) becomes editable in a later one. `imageDispatchCount` bounds how many real backend image
-// calls one response may issue.
 interface HostedToolState {
   config: MaterializedImageGenerationConfig;
-  apiKeyId: string;
-  upstreamIds: readonly string[] | null;
-  backgroundScheduler: BackgroundScheduler;
-  runtimeLocation: string;
-  downstreamAbortSignal: AbortSignal | undefined;
-  imageDispatchCount: number;
-  /** The turn's own context, which each call opens its own run over. */
   gateway: GatewayCtx;
+  imageDispatchCount: number;
 }
-
-/** What one backend answer is billable for, in the shape settlement writes a row from. A body
- *  that reported nothing bills nothing, which is a different statement from reporting zero. */
-const billedImage = (provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): readonly BillableEntity[] => {
-  const usage = tokenUsageFromOpenAIImagesBody(responseBody);
-  if (usage === null) return [];
-  const measurement = tokenUsageMeasurement(usage);
-  return [{
-    identity: { model: model.id, upstream: provider.upstreamId, modelKey, pricing: model.pricing ?? null },
-    quantities: measurement.quantities,
-    pricingFacts: measurement.pricingFacts,
-  }];
-};
-
-const buildGenerationsBody = (prompt: string, config: ImageGenerationConfig, stream: boolean): Record<string, unknown> => ({
-  prompt,
-  // Public OpenAI Responses tool config forbids `n`, but the private standalone
-  // backend call always requests a single image, mirroring Azure's
-  // single-image OpenAI Responses behavior.
-  n: 1,
-  // `response_format` is intentionally not sent: gpt-image-* always returns
-  // base64 (`data[0].b64_json`) and rejects `response_format`, so the inline
-  // extraction below reads `b64_json` directly.
-  ...(config.size !== undefined ? { size: config.size } : {}),
-  ...(config.quality !== undefined ? { quality: config.quality } : {}),
-  ...(config.output_format !== undefined ? { output_format: config.output_format } : {}),
-  ...(config.background !== undefined ? { background: config.background } : {}),
-  ...(config.moderation !== undefined ? { moderation: config.moderation } : {}),
-  ...(config.output_compression !== undefined ? { output_compression: config.output_compression } : {}),
-  ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
-});
-
-const buildEditsRequest = (
-  prompt: string,
-  config: ImageGenerationConfig,
-  sources: readonly PreparedImageSource[],
-  mask: PreparedImageSource | undefined,
-  stream: boolean,
-): OpenAIImagesEditsRequest => {
-  const parameters: Record<string, string | number | boolean> = {
-    prompt,
-    n: 1,
-    ...(config.size === undefined ? {} : { size: config.size }),
-    ...(config.quality === undefined ? {} : { quality: config.quality }),
-    ...(config.output_format === undefined ? {} : { output_format: config.output_format }),
-    ...(config.background === undefined ? {} : { background: config.background }),
-    ...(config.moderation === undefined ? {} : { moderation: config.moderation }),
-    ...(config.output_compression === undefined ? {} : { output_compression: config.output_compression }),
-    ...(config.input_fidelity === undefined ? {} : { input_fidelity: config.input_fidelity }),
-    ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
-  };
-  const images = sources.map((source, index) => ({
-    type: 'upload' as const,
-    file: new File([source.bytes], `image_${index}.${editFileExt(source.mimeType)}`, { type: source.mimeType }),
-  }));
-  const maskFile = mask === undefined
-    ? undefined
-    : new File([mask.bytes], `mask.${editFileExt(mask.mimeType)}`, { type: mask.mimeType });
-  return {
-    images,
-    ...(maskFile === undefined ? {} : { mask: { type: 'upload' as const, file: maskFile } }),
-    parameters,
-  };
-};
-
-const serverError = (e: unknown): ImageError => ({
-  type: 'image_generation_error',
-  message: e instanceof Error ? e.message : String(e),
-  code: 'server_error',
-  retryable: true,
-});
-
-// Resolve the candidate that serves the configured image model for the
-// target endpoint. A resolution/availability failure is normalized into
-// an `ImageError` so the caller always produces a terminal image item.
-const resolveImageCandidate = async (
-  isEdit: boolean,
-  state: HostedToolState,
-): Promise<{ ok: true; candidate: ModelCandidate } | { ok: false; error: ImageError }> => {
-  const endpointKey = isEdit ? 'openaiImagesEdits' : 'openaiImagesGenerations';
-  const endpointPath = isEdit ? '/images/edits' : '/images/generations';
-  let resolution;
-  try {
-    resolution = await enumerateModelCandidates({
-      upstreamIds: state.upstreamIds,
-      model: state.config.model,
-      kind: 'image',
-      scheduler: state.backgroundScheduler,
-      runtimeLocation: state.runtimeLocation,
-    });
-  } catch (e) {
-    return { ok: false, error: serverError(e) };
-  }
-  const match = resolution.candidates.find(c => c.model.endpoints[endpointKey] !== undefined);
-  if (match !== undefined) {
-    return { ok: true, candidate: match };
-  }
-  // Split on the resolver's `sawModel` signal the same way serve-prep.ts
-  // does for chat: an unknown model id ("model_not_found", 404-shaped) vs
-  // a model that exists under some catalog but cannot serve this op
-  // ("model_not_supported"). The latter splits further on whether the
-  // resolver's kind filter rejected the id (sawModel=true, candidates=[]:
-  // id exists but not as an image model) or the per-endpoint key did
-  // (candidates non-empty: image-kind upstreams exist but none expose the
-  // requested edits/generations endpoint).
-  if (!resolution.sawModel) {
-    return {
-      ok: false,
-      error: {
-        type: 'image_generation_error',
-        message: appendFailedUpstreams(`No upstream provides model '${state.config.model}'.`, resolution.failedUpstreams),
-        code: 'model_not_found',
-        retryable: false,
-      },
-    };
-  }
-  const message = resolution.candidates.length === 0
-    ? `Model '${state.config.model}' is not an image model.`
-    : `No upstream supporting the ${endpointPath} endpoint provides model '${state.config.model}'.`;
-  return {
-    ok: false,
-    error: {
-      type: 'image_generation_error',
-      message: appendFailedUpstreams(message, resolution.failedUpstreams),
-      code: 'model_not_supported',
-      retryable: false,
-    },
-  };
-};
-
-// 60s cap matches the per-minute refill window of Azure TPM/RPM and
-// openai.com tier image quotas — same clamp openai-python applies in
-// [`_calculate_retry_timeout`](https://github.com/openai/openai-python/blob/d76d8c11c1da9f97aa8a0aaee8ccd44d2bc8f5e7/src/openai/_base_client.py#L789).
-const RETRY_CAP_MS = 60_000;
-const MAX_RATE_LIMIT_RETRIES = 2;
-
-// Header priority matches openai-python's `_parse_retry_after_header` with
-// Azure's `x-ms-retry-after-ms` alias added. Treats <= 0 as "no hint" so the
-// gpt-image-1 `retry-after: 0.0` quirk falls back to backoff instead of
-// pretending the quota is free.
-export const parseRetryAfterMs = (headers: Headers): number | null => {
-  for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
-    const raw = headers.get(name);
-    if (raw === null) continue;
-    const ms = Number(raw);
-    if (Number.isFinite(ms) && ms > 0) return ms;
-  }
-  const ra = headers.get('retry-after');
-  if (ra !== null) {
-    const seconds = Number(ra);
-    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
-    const httpDateMs = Date.parse(ra);
-    if (!Number.isNaN(httpDateMs)) {
-      const delta = httpDateMs - Date.now();
-      if (delta > 0) return delta;
-    }
-  }
-  return null;
-};
-
-// On 429, sleep for the upstream's retry hint (or jittered exponential
-// backoff when absent) and replay the same backend call up to
-// MAX_RATE_LIMIT_RETRIES times. The returned `response` always has a fresh,
-// unread body — intermediate failed responses are drained inside the loop so
-// the underlying socket can be reused while we sleep.
-const issueImageCall = async (
-  provider: Provider,
-  model: ProviderModel,
-  fetcher: Fetcher,
-  prompt: string,
-  editRequest: OpenAIImagesEditsRequest | null,
-  config: ImageGenerationConfig,
-  state: HostedToolState,
-  stream: boolean,
-  attempt: AttemptState,
-): Promise<{ response: Response; modelKey: string }> => {
-  for (let retry = 0; ; retry++) {
-    const opts = {
-      fetcher,
-      waitUntil: state.backgroundScheduler,
-      headers: new Headers(),
-      // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
-      // so the outer OpenAI Responses turn's upstream-call stamp is preserved.
-      // Perf recording lives at the sub-call's terminal boundary in
-      // streamImageGeneration; the retry loop overwrites this slot each
-      // retry so it reflects the dispatch that actually returned.
-      wrapUpstreamCall: stampUpstreamCallStart(attempt.timing),
-    };
-    const { response, modelKey } = await (editRequest === null
-      ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
-    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
-
-    // 25% jitter desynchronizes parallel callers so a burst of orchestrator
-    // turns doesn't all re-issue at the same instant.
-    const base = 1000 * 2 ** retry;
-    const backoffMs = base + Math.random() * base * 0.25;
-    const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
-    await response.text().catch(() => undefined);
-    await sleep(delayMs, state.downstreamAbortSignal);
-  }
-};
-
-// Consume a non-streaming backend response (partial_images = 0) into an
-// outcome. Transport/backend failures become `{ok:false}` rather than
-// throwing, so the caller always produces a terminal image item.
-const consumeImageResponse = async (
-  provider: Provider,
-  model: ProviderModel,
-  modelKey: string,
-  response: Response,
-  state: HostedToolState,
-  billed: BillableEntity[],
-): Promise<ImageOutcome> => {
-  const text = await response.text();
-  if (!response.ok) {
-    const { type, code, message } = errorFromBody(text, response.status);
-    return { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a non-JSON success body.', code: 'server_error', retryable: true } };
-  }
-  const b64 = (() => {
-    if (parsed === null || typeof parsed !== 'object') return null;
-    const data = (parsed as { data?: unknown }).data;
-    if (!Array.isArray(data) || data.length === 0) return null;
-    const first = data[0] as { b64_json?: unknown };
-    return typeof first.b64_json === 'string' ? first.b64_json : null;
-  })();
-  if (b64 === null) {
-    return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
-  }
-  billed.push(...billedImage(provider, model, modelKey, parsed));
-  return { ok: true, b64, echo: extractEcho(parsed) };
-};
-
-// Build the completed/failed `image_generation_call` output item plus its
-// closing events. On success the final bytes ride `output_item.done.item.result`
-// and a `response.image_generation_call.completed` closes the item; on failure
-// neither `.completed` nor any `.partial_image` is emitted — only the failed
-// `output_item.done`.
-//
-// `revised_prompt` is set to the orchestrator's prompt: the standalone images
-// backend does no prompt rewriting and returns no `revised_prompt`, and the
-// orchestrator's emitted prompt IS already its refined rewrite (it plays the
-// role Azure's native flow gives the orchestrator), so it is the faithful
-// source for this field.
-export const imageTerminal = (
-  prompt: string,
-  action: 'generate' | 'edit',
-  outcome: ImageOutcome,
-): HostedToolTerminal => {
-  if (!outcome.ok) {
-    const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
-      type: 'image_generation_call',
-      status: 'failed',
-      revised_prompt: prompt,
-      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
-    };
-    return { item, endEvents: [] };
-  }
-
-  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
-    type: 'image_generation_call',
-    status: 'completed',
-    action,
-    result: outcome.b64,
-    revised_prompt: prompt,
-    ...outcome.echo,
-  };
-  return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
-};
-
-// One standalone-images SSE data line, folded into a backend-agnostic signal.
-// The generations and edits endpoints use distinct event prefixes
-// (`image_generation.*` vs `image_edit.*`); only the suffix is matched here.
-type ImageStreamSignal =
-  | { kind: 'partial'; index: number; b64: string; echo: EchoFields }
-  | { kind: 'completed'; b64: string | undefined; usage: unknown; echo: EchoFields }
-  | { kind: 'error'; error: ImageError }
-  | null;
-
-export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
-  let evt: { type?: unknown; partial_image_index?: unknown; b64_json?: unknown; usage?: unknown; error?: unknown };
-  try {
-    evt = JSON.parse(data);
-  } catch {
-    return null;
-  }
-  const type = typeof evt.type === 'string' ? evt.type : '';
-  if (type.endsWith('.partial_image')) {
-    return {
-      kind: 'partial',
-      index: typeof evt.partial_image_index === 'number' ? evt.partial_image_index : 0,
-      b64: typeof evt.b64_json === 'string' ? evt.b64_json : '',
-      echo: extractEcho(evt),
-    };
-  }
-  if (type.endsWith('.completed')) {
-    return { kind: 'completed', b64: typeof evt.b64_json === 'string' ? evt.b64_json : undefined, usage: evt.usage, echo: extractEcho(evt) };
-  }
-  if (type === 'error') {
-    const err = evt.error as { message?: unknown; code?: unknown; type?: unknown } | undefined;
-    const code = typeof err?.code === 'string' ? err.code : 'server_error';
-    const errType = typeof err?.type === 'string' ? err.type : 'image_generation_error';
-    return {
-      kind: 'error',
-      error: { type: errType, code, message: typeof err?.message === 'string' ? err.message : 'Image backend stream reported an error.', retryable: isRetryableImageError(code, errType) },
-    };
-  }
-  return null;
-};
-
-// Drive the backend and produce the deferred slot lifecycle: relay each
-// progressively-rendered preview as a native `partial_image` frame, then
-// return the terminal `image_generation_call` item. partial_images = 0 (or
-// absent) takes a single non-streaming round-trip and yields no preview frames.
-//
-// Every sub-call records its OWN perf row under operation='image_generation'
-// or 'image_edit' via a local AttemptState distinct from ctx.attempt (which
-// belongs to the outer OpenAI Responses turn). firstOutputTokenAt stays null — image
-// backends are single-body from the perf model's point of view, so the row
-// lands in the neutral bucket with an honest requests + errors count and no
-// synthesized TTFT. Resolution failures record no row: no upstream was ever
-// dispatched.
-const streamImageGeneration = (
-  prompt: string,
-  action: 'generate' | 'edit',
-  isEdit: boolean,
-  sources: readonly ImageSource[],
-  state: HostedToolState,
-  settle: SettleImageCall,
-  billed: BillableEntity[],
-) => async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> {
-  const resolved = await resolveImageCandidate(isEdit, state);
-  if (!resolved.ok) {
-    // No candidate means no upstream was called, so there is nothing billed and no performance
-    // context to attribute — but the reading still settles, because a run waits for what it
-    // started and a call that resolved nothing has finished.
-    settle([], true, undefined);
-    return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  }
-  const { provider, fetcher } = resolved.candidate;
-  const model = providerModelOf(resolved.candidate);
-  const wantsPartials = (state.config.partial_images ?? 0) > 0;
-
-  const attempt: AttemptState = { timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined };
-  const perfContext: PerformanceTelemetryContext = {
-    keyId: state.apiKeyId,
-    model: model.id,
-    upstream: provider.upstreamId,
-    operation: isEdit ? 'image_edit' : 'image_generation',
-    runtimeLocation: state.runtimeLocation,
-  };
-  // The call's own settlement, through the seam every other upstream call settles by: the
-  // performance sample is attributed to this run's attempt slot rather than the turn's, which is
-  // what keeps the outer turn's upstream stamp intact.
-  const finish = (outcome: ImageOutcome): HostedToolTerminal => {
-    settle(billed, !outcome.ok, perfContext);
-    return imageTerminal(prompt, action, outcome);
-  };
-
-  let response: Response;
-  let modelKey: string;
-  try {
-    let editRequest: OpenAIImagesEditsRequest | null = null;
-    if (isEdit) {
-      const prepared = await prepareEditRequest(sources, state.config);
-      editRequest = buildEditsRequest(prompt, state.config, prepared.sources, prepared.mask, wantsPartials);
-    }
-    ({ response, modelKey } = await issueImageCall(
-      provider,
-      model,
-      fetcher,
-      prompt,
-      editRequest,
-      state.config,
-      state,
-      wantsPartials,
-      attempt,
-    ));
-  } catch (e) {
-    return finish({ ok: false, error: serverError(e) });
-  }
-
-  if (!wantsPartials) {
-    return finish(await consumeImageResponse(provider, model, modelKey, response, state, billed));
-  }
-
-  if (!response.ok) {
-    const { type, code, message } = errorFromBody(await response.text(), response.status);
-    return finish({ ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
-  }
-  if (response.body === null) {
-    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
-  }
-
-  let finalB64: string | undefined;
-  let finalEcho: EchoFields = {};
-  let usage: unknown;
-  for await (const frame of parseSSEStream(response.body, { signal: state.downstreamAbortSignal })) {
-    const signal = parseImageStreamEvent(frame.data);
-    if (signal === null) continue;
-    if (signal.kind === 'partial') {
-      yield { type: 'response.image_generation_call.partial_image', partial_image_index: signal.index, partial_image_b64: signal.b64, ...signal.echo };
-    } else if (signal.kind === 'completed') {
-      finalB64 = signal.b64;
-      finalEcho = signal.echo;
-      usage = signal.usage;
-    } else {
-      return finish({ ok: false, error: signal.error });
-    }
-  }
-  if (finalB64 === undefined) {
-    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
-  }
-  billed.push(...billedImage(provider, model, modelKey, { usage }));
-  return finish({ ok: true, b64: finalB64, echo: finalEcho });
-};
 
 // Output-as-input round-trip: the multi-turn loop feeds accumulated
 // `image_generation_call` items back as the next turn's input, and client
@@ -1497,11 +897,6 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
   const state: HostedToolState = {
     config: materializedConfig,
     gateway: gatewayCtx,
-    apiKeyId: gatewayCtx.apiKeyId,
-    upstreamIds: gatewayCtx.upstreamIds,
-    backgroundScheduler: gatewayCtx.backgroundScheduler,
-    runtimeLocation: gatewayCtx.runtimeLocation,
-    downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,
   };
 
@@ -1562,11 +957,9 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
           // Its own run: its own prologue, its own settlement, its own record. What this
           // yields is that run's lifecycle, spliced into the turn that asked for it.
           run: () => (async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> {
-            const billed: BillableEntity[] = [];
             const call = await runImageGenerationSubRequest(
               state.gateway,
-              operation.action,
-              (settle: SettleImageCall) => streamImageGeneration(promptArg, operation.action, operation.action === 'edit', sources, state, settle, billed)(),
+              portableImageRequest(promptArg, operation.action, state.config, sources),
             );
             try {
               return yield* call.lifecycle;

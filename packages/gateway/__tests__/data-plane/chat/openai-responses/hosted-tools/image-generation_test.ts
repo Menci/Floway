@@ -6,18 +6,16 @@ import {
   inspectImageSources,
   DEFAULT_IMAGE_MODEL,
   type ImageGenerationConfig,
-  type ImageOutcome,
   imageGenerationHostedTool,
-  imageTerminal,
   isHostedImageGenerationTool,
-  parseImageStreamEvent,
-  parseRetryAfterMs,
   prepareImageGenerationConfig,
   resolveImageOperation,
   FUNCTION_TOOL_NAME,
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
 } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-generation.ts';
+import { imageTerminal, projectImageStreamEvent, type ImageOutcome } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-sub-request/result.ts';
+import { parseRetryAfterMs } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-sub-request/retry.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -483,33 +481,30 @@ test('imageTerminal on failure emits a failed item and no closing events', () =>
   assertEquals(endEvents.length, 0);
 });
 
-// ── parseImageStreamEvent ──
-
-test('parseImageStreamEvent maps generations and edits partial/completed/error with backend echo', () => {
-  const genPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: PNG_B64, background: 'opaque', output_format: 'png', quality: 'low', size: '1024x1024' }));
+test('native image events project generations and edits partial/completed/error with backend echo', () => {
+  const genPartial = projectImageStreamEvent({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: PNG_B64, background: 'opaque', output_format: 'png', quality: 'low', size: '1024x1024' });
   assert(genPartial?.kind === 'partial');
   assertEquals(genPartial.index, 1);
   assertEquals(genPartial.b64, PNG_B64);
   assertEquals(genPartial.echo, { background: 'opaque', output_format: 'png', quality: 'low', size: '1024x1024' });
 
-  const editPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_edit.partial_image', partial_image_index: 0, b64_json: PNG_B64 }));
+  const editPartial = projectImageStreamEvent({ type: 'image_edit.partial_image', partial_image_index: 0, b64_json: PNG_B64 });
   assert(editPartial?.kind === 'partial');
   assertEquals(editPartial.echo, {});
 
-  const completed = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.completed', b64_json: PNG_B64, usage: { total_tokens: 1 }, quality: 'high' }));
+  const completed = projectImageStreamEvent({ type: 'image_generation.completed', b64_json: PNG_B64, usage: { total_tokens: 1 }, quality: 'high' });
   assert(completed?.kind === 'completed');
   assertEquals(completed.b64, PNG_B64);
   assertEquals(completed.echo.quality, 'high');
 
-  const err = parseImageStreamEvent(JSON.stringify({ type: 'error', error: { type: 'image_generation_server_error', code: 'image_generation_failed', message: 'boom' } }));
+  const err = projectImageStreamEvent({ type: 'error', error: { type: 'image_generation_server_error', code: 'image_generation_failed', message: 'boom' } });
   assert(err?.kind === 'error');
   assertEquals(err.error.code, 'image_generation_failed');
   assertEquals(err.error.retryable, true);
 });
 
-test('parseImageStreamEvent returns null for non-JSON or unrelated events', () => {
-  assertEquals(parseImageStreamEvent('[DONE]'), null);
-  assertEquals(parseImageStreamEvent(JSON.stringify({ type: 'image_generation.queued' })), null);
+test('native unrelated image events do not become hosted lifecycle events', () => {
+  assertEquals(projectImageStreamEvent({ type: 'image_generation.queued' }), null);
 });
 
 test('prepareImageGenerationConfig rejects a present-but-invalid model', () => {

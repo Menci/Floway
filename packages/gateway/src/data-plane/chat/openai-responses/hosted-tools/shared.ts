@@ -815,16 +815,18 @@ export async function* materializeHostedToolItems(
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
       const lifecycle = slot.run();
-      let step = await lifecycle.next();
-      while (!step.done) {
-        yield stampHostedToolEvent(merge, outputIndex, slot.id, step.value);
-        step = await lifecycle.next();
+      try {
+        let step = await lifecycle.next();
+        while (!step.done) {
+          yield stampHostedToolEvent(merge, outputIndex, slot.id, step.value);
+          step = await lifecycle.next();
+        }
+        // Register dispatcher state before item.done makes its stored row reusable.
+        store.registerPrivatePayload(slot.id, step.value.privatePayload);
+        yield* hostedToolEndFrames(merge, outputIndex, slot, step.value);
+      } finally {
+        await lifecycle.return(undefined as never);
       }
-      // Register private dispatcher state under the emitted item id so output
-      // persistence captures it and replay-side `transformItems` can restore
-      // it on the next loop turn.
-      store.registerPrivatePayload(slot.id, step.value.privatePayload);
-      yield* hostedToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }
 }
