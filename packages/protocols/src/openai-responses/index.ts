@@ -33,9 +33,9 @@ export interface OpenAIResponsesPayload {
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
-  // `false` asks for a prewarm: a response that records this request's
-  // context without generating, which the next request continues from via
-  // `previous_response_id`. Codex sends it on its WebSocket transport.
+  // WebSocket-only field retained across input normalization. `false` prepares
+  // request state without model output for continuation via previous_response_id.
+  // The gateway's transport boundary determines whether to handle the prewarm.
   // https://github.com/openai/codex/blob/6989c6548b3737f108e2bb5ae1171b1d2032e30c/codex-rs/codex-api/src/common.rs#L355
   generate?: boolean | null;
   parallel_tool_calls?: boolean | null;

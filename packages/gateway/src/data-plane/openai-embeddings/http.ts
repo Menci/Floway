@@ -13,7 +13,7 @@ import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 export const openaiEmbeddings = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   const request = prepareJsonModelRequest(requestBody.bytes, 'OpenAI Embeddings');
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const ctx = createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
     return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));

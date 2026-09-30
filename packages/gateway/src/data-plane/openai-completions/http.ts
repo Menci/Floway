@@ -25,6 +25,7 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
   // it before the invalid branch — which has no body to read it from.
   const wantsStream = request.type === 'ok' && request.body.stream === true;
   const ctx = createGatewayCtxFromHono(c, {
+    transport: 'http',
     wantsStream,
     requestBody: takeRequestBody(requestBody),
     backgroundScheduler: backgroundSchedulerFromContext(c),

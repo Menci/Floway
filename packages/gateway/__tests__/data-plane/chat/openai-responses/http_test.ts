@@ -170,6 +170,37 @@ const queueCompletedResponse = (id = 'resp_test') => {
   return callOpenAIResponses;
 };
 
+for (const stream of [false, true]) {
+  test(`POST /v1/responses stream:${stream} forwards generate:false and preserves the upstream rejection`, async () => {
+    installRepo();
+    const upstreamBody = '{"detail":"Unsupported parameter: generate"}';
+    const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+      assertEquals((body as CanonicalOpenAIResponsesPayload).generate, false);
+      return {
+        action: 'generate',
+        ok: false,
+        modelKey: 'test-model-key',
+        response: new Response(upstreamBody, {
+          status: 400,
+          headers: { 'content-type': 'application/json', 'x-request-id': 'http-generate-rejection' },
+        }),
+      };
+    });
+    queueResolution([makeCandidate({ callOpenAIResponses })]);
+
+    const response = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test-model', input: 'hello', stream, generate: false }),
+    });
+
+    assertEquals(callOpenAIResponses.mock.calls.length, 1);
+    assertEquals(response.status, 400);
+    assertEquals(response.headers.get('x-request-id'), 'http-generate-rejection');
+    assertEquals(await response.text(), upstreamBody);
+  });
+}
+
 test('POST /v1/responses streams a successful SSE body', async () => {
   installRepo();
   const callOpenAIResponses = queueCompletedResponse();

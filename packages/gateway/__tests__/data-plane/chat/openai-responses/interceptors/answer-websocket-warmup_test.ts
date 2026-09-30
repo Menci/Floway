@@ -8,8 +8,6 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx();
-
 const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate(),
@@ -18,15 +16,15 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesIn
   action: 'generate',
 });
 
-const payload = (generate?: boolean): CanonicalOpenAIResponsesPayload => ({
+const payload = (generate?: boolean | null): CanonicalOpenAIResponsesPayload => ({
   model: 'gpt-test',
   input: [{ type: 'message', role: 'developer', content: 'Base instructions' }],
   ...(generate === undefined ? {} : { generate }),
 });
 
-test('answers a generate:false prewarm with an empty completed response and no upstream call', async () => {
+test('answers a WebSocket generate:false prewarm with an empty completed response and no upstream call', async () => {
   let upstreamCalls = 0;
-  const result = await answerWebSocketWarmup(invocation(payload(false)), stubCtx, () => {
+  const result = await answerWebSocketWarmup(invocation(payload(false)), mockChatGatewayCtx({ transport: 'websocket' }), () => {
     upstreamCalls++;
     return Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
   });
@@ -45,16 +43,19 @@ test('answers a generate:false prewarm with an empty completed response and no u
   assertEquals(terminal.event.response.usage, { input_tokens: 0, output_tokens: 0, total_tokens: 0 });
 });
 
-for (const generate of [undefined, true]) {
-  test(`passes a generate:${generate} request through to the upstream`, async () => {
-    let upstreamCalls = 0;
-    const upstream = eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity);
-    const result = await answerWebSocketWarmup(invocation(payload(generate)), stubCtx, () => {
-      upstreamCalls++;
-      return Promise.resolve(upstream);
-    });
+for (const transport of ['http', 'websocket'] as const) {
+  for (const generate of [undefined, null, true, false]) {
+    if (transport === 'websocket' && generate === false) continue;
+    test(`passes a ${transport} generate:${generate} request through to the upstream`, async () => {
+      let upstreamCalls = 0;
+      const upstream = eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity);
+      const result = await answerWebSocketWarmup(invocation(payload(generate)), mockChatGatewayCtx({ transport }), () => {
+        upstreamCalls++;
+        return Promise.resolve(upstream);
+      });
 
-    assertEquals(upstreamCalls, 1);
-    assertEquals(result, upstream);
-  });
+      assertEquals(upstreamCalls, 1);
+      assertEquals(result, upstream);
+    });
+  }
 }

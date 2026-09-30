@@ -46,7 +46,7 @@ const rejectBodyBetaResponse = (payload: AnthropicMessagesPayload): Response | n
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const response = await respondAnthropicMessages(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
@@ -57,7 +57,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
 // internal-error 502 path.
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const response = await respondAnthropicMessages(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
@@ -75,7 +75,7 @@ export const anthropicMessagesHttp = {
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
+      ctx = createChatGatewayCtxFromHono(c, { transport: 'http', wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
       const result = await anthropicMessagesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
       const response = await respondAnthropicMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -92,7 +92,7 @@ export const anthropicMessagesHttp = {
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
+      ctx = createChatGatewayCtxFromHono(c, { transport: 'http', wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
       const result = await anthropicMessagesServe.countTokens({ payload, ctx, headers: inboundHeaders(c) });
       const response = await respondAnthropicMessages(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);
