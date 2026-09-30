@@ -27,11 +27,8 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
-export const hoistUserSystemToMessages = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const system: string | AnthropicMessagesTextBlock[] | undefined = ctx.payload.system;
+export const hoistUserSystemToMessagesPayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(payload: P): P => {
+  const system: string | AnthropicMessagesTextBlock[] | undefined = payload.system;
   let captured = '';
   if (typeof system === 'string') {
     captured = system;
@@ -43,7 +40,7 @@ export const hoistUserSystemToMessages = async <TResult>(
   }
   // inject-billing-block et al rebuild `system` from scratch as a three-block
   // array; removing the field here keeps the boundary mutation self-contained.
-  const nextPayload = { ...ctx.payload };
+  const nextPayload = { ...payload };
   delete nextPayload.system;
 
   if (captured !== '') {
@@ -58,6 +55,13 @@ export const hoistUserSystemToMessages = async <TResult>(
     nextPayload.messages = [...synthetic, ...nextPayload.messages];
   }
 
-  ctx.payload = nextPayload;
+  return nextPayload;
+};
+
+export const hoistUserSystemToMessages = async <TResult>(
+  ctx: AnthropicMessagesBoundaryCtx,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
+  ctx.payload = hoistUserSystemToMessagesPayload(ctx.payload);
   return await run();
 };

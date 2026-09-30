@@ -1,7 +1,7 @@
 import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
-import { logWarn, logInfo } from './log.ts';
+import { logWarn, logInfo, type LogFields } from './log.ts';
 import type { ClaudeCodeProviderData } from './models.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
@@ -22,9 +22,9 @@ import {
   type ProviderStreamResult,
 } from '@floway-dev/provider';
 
-const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
-const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
-const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
+export const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+export const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
+export const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
 
 export interface CallClaudeCodeAnthropicMessagesOptions {
   upstreamId: string;
@@ -43,13 +43,13 @@ export interface CallClaudeCodeAnthropicMessagesOptions {
   call: AnthropicMessagesUpstreamCallOptions;
 }
 
-const synthetic503 = (message: string): Response =>
+export const synthetic503 = (message: string): Response =>
   new Response(
     JSON.stringify({ error: { type: 'claude_code_upstream_unavailable', message } }),
     { status: 503, headers: { 'content-type': 'application/json' } },
   );
 
-const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Response => {
+export const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Response => {
   const retryAfterSeconds = retryAtIso === null
     ? 60
     : Math.max(0, Math.ceil((new Date(retryAtIso).getTime() - now.getTime()) / 1000));
@@ -67,12 +67,12 @@ const oneLineError = (error: unknown): string => {
   return message.length > 512 ? `${message.slice(0, 509)}...` : message;
 };
 
-interface StreamDiagnosticFrame {
+export interface StreamDiagnosticFrame {
   event: string | null;
   data: string;
 }
 
-const observedClaudeCodeMessagesStream = async function* (
+export const observedClaudeCodeMessagesStream = async function* (
   events: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
   options: {
     upstreamId: string;
@@ -81,6 +81,7 @@ const observedClaudeCodeMessagesStream = async function* (
     signal: AbortSignal | undefined;
     frames: StreamDiagnosticFrame[];
     rawFrameCount: () => number;
+    warn?: (message: string, fields: Readonly<Record<string, unknown>>) => Promise<void>;
   },
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
   let terminalEvent: 'message_stop' | 'error' | null = null;
@@ -97,18 +98,26 @@ const observedClaudeCodeMessagesStream = async function* (
     streamError = error;
     throw error;
   } finally {
-    if (options.signal?.aborted || (terminalEvent !== null && streamError === undefined)) return;
-    logWarn('claude_code_messages_stream_incomplete', {
-      upstream_id: options.upstreamId,
-      model: options.model,
-      request_id: options.headers.get('request-id'),
-      cf_ray: options.headers.get('cf-ray'),
-      trace_response: options.headers.get('traceresponse'),
-      raw_sse_frames: options.rawFrameCount(),
-      terminal_event: terminalEvent,
-      error: streamError === undefined ? null : oneLineError(streamError),
-      last_sse_frames: JSON.stringify(options.frames),
-    });
+    if (!options.signal?.aborted && !(terminalEvent !== null && streamError === undefined)) {
+      const fields = {
+        upstream_id: options.upstreamId,
+        model: options.model,
+        request_id: options.headers.get('request-id'),
+        cf_ray: options.headers.get('cf-ray'),
+        trace_response: options.headers.get('traceresponse'),
+        raw_sse_frames: options.rawFrameCount(),
+        terminal_event: terminalEvent,
+        error: streamError === undefined ? null : options.warn === undefined ? oneLineError(streamError) : streamError,
+        last_sse_frames: JSON.stringify(options.frames),
+      };
+      if (options.warn === undefined) logWarn('claude_code_messages_stream_incomplete', { ...fields, error: streamError === undefined ? null : oneLineError(streamError) });
+      else {
+        try { await options.warn('claude_code_messages_stream_incomplete', fields); } catch (recordingError) {
+          if (streamError === undefined || recordingError === streamError) throw recordingError;
+          throw new AggregateError([streamError, recordingError], 'Claude Code stream failed and recording also failed', { cause: streamError });
+        }
+      }
+    }
   }
 };
 
@@ -133,7 +142,7 @@ const observedClaudeCodeMessagesStream = async function* (
 // body sentinel) and passes it through verbatim — without a reset we'd
 // otherwise lock the account out indefinitely because the next request
 // never fires to refresh the snapshot.
-const isRateLimitedNow = (
+export const isRateLimitedNow = (
   snapshot: ClaudeCodeQuotaSnapshot | null,
   now: Date,
 ): snapshot is ClaudeCodeQuotaSnapshot => {
@@ -143,7 +152,7 @@ const isRateLimitedNow = (
   return new Date(snapshot.reset).getTime() > now.getTime();
 };
 
-const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
+export const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot, info: (message: string, fields: LogFields) => void | Promise<void> = logInfo): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time, and this records when the snapshot was
   // observed rather than which attempt landed it.
@@ -166,7 +175,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   // verbatim. Operators care about the moment the upstream flipped from
   // `allowed` to `rejected` (or back), not the steady state.
   if (priorStatus !== snapshot.status) {
-    logInfo('claude_code_quota_state_transition', {
+    await info('claude_code_quota_state_transition', {
       upstream_id: upstreamId,
       account_uuid: previousAccount.accountUuid,
       from_status: priorStatus,
@@ -228,7 +237,7 @@ interface AnthropicErrorBody {
 // JSON shape doesn't match `{error:{type,message}}`) is the common case
 // for unrelated errors (`max_tokens` validation, beta-feature gating,
 // etc.) and must NOT trigger a terminal flip.
-const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
+export const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
   if (status !== 400 && status !== 403) return null;
   let parsed: unknown;
   try {
@@ -263,11 +272,12 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
 // untouched — the repo reads that as "nothing to do" and the dashboard keeps
 // the first signal. Merging the two helpers would force conditional dispatch
 // on every one of these axes.
-const persistTerminalAccountState = async (
+export const persistTerminalAccountState = async (
   upstreamId: string,
   terminalMessage: string,
   reason: string,
   upstreamStatus: number,
+  warn: (message: string, fields: LogFields) => void | Promise<void> = logWarn,
 ): Promise<void> => {
   // Stamped before the write for the same reason as the quota snapshot: a
   // replay must produce the same document.
@@ -286,7 +296,7 @@ const persistTerminalAccountState = async (
     }));
   });
   if (previousAccount.state !== 'active') return;
-  logWarn('claude_code_account_state_flip', {
+  await warn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
     from_state: previousAccount.state,

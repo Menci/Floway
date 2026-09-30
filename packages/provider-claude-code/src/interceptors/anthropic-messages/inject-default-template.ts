@@ -17,7 +17,7 @@ const ANTHROPIC_CACHE_BREAKPOINT_CAP = 4;
 // Mirrors sub2api's `collectCacheControlPaths`. The billing and identity
 // blocks injected earlier in this chain carry no `cache_control`, so they
 // never contribute here.
-const countCacheBreakpoints = (payload: AnthropicMessagesPayload): number => {
+const countCacheBreakpoints = (payload: Pick<AnthropicMessagesPayload, 'tools' | 'system' | 'messages'>): number => {
   let count = 0;
 
   if (payload.tools) {
@@ -57,19 +57,24 @@ const countCacheBreakpoints = (payload: AnthropicMessagesPayload): number => {
 //
 // Chain order in ./index.ts guarantees `system` is already a fresh array
 // when this runs.
-export const injectDefaultTemplate = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  if (!Array.isArray(ctx.payload.system)) {
+export const injectDefaultTemplatePayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(payload: P): P => {
+  if (!Array.isArray(payload.system)) {
     throw new Error('inject-default-template: expected system to be an array (inject-billing-block must run first)');
   }
-  const system = ctx.payload.system;
-  const callerBreakpoints = countCacheBreakpoints(ctx.payload);
+  const system = payload.system;
+  const callerBreakpoints = countCacheBreakpoints(payload);
   const wouldOverflowBreakpointCap = callerBreakpoints >= ANTHROPIC_CACHE_BREAKPOINT_CAP;
   const templateBlock = wouldOverflowBreakpointCap
     ? { type: 'text' as const, text: DEFAULT_TEMPLATE_BLOCK.text }
     : DEFAULT_TEMPLATE_BLOCK;
-  ctx.payload = { ...ctx.payload, system: [...system, templateBlock] };
+  payload = { ...payload, system: [...system, templateBlock] };
+  return payload;
+};
+
+export const injectDefaultTemplate = async <TResult>(
+  ctx: AnthropicMessagesBoundaryCtx,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
+  ctx.payload = injectDefaultTemplatePayload(ctx.payload);
   return await run();
 };

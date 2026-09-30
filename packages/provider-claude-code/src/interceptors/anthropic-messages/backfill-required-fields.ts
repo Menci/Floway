@@ -18,15 +18,19 @@ import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/an
 //
 // Positioned at the head of the chain so the rest of the re-mimicry steps
 // see a fully-formed payload. Caller-supplied values are never overwritten.
+export const backfillRequiredFieldsPayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(payload: P, model: Pick<AnthropicMessagesBoundaryCtx['model'], 'limits'>): P => {
+  const next = { ...payload };
+
+  next.max_tokens ??= model.limits.max_output_tokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
+  next.temperature ??= 1;
+
+  return next;
+};
+
 export const backfillRequiredFields = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const next = { ...ctx.payload };
-
-  next.max_tokens ??= ctx.model.limits.max_output_tokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  next.temperature ??= 1;
-
-  ctx.payload = next;
+  ctx.payload = backfillRequiredFieldsPayload(ctx.payload, ctx.model);
   return await run();
 };

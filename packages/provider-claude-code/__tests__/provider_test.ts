@@ -6,7 +6,7 @@ import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -176,6 +176,41 @@ describe('createClaudeCodeProvider — factory surface', () => {
 });
 
 describe('createClaudeCodeProvider — callAnthropicMessages routes through chain', () => {
+  test.each([false, true])('the actual Messages pipeline preserves shaped=%s content and dated model identity', async shaped => {
+    const provider = createClaudeCodeProvider(currentRecord);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    const payload = {
+      max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }],
+      ...(shaped ? { system: [{ type: 'text' as const, text: "You are Claude Code, Anthropic's official CLI for Claude." }], metadata: { user_id: userId } } : {}),
+    };
+    const result = await collectChatProviderPipeline(provider, 'anthropicMessages', sonnetProviderModel, payload, undefined, shaped ? cliClientCallOpts() : noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.facts['response.provider.called']).toBe(true);
+    expect(result.facts['response.provider.modelKey']).toBe('claude-sonnet-4-5-20250929');
+    expect(result.frames.some(frame => frame.type === 'event' && frame.event.type === 'message_start')).toBe(true);
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
+    expect(body.model).toBe('claude-sonnet-4-5-20250929');
+    expect(body.stream).toBe(true);
+    expect(body.system).toHaveLength(shaped ? 1 : 3);
+    if (shaped) expect(body.metadata.user_id).toBe(userId);
+    else expect(body.system[0]!.text).toMatch(/^x-anthropic-billing-header:/);
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer at_cached');
+    expect(new Headers(init.headers).get('anthropic-beta')).toEqual(shaped ? 'oauth-2025-04-20' : expect.stringContaining('claude-code-20250219'));
+  });
+
+  test('the Messages pipeline preserves a complete terminal refusal while recording state persistence', async () => {
+    const body = { error: { type: 'permission_error', message: 'OAuth authentication is currently not allowed for this organization' }, diagnostic: 'x'.repeat(800) };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status: 403, headers: { 'x-upstream': 'retained' } }));
+    const result = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.output).toBeNull();
+    expect(result.response?.status).toBe(403);
+    expect(result.response?.headers.get('x-upstream')).toBe('retained');
+    expect(await result.response!.json()).toEqual(body);
+    expect(result.facts['response.claudeCode.failureBody']).toEqual(body);
+    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.state).toBe('refresh_failed');
+  });
+
   test('unshaped request runs the re-mimicry chain (3-block system, pinned UA, metadata.user_id)', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());

@@ -16,12 +16,17 @@ import { CLAUDE_CLI_VERSION } from '../../headers.ts';
 // shape Anthropic will actually see on the wire, so the fingerprint must
 // reflect it — fingerprinting the pre-hoist shape would compute a different
 // value than what the request body settles to and break CC mimicry.
+export const injectBillingBlockPayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(payload: P): P => {
+  const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, payload);
+  const block = buildBillingBlock(CLAUDE_CLI_VERSION, fingerprint);
+  payload = { ...payload, system: [block] };
+  return payload;
+};
+
 export const injectBillingBlock = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, ctx.payload);
-  const block = buildBillingBlock(CLAUDE_CLI_VERSION, fingerprint);
-  ctx.payload = { ...ctx.payload, system: [block] };
+  ctx.payload = injectBillingBlockPayload(ctx.payload);
   return await run();
 };
