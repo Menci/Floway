@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { codexImageProviderModel, codexModelUsesResponsesLite, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog, type CodexRawModel } from '../src/models.ts';
+import { codexImageProviderModel, codexModelContextWindow, codexModelUsesResponsesLite, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog, type CodexRawModel } from '../src/models.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
@@ -27,8 +27,8 @@ describe('fetchCodexCatalog', () => {
     }));
     const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
     expect(catalog).toHaveLength(3);
-    expect(catalog[0]).toEqual({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 });
-    expect(catalog[2]).toEqual({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 });
+    expect(catalog[0]).toEqual({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, max_context_window: 1000000 });
+    expect(catalog[2]).toEqual({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000, max_context_window: 1000000 });
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = spy.mock.calls[0];
     expect(url).toBe(`https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLI_VERSION}`);
@@ -41,7 +41,7 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('openai-beta')).toBeNull();
   });
 
-  test('keeps the stable CLI catalog operational context and private Lite capability', async () => {
+  test('keeps the stable CLI catalog default, maximum and private Lite capability', async () => {
     // https://github.com/openai/codex/blob/49e95cc73f4eb2999b1d14f863c009168df6122b/codex-rs/models-manager/models.json
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{
@@ -57,7 +57,8 @@ describe('fetchCodexCatalog', () => {
     const headers = new Headers(spy.mock.calls[0][1]?.headers);
     expect(headers.get('user-agent')).toBe('codex_cli_rs/0.156.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
     expect(headers.get('version')).toBe('0.156.0');
-    expect(model.limits.max_context_window_tokens).toBe(272000);
+    expect(model.limits.max_context_window_tokens).toBe(872000);
+    expect(codexModelContextWindow(model)).toEqual({ context_window: 272000, max_context_window: 872000 });
     expect(codexModelUsesResponsesLite(model)).toBe(true);
     expect(model.chat).toEqual({
       modalities: { input: ['text', 'image'], output: ['text'] },
@@ -99,6 +100,23 @@ describe('fetchCodexCatalog', () => {
   test('throws on entry missing context_window', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [{ slug: 'gpt-x', display_name: 'GPT-X' }] }));
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/context_window/);
+  });
+
+  test.each([0, -1, 1.5, '872000', {}, Number.MAX_SAFE_INTEGER + 1])('rejects invalid maximum %j', async max_context_window => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'future-model', display_name: 'Future', context_window: 272000, max_context_window }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher })).rejects.toThrow(/max_context_window/);
+  });
+
+  test.each([undefined, null])('preserves an unspecified maximum %j', async max_context_window => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'future-model', display_name: 'Future', context_window: 272000, max_context_window }],
+    }));
+    const [raw] = await fetchCodexCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
+    const model = codexRawToProviderModel(raw, new Set());
+    expect(model.limits).toEqual({});
+    expect(codexModelContextWindow(model)).toEqual({ context_window: 272000 });
   });
 
   test('carries input_modalities, supported_reasoning_levels, default_reasoning_level through to CodexRawModel', async () => {
@@ -199,13 +217,14 @@ describe('codexRawToProviderModel', () => {
   // a dedicated test asserts the threading.
   const noFlags: ReadonlySet<FlagId> = new Set();
 
-  test('shapes raw → ProviderModel with responses-only endpoint and per-request context window', () => {
-    const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
+  test('exposes the maximum publicly and retains the default in private provider data', () => {
+    const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, max_context_window: 872000 }, noFlags);
     expect(m.id).toBe('gpt-5.4');
     expect(m.display_name).toBe('GPT-5.4');
     expect(m.endpoints).toEqual({ openaiResponses: {} });
     expect(m.kind).toBe('chat');
-    expect(m.limits.max_context_window_tokens).toBe(272000);
+    expect(m.limits.max_context_window_tokens).toBe(872000);
+    expect(codexModelContextWindow(m)).toEqual({ context_window: 272000, max_context_window: 872000 });
     expect(m.owned_by).toBe('openai');
   });
 
@@ -213,11 +232,27 @@ describe('codexRawToProviderModel', () => {
     const model = codexRawToProviderModel({
       id: 'future-model', display_name: 'Future Model', context_window: 1, use_responses_lite,
     }, noFlags);
-    expect(model.providerData).toEqual({ useResponsesLite: use_responses_lite ?? false });
+    expect(model.providerData).toEqual({ contextWindow: 1, useResponsesLite: use_responses_lite ?? false });
     expect(codexModelUsesResponsesLite(model)).toBe(use_responses_lite ?? false);
     expect(model.endpoints).toEqual({ openaiResponses: {} });
     expect(model).not.toHaveProperty('useResponsesLite');
     expect(model).not.toHaveProperty('use_responses_lite');
+  });
+
+  test('rejects a default exceeding the declared maximum', () => {
+    expect(() => codexRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 872000, max_context_window: 272000 }, noFlags))
+      .toThrow(/context_window exceeds max_context_window/);
+  });
+
+  test('recovers separate windows after provider metadata is serialized', () => {
+    const model = codexRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 80000, max_context_window: 600000 }, noFlags);
+    const restored = { ...model, providerData: JSON.parse(JSON.stringify(model.providerData)) as unknown };
+    expect(codexModelContextWindow(restored)).toEqual({ context_window: 80000, max_context_window: 600000 });
+  });
+
+  test.each([undefined, {}, { contextWindow: 0 }, { contextWindow: '272000' }])('rejects missing or invalid persisted default %j', providerData => {
+    const model = codexRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 272000 }, noFlags);
+    expect(() => codexModelContextWindow({ ...model, providerData })).toThrow();
   });
 
   test.each(['true', null, 1, {}, []])('rejects malformed raw and persisted flag %j', value => {
@@ -306,13 +341,14 @@ describe('codexRawToProviderModel', () => {
       id: 'gpt-6.1-sol',
       display_name: 'GPT-6.1-Sol',
       context_window: 272000,
+      max_context_window: 872000,
       input_modalities: ['text', 'image'],
       reasoning_efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
       default_reasoning_effort: 'low',
       use_responses_lite: true,
     }, noFlags);
 
-    expect(model.limits.max_context_window_tokens).toBe(272000);
+    expect(model.limits.max_context_window_tokens).toBe(872000);
     expect(model.endpoints).toEqual({ openaiResponses: {} });
     expect(model.chat?.reasoning?.effort).toEqual({ supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'low' });
     expect(codexModelUsesResponsesLite(model)).toBe(true);

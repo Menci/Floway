@@ -121,8 +121,8 @@ describe('createCodexProvider', () => {
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     expect(models[0].endpoints).toEqual({ openaiResponses: {} });
-    expect(models[0].providerData).toEqual({ useResponsesLite: false });
-    expect(models[1].providerData).toEqual({ useResponsesLite: true });
+    expect(models[0].providerData).toEqual({ contextWindow: 272000, useResponsesLite: false });
+    expect(models[1].providerData).toEqual({ contextWindow: 272000, useResponsesLite: true });
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);

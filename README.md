@@ -71,13 +71,36 @@ one single port now.
 | Jina Rerank | `POST /jina/v1/rerank` |
 | Voyage Rerank | `POST /voyage/v1/rerank` |
 
+### Model Discovery
+
 `/v1/models` and `/models` return Floway's public model superset to ordinary
-callers and select the Codex or Claude Code discovery shape for those clients'
-User-Agent. Each public model includes `opaqueBlobCompatibilityScope`: its
-optional key defaults to the immediate upstream model ID, and
-`bindToUpstream` decides whether the immediate upstream instance participates
-in the compatibility identity. A downstream Floway reads the same metadata and
-materializes the identity at its own upstream boundary.
+callers and the Codex or Claude Code discovery shape for those clients'
+User-Agent. Codex discovery includes listed upstream chat models.
+
+For Codex upstreams, discovery preserves the backend's default
+`context_window` and separate `max_context_window`. Set
+`model_context_window` in the client's `config.toml` to use a larger window;
+Codex caps that setting at the published maximum. For example, a model that
+announces 272,000 by default and 872,000 as its maximum accepts
+`model_context_window = 872000` while retaining the smaller default for
+clients without an override. Automatic compaction follows the selected window.
+[Codex configuration behavior](https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/models-manager/src/model_info.rs#L19-L31).
+
+Other providers advertise the same input budget as both Codex window fields.
+When a provider declares both context and prompt limits, the smaller limit
+controls that budget, including for OpenAI models served through that provider.
+The public superset's `limits.max_context_window_tokens` retains the provider's
+maximum context metadata. For Codex upstreams, its default window remains
+private to Codex discovery. When several upstreams expose the same public ID,
+window metadata follows the registry's first-provider policy.
+
+### Opaque State Compatibility
+
+Each public model includes `opaqueBlobCompatibilityScope`: its optional key
+defaults to the immediate upstream model ID, and `bindToUpstream` decides
+whether the immediate upstream instance participates in the compatibility
+identity. A downstream Floway reads the same metadata and materializes the
+identity at its own upstream boundary.
 
 Floway wraps natural reasoning signatures, encrypted content, fingerprints,
 and other supported opaque blobs with authenticated routing metadata. New
