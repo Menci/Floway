@@ -58,10 +58,10 @@ export interface LogEntry {
 /** Structured, to fit a logger like `@guiiai/logg`. The pipeline defines the shape it
  *  needs and never the implementation, so a foundation package stays runtime-independent. */
 export interface Logger {
-  debug(message: string, fields?: Readonly<Record<string, unknown>>): void;
-  info(message: string, fields?: Readonly<Record<string, unknown>>): void;
-  warn(message: string, fields?: Readonly<Record<string, unknown>>): void;
-  error(message: string, fields?: Readonly<Record<string, unknown>>): void;
+  debug(message: string, fields?: Readonly<Record<string, unknown>>): void | Promise<void>;
+  info(message: string, fields?: Readonly<Record<string, unknown>>): void | Promise<void>;
+  warn(message: string, fields?: Readonly<Record<string, unknown>>): void | Promise<void>;
+  error(message: string, fields?: Readonly<Record<string, unknown>>): void | Promise<void>;
 }
 
 /** Services ride beside `next`, never in the facts: a live handle dumps as nothing, so it
@@ -69,7 +69,9 @@ export interface Logger {
  *  the keys its own slice admits, exactly as with facts. The set is fixed for the run at
  *  the prologue, and `log` is the one the framework specializes by position — each stage
  *  gets its own, and with a dump open its lines land in that stage's record. */
-export type Use<S extends object> = S & { readonly log: Logger };
+export type Use<S extends object> = S & {
+  readonly log: { readonly [Level in LogLevel]: (...args: Parameters<Logger[Level]>) => Promise<void> };
+};
 
 /** What the prologue may put in the container that the runner itself reads. Everything
  *  else in `S` is the composition's own and the runner never looks at it. */
@@ -78,7 +80,7 @@ export interface RunServices {
   readonly log?: Logger;
   /** Resolved by the prologue when this request is being dumped, and absent otherwise —
    *  which is how recording stays conditional without a mode flag. */
-  readonly dump?: (event: import('./dump.ts').Event) => void;
+  readonly dump?: (event: import('./dump.ts').Event) => void | Promise<void>;
   /** Whatever else the composition wires. The runner reads only the two above. */
   readonly [key: string]: unknown;
 }
@@ -102,7 +104,7 @@ export interface RunScope {
   readonly deferred: Map<Promise<unknown>, Promise<void>>;
   /** A no-op when the prologue resolved no dump sink, which is what makes recording
    *  conditional rather than a mode flag. */
-  readonly emit: (event: import('./dump.ts').Event) => void;
+  readonly emit: (event: import('./dump.ts').Event) => Promise<void>;
   /** Every owned value accepted at entry or handover and not yet released. */
   readonly outstanding: Set<import('./run.ts').Owned>;
   readonly failures: WeakSet<object>;
