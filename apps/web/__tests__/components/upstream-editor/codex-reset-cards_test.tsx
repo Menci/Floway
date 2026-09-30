@@ -134,7 +134,7 @@ describe('Codex reset cards', () => {
     await user.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
     await user.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(dialog.isConnected).toBe(false));
     const firstDialog = dialog;
     await user.click(await screen.findByRole('button', { name: 'Use' }));
     const confirm = await waitFor(() => {
