@@ -1,5 +1,6 @@
+import type { WebSearchRequest } from './search-sub-request/facts.ts';
 import { webSearchSubRequestPipeline } from './search-sub-request/pipeline.ts';
-import type { SearchCall } from './search-sub-request/services.ts';
+import type { WebSearchRuntime } from './search-sub-request/services.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
 import type { GatewayCtx, AttemptState } from '../../../shared/gateway-ctx.ts';
 import type { WebSearchCallIR } from '../../../tools/web-search/operations.ts';
@@ -14,7 +15,8 @@ import { run, move } from '@floway-dev/pipeline';
  */
 export const runWebSearchSubRequest = async (
   parent: GatewayCtx,
-  call: SearchCall,
+  request: WebSearchRequest,
+  webSearch: WebSearchRuntime,
 ): Promise<WebSearchCallIR> => {
   const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   const dump = parent.dump?.openSubRequest({ method: 'POST', path: '/alpha/search' }, false, attempt.timing) ?? null;
@@ -26,13 +28,18 @@ export const runWebSearchSubRequest = async (
   };
   const prologue = prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }, dump);
 
-  const { facts, drain } = await run(
-    webSearchSubRequestPipeline,
-    move({ 'request.webSearch.action': 'search' }) as never,
-    { ...prologue.services, searchCall: call } as never,
-  );
-  // Nothing streams out of a search, so the run is over the moment it answers.
-  await drain();
-  dump?.finalize(200, 0);
-  return facts['response.webSearch.ir'];
+  try {
+    const { facts, drain } = await run(
+      webSearchSubRequestPipeline,
+      move({ 'request.webSearch.canonical': request }),
+      { ...prologue.services, webSearch },
+    );
+    await drain();
+    dump?.finalize(200, 0);
+    return facts['response.webSearch.ir'];
+  } catch (error) {
+    dump?.failed(error);
+    dump?.finalize(502, 0);
+    throw error;
+  }
 };

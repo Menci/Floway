@@ -1,5 +1,6 @@
+import type { WebSearchRuntime } from './search-sub-request/services.ts';
 import { runWebSearchSubRequest } from './search-sub-request.ts';
-import { type HostedToolLoopState, type HostedToolOutputItem, type HostedToolRegistration } from './types.ts';
+import { type HostedToolOutputItem, type HostedToolRegistration } from './types.ts';
 import { shortId } from '../../../../shared/short-id.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { executeAlphaSearch } from '../../../tools/web-search/alpha-search/execution.ts';
@@ -8,24 +9,13 @@ import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
 import { normalizeDomainEntry } from '../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
-  assertLocalWebSearchSupport,
   CONTEXT_SIZE_TO_MAX_RESULTS,
   DEFAULT_SEARCH_CONTEXT_SIZE,
-  executeOperationToIr,
   isSearchContextSize,
   maxResultsForContextSize,
-  parseWebSearchOperations,
   renderWebSearchCallOutput,
-  runBackendSearchMulti,
-  schemaErrorIr,
-  startBatchFetch,
-  UnsupportedLocalWebSearchFeatureError,
-  unsupportedLocalWebSearchFeatureIr,
-  type ParsedWebSearchOperations,
   type WebSearchCallIR,
-  type WebSearchExecutionSession,
   type WebSearchFilters,
-  type WebSearchOperation,
 } from '../../../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../../../tools/web-search/types.ts';
@@ -578,134 +568,6 @@ export const transformInputItemsForWebSearch = (
   return out;
 };
 
-// The dispatcher's execution session plus the one wire-shaping flag that lives
-// only on the OpenAI Responses side.
-interface HostedToolState extends WebSearchExecutionSession {
-  // Set when the client passed `include: ["web_search_call.results"]` on
-  // the request. Native OpenAI Responses gates the `results` field on this
-  // include token; the dispatcher follows suit on the wire item — but the IR
-  // (and therefore `payload.private`) always carries the real results
-  // so a subsequent turn echoing the item id can be hydrated regardless.
-  includeSearchResults: boolean;
-  executeAlpha?: (commands: Record<string, unknown>, action: OpenAIResponsesWebSearchAction) => Promise<WebSearchCallIR>;
-}
-
-const ITERATION_CAP = 30;
-
-const eagerResolver = <T>(promise: Promise<T>): (() => Promise<T>) => {
-  const settled = promise.then(
-    value => ({ ok: true as const, value }),
-    error => ({ ok: false as const, error }),
-  );
-  return async () => {
-    const result = await settled;
-    if (result.ok) return result.value;
-    throw result.error;
-  };
-};
-
-const planDispatchSlots = (
-  parsed: ParsedWebSearchOperations,
-  commands: Record<string, unknown>,
-  toolName: string,
-  state: HostedToolState,
-  loopState: HostedToolLoopState,
-): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
-  if (loopState.iterationCount > ITERATION_CAP) {
-    return {
-      id: synthesizeWebSearchCallId(),
-      resolve: async () => schemaErrorIr(
-        'tool budget exhausted',
-        'Tool call budget exhausted',
-        `Web search iteration limit (${ITERATION_CAP}) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you've gathered.`,
-      ),
-    };
-  }
-
-  if (parsed.kind === 'malformed' || parsed.ops.length === 0) {
-    return {
-      id: synthesizeWebSearchCallId(),
-      resolve: async () => schemaErrorIr(
-        'malformed dispatcher call arguments',
-        'Malformed arguments',
-        'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
-      ),
-    };
-  }
-
-  const executeAlpha = state.executeAlpha;
-  if (executeAlpha !== undefined) {
-    const first = parsed.ops[0];
-    let action: OpenAIResponsesWebSearchAction;
-    if (first.kind === 'search') {
-      const queries = parsed.ops.filter((op): op is Extract<WebSearchOperation, { kind: 'search' }> => op.kind === 'search').map(op => op.query);
-      action = queries.length === 1
-        ? { type: 'search', query: queries[0], queries }
-        : { type: 'search', query: queries.join(' | '), queries };
-    } else if (first.kind === 'open') {
-      action = { type: 'open_page', url: first.url };
-    } else if (first.kind === 'find') {
-      action = { type: 'find_in_page', url: first.url, pattern: first.pattern };
-    } else {
-      action = { type: 'search', query: Object.keys(commands).join(', ') };
-    }
-    return { id: synthesizeWebSearchCallId(), resolve: eagerResolver(executeAlpha(commands, action)) };
-  }
-
-  try {
-    assertLocalWebSearchSupport(commands);
-  } catch (error) {
-    if (error instanceof UnsupportedLocalWebSearchFeatureError) {
-      return {
-        id: synthesizeWebSearchCallId(),
-        resolve: async () => unsupportedLocalWebSearchFeatureIr(
-          { type: 'search', query: Object.keys(commands).join(', ') },
-          error.message,
-        ),
-      };
-    }
-    return {
-      id: synthesizeWebSearchCallId(),
-      resolve: async () => { throw error; },
-    };
-  }
-
-  // Multi-`search_query` entries collapse into one wsc with a multi-query
-  // action (`{type:'search', queries:[...]}`) — protocol-native and the
-  // only same-kind shape that fits in one wsc. Require every entry to
-  // parse cleanly; one malformed entry forces the model to fix all of
-  // them rather than silently dropping a search.
-  if (parsed.ops.length > 1 && parsed.ops.every(op => op.kind === 'search' && op.error === undefined)) {
-    const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
-    return {
-      id: synthesizeWebSearchCallId(),
-      resolve: eagerResolver(runBackendSearchMulti(searchOps, state)),
-    };
-  }
-
-  // Any other multi-op shape cannot reduce to a single wsc action: `open`
-  // and `find` actions each carry one url/pattern, and mixed kinds have
-  // incompatible action types. Surface as ambiguous and let the model
-  // split into independent calls.
-  if (parsed.ops.length > 1) {
-    return {
-      id: synthesizeWebSearchCallId(),
-      resolve: async () => schemaErrorIr(
-        'ambiguous dispatcher call',
-        'Ambiguous tool call',
-        `Error: ambiguous \`${toolName}\` tool call — each function_call maps to one web_search_call. `
-        + 'Multiple `search_query` entries are fine (they collapse into one search). '
-        + 'For `open`/`find`, or any mix of kinds, split into one call per `open[]` entry, `find[]` entry, or `search_query[]` batch.',
-      ),
-    };
-  }
-
-  return {
-    id: synthesizeWebSearchCallId(),
-    resolve: eagerResolver(startBatchFetch(parsed, state).then(async batch => await executeOperationToIr(parsed.ops[0], state, batch))),
-  };
-};
-
 export const webSearchHostedTool: HostedToolRegistration = async (invocation, gatewayCtx) => {
   if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('openai-responses-web-search-shim')) {
     return { type: 'inactive' };
@@ -732,18 +594,16 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
   const settings = alphaSearchSettingsFromHosted(hosted);
-  const state: HostedToolState = {
-    filters,
+  const session: WebSearchRuntime['session'] = {
     pageCache: new Map(),
     getProvider: () => {
       configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
       return configuredProvider;
     },
     apiKeyId: gatewayCtx.apiKeyId,
-    includeSearchResults: includeArray.includes('web_search_call.results'),
-    includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
+  let executeAlpha: WebSearchRuntime['executeAlpha'];
   if (webSearchConfig.passthroughOpenAiSearch.enabled) {
     const dispatcher = resolveAlphaSearchDispatcher({
       config: webSearchConfig.passthroughOpenAiSearch,
@@ -752,16 +612,17 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
       runtimeLocation: gatewayCtx.runtimeLocation,
     });
     const sessionId = crypto.randomUUID();
-    state.executeAlpha = async (commands, action) => await executeAlphaSearch({
+    executeAlpha = async (request, action) => await executeAlphaSearch({
       dispatcher: await dispatcher,
       sessionId,
-      commands,
-      settings,
-      input: invocation.payload.input,
+      commands: request.commands,
+      settings: request.settings,
+      input: request.input,
       action,
       signal: gatewayCtx.abortSignal,
     });
   }
+  const webSearch: WebSearchRuntime = { session, ...(executeAlpha === undefined ? {} : { executeAlpha }) };
 
   return {
     type: 'active',
@@ -775,7 +636,15 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
             buildFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.arguments ?? {};
-              const slot = planDispatchSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
+              const id = synthesizeWebSearchCallId();
+              const search = runWebSearchSubRequest(gatewayCtx, {
+                commands, toolName: intercepted.name, iterationCount: loopState.iterationCount, filters,
+                includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
+                settings, input: invocation.payload.input,
+              }, webSearch).then(
+                value => ({ ok: true as const, value }),
+                error => ({ ok: false as const, error }),
+              );
               const functionCallItem: OpenAIResponsesFunctionToolCallItem = {
                 type: 'function_call',
                 call_id: intercepted.callId,
@@ -788,22 +657,24 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
                 status: 'completed',
               };
               return [{
-                id: slot.id,
+                id,
                 startItem: { type: 'web_search_call', status: 'in_progress' },
                 startEvents: [
                   { type: 'response.web_search_call.in_progress' },
                   { type: 'response.web_search_call.searching' },
                 ],
                 // Its own run: its own prologue, its own settlement, its own record. The
-                // planning above stays with the turn — what a call resolves to is the turn's
-                // decision — and what runs the backend is a run of its own.
+                // commands, filters, and conversation enter the child record before its backend
+                // executes; live caches and provider handles remain in its services.
                 run: async function* run() {
-                  const ir = await runWebSearchSubRequest(gatewayCtx, slot.resolve);
+                  const result = await search;
+                  if (!result.ok) throw result.error;
+                  const ir = result.value;
                   // `results` is gated on the client's `include`
                   // opt-in to match native OpenAI Responses' default wire
                   // shape; the IR keeps them either way for the
                   // private-payload round-trip.
-                  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputWebSearchCall, 'id'> = state.includeSearchResults
+                  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputWebSearchCall, 'id'> = includeArray.includes('web_search_call.results')
                     ? { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results }
                     : { type: 'web_search_call', status: 'completed', action: ir.action };
                   const privatePayload: WebSearchCallPrivatePayload = {

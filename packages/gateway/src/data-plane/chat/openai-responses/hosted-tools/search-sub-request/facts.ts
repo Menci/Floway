@@ -1,10 +1,19 @@
 import type { GatewayFacts } from '../../../../pipeline/facts.ts';
-import type { WebSearchCallIR } from '../../../../tools/web-search/operations.ts';
+import type { WebSearchCallIR, WebSearchFilters } from '../../../../tools/web-search/operations.ts';
+import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
-/** What one search call is, and what it came to. */
+export interface WebSearchRequest {
+  commands: Record<string, unknown>;
+  toolName: string;
+  iterationCount: number;
+  filters: WebSearchFilters;
+  includeSearchActionSources: boolean;
+  settings: Record<string, unknown>;
+  input: OpenAIResponsesInputItem[];
+}
+
 export interface WebSearchSubRequestFacts extends GatewayFacts {
-  'request.webSearch.action': 'search';
-  /** What the backend answered, in the shape the hosted-tool item is built from. */
+  'request.webSearch.canonical': WebSearchRequest;
   'response.webSearch.ir': WebSearchCallIR;
 }
 
