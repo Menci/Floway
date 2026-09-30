@@ -48,7 +48,7 @@ export const emitAnthropicMessagesTokenCount = defineStage<
       ...rest,
       'response.http.headers': forClient,
       'response.chat.anthropicMessages.rendered': move(answer.body as Record<string, unknown>),
-      'response.http.status': 200,
+      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
     };
   },
 });

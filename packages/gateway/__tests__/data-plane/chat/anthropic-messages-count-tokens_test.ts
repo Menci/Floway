@@ -338,3 +338,10 @@ describe('the messages count-tokens chain', () => {
     expect((facts as Record<string, unknown>)['response.usage.billable']).toEqual([]);
   });
 });
+
+it('preserves the accepted native counting HTTP status', async () => {
+  resolves([candidate(async () => ({ response: new Response(JSON.stringify({ input_tokens: 3 }), { status: 201, headers: { 'content-type': 'application/json' } }), modelKey: 'counted-model' }))]);
+  const { facts, drain } = await count();
+  expect(facts['response.http.status']).toBe(201);
+  await drain();
+});

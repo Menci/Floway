@@ -81,7 +81,7 @@ export const emitOpenAIResponsesCompaction = defineStage<
         'response.chat.openaiResponses.rendered': move(
           completeOpenAIResponsesCompaction(persisted, openaiResponsesCreatedAt(use.gateway)) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 200,
+        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
         'response.chat.openaiResponses.streamedUsage': move(
           withVerdict(rest['response.chat.openaiResponses.streamedUsage'], compactionFailed(persisted)),
         ),
