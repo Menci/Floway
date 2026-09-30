@@ -1,6 +1,6 @@
-import { describe, test } from 'vitest';
+import { describe, test, vi } from 'vitest';
 
-import { stampUpstreamCallStart, type AttemptTiming } from '../../../src/data-plane/shared/attempt-timing.ts';
+import { attemptTtftMs, stampUpstreamCallStart, type AttemptTiming } from '../../../src/data-plane/shared/attempt-timing.ts';
 import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 describe('stampUpstreamCallStart', () => {
@@ -57,7 +57,7 @@ describe('stampUpstreamCallStart', () => {
     assertEquals(timing.upstreamCallStartedAt, midDispatchReading);
   });
 
-  test('re-stamps on each invocation of the returned factory', async () => {
+  test('pre-output retries refresh the upstream dispatch anchor', async () => {
     const timing = freshTiming();
     const factory = stampUpstreamCallStart(timing);
 
@@ -72,5 +72,28 @@ describe('stampUpstreamCallStart', () => {
     const second = timing.upstreamCallStartedAt;
     assertExists(second);
     assert(second > first, `expected second stamp ${second} to exceed first ${first}`);
+  });
+
+  test('tool continuations preserve the completed first-token measurement', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200);
+    try {
+      const timing = freshTiming();
+      const dispatch = stampUpstreamCallStart(timing);
+      await dispatch(() => Promise.resolve());
+      timing.firstOutputTokenAt = 150;
+      assertEquals(attemptTtftMs(timing), 50);
+
+      let continuationStartedAt: number | null = null;
+      await dispatch(() => {
+        continuationStartedAt = timing.upstreamCallStartedAt;
+        return Promise.resolve();
+      });
+
+      assertEquals(continuationStartedAt, 100);
+      assertEquals(attemptTtftMs(timing), 50);
+      assertEquals(clock.mock.calls.length, 1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

@@ -11,10 +11,11 @@ export const attemptTtftMs = (timing: AttemptTiming | undefined): number | null 
   return Math.round(timing.firstOutputTokenAt - timing.upstreamCallStartedAt);
 };
 
-// Stamps at dispatch entry — pre-dial by design. See
-// UpstreamCallOptions.wrapUpstreamCall for what the interval covers.
+// Continuations share one attempt. After the first output arrives, moving
+// its dispatch anchor would invalidate the completed TTFT measurement.
+// See UpstreamCallOptions.wrapUpstreamCall for the dispatch boundary.
 export const stampUpstreamCallStart = (timing: AttemptTiming) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
-    timing.upstreamCallStartedAt = performance.now();
+    if (timing.firstOutputTokenAt === null) timing.upstreamCallStartedAt = performance.now();
     return dispatch();
   };
