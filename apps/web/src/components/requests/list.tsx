@@ -3,6 +3,7 @@ import {
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DismissCircleRegular,
+  FlashRegular,
   TimerRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
@@ -271,6 +272,13 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
             </span>
           </Tooltip>
+          {record.ttftMs != null && (
+            <Tooltip content={t('dashboard.requests.ttft', { value: record.ttftMs })} relationship="description">
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.ttftMs)}</Text>
+              </span>
+            </Tooltip>
+          )}
           <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
               <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatBytes(record.requestBytes, locale)}</Text>

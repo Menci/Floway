@@ -93,3 +93,41 @@ test('persisted metadata parses absent targetApi as undefined (nullish)', () => 
   // nullish means null OR undefined both acceptable; assert it is one of them.
   expect(decoded.targetApi == null).toBe(true);
 });
+
+test('persisted metadata round-trips ttftMs', () => {
+  const meta = fakeMeta({ ttftMs: 142 });
+  const decoded = decodePersistedDumpMetadata(
+    encodePersistedDumpMetadata(meta, 'test ttftMs'),
+    'test ttftMs',
+  );
+  expect(decoded.ttftMs).toBe(142);
+});
+
+test('persisted metadata round-trips null ttftMs', () => {
+  const meta = fakeMeta({ ttftMs: null });
+  const decoded = decodePersistedDumpMetadata(
+    encodePersistedDumpMetadata(meta, 'test null ttftMs'),
+    'test null ttftMs',
+  );
+  expect(decoded.ttftMs).toBeNull();
+});
+
+test('persisted metadata parses old JSON without ttftMs as undefined (nullish)', () => {
+  const oldJson = JSON.stringify({
+    id: 'rec-no-ttft',
+    startedAt: 0,
+    completedAt: 1,
+    method: 'POST',
+    path: '/v1/chat/completions',
+    status: 200,
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    requestBytes: 0,
+    responseBytes: 0,
+    durationMs: 1,
+    error: null,
+  });
+  const decoded = decodePersistedDumpMetadata(oldJson, 'test old metadata without ttft');
+  expect(decoded.ttftMs == null).toBe(true);
+});

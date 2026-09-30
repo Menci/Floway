@@ -57,7 +57,7 @@ test('history-only namespace calls reserve names without inventing declarations'
   expect(chat.target.tools).toBeUndefined();
   expect(messages.target.tools).toBeUndefined();
   expect(chat.target.messages[0].tool_calls?.[0].function.name).toBe('agents_wait');
-  expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait' });
+  expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait', type: 'function_call' });
 });
 
 test('forced namespace choices use the declaration mapping', async () => {
@@ -78,7 +78,7 @@ test('restores function and custom calls across item events and terminal snapsho
     yield eventFrame({ type: 'response.completed', response: { id: 'r', object: 'response', model: 'm', status: 'completed', error: null, incomplete_details: null, output } });
   })();
   const events: OpenAIResponsesStreamEvent[] = [];
-  for await (const frame of restoreNamespaceEvents(frames, prepared.names.targetToSource)) if (frame.type === 'event') events.push(frame.event);
+  for await (const frame of restoreNamespaceEvents(frames, prepared.names)) if (frame.type === 'event') events.push(frame.event);
   expect(events[0]).toMatchObject({ item: { namespace: 'agents', name: 'spawn', arguments: '{"name":"agents_spawn_2"}' } });
   expect(events[1]).toMatchObject({
     response: {

@@ -301,6 +301,24 @@ describe('codexRawToProviderModel', () => {
     });
   });
 
+  test('uses the Codex catalog capabilities and default for GPT-6.1 Sol', () => {
+    const model = codexRawToProviderModel({
+      id: 'gpt-6.1-sol',
+      display_name: 'GPT-6.1-Sol',
+      context_window: 272000,
+      input_modalities: ['text', 'image'],
+      reasoning_efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+      default_reasoning_effort: 'low',
+      use_responses_lite: true,
+    }, noFlags);
+
+    expect(model.limits.max_context_window_tokens).toBe(272000);
+    expect(model.endpoints).toEqual({ openaiResponses: {} });
+    expect(model.chat?.reasoning?.effort).toEqual({ supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'low' });
+    expect(codexModelUsesResponsesLite(model)).toBe(true);
+    expect(model.pricing).toBeDefined();
+  });
+
   // Every codex catalog entry resolves a chat block: the mapper always states
   // `image_detail_original`.
   test('always states image_detail_original even when the raw entry is otherwise bare', () => {

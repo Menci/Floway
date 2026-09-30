@@ -28,6 +28,10 @@ export const dumpMetadataSchema = z.object({
   requestBytes: z.number(),
   responseBytes: z.number(),
   durationMs: z.number(),
+  // Time to first token in milliseconds. Null on non-streaming responses,
+  // turns failed before any output token arrived, prewarm answers, and
+  // records written before this field was introduced.
+  ttftMs: z.number().nullish(),
   error: dumpErrorSchema.nullable(),
   // The target protocol a translated turn spoke to its upstream. Null on
   // native turns (no translation) and on records written before this field.

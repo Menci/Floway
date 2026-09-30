@@ -36,6 +36,11 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/opus-5-5/overview
   ['claude-opus-5-5', tokenBasePricing({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' })],
+  // GitHub lists Sonnet 5.5 at Anthropic's standard rates, with no separate
+  // Fast lane. The live Copilot catalog already exposes this exact public id.
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+  ['claude-sonnet-5-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
@@ -45,6 +50,17 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/fable-5-1/overview
   ['claude-fable-5-1', tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' })],
+  // Keep the API-equivalent rates ready for Copilot's eventual catalog entry.
+  // A Fast lane becomes selectable only if Copilot publishes a `-fast` sibling;
+  // until then these priority selectors cannot be reached through the catalog.
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  // https://docs.github.com/en/copilot/reference/ai-models/supported-models
+  ['gpt-6.1-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // Two Copilot accounts began returning GPT-6 Astra on 2026-09-05 and served
   // a real `/responses` request as `model: "gpt-6-astra"` with
   // `service_tier: "default"`. Their catalogs quote exactly OpenAI's standard

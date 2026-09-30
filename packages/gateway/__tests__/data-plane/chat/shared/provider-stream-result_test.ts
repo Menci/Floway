@@ -35,7 +35,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'anthropicMessages', ctx, () => null);
     const collected = await drainEvents(result);
     expect(collected).toEqual(frames);
-    expect(ctx.attempt.firstOutputTokenAt).not.toBe(null);
+    expect(ctx.attempt.timing.firstOutputTokenAt).not.toBe(null);
   });
 
   test('leaves firstOutputTokenAt null when only envelope frames appear', async () => {
@@ -46,7 +46,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     ];
     const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
     await drainEvents(result);
-    expect(ctx.attempt.firstOutputTokenAt).toBe(null);
+    expect(ctx.attempt.timing.firstOutputTokenAt).toBe(null);
   });
 
   test('stamps at most once even for many output-content frames', async () => {
@@ -59,7 +59,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
-    for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);
+    for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.timing.firstOutputTokenAt);
     expect(stampsAfterEachFrame[0]).not.toBe(null);
     // The subsequent frames must observe the exact same stamp — the stamping
     // hook never overwrites once firstOutputTokenAt has been set.

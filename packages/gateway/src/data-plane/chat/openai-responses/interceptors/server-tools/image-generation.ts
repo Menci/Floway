@@ -1,7 +1,8 @@
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
+import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
-import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
+import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
@@ -1090,7 +1091,7 @@ const issueImageCall = async (
       // Perf recording lives at the sub-call's terminal boundary in
       // streamImageGeneration; the retry loop overwrites this slot each
       // retry so it reflects the dispatch that actually returned.
-      wrapUpstreamCall: stampUpstreamCallStart(attempt),
+      wrapUpstreamCall: stampUpstreamCallStart(attempt.timing),
     };
     const { response, modelKey } = await (editRequest === null
       ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
@@ -1244,7 +1245,7 @@ const streamImageGeneration = (
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
-  const attempt: AttemptState = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
+  const attempt: AttemptState = { timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined };
   const perfContext: PerformanceTelemetryContext = {
     keyId: state.apiKeyId,
     model: model.id,

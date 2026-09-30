@@ -970,6 +970,7 @@ const zhHansCN = {
         unknownModel: '未知模型',
         status: { success: '请求成功', warning: '请求警告', error: '请求失败' },
         duration: '耗时：{{value, number}}ms',
+        ttft: '首 Token 时间：{{value, number}}ms',
         requestBytes: '请求载荷：{{value, number}} 字节',
         responseBytes: '响应载荷：{{value, number}} 字节',
         selectPrompt: '选择一条请求以查看详情',

@@ -18,6 +18,7 @@ import type {
   StoredDumpResponseBody,
 } from './types.ts';
 import { encodeBodyForWire } from './wire.ts';
+import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
@@ -121,6 +122,8 @@ export class DumpAccumulator {
     requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly wantsStream: boolean = false,
+    private readonly timing?: AttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
@@ -282,6 +285,8 @@ export class DumpAccumulator {
         ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
+    const ttftMs = this.wantsStream ? attemptTtftMs(this.timing) : null;
+
     const meta: DumpMetadata = {
       id: recordId,
       startedAt: this.startedAt,
@@ -296,6 +301,7 @@ export class DumpAccumulator {
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
+      ttftMs,
       // Precedence: an explicit error stamp from the respond path wins;
       // otherwise a request-body read failure (operator-side payload didn't
       // arrive intact) outranks a response-body read failure. Both stream-
@@ -364,6 +370,8 @@ export const openDumpAccumulator = (
   apiKey: ApiKey,
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
+  wantsStream: boolean = false,
+  timing?: AttemptTiming,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   const requestSnapshot: RequestSnapshot = {
@@ -373,5 +381,5 @@ export const openDumpAccumulator = (
     bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler, wantsStream, timing);
 };

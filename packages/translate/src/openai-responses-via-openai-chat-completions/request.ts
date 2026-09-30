@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
@@ -100,7 +102,7 @@ const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | und
           name: tool.name,
           // OpenAI Responses spells "unspecified" as an omitted key or an explicit
           // `null`; OpenAI Chat Completions has only the omitted-key spelling.
-          ...(tool.parameters == null ? {} : { parameters: tool.parameters }),
+          ...(tool.parameters == null ? {} : { parameters: klona(tool.parameters) }),
           ...(tool.strict == null ? {} : { strict: tool.strict }),
           ...(tool.description ? { description: tool.description } : {}),
         },
@@ -138,7 +140,7 @@ const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['
   if (text === null) return null;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
   // absence into an explicit OpenAI Chat Completions `response_format: null`.
-  const format = text.format;
+  const format = klona(text.format);
   if (!Object.hasOwn(text, 'format') || format === undefined) return undefined;
   if (format === null) return null;
   // OpenAI Responses API uses a flat json_schema shape
@@ -288,7 +290,7 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     stream: true,
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
-    ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
+    ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
     ...(responseFormat !== undefined ? { response_format: responseFormat } : {}),
