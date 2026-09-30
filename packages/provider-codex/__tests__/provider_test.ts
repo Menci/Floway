@@ -93,6 +93,33 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createCodexProvider', () => {
+  test('access-only401 remains readable while terminal persistence failure reaches the run outcome', async () => {
+    current = accessOnlyRecord(freshAccessToken);
+    const writeError = new Error('terminal state write failed');
+    repo.saveState.mockRejectedValue(writeError);
+    const body = { error: { code: 'token_invalidated', message: 're-import required' }, diagnostic: 'full upstream details' };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status: 401, headers: { 'x-upstream': 'retained' } }));
+    const provider = createCodexProvider(current);
+    const events: Event[] = [];
+    const executed = await run(provider.pipelines.openaiResponses!, move({
+      'request.provider.model': providerModelFacts(stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } })),
+      'request.provider.payload': { input: [], stream: true },
+      'request.http.callId': 0, 'request.http.headers': [],
+    }), { httpCall: () => noopUpstreamCallOptions(), recordProtocolFrames: <T>(frames: AsyncIterable<T>) => frames, dump: (event: Event) => { events.push(event); } });
+    const exchange = executed.facts['response.http.exchange'];
+    if (exchange.type === 'transportFailure') throw exchange.error;
+    const response = exchangeResponse(exchange);
+    expect(response.status).toBe(401);
+    expect(response.headers.get('x-upstream')).toBe('retained');
+    expect(await response.json()).toEqual(body);
+    if (exchange.body !== null) setRelease(exchange.body, async () => {});
+    await expect(executed.drain()).rejects.toBe(writeError);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(events.find(event => event.type === 'deferred.settled' && event.outcome.status === 'rejected')).toMatchObject({
+      deferred: (executed.facts as typeof executed.facts & Record<string, unknown>)['response.codex.background'], outcome: { status: 'rejected', reason: writeError },
+    });
+  });
+
   test.each(['openaiResponses', 'openaiResponsesCompact'] as const)('%s pipeline keeps parsed private wire content and actual endpoint observations', async operation => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => operation === 'openaiResponses'
       ? new Response(sseResponse().body, { headers: { [CODEX_RESPONSES_LITE_HEADER]: 'true' } })

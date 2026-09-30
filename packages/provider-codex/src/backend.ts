@@ -461,13 +461,6 @@ export const decodeCodexUpstreamError = (rawText: string): CodexUpstreamError =>
 export const classifyCodexUnauthorizedResponse = async (opts: CodexBackendCallBase, response: Response, parsed: CodexUpstreamError): Promise<Response> => {
   const { rawText, code, message } = parsed;
   if (opts.account.refresh_token === null) {
-    // Access-only credentials retain the authoritative upstream reply even when
-    // the terminal-state write fails.
-    try {
-      await opts.effects.persistTerminalState('session_terminated', message);
-    } catch {
-      // The upstream response remains authoritative.
-    }
     return new Response(rawText, { status: 401, statusText: response.statusText, headers: response.headers });
   }
   if (code === 'token_invalidated') {

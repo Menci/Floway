@@ -214,6 +214,15 @@ describe('createClaudeCodeProvider — Messages operation stages', () => {
     expect(bodies.every(body => JSON.stringify(body.messages[0]).includes('Shared system instructions'))).toBe(true);
   });
 
+  test('observing a JSON error preserves its original UTF8 BOM bytes', async () => {
+    const body = { error: { type: 'permission_error', message: 'A beta feature is unavailable' } };
+    const bytes = new TextEncoder().encode(`\uFEFF${JSON.stringify(body)}`);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 403, headers: { 'content-type': 'application/json', 'x-upstream': 'retained' } }));
+    const result = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.facts['response.claudeCode.failureBody']).toEqual(body);
+    expect(new Uint8Array(await result.response!.arrayBuffer())).toEqual(bytes);
+  });
+
   test('the Messages pipeline preserves a complete terminal refusal while recording state persistence', async () => {
     const body = { error: { type: 'permission_error', message: 'OAuth authentication is currently not allowed for this organization' }, diagnostic: 'x'.repeat(800) };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status: 403, headers: { 'x-upstream': 'retained' } }));

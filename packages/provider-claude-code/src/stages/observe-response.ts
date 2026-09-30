@@ -26,12 +26,13 @@ export const observeClaudeCodeResponse = (upstreamId: string) => defineStage<Cla
     let failureBody: unknown = null;
     let retained = exchange;
     if (response.status === 400 || response.status === 403) {
-      const text = await response.text();
+      const bytes = await response.arrayBuffer();
+      const text = new TextDecoder().decode(bytes);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
       try { failureBody = JSON.parse(text); } catch (error) { if (!(error instanceof SyntaxError)) throw error; failureBody = text; }
       const terminal = detectTerminalSentinel(response.status, text);
       if (terminal !== null) tasks.push(persistTerminalAccountState(upstreamId, terminal, response.status === 400 ? 'org_disabled_400_sentinel' : 'org_banned_403_sentinel', response.status, use.log.warn));
-      retained = takeHttpResponse(new Response(text, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }));
+      retained = takeHttpResponse(new Response(bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }));
     }
     return move({
       ...back, 'response.http.exchange': retained, 'response.http.body': retained.body,

@@ -1190,7 +1190,7 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
     });
     const upstreamBody = { error: { code: 'token_invalidated', message: 're-import required' } };
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, upstreamBody, { 'x-upstream-marker': 'kept' }));
-    const persistTerminalState = vi.fn(async () => { throw new Error('state write failed'); });
+    const persistTerminalState = vi.fn(async () => {});
     const result = await callCodexOpenAIResponses({
       upstreamId, account: accessOnlyAccount,
       model, body: { input: [], stream: true }, headers: new Headers(),
