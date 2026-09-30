@@ -12,7 +12,7 @@ export const createMergeState = (): MergeState => ({
   accumulatedOutput: new Map(),
   accumulatedUsage: {},
   lastSeenModel: null,
-  synthesizedResponseId: `resp_shim_${crypto.randomUUID().replace(/-/g, '')}`,
+  synthesizedResponseId: `resp_hosted_${crypto.randomUUID().replace(/-/g, '')}`,
   upstreamResponseSnapshot: undefined,
 });
 
@@ -123,7 +123,7 @@ export const isForcedHostedToolChoice = (
     && typeof selector.name === 'string' && dispatchers.has(selector.name));
 };
 
-// The shim demotes forced choice to `auto` after the first turn, so synthesized
+// The dispatcher demotes forced choice to `auto` after the first turn, so synthesized
 // echoes restore the captured client shape rather than the final upstream echo.
 const restoreEchoedToolChoice = (
   toolChoice: OpenAIResponsesToolChoice | null | undefined,
@@ -215,7 +215,7 @@ export const historicalClientCallableUsesName = (name: string, input: readonly O
 // Collapse matching hosted declarations within each tools array. Keep the
 // last declaration's configuration at the first matching slot so unrelated
 // tools retain their relative order.
-export const rewriteToolsForHostedShim = (
+export const rewriteHostedTools = (
   tools: readonly OpenAIResponsesTool[],
   hosted: HostedToolRewrite,
   toolName: string,
@@ -250,7 +250,7 @@ export const rewriteHostedDeclarations = (
   let canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   const rewrite = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
     if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
-    const result = rewriteToolsForHostedShim(tools, hosted, toolName);
+    const result = rewriteHostedTools(tools, hosted, toolName);
     canonicalHostedTool = result.canonicalHostedTool;
     return result.rewritten;
   };
@@ -292,7 +292,7 @@ const syntheticPrologueResponse = (
   status: 'queued' | 'in_progress',
 ): OpenAIResponsesResult => {
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses prologue envelope before an upstream response snapshot is captured.');
+    throw new Error('Hosted-tool execution cannot synthesize an OpenAI Responses prologue envelope before an upstream response snapshot is captured.');
   }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
@@ -441,7 +441,7 @@ export const consumeTurnStreaming = async function* (
 
   const ensureModel = (): string => {
     if (merge.lastSeenModel === null) {
-      throw new Error('Server-tool shim cannot synthesize an OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
+      throw new Error('Hosted-tool execution cannot synthesize an OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
     }
     return merge.lastSeenModel;
   };
@@ -519,7 +519,7 @@ export const consumeTurnStreaming = async function* (
       const item = event.item;
       if (item.type === 'function_call') {
         if (dispatchers.has(item.name)) {
-          // Reserve the downstream index the shim call occupies now, at
+          // Reserve the downstream index the dispatcher call occupies now, at
           // `.added`; the actual slot count is only known at `.done`,
           // where slot 0 takes this reserved index and any further slots
           // take fresh ones. Those stay contiguous because OpenAI Responses
@@ -711,7 +711,7 @@ export const consumeTurnStreaming = async function* (
         output: [],
         status: 'failed',
         error: {
-          message: `Upstream emitted ${priorLabel} without closing shim call items at upstream output_index ${unmatched.join(', ')}.`,
+          message: `Upstream emitted ${priorLabel} without closing dispatcher call items at upstream output_index ${unmatched.join(', ')}.`,
           code: 'server_error',
         },
         incomplete_details: null,
@@ -769,10 +769,10 @@ export const synthesizeTerminalEnvelope = (
   active: readonly ActiveHostedTool[],
 ): ProtocolFrame<OpenAIResponsesStreamEvent> => {
   if (state.lastSeenModel === null) {
-    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` reports a model.');
+    throw new Error('Hosted-tool execution cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` reports a model.');
   }
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` is captured.');
+    throw new Error('Hosted-tool execution cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` is captured.');
   }
   const output = materializeAccumulatedOutput(state);
   const usage = usageForWire(state);

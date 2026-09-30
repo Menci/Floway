@@ -124,7 +124,7 @@ export type ActiveHostedTool = Extract<HostedToolPrepareResult, { type: 'active'
 // the loop can lift the upstream `error` / `incomplete_details`, plus a
 // `bare-error-pre-shell` variant for an `error` event that arrived
 // before any `response.created` (no model known yet). Distinct from
-// `SynthesizedTerminal`, which is the shim's own outgoing terminal.
+// `SynthesizedTerminal`, which is the dispatcher's own outgoing terminal.
 export type UpstreamTerminal =
   | { kind: 'completed' }
   | { kind: 'failed'; response: OpenAIResponsesResult }
@@ -138,10 +138,10 @@ export interface TurnSummary {
   terminalStatus: UpstreamTerminal;
 }
 
-// The terminal the shim emits downstream. Unlike `UpstreamTerminal`
+// The terminal the dispatcher emits downstream. Unlike `UpstreamTerminal`
 // (what we observed), this carries only the already-extracted `error` /
 // `incompleteDetails` the synthesized envelope needs; the output and
-// usage come from accumulated shim state. There is no pre-shell variant
+// usage come from accumulated dispatcher state. There is no pre-shell variant
 // here — synthesis always runs after a model is known.
 export type SynthesizedTerminal =
   | { kind: 'completed' }

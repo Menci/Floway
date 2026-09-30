@@ -27,7 +27,7 @@ import {
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
-export const SHIM_TOOL_NAME = 'image_generation';
+export const FUNCTION_TOOL_NAME = 'image_generation';
 
 // Default image backend when the hosted tool omits `model`. gpt-image-2 is
 // the reference backend Azure's native OpenAI Responses `image_generation` routes
@@ -35,7 +35,7 @@ export const SHIM_TOOL_NAME = 'image_generation';
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 
 // Safety valve on the multi-turn ReAct loop: cap how many real image backend
-// calls one response may dispatch (counted on `ShimState.imageDispatchCount`,
+// calls one response may dispatch (counted on `HostedToolState.imageDispatchCount`,
 // not the shared ReAct turn count, so unrelated turns do not consume the
 // budget). Past the cap the dispatcher replays an exhausted-budget tool output
 // instead of hitting the backend, so a model that keeps retrying after failures
@@ -44,7 +44,7 @@ const IMAGE_ITERATION_CAP = 10;
 
 // Public OpenAI Responses `image_generation` tool config enums (Azure-strict
 // surface). `webp` and arbitrary `WxH` sizes are rejected because the
-// native Azure path rejects them; the shim mirrors that vocabulary rather
+// native Azure path rejects them; the dispatcher mirrors that vocabulary rather
 // than passing them to a backend that would 400 with a different shape.
 const ALLOWED_SIZES = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
 const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high', 'auto']);
@@ -57,7 +57,7 @@ const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
 // gpt-image-* `/images/edits` accepts only these input image mimetypes; a live
 // Azure probe confirmed png/jpeg/webp succeed while gif is rejected with
 // `unsupported_file_mimetype`. Native OpenAI Responses accepts the same GIF and
-// re-encodes it before editing, so the shim mirrors that behavior through the
+// re-encodes it before editing, so the dispatcher mirrors that behavior through the
 // platform image processor. Common aliases are folded onto the backend form.
 type EditMime = 'image/png' | 'image/jpeg' | 'image/webp';
 
@@ -79,7 +79,7 @@ const editFileExt = (mime: EditMime): string =>
   mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
 
 // The public `image_generation` tool-config surface. Azure rejects any other
-// field with `unknown_parameter`, so the shim mirrors that strictness rather
+// field with `unknown_parameter`, so the dispatcher mirrors that strictness rather
 // than silently forwarding unknown fields (which would diverge from the
 // emulated surface and hide client bugs). `n` is deliberately absent: Azure
 // echoes `n:1` internally but rejects a client-supplied `tools[].n`.
@@ -92,7 +92,7 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesHostedTool =>
   tool.type === 'image_generation';
 
-// Identity canonicalization for image_generation: the shim doesn't
+// Identity canonicalization for image_generation: the dispatcher doesn't
 // depend on filled defaults to run, and the OpenAI spec defaults for
 // `background` / `quality` / `size` / etc. observed via Azure echo
 // (all `'auto'`) signal "backend decides" rather than concrete values
@@ -242,9 +242,9 @@ const decodeInputImageDataUrl = (
   }
 };
 
-// The orchestrator-visible tool config the shim layers onto the backend
+// The orchestrator-visible tool config the dispatcher layers onto the backend
 // call. Mirrors Azure: the orchestrator only chooses `prompt`; everything
-// here is read from the client's hosted-tool entry and applied by the shim.
+// here is read from the client's hosted-tool entry and applied by the dispatcher.
 export interface ImageGenerationConfig {
   model: string;
   size?: string;
@@ -322,7 +322,7 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
 };
 
 // Validate one hosted `image_generation` declaration against the fields and
-// values supported by this shim. The caller validates every
+// values supported by this dispatcher. The caller validates every
 // declaration before selecting the last config, so an earlier invalid entry
 // fails. toolPath identifies its source carrier in the error.
 // https://developers.openai.com/api/docs/guides/tools-image-generation
@@ -463,7 +463,7 @@ export const prepareImageGenerationConfig = (
 };
 
 // Single optional `prompt` parameter — matches the native `image_gen.imagegen`
-// tool's surface (size/quality/etc. are NOT model-chosen; the shim layers them
+// tool's surface (size/quality/etc. are NOT model-chosen; the dispatcher layers them
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
@@ -901,7 +901,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 // from the payload the current descent is sending, so an image generated in an
 // earlier turn (fed back as an `input_image`) becomes editable in a later one. `imageDispatchCount` bounds how many real backend image
 // calls one response may issue.
-interface ShimState {
+interface HostedToolState {
   config: MaterializedImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
@@ -989,7 +989,7 @@ const serverError = (e: unknown): ImageError => ({
 // an `ImageError` so the caller always produces a terminal image item.
 const resolveImageCandidate = async (
   isEdit: boolean,
-  state: ShimState,
+  state: HostedToolState,
 ): Promise<{ ok: true; candidate: ModelCandidate } | { ok: false; error: ImageError }> => {
   const endpointKey = isEdit ? 'openaiImagesEdits' : 'openaiImagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
@@ -1084,7 +1084,7 @@ const issueImageCall = async (
   prompt: string,
   editRequest: OpenAIImagesEditsRequest | null,
   config: ImageGenerationConfig,
-  state: ShimState,
+  state: HostedToolState,
   stream: boolean,
   attempt: AttemptState,
 ): Promise<{ response: Response; modelKey: string }> => {
@@ -1123,7 +1123,7 @@ const consumeImageResponse = async (
   model: ProviderModel,
   modelKey: string,
   response: Response,
-  state: ShimState,
+  state: HostedToolState,
   billed: BillableEntity[],
 ): Promise<ImageOutcome> => {
   const text = await response.text();
@@ -1245,7 +1245,7 @@ const streamImageGeneration = (
   action: 'generate' | 'edit',
   isEdit: boolean,
   sources: readonly ImageSource[],
-  state: ShimState,
+  state: HostedToolState,
   settle: SettleImageCall,
   billed: BillableEntity[],
 ) => async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> {
@@ -1426,7 +1426,7 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
     // the upstream can read them, but there is no hosted tool to dispatch.
     return {
       type: 'active',
-      baseToolName: SHIM_TOOL_NAME,
+      baseToolName: FUNCTION_TOOL_NAME,
       transformItems: transformInputItemsForImageGeneration,
     };
   }
@@ -1494,7 +1494,7 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
     ...(mask === undefined ? {} : { mask }),
   };
 
-  const state: ShimState = {
+  const state: HostedToolState = {
     config: materializedConfig,
     gateway: gatewayCtx,
     apiKeyId: gatewayCtx.apiKeyId,
@@ -1507,7 +1507,7 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
 
   return {
     type: 'active',
-    baseToolName: SHIM_TOOL_NAME,
+    baseToolName: FUNCTION_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
     hosted: {
       hostedTypes: ['image_generation'],

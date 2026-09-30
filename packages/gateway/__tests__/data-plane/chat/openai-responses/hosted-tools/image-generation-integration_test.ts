@@ -13,10 +13,10 @@ import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEdi
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
-// pair of in-test stubs, then drive the whole shim (function-tool rewrite,
+// pair of in-test stubs, then drive the whole dispatcher (function-tool rewrite,
 // ReAct loop, dispatch, streaming relay, output feedback) over a scripted
 // upstream. The stubs record every backend call so a test can assert what the
-// shim actually forwarded — most importantly that an image generated in turn 1
+// dispatcher actually forwarded — most importantly that an image generated in turn 1
 // is re-collected as an edit source in turn 2.
 
 interface BackendStub {
@@ -35,7 +35,7 @@ interface BackendStub {
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsRequests: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
 
 // Assigned per test in beforeEach and captured so the perf-attribution test
-// can read `repo.performance.listAll()` after the shim completes.
+// can read `repo.performance.listAll()` after the dispatcher completes.
 let repo: InMemoryRepo;
 
 const defaultCandidates = vi.hoisted(() => () => [{
@@ -90,7 +90,7 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', () => ({
 // Imported AFTER vi.mock so the mocked registry is in effect.
 const { imageGenerationHostedTool } = await import('../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-generation.ts');
 
-const shim = driveHostedToolStage([imageGenerationHostedTool]);
+const dispatcher = driveHostedToolStage([imageGenerationHostedTool]);
 
 const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', pricing: null };
 
@@ -232,7 +232,7 @@ beforeEach(async () => {
 
 test('generates an image end-to-end and emits the native lifecycle', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')]; // "GEN"
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', {
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', {
     size: '1024x1024',
     quality: 'low',
   }), gatewayCtx(), scriptedRun([
@@ -260,7 +260,7 @@ test('generates an image from an additional_tools declaration without moving the
   ]);
   delete invocation.payload.tools;
 
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+  const result = await dispatcher(invocation, gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('done'),
   ]));
@@ -280,7 +280,7 @@ test('invalid image generation in tool_search_output reports its input path', as
   }]);
   delete invocation.payload.tools;
 
-  const result = await shim(invocation, gatewayCtx(), async () => {
+  const result = await dispatcher(invocation, gatewayCtx(), async () => {
     throw new Error('Invalid request reached upstream');
   });
   assert(result.type === 'api-error');
@@ -294,7 +294,7 @@ test('restores a forced hosted choice when the terminal upstream echo omits it',
   const invocation = makeCtx([], 'generate', { quality: 'high' }, hostedChoice);
   const hostedTool = invocation.payload.tools![0];
   const replacement = { type: 'function', name: 'image_generation', parameters: {}, strict: false } as OpenAIResponsesTool;
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+  const result = await dispatcher(invocation, gatewayCtx(), scriptedRun([
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: 'image_generation' }),
     withResponseEcho(messageTurn('done'), [replacement]),
   ]));
@@ -313,7 +313,7 @@ test('keeps the top-level hosted echo when a later input declaration changes the
   ], 'generate', { quality: 'low' });
   const topLevelTool = invocation.payload.tools![0];
   const replacement = { type: 'function', name: 'image_generation', parameters: {}, strict: false } as OpenAIResponsesTool;
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+  const result = await dispatcher(invocation, gatewayCtx(), scriptedRun([
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement]),
     withResponseEcho(messageTurn('done'), [replacement]),
   ]));
@@ -331,7 +331,7 @@ test('relays real partial_image frames when partial_images > 0', async () => {
     JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: 'UDE=' }),
     JSON.stringify({ type: 'image_generation.completed', b64_json: 'RklO' }),
   ])];
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', { partial_images: 2 }), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', { partial_images: 2 }), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('done'),
   ]));
@@ -347,13 +347,13 @@ test('relays real partial_image frames when partial_images > 0', async () => {
 });
 
 test('an image generated in turn 1 is re-collected as an edit source in turn 2', async () => {
-  // Turn 1 generates "AAAA"; the shim feeds it back as an input_image. Turn 2's
+  // Turn 1 generates "AAAA"; the dispatcher feeds it back as an input_image. Turn 2's
   // call must therefore resolve to an EDIT whose image[] part carries those
   // exact bytes — proving the dispatcher re-collects the live input rather than
   // a frozen registration-time snapshot.
   stub.nextGenerations = [jsonResponse('QUFBQQ==')]; // "AAAA"
   stub.nextEdits = [jsonResponse('QkJCQg==')]; // "BBBB"
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw then border it' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw then border it' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     callTurn(0, 'call_2', 'add a black border'),
     messageTurn('done'),
@@ -398,7 +398,7 @@ test('a prefetched remote edit source remains visible to orchestration and is re
     return await baseRun();
   };
 
-  await drain(await shim(invocation, gatewayCtx(), run));
+  await drain(await dispatcher(invocation, gatewayCtx(), run));
 
   assertEquals(fetched, ['https://example.com/source.png']);
   assertEquals(orchestratorImageUrl, 'https://example.com/source.png');
@@ -419,7 +419,7 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   });
   const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
   stub.nextEdits = [jsonResponse('RURJVA==')];
-  const result = await shim(makeCtx([], 'edit', {
+  const result = await dispatcher(makeCtx([], 'edit', {
     input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
   }), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'edit from the mask'),
@@ -450,7 +450,7 @@ test('identical GIF source and mask share one transcode', async () => {
   });
   const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
   stub.nextEdits = [jsonResponse('RURJVA==')];
-  const result = await shim(makeCtx([{
+  const result = await dispatcher(makeCtx([{
     type: 'message', role: 'user',
     content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
   }], 'edit', {
@@ -475,7 +475,7 @@ test('image transcoding failure becomes a terminal image tool failure', async ()
     compressToWebp: () => Promise.reject(new Error('codec down')),
   });
   const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-  const result = await shim(makeCtx([{
+  const result = await dispatcher(makeCtx([{
     type: 'message', role: 'user',
     content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
   }], 'edit'), gatewayCtx(), scriptedRun([
@@ -501,7 +501,7 @@ test('retries on 429 and surfaces the eventual success', async () => {
     rateLimitResponse(1),
     jsonResponse('T0s='),
   ];
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('done'),
   ]));
@@ -522,7 +522,7 @@ test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a fai
     rateLimitResponse(1),
     rateLimitResponse(1),
   ];
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
   ]));
@@ -544,7 +544,7 @@ test('does not retry non-rate-limit upstream failures', async () => {
       { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
     ),
   ];
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
   ]));
@@ -565,7 +565,7 @@ test('does not retry non-rate-limit upstream failures', async () => {
 
 test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
   stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
   ]));
@@ -585,7 +585,7 @@ test('resolveImageCandidate renders model_not_supported when sawModel=true but n
   // Mirrors the resolver's "id exists in some catalog but the kind filter
   // dropped it" signal — sawModel=true, candidates=[].
   stub.nextResolutionOverride = { candidates: [], sawModel: true, failedUpstreams: [] };
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
   ]));
@@ -614,7 +614,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
     sawModel: true,
     failedUpstreams: [],
   };
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
   ]));
@@ -631,7 +631,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
 
 test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {
   stub.nextGenerations = [jsonResponse('R0VO', { input_tokens: 9, output_tokens: 4, total_tokens: 13 })];
-  // Real scheduler: capture the promises the shim fires so the test can
+  // Real scheduler: capture the promises the dispatcher fires so the test can
   // await them before querying the repo (the default no-op scheduler in
   // `gatewayCtx()` would drop the recordSample write).
   const pending: Promise<unknown>[] = [];
@@ -639,7 +639,7 @@ test('an image sub-call records its own perf row attributed to the image backend
     wantsStream: true,
     backgroundScheduler: p => { pending.push(p); },
   });
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
+  const result = await dispatcher(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('here it is'),
   ]));
@@ -661,7 +661,7 @@ test('an image sub-call records its own perf row attributed to the image backend
   const imageUsage = usageRows.filter(row => row.model === 'gpt-image-2');
   assertEquals(imageUsage.length, 1);
   assertEquals(imageUsage[0]!.upstream, 'u');
-  // The image shim runs on a local AttemptState distinct from the outer
+  // The image dispatcher runs on a local AttemptState distinct from the outer
   // OpenAI Responses turn's — no image-call stamps may leak onto ctx.attempt.
   assertEquals(ctx.attempt.timing.upstreamCallStartedAt, null);
   assertEquals(ctx.attempt.timing.firstOutputTokenAt, null);

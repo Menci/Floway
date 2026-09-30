@@ -39,9 +39,9 @@ import { providerModelOf } from '@floway-dev/provider';
 //   https://github.com/openai/openai-python/blob/e75766769547601a25ed83b666c4d0fd046881f0/src/openai/types/responses/web_search_preview_tool.py
 export const WEB_SEARCH_HOSTED_TYPES: ReadonlySet<string> = new Set<string>(WEB_SEARCH_HOSTED_TYPE_NAMES);
 
-// Function-name regex `^[a-zA-Z0-9_-]+$` forbids dots, so the shim call
+// Function-name regex `^[a-zA-Z0-9_-]+$` forbids dots, so the dispatcher call
 // uses the underscored form of the model's training-time `web.run`.
-export const SHIM_TOOL_NAME = 'web_search';
+export const FUNCTION_TOOL_NAME = 'web_search';
 
 // Put the selected hosted declaration's `user_location` in the replacement
 // function description so the model can use it as the default for local searches.
@@ -60,7 +60,7 @@ const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>):
 // local Tavily, Jina, and Microsoft Web IQ execution rejects the fields it
 // cannot implement before dispatch.
 // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L31-L213
-export const buildShimFunctionTool = (
+export const buildFunctionTool = (
   canonical: OpenAIResponsesHostedTool,
   name: string,
 ): OpenAIResponsesFunctionTool => {
@@ -332,8 +332,8 @@ const validateDomainListEntry = (
   return { ok: true };
 };
 
-// Validate the hosted web-search fields the shim interprets. The model-bound
-// replacement uses the shim command schema; backend settings such as
+// Validate the hosted web-search fields the dispatcher interprets. The model-bound
+// replacement uses the dispatcher command schema; backend settings such as
 // `external_web_access` are handled separately, while unhandled fields such
 // as `return_token_budget` are omitted from that request.
 const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError | null => {
@@ -381,7 +381,7 @@ const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError
 
 // Validate every hosted declaration before selecting the last one's runtime
 // filters, so an earlier invalid declaration cannot be masked.
-export const prepareToolsForShim = (
+export const prepareTools = (
   tools: OpenAIResponsesTool[],
   paths?: readonly string[],
 ): PrepareToolsResult => {
@@ -411,9 +411,9 @@ export const prepareToolsForShim = (
 const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
 
 /**
- * Persistent `payload.private` shape for one `web_search_call`. One shim call
+ * Persistent `payload.private` shape for one `web_search_call`. One dispatcher call
  * function_call corresponds to exactly one wsc and one op — multi-op
- * shim calls (multi-kind mix or multi-instance same-kind) are rejected at
+ * dispatcher calls (multi-kind mix or multi-instance same-kind) are rejected at
  * dispatch with an `ambiguous` error, so there is never an array to
  * denormalize. The persisted-payload key IS the wsc id, so we don't repeat
  * it inside.
@@ -425,13 +425,13 @@ const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
  *   so the upstream model's prior assistant turn looks bit-exact.
  *
  * - `ir` stores the action, structured results, and optional upstream
- *   model-facing output straight from `planShimSlots`. Replay uses
+ *   model-facing output straight from `planDispatchSlots`. Replay uses
  *   `renderWebSearchCallOutput`, which preserves that output when present
  *   and otherwise renders the action and results.
  *
  * Version-tagged: an unknown `v` falls through the no-payload branch in
  * `transformInputItemsForWebSearch` (action re-serialized into the
- * shim call shape, output replaced with the not-preserved notice). Starts
+ * dispatcher call shape, output replaced with the not-preserved notice). Starts
  * at 1; bump only on a wire-incompatible change after release.
  */
 export interface WebSearchCallPrivatePayload {
@@ -460,12 +460,12 @@ export const synthesizeWebSearchCallId = (): string => createRandomOpenAIRespons
 // replay call_id never reads as a web-search item id in logs.
 const synthesizeReplayCallId = (): string => shortId('cc_replay');
 
-// Re-serializes a wire `action` back into the shim's JSON arguments
+// Re-serializes a wire `action` back into the dispatcher's JSON arguments
 // shape (`{search_query:[{q}]}` / `{open:[{ref_id}]}` /
 // `{find:[{ref_id,pattern}]}`). Used only on the replay-fallback path to
 // fill the paired function_call's `arguments` when no private payload
 // exists; the happy path replays the upstream's original args verbatim.
-const actionToShimCallArgsJson = (action: OpenAIResponsesWebSearchAction): string => {
+const actionToFunctionCallArgsJson = (action: OpenAIResponsesWebSearchAction): string => {
   switch (action.type) {
   case 'search':
     return JSON.stringify({
@@ -497,9 +497,9 @@ const actionToShimCallArgsJson = (action: OpenAIResponsesWebSearchAction): strin
 // 2. No payload (`store: false`, expired, foreign id, cross-account, or
 //    schema-version mismatch): degrade to a synthesized pair whose
 //    `function_call.arguments` is the wire action re-serialized into
-//    the shim call shape (so the model still sees what it asked for) and
+//    the dispatcher call shape (so the model still sees what it asked for) and
 //    whose `function_call_output` text is the not-preserved placeholder.
-//    The shim deliberately does not read `item.results` from the
+//    The dispatcher deliberately does not read `item.results` from the
 //    wire — turn 1's wire results may or may not exist depending on the
 //    client's `include` opt-in, and trusting them across the wire would
 //    couple state correctness to client storage discipline.
@@ -563,7 +563,7 @@ export const transformInputItemsForWebSearch = (
         type: 'function_call',
         call_id: callId,
         name: toolName,
-        arguments: actionToShimCallArgsJson(item.action),
+        arguments: actionToFunctionCallArgsJson(item.action),
         status: 'completed',
       },
       {
@@ -578,12 +578,12 @@ export const transformInputItemsForWebSearch = (
   return out;
 };
 
-// The shim's execution session plus the one wire-shaping flag that lives
+// The dispatcher's execution session plus the one wire-shaping flag that lives
 // only on the OpenAI Responses side.
-interface ShimState extends WebSearchExecutionSession {
+interface HostedToolState extends WebSearchExecutionSession {
   // Set when the client passed `include: ["web_search_call.results"]` on
   // the request. Native OpenAI Responses gates the `results` field on this
-  // include token; the shim follows suit on the wire item — but the IR
+  // include token; the dispatcher follows suit on the wire item — but the IR
   // (and therefore `payload.private`) always carries the real results
   // so a subsequent turn echoing the item id can be hydrated regardless.
   includeSearchResults: boolean;
@@ -604,11 +604,11 @@ const eagerResolver = <T>(promise: Promise<T>): (() => Promise<T>) => {
   };
 };
 
-const planShimSlots = (
+const planDispatchSlots = (
   parsed: ParsedWebSearchOperations,
   commands: Record<string, unknown>,
   toolName: string,
-  state: ShimState,
+  state: HostedToolState,
   loopState: HostedToolLoopState,
 ): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
   if (loopState.iterationCount > ITERATION_CAP) {
@@ -626,7 +626,7 @@ const planShimSlots = (
     return {
       id: synthesizeWebSearchCallId(),
       resolve: async () => schemaErrorIr(
-        'malformed shim call arguments',
+        'malformed dispatcher call arguments',
         'Malformed arguments',
         'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
       ),
@@ -691,7 +691,7 @@ const planShimSlots = (
     return {
       id: synthesizeWebSearchCallId(),
       resolve: async () => schemaErrorIr(
-        'ambiguous shim call',
+        'ambiguous dispatcher call',
         'Ambiguous tool call',
         `Error: ambiguous \`${toolName}\` tool call — each function_call maps to one web_search_call. `
         + 'Multiple `search_query` entries are fine (they collapse into one search). '
@@ -717,7 +717,7 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'web_search_call');
   if (!hasHostedWebSearch && !hasReplayInput) return { type: 'inactive' };
 
-  const prepared = prepareToolsForShim(tools, declarations.map(entry => entry.path));
+  const prepared = prepareTools(tools, declarations.map(entry => entry.path));
   if (!prepared.ok) {
     return {
       type: 'invalid-request',
@@ -732,7 +732,7 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
   const settings = alphaSearchSettingsFromHosted(hosted);
-  const state: ShimState = {
+  const state: HostedToolState = {
     filters,
     pageCache: new Map(),
     getProvider: () => {
@@ -765,17 +765,17 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
 
   return {
     type: 'active',
-    baseToolName: SHIM_TOOL_NAME,
+    baseToolName: FUNCTION_TOOL_NAME,
     transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => gatewayCtx.store.getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
           hosted: {
             hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
             canonicalize: canonicalizeWebSearchTool,
-            buildFunctionTool: buildShimFunctionTool,
+            buildFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.arguments ?? {};
-              const slot = planShimSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
+              const slot = planDispatchSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
               const functionCallItem: OpenAIResponsesFunctionToolCallItem = {
                 type: 'function_call',
                 call_id: intercepted.callId,

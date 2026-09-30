@@ -22,7 +22,7 @@ import type { Stage } from '@floway-dev/pipeline';
  * this wire reports; the vendor dialects are how one upstream spells both. All of them apply
  * to whatever body this wire actually sends and to nothing that leaves for another protocol.
  *
- * The order is the one the rules had as an onion, which is the same order in both directions:
+ * Requests descend through this array and responses return through it in reverse:
  * a stage earlier in the array rewrites the request first and reads the answer last. So the
  * usage chunk is asked for above everything, and coming back the vendor dialects have the
  * first say — the generic rules above them then read a body already in OpenAI-canonical form,

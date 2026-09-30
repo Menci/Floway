@@ -8,7 +8,7 @@ import type { GatewayCtx, AttemptState } from '../../../shared/gateway-ctx.ts';
 import { run, move } from '@floway-dev/pipeline';
 
 /**
- * The run a shim call is.
+ * The run a dispatcher call is.
  *
  * Its context is the parent's, with the three things a separate run owes itself: a start time of
  * its own, an attempt slot of its own — so the outer turn's upstream stamp survives — and a

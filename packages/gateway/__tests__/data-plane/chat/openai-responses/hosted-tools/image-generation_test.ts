@@ -14,7 +14,7 @@ import {
   parseRetryAfterMs,
   prepareImageGenerationConfig,
   resolveImageOperation,
-  SHIM_TOOL_NAME,
+  FUNCTION_TOOL_NAME,
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
 } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-generation.ts';
@@ -239,9 +239,9 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
 // ── buildImageGenerationFunctionTool ──
 
 test('buildImageGenerationFunctionTool exposes only an optional prompt and is non-strict', () => {
-  const tool = buildImageGenerationFunctionTool({ type: 'image_generation' }, SHIM_TOOL_NAME);
+  const tool = buildImageGenerationFunctionTool({ type: 'image_generation' }, FUNCTION_TOOL_NAME);
   assertEquals(tool.type, 'function');
-  assertEquals(tool.name, SHIM_TOOL_NAME);
+  assertEquals(tool.name, FUNCTION_TOOL_NAME);
   assertEquals(tool.strict, false);
   const params = tool.parameters as { properties: Record<string, unknown>; required: unknown[]; additionalProperties: unknown };
   assertEquals(Object.keys(params.properties), ['prompt']);
@@ -383,7 +383,7 @@ test('a request inspector reuses decoded bytes after generated results become re
     output_format: 'jpeg',
   };
   const initial = inspect([generated]);
-  const replay = inspect(transformInputItemsForImageGeneration([generated], SHIM_TOOL_NAME));
+  const replay = inspect(transformInputItemsForImageGeneration([generated], FUNCTION_TOOL_NAME));
   assert(initial.sources[0] === replay.sources[0]);
 });
 
@@ -396,7 +396,7 @@ test('auto generation pivots to edit when a generated image is fed back', () => 
 
   const replayInput = transformInputItemsForImageGeneration([
     { type: 'image_generation_call', id: 'ig_replay', status: 'completed', result: PNG_B64 },
-  ], SHIM_TOOL_NAME);
+  ], FUNCTION_TOOL_NAME);
   const replay = resolveImageOperation(config, inspect(replayInput));
   assert(replay.ok);
   assertEquals(replay.action, 'edit');
@@ -654,7 +654,7 @@ test('imageGenerationHostedTool fetches repeated remote edit sources once', asyn
 
   assert(result.type === 'active');
   assertEquals(urls, ['https://example.com/source.png']);
-  const transformed = result.transformItems?.(input, SHIM_TOOL_NAME);
+  const transformed = result.transformItems?.(input, FUNCTION_TOOL_NAME);
   assert(transformed?.[0].type === 'message' && Array.isArray(transformed[0].content));
   const first = transformed[0].content[0];
   assert(first.type === 'input_image');
@@ -952,7 +952,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
   };
   assertThrows(
     () => result.hosted?.dispatcher({
-      intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
+      intercepted: { callId: 'call_live_invalid', name: FUNCTION_TOOL_NAME, arguments: { prompt: 'edit it' } },
       loopState: { iterationCount: 2, remainingToolCalls: undefined },
     }),
     Error,
@@ -966,7 +966,7 @@ test('image dispatch budget caps real backend calls per response, not ReAct turn
   const result = await imageGenerationHostedTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), gatewayCtx());
   assert(result.type === 'active' && result.hosted !== undefined);
   const dispatch = result.hosted.dispatcher;
-  const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
+  const intercepted = { callId: 'c', name: FUNCTION_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 
   for (let i = 0; i < 10; i++) {

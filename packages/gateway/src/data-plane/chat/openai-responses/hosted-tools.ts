@@ -175,7 +175,7 @@ export const hostedTools = (
     },
   },
   // A tool declaration this gateway cannot accept is answered here rather than dialled: the
-  // upstream would have been asked for a tool it does not implement, on a body the shim wrote.
+  // upstream would have been asked for a tool it does not implement, on a body the dispatcher wrote.
   return: {
     provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers'],
   },
@@ -272,7 +272,7 @@ export const hostedTools = (
   },
 });
 
-/** One descent, asked with the payload the shim wrote. */
+/** One descent, asked with the payload the dispatcher wrote. */
 const descend = async (
   next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>) => Promise<Answered>,
   facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
@@ -336,16 +336,16 @@ async function* spliceTurns(args: {
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     for (;;) {
       const turn = currentTurn;
-      const executedShim = turn.dispatched.length > 0;
+      const executedHostedTools = turn.dispatched.length > 0;
 
       if (turn.terminalStatus.kind === 'failed') {
         failed = true;
-        if (executedShim) yield* materializeHostedToolItems(turn.dispatched, merge, store);
+        if (executedHostedTools) yield* materializeHostedToolItems(turn.dispatched, merge, store);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'incomplete') {
-        if (executedShim) yield* materializeHostedToolItems(turn.dispatched, merge, store);
+        if (executedHostedTools) yield* materializeHostedToolItems(turn.dispatched, merge, store);
         yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
         return;
       }
@@ -357,7 +357,7 @@ async function* spliceTurns(args: {
         }, active);
         return;
       }
-      if (!executedShim && !turn.sawClientToolCall) {
+      if (!executedHostedTools && !turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
       }

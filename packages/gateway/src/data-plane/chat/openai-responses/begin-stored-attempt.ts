@@ -3,13 +3,9 @@ import type { ChatServices } from '../services.ts';
 import { defineStage } from '@floway-dev/pipeline';
 
 /**
- * Reseeds the store's per-attempt scratchpad from what the membrane hydrated.
- *
- * Below the fork because it is per attempt: what one attempt wrote into the scratchpad is
- * not what the next one starts from, and re-running the suffix is what clears it. Nothing in
- * a pipelined turn writes to it — the hosted-tool shim is what writes, and it does not run at
- * all — so today this only puts back the state the stored rows already carried, which is what
- * lets an item this turn re-emits be stored with it intact.
+ * Each candidate starts with the hydrated private payloads. Hosted tools can add execution
+ * state during that attempt; reseeding here prevents a failed candidate's state from leaking
+ * into failover while preserving payloads when stored items are replayed.
  */
 export const beginStoredAttempt = defineStage<
   Fields<'request.chat.openaiResponses.privatePayloads'>,

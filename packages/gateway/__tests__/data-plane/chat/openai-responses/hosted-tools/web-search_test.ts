@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { resolveHostedToolName } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/shared.ts';
 import {
   alphaSearchSettingsFromHosted,
-  buildShimFunctionTool,
+  buildFunctionTool,
   isHostedWebSearchTool,
-  prepareToolsForShim,
-  SHIM_TOOL_NAME,
+  prepareTools,
+  FUNCTION_TOOL_NAME,
   synthesizeWebSearchCallId,
   transformInputItemsForWebSearch,
   WEB_SEARCH_HOSTED_TYPES,
@@ -16,7 +16,7 @@ import { assertLocalWebSearchSupport, findMatches, formatMatches, isUrlAllowed, 
 import type { OpenAIResponsesHostedTool, OpenAIResponsesTool, OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchResult } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-// ── Shim call argument parsing (parseWebSearchOperations) ──
+// ── Dispatcher call argument parsing (parseWebSearchOperations) ──
 
 const opsOf = (args: Record<string, unknown> | null): WebSearchOperation[] => {
   const parsed = parseWebSearchOperations(args);
@@ -25,7 +25,7 @@ const opsOf = (args: Record<string, unknown> | null): WebSearchOperation[] => {
 };
 
 test('injected web_search function exposes the complete OpenAI alpha-search command shape', () => {
-  const functionTool = buildShimFunctionTool({ type: 'web_search' }, SHIM_TOOL_NAME);
+  const functionTool = buildFunctionTool({ type: 'web_search' }, FUNCTION_TOOL_NAME);
   const properties = (functionTool.parameters as { properties: Record<string, unknown> }).properties;
   assertEquals(Object.keys(properties), [
     'search_query',
@@ -382,11 +382,11 @@ test('formatMatches: multi-match output uses Match N: headers', () => {
 
 // ── Tool detection, filter prep, and name resolution ──
 
-const SHIM_TOOL = SHIM_TOOL_NAME;
+const FUNCTION_NAME = FUNCTION_TOOL_NAME;
 const hostedVariants = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
 
 const prepare = (tools: OpenAIResponsesTool[]) => {
-  const result = prepareToolsForShim(tools);
+  const result = prepareTools(tools);
   assert(result.ok);
   return { filters: result.filters };
 };
@@ -399,12 +399,12 @@ test('isHostedWebSearchTool recognizes every hosted variant', () => {
 });
 
 for (const type of hostedVariants) {
-  test(`prepareToolsForShim accepts ${type} and extracts default filters`, () => {
+  test(`prepareTools accepts ${type} and extracts default filters`, () => {
     assertEquals(prepare([{ type } as OpenAIResponsesTool]).filters, { maxResults: 20 });
   });
 }
 
-test('prepareToolsForShim extracts filters, user_location, and context size', () => {
+test('prepareTools extracts filters, user_location, and context size', () => {
   const { filters } = prepare([{
     type: 'web_search',
     filters: { allowed_domains: ['a.com'], blocked_domains: ['b.com'] },
@@ -417,7 +417,7 @@ test('prepareToolsForShim extracts filters, user_location, and context size', ()
   assertEquals(filters.maxResults, 40);
 });
 
-test('prepareToolsForShim selects the last web_search declaration as one configuration', () => {
+test('prepareTools selects the last web_search declaration as one configuration', () => {
   const { filters } = prepare([
     {
       type: 'web_search',
@@ -439,22 +439,22 @@ test('prepareToolsForShim selects the last web_search declaration as one configu
   });
 });
 
-test('prepareToolsForShim passes through with empty filters when no hosted web_search exists', () => {
+test('prepareTools passes through with empty filters when no hosted web_search exists', () => {
   const fn: OpenAIResponsesTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
   assertEquals(prepare([fn]).filters, {});
 });
 
 test('resolveHostedToolName returns the first free sequential name', () => {
-  assertEquals(resolveHostedToolName(SHIM_TOOL, []), SHIM_TOOL);
-  assertEquals(resolveHostedToolName(SHIM_TOOL, [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }]), `${SHIM_TOOL}_2`);
-  assertEquals(resolveHostedToolName(SHIM_TOOL, [
-    { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
-    { type: 'custom', name: `${SHIM_TOOL}_2` },
-  ]), `${SHIM_TOOL}_3`);
+  assertEquals(resolveHostedToolName(FUNCTION_NAME, []), FUNCTION_NAME);
+  assertEquals(resolveHostedToolName(FUNCTION_NAME, [{ type: 'function', name: FUNCTION_NAME, parameters: {}, strict: false }]), `${FUNCTION_NAME}_2`);
+  assertEquals(resolveHostedToolName(FUNCTION_NAME, [
+    { type: 'function', name: FUNCTION_NAME, parameters: {}, strict: false },
+    { type: 'custom', name: `${FUNCTION_NAME}_2` },
+  ]), `${FUNCTION_NAME}_3`);
 });
 
-test('prepareToolsForShim rejects invalid hosted fields', () => {
-  const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as OpenAIResponsesTool]);
+test('prepareTools rejects invalid hosted fields', () => {
+  const result = prepareTools([{ type: 'web_search', search_context_size: 'huge' } as unknown as OpenAIResponsesTool]);
   assertEquals(result.ok, false);
 });
 
@@ -478,7 +478,7 @@ const makePrivatePayload = (
 });
 
 test('transformInputItemsForWebSearch replays the upstream function_call verbatim when a private payload exists', () => {
-  // One wsc maps 1:1 to one shim call. The shim's
+  // One wsc maps 1:1 to one dispatcher call. The dispatcher's
   // jsonrepair-canonical args and the per-op output are persisted on
   // this single row.
   const payload = makePrivatePayload(
@@ -506,7 +506,7 @@ test('transformInputItemsForWebSearch replays the upstream function_call verbati
 });
 
 test('transformInputItemsForWebSearch replays each echoed wsc independently (one pair per wsc)', () => {
-  // Two distinct shim calls (different upstream call_ids) → two replay
+  // Two distinct dispatcher calls (different upstream call_ids) → two replay
   // pairs, one per wsc.
   const p1 = makePrivatePayload('call_u1', '{"search_query":[{"q":"q1"}]}',
     { type: 'search', queries: ['q1'] }, [{ type: 'text_result', url: 'u1', title: 't1', snippet: 'body1' }]);
