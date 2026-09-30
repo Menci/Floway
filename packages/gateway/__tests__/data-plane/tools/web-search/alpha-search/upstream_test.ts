@@ -36,12 +36,7 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
         return { response: new Response('{}'), modelKey: 'search-model' };
       }),
     },
-    instance: stubProvider({
-      callAlphaSearch: async (_model, _body, _signal, opts) => {
-        observedHeaders = opts.headers;
-        return { response: new Response('{}'), modelKey: 'search-model' };
-      },
-    }),
+    instance: stubProvider(),
   };
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchCandidate({

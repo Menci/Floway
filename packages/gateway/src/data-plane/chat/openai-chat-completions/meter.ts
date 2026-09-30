@@ -24,15 +24,22 @@ const meterOpenAIChatCompletions = (
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
-  let settle!: (outcome: StreamOutcome) => void;
-  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
-  // it can see it rather than the reading being started and forgotten.
-  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
+  const completion = Promise.withResolvers<StreamOutcome>();
+  const outcome = defer(completion.promise);
+  let settled = false;
   // A clean EOF completes Chat Completions even when no [DONE] frame was sent.
   let completed = false;
   let failed = false;
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      try { completion.resolve({ billable: [billedEntity(reported, identity)], failed: failed || !completed }); } catch (error) {
+        completion.reject(error);
+        throw error;
+      }
+    };
     try {
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
@@ -47,7 +54,7 @@ const meterOpenAIChatCompletions = (
         if (isTerminal(frame)) {
           completed = true;
           failed = frame.type === 'event' && 'error' in frame.event;
-          settle({ billable: [billedEntity(reported, identity)], failed });
+          finish();
         }
         yield frame;
         // The terminator is written out before the read stops, because it is what the client
@@ -59,7 +66,7 @@ const meterOpenAIChatCompletions = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billedEntity(reported, identity)], failed: failed || !completed });
+      finish();
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };

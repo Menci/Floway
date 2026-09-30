@@ -25,10 +25,9 @@ const meterAnthropicMessages = (
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
-  let settle!: (outcome: StreamOutcome) => void;
-  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
-  // it can see it rather than the reading being started and forgotten.
-  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
+  const completion = Promise.withResolvers<StreamOutcome>();
+  const outcome = defer(completion.promise);
+  let settled = false;
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
@@ -36,6 +35,14 @@ const meterAnthropicMessages = (
   const readBillableUsage = createAnthropicMessagesBillableUsageReader();
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      try { completion.resolve({ billable: [billedEntity(reported, identity)], failed: failed || !sawTerminal }); } catch (error) {
+        completion.reject(error);
+        throw error;
+      }
+    };
     try {
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
@@ -50,7 +57,7 @@ const meterAnthropicMessages = (
         if (isAnthropicMessagesTerminalFrame(frame)) {
           sawTerminal = true;
           failed = frame.type === 'event' && frame.event.type === 'error';
-          settle({ billable: [billedEntity(reported, identity)], failed });
+          finish();
         }
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the
@@ -65,7 +72,7 @@ const meterAnthropicMessages = (
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billedEntity(reported, identity)], failed: failed || !sawTerminal });
+      finish();
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };

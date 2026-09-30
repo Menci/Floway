@@ -7,7 +7,7 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
+import { stubChatProviderPipelines, type ChatFixtureCalls } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -130,9 +130,10 @@ const makeCandidate = (overrides: {
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const calls = {
     callOpenAIResponses: overrides.callOpenAIResponses,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream,
@@ -141,7 +142,7 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null, pipelines: stubChatProviderPipelines(provider),
+      modelsCache: null, pipelines: stubChatProviderPipelines(calls),
       instance: provider,
     },
     model: stubInternalModel({
@@ -804,7 +805,7 @@ const translatedCustomCandidate = (
   callExec = false,
 ): ModelCandidate => {
   const candidate = makeCandidate({ upstream: `up_${target}`, endpoints: { [target]: {} } });
-  const instance = stubProvider({
+  const calls: ChatFixtureCalls = {
     callOpenAIChatCompletions: async (_model, body) => {
       observe(body as unknown as Record<string, unknown>);
       const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({ id: 'chat_exec', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices });
@@ -830,8 +831,8 @@ const translatedCustomCandidate = (
         })(),
       };
     },
-  });
-  return { ...candidate, provider: { ...candidate.provider, instance, pipelines: stubChatProviderPipelines(instance) } };
+  };
+  return { ...candidate, provider: { ...candidate.provider, pipelines: stubChatProviderPipelines(calls) } };
 };
 
 for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {

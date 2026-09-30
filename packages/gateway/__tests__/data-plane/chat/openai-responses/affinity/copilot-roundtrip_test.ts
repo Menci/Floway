@@ -8,7 +8,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
-import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream: UpstreamRecord = {
   id: 'up-copilot',
@@ -117,17 +117,16 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       return sseResponse();
     },
     async () => {
-      const first = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+      const first = await collectChatProviderPipeline(
+        provider, 'openaiResponses', providerModelOf(candidate),
         { input: [], stream: true, store: false },
-        'generate',
         undefined,
         noopUpstreamCallOptions(),
       );
-      if (!first.ok || first.action !== 'generate') throw new Error('expected first Copilot stream');
+      if (first.output === null || !('kind' in first.output) || first.output.kind !== 'stream') throw new Error('expected first Copilot stream');
 
       const codec = new AffinityCodec('00'.repeat(32));
-      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(first.events, {
+      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress({ async *[Symbol.asyncIterator]() { yield* first.frames; } }, {
         codec,
         affinity: {
           upstreamId: provider.upstreamId,
@@ -155,14 +154,13 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       expect(foreign.input[0]).toEqual({ type: 'reasoning', id: publicItem.id, summary: [] });
 
       const { model: _model, ...exactBody } = exact;
-      const second = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+      const second = await collectChatProviderPipeline(
+        provider, 'openaiResponses', providerModelOf(candidate),
         exactBody,
-        'generate',
         undefined,
         noopUpstreamCallOptions(),
       );
-      if (!second.ok || second.action !== 'generate') throw new Error('expected replay Copilot stream');
+      if (second.output === null || !('kind' in second.output) || second.output.kind !== 'stream') throw new Error('expected replay Copilot stream');
     },
   );
 

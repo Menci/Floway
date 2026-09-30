@@ -111,15 +111,16 @@ const makeCandidate = (overrides: {
     : targetApi === 'anthropicMessages'
       ? { anthropicMessages: {} }
       : { openaiResponses: {} });
-  const provider = stubProvider({
+  const calls = {
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(provider), instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(calls), instance: provider,
     },
     model: stubInternalModel({ endpoints }, upstream),
     fetcher: directFetcher,

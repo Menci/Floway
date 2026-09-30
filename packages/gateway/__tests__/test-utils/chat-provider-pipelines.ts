@@ -2,14 +2,14 @@ import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import type { ProviderPipelines, ProviderChatServices } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubChatProviderPipeline, type StubChatProviderCall } from '@floway-dev/test-utils';
 
-type Calls = Partial<{
+export type ChatFixtureCalls = Partial<{
   callOpenAIChatCompletions: StubChatProviderCall<'openaiChatCompletions'>;
   callOpenAIResponses: StubChatProviderCall<'openaiResponses'>;
   callAnthropicMessages: StubChatProviderCall<'anthropicMessages'>;
   callAnthropicMessagesCountTokens: StubChatProviderCall<'anthropicMessagesCountTokens'>;
 }>;
 
-export const stubChatProviderPipelines = (calls: Calls): ProviderPipelines => ({
+export const stubChatProviderPipelines = (calls: ChatFixtureCalls): ProviderPipelines => ({
   ...(calls.callOpenAIChatCompletions === undefined ? {} : { openaiChatCompletions: stubChatProviderPipeline('openaiChatCompletions', calls.callOpenAIChatCompletions) }),
   ...(calls.callOpenAIResponses === undefined ? {} : {
     openaiResponses: stubChatProviderPipeline('openaiResponses', calls.callOpenAIResponses),

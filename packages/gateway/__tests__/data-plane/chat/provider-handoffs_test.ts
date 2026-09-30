@@ -16,7 +16,7 @@ const config = { baseUrl: 'https://custom.example', authStyle: 'none' as const, 
 const first = { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'wire-model', choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] };
 const usage = { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'wire-model', choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
 
-for (const client of ['unread', 'partial', 'complete'] as const) test(`typed provider handoff preserves HTTP 201 and drains one reading after ${client} client output`, async () => {
+const runWire = async (response: Response) => {
   const gateway = mockChatGatewayCtx({ wantsStream: true });
   const base = prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] });
   const plain = stubModelCandidate({ model: { id: 'alias', endpoints: { openaiChatCompletions: {} } }, providerData: 'wire-model' });
@@ -29,7 +29,7 @@ for (const client of ['unread', 'partial', 'complete'] as const) test(`typed pro
       if (!isReplayableBody(init.body)) throw new Error('JSON HTTP content must be replayable');
       calls += 1;
       expect(await new Response(init.body.open()).json()).toMatchObject({ model: 'wire-model', stream: true, messages: [{ role: 'user', content: 'hello' }], stream_options: { include_usage: true } });
-      return new Response([first, usage].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { status: 201, headers: { 'content-type': 'text/event-stream', 'x-upstream': 'kept' } });
+      return response;
     },
   };
   const [selector] = base.services.rememberCandidates([candidate]);
@@ -47,6 +47,11 @@ for (const client of ['unread', 'partial', 'complete'] as const) test(`typed pro
     selectAffinity: () => {},
     dump: (event: Event) => { events.push(event); },
   });
+  return { executed, events, calls: () => calls };
+};
+
+for (const client of ['unread', 'partial', 'complete'] as const) test(`typed provider handoff preserves HTTP 201 and drains one reading after ${client} client output`, async () => {
+  const { executed, events, calls } = await runWire(new Response([first, usage].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { status: 201, headers: { 'content-type': 'text/event-stream', 'x-upstream': 'kept' } }));
   expect(executed.facts['response.http.status']).toBe(201);
   expect(executed.facts['response.http.headers']).toContainEqual(['x-upstream', 'kept']);
   const frames = executed.facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>;
@@ -64,7 +69,27 @@ for (const client of ['unread', 'partial', 'complete'] as const) test(`typed pro
   expect(outcome.failed).toBe(client !== 'complete');
   expect(outcome.billable).toHaveLength(1);
   expect(outcome.billable[0].quantities).toMatchObject({ input_tokens: '10', output_tokens: '5' });
-  expect(calls).toBe(1);
+  expect(calls()).toBe(1);
   expect(events).toContainEqual(expect.objectContaining({ type: 'stage.entered', name: 'http' }));
   expect(events).toContainEqual(expect.objectContaining({ type: 'stage.entered', facts: expect.objectContaining({ 'request.provider.payload': expect.objectContaining({ messages: [{ role: 'user', content: 'hello' }] }), 'request.provider.model': expect.objectContaining({ enabledFlags: [] }) }) }));
+});
+
+test('an actual upstream quantity-formatting fault rejects produced usage with the original error', async () => {
+  const raw = `data: ${JSON.stringify(first)}\n\ndata: {"id":"c1","object":"chat.completion.chunk","model":"wire-model","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1e999,"total_tokens":1}}\n\ndata: [DONE]\n\n`;
+  const { executed, calls } = await runWire(new Response(raw, { headers: { 'content-type': 'text/event-stream' } }));
+  const sent: SseFrame[] = [];
+  for await (const frame of executed.facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) sent.push(frame);
+  const reading = executed.facts['response.chat.openaiChatCompletions.streamedUsage'] as Deferred<StreamOutcome>;
+  let original: unknown;
+  try { await reading; } catch (error) { original = error; }
+  expect(original).toBeInstanceOf(TypeError);
+  expect((original as Error).message).toContain('Infinity');
+  expect(JSON.parse(sent.at(-1)!.data)).toMatchObject({ error: { name: 'TypeError', message: (original as Error).message } });
+  expect(executed.facts['response.usage.billable']).toMatchObject([{ quantities: {} }]);
+  expect(calls()).toBe(1);
+  let teardown: unknown;
+  try { await executed.drain(); } catch (error) { teardown = error; }
+  const causes = teardown instanceof AggregateError ? teardown.errors as unknown[] : [teardown];
+  expect(causes.length).toBeGreaterThan(0);
+  expect(causes.every(error => error === original)).toBe(true);
 });
