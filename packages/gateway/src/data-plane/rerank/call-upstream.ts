@@ -68,7 +68,7 @@ export const callRerankUpstream = defineStage<
     const body = await readUpstreamBody(result.response);
 
     if (!result.response.ok) {
-      use.log.warn('upstream refused', { status: result.response.status });
+      await use.log.warn('upstream refused', { status: result.response.status });
       return move({
         ...rest,
         'response.rerank.canonical': {
@@ -104,7 +104,7 @@ export const callRerankUpstream = defineStage<
     try {
       usage = parseRerankUsage(result.target.protocol, body.json);
     } catch (error) {
-      use.log.warn('upstream reported usage the rerank protocol cannot read', { error: String(error) });
+      await use.log.warn('upstream reported usage the rerank protocol cannot read', { error: String(error) });
       usage = {};
     }
     const metered: readonly BillableEntity[] = [{
@@ -125,7 +125,7 @@ export const callRerankUpstream = defineStage<
       canonical = parseRerankResponse(result.target.protocol, body.json);
     } catch (error) {
       if (translating) {
-        use.log.warn('upstream answered with results the rerank protocol cannot read', { error: String(error) });
+        await use.log.warn('upstream answered with results the rerank protocol cannot read', { error: String(error) });
         return move({
           ...rest,
           'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
@@ -135,7 +135,7 @@ export const callRerankUpstream = defineStage<
           'response.usage.billable': providerUsage(candidate, back, wasCalled ? metered : []),
         });
       }
-      use.log.debug('same-protocol answer carries results this gateway does not model', { error: String(error) });
+      await use.log.debug('same-protocol answer carries results this gateway does not model', { error: String(error) });
       canonical = { raw: body.json as Record<string, unknown>, results: [] };
     }
 

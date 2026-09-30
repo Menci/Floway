@@ -5,8 +5,10 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
+import { runStreamId } from '../dump/run-sink.ts';
 import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
+import { getLogStreamStore, serveLogStream } from '@floway-dev/platform';
 
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;
@@ -39,6 +41,15 @@ export const dumpRoutes = new Hono()
       ...(before !== undefined ? { before } : {}),
     });
     return c.json({ records });
+  })
+  .get('/keys/:keyId/records/:recordId/live', zValidator('query', z.object({
+    offset: z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  })), async c => {
+    const owned = await ownedKey(c);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
+    const stream = await getLogStreamStore().get(runStreamId(owned.id, c.req.param('recordId')!));
+    if (stream === null) return c.json({ error: 'Live recording is unavailable' }, 404);
+    return serveLogStream(stream, c.req.valid('query').offset ?? 0, c.req.raw.signal);
   })
   .get('/keys/:keyId/records/:recordId', async c => {
     const owned = await ownedKey(c);

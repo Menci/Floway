@@ -29,7 +29,7 @@ const candidate = (upstream: string, callRerank: () => Promise<ProviderRerankCal
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callRerank }),
+      instance: stubProvider(),
       pipelines: { rerank: stubProviderPipeline('rerank', callRerank) },
     },
     model: stubInternalModel(

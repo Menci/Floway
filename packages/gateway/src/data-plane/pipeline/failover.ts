@@ -69,7 +69,7 @@ export const failover = ({ failed, owns, pendingUsage }: Forking) => defineStage
           }),
         };
       }
-      use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
+      await use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
     }
     if (last === undefined) throw new Error('failover: assembly handed it an empty candidate list');
     // Every candidate failed, and the last failure is the base — so the client sees real

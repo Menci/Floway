@@ -5,6 +5,8 @@ import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -399,6 +401,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   await registerOpenAICompletionsUpstream(repo);
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
 
+  let delivered = '';
   await withMockedFetch(
     () => Promise.resolve(completionStream()),
     async () => {
@@ -408,7 +411,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
       });
       assertEquals(response.status, 200);
-      await response.text();
+      delivered = await response.text();
     },
   );
 
@@ -430,31 +433,27 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 4);
   assertEquals(dump.meta.outputTokens, 2);
-  // The frames the gateway saw from upstream, before the edge decided which of them the
-  // client is shown — recorded as `stream.frame` events in the run's own stream. The fixture
-  // emits two content events, one usage-only event (which this client did not opt into and
-  // so was stripped from what it received), and a done terminator.
-  const events = eventsOf(runRecordOf(dumpStubs.stored[0]!.record));
-  const frames = events
-    .filter(event => event.type === 'stream.frame')
-    .flatMap(event => (event as unknown as { frames: readonly unknown[] }).frames);
-  assertEquals(frames.length, 4);
-  // The usage chunk the client did not opt into is still in the run's own record: what the
-  // gateway saw is not narrowed to what it forwarded. The encoder shares repeated values, so
-  // what is asserted is that the numbers are in the stream, not the shape they took in it.
-  const stored = new TextDecoder().decode(runRecordOf(dumpStubs.stored[0]!.record).events);
-  assertEquals(stored.includes('"prompt_tokens":4'), true);
-
-  // The stream is named, and every frame says which stream it belongs to — the id is
-  // allocated per stream rather than fixed, so a run that opened two would keep them apart.
-  const streamIds = new Set(events.filter(event => event.type === 'stream.frame').map(event => event.streamId));
-  assertEquals([...streamIds], [1]);
-  // And the record of it is complete. A client that stopped reading would leave the frames it
-  // did get and no terminator, which is how a reader tells the two apart.
-  assertEquals(events.filter(event => event.type === 'stream.end'), [{ type: 'stream.end', streamId: 1 }]);
-  // The facts that hold the stream point at it: the answer the ending provided, and the
-  // framing the edge built for the client over the same frames.
-  assertEquals(stored.includes('"$stream":1'), true);
+  const events = eventsOf(runRecordOf(dumpStubs.stored[0]!.record)) as unknown as DumpEvent[];
+  const read = createRunReader();
+  const streams = new Map<number, ProtocolFrame<unknown>[]>();
+  let client: number | undefined;
+  for (const event of events) {
+    const decoded = read(event);
+    if (decoded?.facts && 'response.openaiCompletions.rendered' in decoded.facts) {
+      client = (decoded.facts['response.openaiCompletions.rendered'] as { stream: number }).stream;
+    }
+    if (event.type === 'stream.frame') {
+      const frames = streams.get(event.streamId) ?? [];
+      frames.push(...decoded!.frames as ProtocolFrame<unknown>[]);
+      streams.set(event.streamId, frames);
+    }
+  }
+  assertExists(client);
+  const clientFrames = streams.get(client)!;
+  assertEquals(clientFrames.length, 3);
+  assertEquals(clientFrames.map(frame => `data: ${frame.type === 'done' ? '[DONE]' : JSON.stringify(frame.event)}\n\n`).join(''), delivered);
+  assertEquals([...streams.values()].some(frames => frames.some(frame => frame.type === 'event' && 'usage' in (frame.event as object))), true);
+  assertEquals(events.filter(event => event.type === 'stream.end').map(event => event.streamId).sort(), [...streams.keys()].sort());
 });
 
 // A run that threw is the turn that most needs explaining and used to be the one that left

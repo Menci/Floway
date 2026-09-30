@@ -74,8 +74,9 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       const snapshot = (JSON.parse((raw as MessageEvent).data) as { records: DumpMetadata[] }).records;
       setRecords(current => {
         const ids = new Set(snapshot.map(record => record.id));
-        const oldest = snapshot.at(-1)?.id;
-        const tail = oldest ? current.filter(record => !ids.has(record.id) && record.id < oldest) : [];
+        const oldest = snapshot.at(-1);
+        const tail = oldest ? current.filter(record => !ids.has(record.id)
+          && (record.completedAt < oldest.completedAt || (record.completedAt === oldest.completedAt && record.id < oldest.id))) : [];
         const next = [...snapshot, ...tail];
         seenRef.current = new Set(next.map(record => record.id));
         return next;

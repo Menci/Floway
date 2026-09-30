@@ -30,7 +30,7 @@ const candidate = (callOpenAIAudioTranscriptions: () => Promise<ProviderCallResu
     provider: {
       upstreamId: 'up_a', kind: 'custom', name: 'up_a', inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callOpenAIAudioTranscriptions }),
+      instance: stubProvider(),
       pipelines: { openaiAudioTranscriptions: stubProviderPipeline('openaiAudioTranscriptions', callOpenAIAudioTranscriptions) },
     },
     model: stubInternalModel(

@@ -204,6 +204,14 @@ wraps rendering and writes each observed call once, including calls completed be
 stage throws. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
+Run dumps stream their encoded NDJSON into durable storage with backpressure while appending
+the same bytes to a temporary LogStream. Live writes retry at the same byte offset; persistent
+live failure leaves durable recording active. Quiet runs renew their temporary stream and
+staged-file leases. Closing waits for owned readers and deferred outcomes before publishing
+completed metadata. Run IDs are assigned at entry; listing remains ordered by completion time
+and ID. The authenticated `GET /api/dump/keys/:keyId/records/:recordId/live?offset=0` endpoint
+attaches only to an existing per-key stream and uses the platform's framed byte protocol.
+
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same
 file and can place independent parts in a sibling directory of the same name.

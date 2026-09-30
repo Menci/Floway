@@ -583,7 +583,7 @@ const observeOpenAIResponsesWebSocketFrames = async function* (
   ctx: ChatGatewayCtx,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     if (frame.type === 'event') {
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';

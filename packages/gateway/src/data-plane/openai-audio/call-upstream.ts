@@ -5,15 +5,13 @@ import type { BillableEntity, Failure } from '../pipeline/facts.ts';
 import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
+import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease, defer, type Owned, type Logger, type Deferred } from '@floway-dev/pipeline';
 import { isEventStreamMediaType, eventFrame, parseSSEStream, parseDecimalString } from '@floway-dev/protocols/common';
 import { parseOpenAIAudioTranscription, parseOpenAIAudioTranscriptionUsage, isOpenAIAudioTranscriptionDoneEvent, parseOpenAIAudioTranscriptionStreamUsage, type OpenAIAudioTranscriptionResponseFormat, type CanonicalOpenAIAudioTranscription, type OpenAIAudioTranscriptionUsage } from '@floway-dev/protocols/openai-audio';
 import type { ProviderRequest, ProviderOperationPayloads, ProviderResponse, TelemetryModelIdentity } from '@floway-dev/provider';
-
-const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => events });
 
 /**
  * The ending. It dials, reads what came back in the rendering the request asked for, and
@@ -72,7 +70,7 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     const called: readonly BillableEntity[] = wasCalled ? [{ identity, quantities: {} }] : [];
 
     if (!result.response.ok) {
-      use.log.warn('upstream refused', { status });
+      await use.log.warn('upstream refused', { status });
       spentBody(exchange.body);
       // An upstream error body is JSON like any other body, and reading it here is also what
       // leaves a losing attempt with nothing open behind it.
@@ -130,7 +128,7 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     // So there is nothing here to fail over from: the reading feeds the record and the usage
     // row, and the bytes travel either way.
     spentBody(exchange.body);
-    const read = readTranscription(format, new Uint8Array(await result.response.arrayBuffer()), use.log);
+    const read = await readTranscription(format, new Uint8Array(await result.response.arrayBuffer()), use.log);
     return move({
       ...rest,
       'response.openaiAudioTranscription.canonical': read.canonical,
@@ -165,32 +163,32 @@ const refusal = async (status: number, response: Response): Promise<Failure> => 
  * an upstream whose usage block this gateway cannot model still had its transcript read, and
  * one whose document it could not open is still billed for nothing rather than mis-billed.
  */
-const readTranscription = (
+const readTranscription = async (
   format: OpenAIAudioTranscriptionResponseFormat,
   document: Uint8Array,
   log: Logger,
-): { readonly canonical: CanonicalOpenAIAudioTranscription; readonly usage: OpenAIAudioTranscriptionUsage | undefined } => {
+): Promise<{ readonly canonical: CanonicalOpenAIAudioTranscription; readonly usage: OpenAIAudioTranscriptionUsage | undefined }> => {
   let canonical: CanonicalOpenAIAudioTranscription;
   try {
     canonical = parseOpenAIAudioTranscription(format, document);
   } catch (error) {
-    log.warn('failed to parse 2xx upstream body for /audio/transcriptions; forwarding it as it arrived', { error: String(error) });
+    await log.warn('failed to parse 2xx upstream body for /audio/transcriptions; forwarding it as it arrived', { error });
     return { canonical: { document }, usage: undefined };
   }
   // Only an object rendering states usage: `text`, `srt` and `vtt` have nowhere to put it,
   // and asking them for one is what would warn about every subtitle a client requests.
-  return { canonical, usage: canonical.raw === undefined ? undefined : readUsage(() => parseOpenAIAudioTranscriptionUsage(canonical.raw), log) };
+  return { canonical, usage: canonical.raw === undefined ? undefined : await readUsage(() => parseOpenAIAudioTranscriptionUsage(canonical.raw), log) };
 };
 
 /** A transcription states its usage in two places — the body of an object rendering and the
  *  terminal event of a stream — and either can state it in a shape this gateway cannot read.
  *  That upstream metered something, and the request is recorded saying exactly that: the
  *  entity, and no quantities. */
-const readUsage = (read: () => OpenAIAudioTranscriptionUsage | undefined, log: Logger): OpenAIAudioTranscriptionUsage | undefined => {
+const readUsage = async (read: () => OpenAIAudioTranscriptionUsage | undefined, log: Logger): Promise<OpenAIAudioTranscriptionUsage | undefined> => {
   try {
     return read();
   } catch (error) {
-    log.warn('invalid usage in 2xx upstream response; recording the request only', { error: String(error) });
+    await log.warn('invalid usage in 2xx upstream response; recording the request only', { error });
     return undefined;
   }
 };
@@ -210,14 +208,14 @@ const meterEvents = (
   // Declared as this run's own unfinished work, so the runner waits for it at teardown where
   // it can see it rather than the reading being started and forgotten.
   const outcome = defer(new Promise<OpenAIAudioTranscriptionStreamOutcome>(resolve => { settle = resolve; }));
-  const events = viewOf((async function* () {
+  const events = retainReader((async function* () {
     let usage: OpenAIAudioTranscriptionUsage | undefined;
     let completed = false;
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
         const event: unknown = JSON.parse(frame.data);
         if (isOpenAIAudioTranscriptionDoneEvent(event)) {
-          usage = readUsage(() => parseOpenAIAudioTranscriptionStreamUsage(event), log);
+          usage = await readUsage(() => parseOpenAIAudioTranscriptionStreamUsage(event), log);
           completed = true;
           yield frame;
           // The transcript is complete, so there is nothing further to read. An upstream that

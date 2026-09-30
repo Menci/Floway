@@ -25,8 +25,8 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
  * and it goes away with the shape.
  */
 export interface StreamRecording {
-  frame(frame: ProtocolFrame<unknown>): void;
-  end(): void;
+  frame(frame: ProtocolFrame<unknown>): void | Promise<void>;
+  end(): void | Promise<void>;
   readonly fact: StreamFact | null;
 }
 
@@ -36,7 +36,7 @@ export interface TurnDump {
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void;
   error(kind: 'upstream' | 'gateway', upstream?: string): void;
   failed(reason: unknown, options?: { readonly fallback: boolean }): void;
-  frame(frame: ProtocolFrame<unknown>): void;
+  frame(frame: ProtocolFrame<unknown>): void | Promise<void>;
   /** Begins recording one stream. Every call is a new one, which is what lets a turn that
    *  opens two — a sub-request beside the answer — keep them apart. */
   openStream(): StreamRecording;
@@ -64,7 +64,7 @@ export interface TurnDump {
  * family whose stream is bare protocol events says how one becomes a frame, because the record
  * cannot guess and a cast would be it guessing.
  */
-export function recordStream<T>(stream: AsyncIterable<ProtocolFrame<T>>, dump: TurnDump | null): AsyncIterable<ProtocolFrame<T>>;
+export function recordStream<T extends ProtocolFrame<unknown>>(stream: AsyncIterable<T>, dump: TurnDump | null): AsyncIterable<T>;
 export function recordStream<T>(stream: AsyncIterable<T>, dump: TurnDump | null, asFrame: (value: T) => ProtocolFrame<unknown>): AsyncIterable<T>;
 export function recordStream<T>(
   stream: AsyncIterable<T>,
@@ -80,12 +80,12 @@ export function recordStream<T>(
     ...recording.fact,
     [Symbol.asyncIterator]: () => (async function* () {
       for await (const value of stream) {
-        recording.frame(asFrame(value));
+        await recording.frame(asFrame(value));
         yield value;
       }
       // Reached only where the source ran out on its own, which is what makes the record of
       // this stream complete. A reader that stopped early never gets here.
-      recording.end();
+      await recording.end();
     })(),
   };
 }

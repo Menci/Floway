@@ -105,7 +105,7 @@ const isOpenAIChatCompletionsTerminalFrame = (frame: ProtocolFrame<OpenAIChatCom
 
 const observeOpenAIChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     const failed = isOpenAIChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
     if (isOpenAIChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
@@ -124,7 +124,7 @@ const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<Pr
   } catch (error) {
     state.failed = true;
     const event = internalOpenAIChatCompletionsErrorPayload(toInternalDebugError(error)) as unknown as OpenAIChatCompletionsStreamEvent;
-    ctx.dump?.frame(eventFrame(event));
+    await ctx.dump?.frame(eventFrame(event));
     yield sseFrame(JSON.stringify(event), 'error');
   }
 };

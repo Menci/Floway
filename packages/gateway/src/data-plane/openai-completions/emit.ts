@@ -1,6 +1,7 @@
 import type { OpenAICompletionsFacts, OpenAICompletionsFrames, Fields } from './facts.ts';
-import { streamReferenceOf } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf, type TurnDump } from '../../dump/turn-dump.ts';
 import { isFailure } from '../pipeline/facts.ts';
+import type { GatewayServices } from '../pipeline/services.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { renderErrorEnvelope, isOpenAIUsageOnlyEventShape, type SseFrame } from '@floway-dev/protocols/common';
@@ -22,7 +23,8 @@ export const emitOpenAICompletions = defineStage<
   Fields<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
   Fields<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
   Fields<'ingress.openaiCompletions.wantsUsageChunk' | 'response.openaiCompletions.payload' | 'response.http.status' | 'response.http.headers'>,
-  Fields<'response.openaiCompletions.rendered' | 'response.http.status' | 'response.http.headers'>
+  Fields<'response.openaiCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
+  GatewayServices
 >({
   name: 'emitOpenAICompletions',
   through: {
@@ -37,7 +39,7 @@ export const emitOpenAICompletions = defineStage<
       provides: ['response.openaiCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, next, use) => {
     const asked = facts['request.openaiCompletions.payload'];
     const back = await next({
       ...facts,
@@ -55,7 +57,7 @@ export const emitOpenAICompletions = defineStage<
       ...rest,
       'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
       'response.http.status': isFailure(answer) ? answer.status : back['response.http.status'],
-      'response.openaiCompletions.rendered': move(rendered(answer, back['ingress.openaiCompletions.wantsUsageChunk'])),
+      'response.openaiCompletions.rendered': move(rendered(answer, back['ingress.openaiCompletions.wantsUsageChunk'], use.gateway.dump)),
     };
   },
 });
@@ -63,19 +65,28 @@ export const emitOpenAICompletions = defineStage<
 const rendered = (
   answer: OpenAICompletionsFacts['response.openaiCompletions.payload'],
   wantsUsageChunk: boolean,
+  dump: TurnDump | null,
 ): OpenAICompletionsFacts['response.openaiCompletions.rendered'] =>
   isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
-    : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
+    : isFrames(answer) ? renderSSE(wantsUsageChunk ? answer : recordStream(withoutUsage(answer), dump))
       : answer;
 
-const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => ({
+const renderSSE = (frames: OpenAICompletionsFrames): AsyncIterable<SseFrame> => ({
   // The frames the client reads are a reframing of the ones the record holds, so this key
   // points at that same stream rather than at nothing.
   ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
-      if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
       yield openaiCompletionsProtocolFrameToSSEFrame(frame);
     }
   })(),
+});
+
+const withoutUsage = (frames: OpenAICompletionsFrames): OpenAICompletionsFrames => ({
+  async *[Symbol.asyncIterator]() {
+    for await (const frame of frames) {
+      if (frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
+      yield frame;
+    }
+  },
 });

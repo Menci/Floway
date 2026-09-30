@@ -6,7 +6,7 @@ import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { dialFailure, spentBody } from '../pipeline/upstream-body.ts';
+import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
@@ -24,7 +24,6 @@ import { providerModelOf, type ProviderRequest, type ProviderOperationPayloads, 
  * What comes back is single-shot on purpose: a stream that has been read is a stream that is
  * over, and a second reader learns that rather than being lied to.
  */
-const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
 
 /**
  * The ending. It dials, reads what came back on the shape the request asked for, and
@@ -71,7 +70,7 @@ export const callOpenAICompletionsUpstream = defineStage<
     }
     const result = { response: exchangeResponse(exchange), modelKey };
 
-    if (!result.response.ok) use.log.warn('upstream refused', { status: result.response.status });
+    if (!result.response.ok) await use.log.warn('upstream refused', { status: result.response.status });
 
     const answer = await readUpstream(
       result.response,
@@ -195,14 +194,14 @@ const meterFrames = (
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
 ): MeteredFrames => {
-  let settle!: (outcome: StreamOutcome) => void;
+  const settlement = Promise.withResolvers<StreamOutcome>();
   // Declared as this run's own unfinished work, so the runner waits for it at teardown where
   // it can see it rather than the reading being started and forgotten.
-  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
+  const outcome = defer(settlement.promise);
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
-  const frames = view((async function* () {
+  const frames = retainReader((async function* () {
     let usage: unknown;
     let tier: string | null | undefined;
     try {
@@ -222,7 +221,12 @@ const meterFrames = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [{ identity, ...billed(usage, tier, candidate) }], failed: !sawTerminal });
+      try {
+        settlement.resolve({ billable: [{ identity, ...billed(usage, tier, candidate) }], failed: !sawTerminal });
+      } catch (error) {
+        settlement.reject(error);
+        throw error;
+      }
     }
   })());
   return { frames, outcome };
