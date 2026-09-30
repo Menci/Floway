@@ -4,9 +4,7 @@ import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openRunDump } from '../../src/dump/run-sink.ts';
 import type { StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
-import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
-import { InMemoryRepo } from '../repo/memory.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
 import { compose, defineStage, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -169,29 +167,20 @@ test('finalizing on a response measures what the client reads and leaves it inta
 
   const record = runRecordOf(stubs.stored[0]);
   assertEquals(record.meta.responseBytes, 22);
-  assertEquals(record.capture?.response?.body, { encoding: 'utf8', data: 'data: one\n\ndata: two\n\n' });
-  assertEquals(record.capture?.response?.complete, true);
+
 });
 
-test('a run retains raw upstream exchanges, client bytes and the stable timing reading beside its stage history', async () => {
-  initRepo(new InMemoryRepo());
+test('a run reads the stable timing state at completion alongside its stage history', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   const timing = { upstreamCallStartedAt: 100, firstOutputTokenAt: null as number | null };
-  const dump = openRunDump(apiKey(3600), { ...turn, headers: [['content-type', 'application/json']] }, trackBackground, true, timing);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, true, timing);
   if (dump === null) throw new Error('a key with retention must open a run dump');
   await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
-  const bytes = new Uint8Array([0xFF, 0, 0x80]);
-  const fetcher = dump.http.wrapFetcher(async () => new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } }), 'up_run');
-  const response = await fetcher('https://upstream.test/embeddings', { method: 'POST', body: '{"model":"upstream"}' });
-  assertEquals([...new Uint8Array(await response.arrayBuffer())], [...bytes]);
   timing.firstOutputTokenAt = 225;
-  assertEquals(await dump.finalize(new Response('client', { headers: { 'content-type': 'text/plain' } })).text(), 'client');
+  assertEquals(await dump.finalize(new Response('client')).text(), 'client');
   await flushBackground();
   const record = runRecordOf(stubs.stored[0]);
   assertEquals(record.meta.ttftMs, 125);
-  assertEquals(record.capture?.request?.body, { encoding: 'utf8', data: '{"input":"hi"}' });
-  assertEquals(record.capture?.exchanges[0]?.response?.body, { encoding: 'base64', data: '/wCA' });
-  assertEquals(record.capture?.exchanges[0]?.response?.complete, true);
-  assertEquals(record.capture?.response?.body, { encoding: 'utf8', data: 'client' });
+  assertEquals('capture' in record, false);
   assertEquals(lines(record).some(event => event.type === 'stage.entered'), true);
 });

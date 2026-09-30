@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { renderInApp } from '../../render';
-import type { DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpEdgeRecord, DumpRunRecord } from '@floway-dev/gateway/dump-types';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({ default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => <>{toolbarStart}<pre data-testid="body-content">{text}</pre></> }));
 
@@ -15,6 +15,19 @@ const record: DumpEdgeRecord = {
   response: { status: 200, headers: [], body: { type: 'stream', events: [] } },
   capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: null }, error: null }], response: { body: { encoding: 'utf8', data: 'data: downstream\n' }, complete: true, error: null } },
 };
+
+it('shows pipeline facts through the searchable event viewer with timing and export controls', () => {
+  const run: DumpRunRecord = {
+    shape: 'run', meta: { ...record.meta, ttftMs: 125 },
+    events: '{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null,"facts":{"serve.model":"m"}}\n',
+  };
+  renderInApp(<RequestDetailPanel record={run} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+  expect(screen.getByRole('button', { name: '#1 stage.entered serve' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Search events' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Export record' })).toBeTruthy();
+  expect(screen.getByText('125ms')).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: 'Request details' })).toBeNull();
+});
 
 describe('request detail navigation', () => {
   it('opens each body directly and preserves malformed raw response text', async () => {

@@ -43,10 +43,6 @@ export const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: t
 
 export const dumpHeadersSchema = z.array(z.tuple([z.string(), z.string()]));
 
-// `type` says how to read the file the descriptor points at: raw bytes, the
-// JSON array of captured protocol frames, or a run's NDJSON event stream. It is
-// also what tells the reader which shape the record is — a run's stream is one
-// more body file under the same contract, so the row needs nothing else.
 export const dumpBodyDescriptorSchema = z.object({
   key: z.string(),
   type: z.enum(['bytes', 'events', 'run', 'capture']),
@@ -76,12 +72,6 @@ const rawCaptureSchema = z.object({
 }).strict();
 
 export const dumpCaptureSchema = z.object({
-  request: z.object({
-    method: z.string(),
-    path: z.string(),
-    headers: dumpHeadersSchema,
-    body: rawBodySchema,
-  }).strict().optional(),
   exchanges: z.array(z.object({
     upstreamId: z.string(),
     request: z.object({
@@ -93,10 +83,7 @@ export const dumpCaptureSchema = z.object({
     response: rawCaptureSchema.extend({ status: z.number(), headers: dumpHeadersSchema }).nullable(),
     error: z.string().nullable(),
   }).strict()),
-  response: rawCaptureSchema.extend({
-    status: z.number().nullable().optional(),
-    headers: dumpHeadersSchema.optional(),
-  }).optional(),
+  response: rawCaptureSchema.optional(),
 }).strict();
 
 export const dumpCaptureEnvelopeSchema = z.object({

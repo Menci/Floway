@@ -50,7 +50,6 @@ export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => {
   if (record.shape === 'run') {
     return {
       shape: 'run',
-      ...(record.capture === undefined ? {} : { capture: record.capture }),
       meta: record.meta,
       events: new TextDecoder('utf-8', { fatal: true }).decode(record.events),
     };

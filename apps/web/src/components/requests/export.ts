@@ -9,17 +9,15 @@ const redactHeaders = (headers: Array<[string, string]>): Array<[string, string]
   headers.map(([name, value]) => isSensitiveHeader(name) ? [name, redactHeaderValue(value)] as [string, string] : [name, value]);
 
 const redactRecord = (record: DumpRecord): DumpRecord => {
+  if (record.shape === 'run') return { ...record, events: redactRunHeaders(record.events) };
   const capture = record.capture === undefined ? undefined : {
     ...record.capture,
-    ...(record.capture.request === undefined ? {} : { request: { ...record.capture.request, headers: redactHeaders(record.capture.request.headers) } }),
-    ...(record.capture.response?.headers === undefined ? {} : { response: { ...record.capture.response, headers: redactHeaders(record.capture.response.headers) } }),
     exchanges: record.capture.exchanges.map(exchange => ({
       ...exchange,
       request: { ...exchange.request, headers: redactHeaders(exchange.request.headers) },
       response: exchange.response === null ? null : { ...exchange.response, headers: redactHeaders(exchange.response.headers) },
     })),
   };
-  if (record.shape === 'run') return { ...record, events: redactRunHeaders(record.events), ...(capture === undefined ? {} : { capture }) };
   return {
     ...record,
     request: { ...record.request, headers: redactHeaders(record.request.headers) },

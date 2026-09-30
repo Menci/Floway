@@ -10,27 +10,16 @@
 // them compose into a pipeline over any family's larger space with no variance question to
 // lose: assembly reasons over declarations, which are strings.
 
-import type { AttemptSelector, GatewayFacts } from './facts.ts';
+import type { GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { Facts } from '@floway-dev/pipeline';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
-
-/** Everything about a candidate that is data. The live half — the provider instance, the
- *  fetcher, the models cache — stays out of the record and is looked back up by the
- *  resolver service at the moment of the call. */
-const selectorFor = (candidate: ModelCandidate, candidateId: number): AttemptSelector => ({
-  candidateId,
-  upstreamId: candidate.provider.upstreamId,
-  modelId: candidate.model.id,
-  flags: [...providerModelOf(candidate).enabledFlags],
-});
 
 /** What a family narrows its candidates by, and what it says when nothing is left. A
  *  candidate that resolves but cannot serve this request — no endpoint for the kind, or a
@@ -110,14 +99,13 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       return why === null;
     });
     // The live half stays with the resolver; only selectors travel.
-    use.rememberCandidates(viable);
     if (viable.length === 0) {
       use.log.debug('no viable candidate', { model, refused: [...refused] });
       return refuse(400, appendFailedUpstreams(narrowing.unsupported(model, [...refused]), failedUpstreams));
     }
 
     use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(viable.map(selectorFor)) });
+    return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(viable)) });
   },
 });
 

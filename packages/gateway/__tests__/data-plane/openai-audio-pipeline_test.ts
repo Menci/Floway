@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openaiAudioTranscriptionServePipeline } from '../../src/data-plane/openai-audio/pipeline.ts';
+import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
@@ -57,7 +58,7 @@ const serve = async (responseFormat = 'json') => await run(
   {
     gateway: mockGatewayCtx({ wantsStream: responseFormat === 'stream' }),
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);

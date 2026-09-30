@@ -159,18 +159,15 @@ export type DumpEdgeRecord = {
   response: DumpResponse;
 };
 
-// A run's event stream records every stage and both directions. Raw HTTP
-// exchanges remain parallel diagnostic data, captured at the actual fetch boundary.
+// A run's event stream records every stage and both directions.
 export type StoredDumpRunRecord = {
   shape: 'run';
-  capture?: DumpCapture;
   meta: DumpMetadata;
   events: Uint8Array;
 };
 
 export type DumpRunRecord = {
   shape: 'run';
-  capture?: DumpCapture;
   meta: DumpMetadata;
   events: string;
 };

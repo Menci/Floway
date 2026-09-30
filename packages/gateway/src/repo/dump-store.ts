@@ -20,6 +20,7 @@ import type {
   DumpWriteRecord,
   PreparedDumpRequestBody,
   StoredDumpRecord,
+  StoredDumpEdgeRecord,
   StoredDumpRequest,
   StoredDumpResponse,
   StoredDumpResponseBody,
@@ -143,9 +144,10 @@ export class FileDumpStore implements DumpStore {
     // The pre-translation upstream body, when present. Same descriptor shape
     // as the downstream response body (`{key, type}`), spilled under a
     // distinct `resp.up` side so the sweep can own it independently.
+    const capture = record.shape === 'edge' ? record.capture : undefined;
     const upstream = record.shape === 'edge' ? record.response.upstream : undefined;
     const upstreamBody = upstream?.body;
-    const upstreamFileKey = record.capture !== undefined
+    const upstreamFileKey = capture !== undefined
       ? bodyPath(keyId, bucket, record.meta.id, 'resp.up')
       : upstreamBody === undefined
         ? null
@@ -198,8 +200,8 @@ export class FileDumpStore implements DumpStore {
     }
 
     let upstreamDescriptor: DumpBodyDescriptor | null = null;
-    if (record.capture !== undefined) {
-      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, upstream: upstreamResponseToWire(upstream) });
+    if (capture !== undefined) {
+      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture, upstream: upstreamResponseToWire(upstream) });
       upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, new TextEncoder().encode(JSON.stringify(envelope)), 'capture');
     } else if (upstreamBody !== undefined) {
       if (upstreamBody.type === 'bytes') {
@@ -309,10 +311,7 @@ export class FileDumpStore implements DumpStore {
     // The body kind is the shape: a run was written as one NDJSON stream and
     // has no edge halves to rebuild.
     if (responseDescriptor?.type === 'run') {
-      const capture = upstreamDescriptor?.type === 'capture'
-        ? dumpCaptureEnvelopeSchema.parse(JSON.parse(new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor)))).capture
-        : undefined;
-      return { shape: 'run', meta, events: await fetchBody(this.files, responseDescriptor), ...(capture === undefined ? {} : { capture }) };
+      return { shape: 'run', meta, events: await fetchBody(this.files, responseDescriptor) };
     }
 
     const requestHeaders = decodeDumpHeaders(row.request_headers_json, `dump record ${recordId} request headers`);
@@ -349,7 +348,7 @@ export class FileDumpStore implements DumpStore {
     // Same rehydration rules as the downstream body; absent on native turns
     // and on records written before the upstream column existed (NULL).
     let upstream: StoredDumpUpstreamResponse | undefined;
-    let capture: StoredDumpRecord['capture'];
+    let capture: StoredDumpEdgeRecord['capture'];
     if (upstreamDescriptor?.type === 'capture') {
       const envelope = dumpCaptureEnvelopeSchema.parse(JSON.parse(new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor))));
       capture = envelope.capture;

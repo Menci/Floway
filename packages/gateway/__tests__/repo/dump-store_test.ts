@@ -638,7 +638,7 @@ test('FileDumpStore round-trips raw exchanges and parsed events in one owned spi
   record.response = { ...record.response, upstream: { status: 200, headers: [['x-trace', 'upstream']], body: { type: 'stream', events: [{ ts: 0, frame: { type: 'done' } }] } } };
   await store.put('key_x', record);
   const stored = await store.get('key_x', record.meta.id);
-  expect(stored?.capture).toEqual(record.capture);
+  expect(edgeOf(stored).capture).toEqual(record.capture);
   expect(edgeOf(stored!).response.upstream).toEqual(record.response.upstream);
   const spill = await db.prepare("SELECT file_key, state FROM spilled_files WHERE owner_kind = 'dump-response-upstream'").first<{ file_key: string; state: string }>();
   expect(spill?.state).toBe('owned');

@@ -19,12 +19,12 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpRecord, DumpResponseBody } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata, DumpRecord, DumpResponseBody, DumpRunRecord, DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
 const { Button, DialogActions, DialogTitle, Option, Spinner, Text, Tooltip } = fluentComponents;
 
-type Source = 'run' | 'request' | 'upstreamRequest' | 'upstreamResponse' | 'response';
+type Source = 'request' | 'upstreamRequest' | 'upstreamResponse' | 'response';
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
@@ -66,12 +66,13 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
   if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
   if (!shown.record) return null;
+  if (shown.record.shape === 'run') return <RunRecordDetail key={shown.record.meta.id} record={shown.record} />;
   return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
 }
 
-function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
+function RecordDetail({ record, collected, upstreamCollected }: { record: DumpEdgeRecord; collected: CollectedStream | null; upstreamCollected: CollectedStream | null }) {
   const { t } = useTranslation();
-  const [source, setSource] = useState<Source>(record.shape === 'run' ? 'run' : 'response');
+  const [source, setSource] = useState<Source>('response');
   const [view, setView] = useState('collected');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const exchanges = record.capture?.exchanges ?? [];
@@ -79,22 +80,19 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
   const upstream = source === 'upstreamRequest' || source === 'upstreamResponse';
   const request = source === 'request' || source === 'upstreamRequest';
   const exchange = upstream ? exchanges[index] : undefined;
-  const clientRequest = record.shape === 'edge' ? record.request : record.capture?.request;
-  const clientResponse = useMemo(() => record.shape === 'edge' ? record.response : { status: record.meta.status, headers: record.capture?.response?.headers ?? [], body: record.capture?.response ? { type: 'bytes' as const, body: record.capture.response.body } : { type: 'none' as const } }, [record]);
-  const legacy = record.shape === 'edge' ? record.response.upstream : undefined;
-  const runEvents = useMemo(() => record.shape === 'run' ? renderRunEvents(record.events).map(event => ({ event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError })) : [], [record]);
+  const legacy = record.response.upstream;
   const headers = useMemo(() => upstream ? (request ? exchange?.request.headers : exchange?.response?.headers ?? legacy?.headers) ?? []
-    : request ? clientRequest?.headers ?? [] : clientResponse.headers, [exchange, legacy, clientRequest, clientResponse, request, upstream]);
-  const status = upstream ? exchange?.response?.status ?? legacy?.status ?? null : clientResponse.status;
-  const endpoint = upstream ? exchange?.request.url : record.meta.path;
-  const method = upstream ? exchange?.request.method : record.meta.method;
+    : request ? record.request.headers : record.response.headers, [exchange, legacy, record, request, upstream]);
+  const status = upstream ? exchange?.response?.status ?? legacy?.status ?? null : record.response.status;
+  const endpoint = upstream ? exchange?.request.url : record.request.path;
+  const method = upstream ? exchange?.request.method : record.request.method;
   const raw = request ? undefined : upstream ? exchange?.response ?? undefined : record.capture?.response;
   const result = request ? null : upstream ? (!exchange || index === exchanges.length - 1 ? upstreamCollected : null) : collected;
   const kind = upstream ? collectKindFromTargetApi(record.meta.targetApi) : detectCollectKind(record.meta.path);
   const body = useMemo<DumpResponseBody>(() => upstream
     ? request ? exchange ? { type: 'bytes', body: exchange.request.body } : { type: 'none' }
       : (!exchange || index === exchanges.length - 1) && legacy ? legacy.body : raw ? { type: 'bytes', body: raw.body } : { type: 'none' }
-    : request ? clientRequest ? { type: 'bytes', body: clientRequest.body } : { type: 'none' } : clientResponse.body, [upstream, request, exchange, index, exchanges.length, legacy, raw, clientRequest, clientResponse]);
+    : request ? { type: 'bytes', body: record.request.body } : record.response.body, [upstream, request, exchange, index, exchanges.length, legacy, raw, record]);
   const displayed = useMemo(() => {
     if (view === 'raw' && raw) return { text: raw.body.data, isJson: false, decodeError: null };
     if (body.type === 'bytes') return renderBody(body.body, contentTypeOf(headers));
@@ -107,7 +105,7 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
     displayed.decodeError ? t('dashboard.requests.decodeError', { error: displayed.decodeError }) : null,
   ].filter((value): value is string => Boolean(value)))];
   const labels: Record<Source, string> = {
-    run: t('dashboard.requests.run'), request: t('dashboard.requests.clientRequest'), upstreamRequest: t('dashboard.requests.upstreamRequest'),
+    request: t('dashboard.requests.clientRequest'), upstreamRequest: t('dashboard.requests.upstreamRequest'),
     upstreamResponse: t('dashboard.requests.upstreamResponse'), response: t('dashboard.requests.clientResponse'),
   };
   const viewLabels: Record<string, string> = {
@@ -132,28 +130,17 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
       <Dropdown size="small" className="flex-1" aria-label={t('dashboard.requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
-        {Object.entries(labels).filter(([value]) => value !== 'run' || record.shape === 'run').map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
+        {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-      <Tooltip content={t('dashboard.requests.duration', { value: record.meta.durationMs })} relationship="description">
-        <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.durationMs)}</Text>
-        </span>
-      </Tooltip>
-      {record.meta.ttftMs != null && (
-        <Tooltip content={t('dashboard.requests.ttft', { value: record.meta.ttftMs })} relationship="description">
-          <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
-            <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(record.meta.ttftMs)}</Text>
-          </span>
-        </Tooltip>
-      )}
+      <RecordTiming meta={record.meta} />
       <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
         {diagnostics.length ? t('dashboard.requests.diagnostics', { count: String(diagnostics.length) }) : t('dashboard.requests.metadata')}
       </Button>
       <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
     <div className="flex-1 min-h-0">
-      {source === 'run' && record.shape === 'run' ? <RenderedEventList events={runEvents} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.run')}</Text>} /> : view === 'events' && body.type === 'stream'
+      {view === 'events' && body.type === 'stream'
         ? <EventList key={`${source}-${index}`} events={body.events} kind={kind} toolbarStart={toolbar} />
         : <Suspense fallback={<Spinner />}><BodyEditor
             text={displayed.text} json={displayed.isJson} label={labels[source]}
@@ -162,11 +149,49 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
           /></Suspense>}
     </div>
     <DialogShell width="editor" open={detailsOpen} onOpenChange={(_, data) => setDetailsOpen(data.open)} title={<DialogTitle>{labels[source]}</DialogTitle>} actions={<DialogActions><Button onClick={() => setDetailsOpen(false)}>{t('common.dismiss')}</Button></DialogActions>}>
-      <div className="flex items-center gap-2"><HttpMethodBadge method={method ?? record.meta.method} /><Text className="font-mono break-all">{endpoint ?? record.meta.path}</Text><CopyButton text={endpoint ?? record.meta.path} /></div>
+      <div className="flex items-center gap-2"><HttpMethodBadge method={method ?? record.request.method} /><Text className="font-mono break-all">{endpoint ?? record.request.path}</Text><CopyButton text={endpoint ?? record.request.path} /></div>
       {diagnostics.map((message, i) => <OutcomeMessageBar key={i} intent="warning">{message}</OutcomeMessageBar>)}
       {upstream && !exchange && !legacy && <EmptyStateLine>{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>}
       <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={headers.map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
       <HeaderTable key={`${source}-${index}`} headers={headers} />
     </DialogShell>
+  </div>;
+}
+
+function RecordTiming({ meta }: { meta: DumpMetadata }) {
+  const { t } = useTranslation();
+  return <>
+    <Tooltip content={t('dashboard.requests.duration', { value: meta.durationMs })} relationship="description">
+      <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+        <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(meta.durationMs)}</Text>
+      </span>
+    </Tooltip>
+    {meta.ttftMs != null && (
+      <Tooltip content={t('dashboard.requests.ttft', { value: meta.ttftMs })} relationship="description">
+        <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
+          <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200}>{formatDuration(meta.ttftMs)}</Text>
+        </span>
+      </Tooltip>
+    )}
+  </>;
+}
+
+function RunRecordDetail({ record }: { record: DumpRunRecord }) {
+  const { t } = useTranslation();
+  const events = useMemo(() => renderRunEvents(record.events).map(event => ({
+    event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
+  })), [record.events]);
+  const failure = errorLabel(record.meta.error);
+  return <div className="h-full min-h-0 flex flex-col">
+    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
+      <Text className="flex-1">{t('dashboard.requests.run')}</Text>
+      <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <RecordTiming meta={record.meta} />
+      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
+    </div>
+    {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
+    <div className="flex-1 min-h-0">
+      <RenderedEventList events={events} copyText={record.events} toolbarStart={<Text>{t('dashboard.requests.events', { count: events.length })}</Text>} />
+    </div>
   </div>;
 }

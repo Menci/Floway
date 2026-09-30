@@ -10,7 +10,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
+import { createCandidateRegistry } from './candidates.ts';
+import type { BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
 import { openRunDump } from '../../dump/run-sink.ts';
@@ -23,7 +24,6 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { writeSSEFrames } from '../shared/sse.ts';
 import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -76,7 +76,7 @@ export const openPrologue = (
   // no turn is ever written twice.
   const runDump = openRunDump(
     apiKeyFromContext(c),
-    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body, headers: ingress.headers },
+    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
     backgroundScheduler,
     options.wantsStream,
     attempt.timing,
@@ -90,8 +90,6 @@ export const openPrologue = (
     dump: runDump,
   });
 
-  const live = new Map<number, ModelCandidate>();
-
   return {
     gateway,
     headers: ingress.headers,
@@ -99,19 +97,11 @@ export const openPrologue = (
       gateway,
       log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
-      rememberCandidates: candidates => {
-        for (const [candidateId, candidate] of candidates.entries()) live.set(candidateId, candidate);
-      },
+      ...createCandidateRegistry(),
       // Absent when this key has no retention configured, which is what keeps recording
       // conditional: the runner does none of it rather than doing it and discarding.
       ...(runDump === null ? {} : { dump: runDump.sink }),
-      resolveAttempt: (selector: AttemptSelector) => {
-        const candidate = live.get(selector.candidateId);
-        if (candidate === undefined) {
-          throw new Error(`resolveAttempt: nothing live for candidate ${selector.candidateId}; the selector did not come from this run`);
-        }
-        return candidate;
-      },
+
     },
   };
 };

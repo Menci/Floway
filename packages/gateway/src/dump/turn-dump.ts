@@ -31,7 +31,7 @@ export interface StreamRecording {
 }
 
 export interface TurnDump {
-  readonly http: HttpCapture;
+  readonly http?: HttpCapture;
   requestedModel(model: string): void;
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void;
   error(kind: 'upstream' | 'gateway', upstream?: string): void;
