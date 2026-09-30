@@ -90,7 +90,7 @@ export type ThroughNext<Down extends object, Up extends object> =
  *  stage that declared `through` cannot name a target: a second argument is a compile
  *  error at the definition site. */
 export type IntoNext<Entry extends object, Up extends object> =
-  (handed: Handed<Entry>, target: Pipeline<Entry, Up>) => Promise<Up>;
+  <Target extends Entry>(handed: Handed<Target>, target: Pipeline<Target, Up>) => Promise<Up>;
 
 /** What one run holds, threaded rather than ambient. A module-level context saved and
  *  restored around an `await` interleaves two concurrent runs — one dump lost, the other
