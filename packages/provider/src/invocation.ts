@@ -9,23 +9,8 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
 
 export type ChatTargetApi = 'anthropicMessages' | 'openaiResponses' | 'openaiChatCompletions';
 
-// One (provider, model) pair the resolver produced for an inbound id,
-// plus the per-request `Fetcher` minted for the provider's upstream. The
-// pair is the smallest unit the dispatch layer needs to make a wire call:
-// `provider.instance.callXxx(providerModelOf(candidate), body, ...)` —
-// upstream id / upstream name / provider kind / capability flags come off
-// `provider.*`, the merged public metadata (id, endpoints, limits, ...) off
-// `model.*`, and the per-upstream `ProviderModel` (providerData,
-// enabledFlags) off `providerModelOf(candidate)`.
-//
-// Resolution narrows by `model.kind` only — choosing the inbound target
-// protocol from `model.endpoints` is the attempt layer's job, not part of
-// the candidate.
-//
-// `rules` is set only for candidates minted by the alias walk — it carries
-// the picked target's rule overlay so the attempt's terminal wire call can
-// apply it against the target IR. Absent (undefined) for direct-resolution
-// candidates and present (possibly `{}`) for alias-origin candidates.
+// A resolver's live candidate belongs to services. Pipeline facts retain its identifier and
+// portable model/rule content; the selected operation hands off into provider.pipelines.
 export interface ModelCandidate {
   readonly provider: Provider;
   readonly model: InternalModel;
@@ -33,19 +18,7 @@ export interface ModelCandidate {
   readonly rules?: AliasRules;
 }
 
-// Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
-// hands this to the provider's `callXxx`; interceptor gates read
-// `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
-// always names exactly one upstream via `provider.upstreamId`; for real-row
-// candidates the resolver populates `model.providerModels` with an entry
-// under that key at candidate-creation time.
-//
-// Two error paths, distinguished so a caller reading the message can tell
-// which invariant broke: an alias row was mistakenly used as a dispatch
-// target (the resolver should have expanded it to its target's real row
-// first), or a real row is missing the entry for the candidate's upstream
-// (the candidate was assembled outside the resolver, or the row was merged
-// after the upstream stopped contributing).
+// Alias rows must be expanded before selecting one upstream's catalog metadata.
 export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
   const { model, provider } = candidate;
   if (model.providerModels === undefined) {
@@ -58,13 +31,8 @@ export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
   return providerModel;
 };
 
-// Per-protocol invocation shape passed to interceptors. Carries the
-// source-shape request body (mutable, so the body can be cleaned), the
-// candidate the attempt is dispatching against, the chat target protocol
-// the attempt picked for this candidate, and a mutable `Headers` instance
-// carried into the boundary chain — so workarounds that only need to set
-// or drop a header stay at the owning interceptor boundary instead of
-// widening the provider call signature.
+// Local planning views carry immutable payload content and live candidate/transport handles.
+// Stages materialize their resulting payload, action and header lines into facts.
 export interface AnthropicMessagesInvocation {
   payload: AnthropicMessagesPayload;
   readonly candidate: ModelCandidate;
@@ -74,10 +42,7 @@ export interface AnthropicMessagesInvocation {
 
 export interface OpenAIResponsesInvocation {
   payload: CanonicalOpenAIResponsesPayload;
-  // Mutable action tag — interceptors can flip 'compact' to 'generate' so the
-  // inner provider call runs a normal summarization turn (see the
-  // openai-responses-compact-shim) and the gateway derives snapshot mode from the
-  // post-chain action carried on the provider's tagged result.
+  // Planning may choose a different dispatched action while preserving source intent.
   action: OpenAIResponsesAction;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;

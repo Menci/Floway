@@ -41,7 +41,7 @@ export interface ApiErrorResult {
   upstreamId?: string;
 }
 
-// Gateway-side bug surface (parser crash, interceptor throw, etc.). The
+// Gateway-side bug surface (parser crash, stage throw, etc.). The
 // protocol's respond layer renders a debug envelope around `error`
 // (stack, cause, target_api) rather than passing through a wire body —
 // the shape differs from `ApiErrorResult` for that reason.
@@ -54,7 +54,7 @@ export interface InternalErrorResult {
 
 // A fully-shaped non-streaming success body — the output of a source endpoint
 // that measures rather than generates (count_tokens). It is NOT an
-// `ExecuteResult`: the target emit/interceptor layer never produces one. The
+// `ExecuteResult`: the target emit/stage layer never produces one. The
 // orchestrator passes it straight to `respond` without persistence, and
 // `respond` emits it verbatim. `upstreamId` is present when the body came from
 // a real upstream call and absent for gateway-synthesized envelopes (rewrite
