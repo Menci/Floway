@@ -7,6 +7,16 @@ const answer = defineStage<Record<string, never>, Record<string, never>>({
 });
 
 describe('run lifetime', () => {
+  it('retains initial failure facts and releases resources when entry validation fails', async () => {
+    let released = 0;
+    const body = move(own({}, async () => { released++; }));
+    const initial = { invalid: { mutable: true }, body };
+    const caught: unknown = await run(compose('invalidInitial', [answer]), initial as never, {}).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(Error);
+    expect(getFailureFacts(caught)).toBe(initial);
+    expect(released).toBe(1);
+  });
+
   it('changes the release action without adopting a resource twice', async () => {
     let cancelled = 0;
     let drained = 0;
@@ -17,6 +27,17 @@ describe('run lifetime', () => {
     expect(cancelled).toBe(0);
     expect(drained).toBe(1);
     expect(() => setRelease(resource, async () => {})).toThrow('after disposal has started');
+  });
+
+  it('composes the previous release action without recursively awaiting its own disposal', async () => {
+    const steps: string[] = [];
+    const resource = move(own({}, async () => { steps.push('drain'); }));
+    const previous = setRelease(resource, async () => {
+      try { await previous(); } finally { steps.push('settle'); }
+    });
+    await resource[Symbol.asyncDispose]();
+    await resource[Symbol.asyncDispose]();
+    expect(steps).toEqual(['drain', 'settle']);
   });
 
   it('cleans an initial resource consumed before the first handover', async () => {

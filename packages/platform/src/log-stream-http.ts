@@ -35,24 +35,46 @@ const LENGTH_PREFIX_BYTES = 4;
  *  completed on its own; where it threw, the body simply stops, which is what the reader half
  *  detects. */
 export const serveLogStream = (stream: LogStream, fromOffset: number, signal: AbortSignal): Response => {
+  const abort = new AbortController();
+  const forwardAbort = () => { abort.abort(signal.reason); };
+  if (signal.aborted) forwardAbort();
+  else signal.addEventListener('abort', forwardAbort, { once: true });
+  const iterator = stream.read(fromOffset, abort.signal)[Symbol.asyncIterator]();
+  let cancelled = false;
+  const finish = () => { signal.removeEventListener('abort', forwardAbort); };
   const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    async pull(controller) {
       try {
-        for await (const chunk of stream.read(fromOffset, signal)) {
+        for (;;) {
+          const { value: chunk, done } = await iterator.next();
+          if (cancelled) return;
+          if (done) {
+            controller.enqueue(new Uint8Array(LENGTH_PREFIX_BYTES));
+            controller.close();
+            finish();
+            return;
+          }
           if (chunk.byteLength === 0) continue;
           const header = new Uint8Array(LENGTH_PREFIX_BYTES);
           new DataView(header.buffer).setUint32(0, chunk.byteLength, false);
           controller.enqueue(header);
           controller.enqueue(chunk);
+          return;
         }
-        controller.enqueue(new Uint8Array(LENGTH_PREFIX_BYTES));
       } catch {
         // Ending without the terminator is the whole signal. Erroring the controller would
         // reach the client as a clean end, which is the measurement this framing exists for.
+        if (!cancelled) controller.close();
+        finish();
       }
-      controller.close();
     },
-  });
+    async cancel(reason) {
+      cancelled = true;
+      abort.abort(reason);
+      finish();
+      await iterator.return?.();
+    },
+  }, { highWaterMark: 0 });
   return new Response(body, { headers: { 'content-type': 'application/octet-stream' } });
 };
 

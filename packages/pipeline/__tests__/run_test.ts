@@ -60,18 +60,24 @@ describe('run', () => {
 
   it('delivers each event to the sink as it happens, not in one batch at the end', async () => {
     const order: string[] = [];
-    const attempt = attemptPipeline(makeProvider('tok', []), ['steady']);
-    const { events } = await run(attempt, move({ 'in.words': ['a'] }), {
+    const answer = defineStage<Record<string, never>, Record<string, never>>({
+      name: 'answer', return: { provides: [] },
+      execute: async facts => {
+        expect(order).toEqual(['stage.entered']);
+        return facts;
+      },
+    });
+    const result = await run(compose('liveEvents', [answer]), move({}), {
       dump: (event: Event) => { order.push(event.type); },
     });
-    expect(order.length).toBe(events.length);
-    expect(order[0]).toBe('stage.entered');
+    expect(order).toEqual(['stage.entered', 'stage.leaved']);
+    expect(result).not.toHaveProperty('events');
   });
 
   it('records nothing at all when the prologue resolved no dump sink', async () => {
     const attempt = attemptPipeline(makeProvider('tok', []), ['steady']);
-    const { events } = await run(attempt, move({ 'in.words': ['a'] }), PLAIN);
-    expect(events).toEqual([]);
+    const result = await run(attempt, move({ 'in.words': ['a'] }), PLAIN);
+    expect(result).not.toHaveProperty('events');
   });
 });
 

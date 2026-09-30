@@ -26,6 +26,7 @@ declare module 'cloudflare:workers' {
 // Hibernatable WebSockets and log segments live in the actors; database-owning
 // operations execute through the loopback WorkerEntrypoint outside the DO.
 interface DurableObjectState {
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
   readonly exports: {
     readonly ExecutionOperationEntrypoint: {
       fetch(request: Request): Promise<Response>;
@@ -47,7 +48,7 @@ interface DurableObjectStorage {
 // `exec` is synchronous, which is what lets an append read the current length, slice off what
 // is already stored and write the remainder inside one JavaScript turn.
 interface SqlStorage {
-  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): Iterable<T>;
+  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): Iterable<T> & { one(): T };
 }
 
 // Cloudflare extends Web Crypto with a constant-time comparison primitive.

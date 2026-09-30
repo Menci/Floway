@@ -67,8 +67,11 @@ export interface LogStream {
 /** Opens streams by id. A stream is created for one run and expires after it, so there is no
  *  delete: reclamation is the implementation's own idle rule. */
 export interface LogStreamStore {
-  open(streamId: string): LogStream;
+  open(streamId: string): Promise<LogStream>;
+  get(streamId: string): Promise<LogStream | null>;
 }
+
+export const LOG_STREAM_IDLE_MS = 60_000;
 
 let logStreamStore: LogStreamStore | null = null;
 
@@ -87,5 +90,19 @@ export class LogStreamHoleError extends Error {
   constructor(readonly atOffset: number, readonly length: number) {
     super(`LogStream append at ${atOffset} would leave a hole: the stream is ${length} bytes long`);
     this.name = 'LogStreamHoleError';
+  }
+}
+
+export class LogStreamExpiredError extends Error {
+  constructor() {
+    super('LogStream expired');
+    this.name = 'LogStreamExpiredError';
+  }
+}
+
+export class LogStreamEndedError extends Error {
+  constructor() {
+    super('LogStream append side is already ended');
+    this.name = 'LogStreamEndedError';
   }
 }

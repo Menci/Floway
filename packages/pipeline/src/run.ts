@@ -11,7 +11,6 @@
 // putting the target at another key; coming up, a fork taking ownership of every branch's
 // releasable and handing one of them onward.
 
-import type { Event } from './dump.ts';
 import type { Facts } from './facts.ts';
 import { assertHandedOver, move } from './facts.ts';
 import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
@@ -62,10 +61,12 @@ export const own = <T extends object>(value: T, release: () => Promise<void>): T
   return resource;
 };
 
-export const setRelease = (value: Owned, release: () => Promise<void>): void => {
+export const setRelease = (value: Owned, release: () => Promise<void>): (() => Promise<void>) => {
   const state = ownership.get(value)!;
   if (state.disposal !== undefined) throw new Error('Cannot change a resource release action after disposal has started');
+  const previous = state.release;
   state.release = release;
+  return previous;
 };
 
 export const isOwned = (value: unknown): value is Owned =>
@@ -209,6 +210,7 @@ export const walk = async (
           : `${stage.name}: returned without calling next, and declares no 'return'`);
       }
       const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
+      current = answer;
       scope.emit({ type: 'stage.leaved', stageId, facts: answer });
       return answer;
     }
@@ -231,6 +233,7 @@ export const walk = async (
     }
 
     const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
+    current = handedUp;
 
     // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
     // consumes is one it took ownership of, so what it received there and did not hand on is
@@ -319,9 +322,6 @@ const loggerFor = (services: object, name: string, stageId: number, scope: RunSc
 
 export interface RunResult<Exit> {
   readonly facts: Exit;
-  /** Empty unless the prologue resolved a dump sink. Recording is conditional, and this
-   *  is the same list the sink was given, event by event, as they happened. */
-  readonly events: readonly Event[];
   /**
    * What the run still owns. Release is not cancel — this drains to end-of-stream, because
    * an aborted connection cannot be reused and leaves its billing unsettled — so the
@@ -342,28 +342,16 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   initial: Entry,
   services: S,
 ): Promise<RunResult<Exit>> => {
-  for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
-  requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
-
   // With no dump sink resolved in the prologue, none of the recording happens.
   const sink = services.dump;
-  const events: Event[] = [];
   const scope: RunScope = {
-    emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
+    emit: sink ?? (() => {}),
     outstanding: new Set<Owned>(),
     deferred: new Map<Promise<unknown>, Promise<void>>(),
     failures: new WeakSet<object>(),
     parentStageId: null,
     nextStageId: 1,
   };
-  // The first state the record is in is the one the prologue built, and it is frozen here
-  // so it cannot be rewritten after the run has recorded it.
-  Object.freeze(initial);
-
-  for (const value of Object.values(initial)) {
-    registerFact(value, initial as Facts, scope);
-  }
-
   let draining: Promise<void> | undefined;
   const drain = (): Promise<void> => {
     if (draining !== undefined) return draining;
@@ -380,9 +368,14 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   };
 
   try {
+    Object.freeze(initial);
+    for (const value of Object.values(initial)) registerFact(value, initial as Facts, scope);
+    for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
+    requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
     const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
-    return { facts, events, drain };
+    return { facts, drain };
   } catch (error) {
+    captureFailure(error, initial as Facts, scope);
     // A run that threw has nothing left to hand back, so there is nothing to defer for:
     // draining here is what stops a bug from abandoning every body opened below it. The
     // events are already with the sink, so the dump of the run that 500'd survives.
