@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { assertRejects } from '@floway-dev/test-utils';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -11,7 +10,7 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   }
 };
 
-test('translateToSourceEvents rejects OpenAI Chat Completions streams without DONE', async () => {
+test('translateToSourceEvents accepts OpenAI Chat Completions streams without DONE', async () => {
   async function* stream() {
     yield eventFrame({
       id: 'chatcmpl_truncated',
@@ -28,5 +27,5 @@ test('translateToSourceEvents rejects OpenAI Chat Completions streams without DO
     } satisfies OpenAIChatCompletionsStreamEvent);
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.');
+  await drain(translateToSourceEvents(stream()));
 });

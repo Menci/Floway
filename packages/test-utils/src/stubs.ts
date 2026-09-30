@@ -26,9 +26,11 @@ export const noopAnthropicMessagesUpstreamCallOptions = (overrides: Partial<Anth
 // that build a ctx by hand use `stubProviderModel` directly.
 export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): ProviderModel => ({
   id: 'test-model',
+  upstreamModelId: 'test-model',
   limits: {},
   kind: 'chat',
   endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
+  opaqueBlobCompatibilityScope: { bindToUpstream: true },
   enabledFlags: new Set<FlagId>(),
   ...overrides,
 });
@@ -122,6 +124,7 @@ export const stubModelCandidate = (overrides: {
   } as const;
   const providerModel = stubProviderModel({
     id: outerMeta.id,
+    upstreamModelId: outerMeta.id,
     limits: outerMeta.limits,
     kind: outerMeta.kind,
     endpoints: outerMeta.endpoints,

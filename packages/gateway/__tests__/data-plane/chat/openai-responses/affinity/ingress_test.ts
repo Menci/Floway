@@ -1,28 +1,45 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec, type AffinityRequestAnalysis, type AffinityTarget, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate } from '@floway-dev/test-utils';
+import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction_summary' ? 'compaction' : itemType;
 const carrierDomain = (itemType: string, slot: string): string => `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
-const candidate = (upstream: string): ModelCandidate => {
+const candidate = (
+  upstream: string,
+  model = 'model',
+  scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
+): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
+    model: {
+      id: model,
+      opaqueBlobCompatibilityScope: scope,
+      providerModels: {
+        [upstream]: stubProviderModel({
+          id: model,
+          upstreamModelId: model,
+          opaqueBlobCompatibilityScope: scope,
+        }),
+      },
+    },
   });
 };
 
-const targetFor = (value: ModelCandidate): AffinityTarget => ({
+const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
+  opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),
 });
 
 const candidateA = candidate('upstream-a');
@@ -52,6 +69,26 @@ test('reuses a payload with no affinity carriers', async () => {
   expect(materialized.input[0]).toBe(image);
 });
 
+test('treats gateway-owned compaction payloads as portable across affinity targets', async () => {
+  const item = {
+    type: 'compaction' as const,
+    id: 'cmp_shim',
+    encrypted_content: encodeBase64UrlJson([{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'portable summary' }],
+    }]),
+  };
+  expect(isOpenAIResponsesCompactShimItem(item)).toBe(true);
+  const payload: CanonicalOpenAIResponsesPayload = { model: 'model', input: [item] };
+  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
+
+  expect(prepared.requiredTargets).toEqual([]);
+  expect(prepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize()).toBe(payload);
+});
+
 test('copies only paths carrying an affinity projection', async () => {
   const carrier = await codec.wrap(
     'encrypted',
@@ -76,7 +113,7 @@ test('copies only paths carrying an affinity projection', async () => {
   expect(materialized.input[1]).toBe(unchanged);
 });
 
-test('restores an owned blob only for its exact target without changing item ids', async () => {
+test('restores an owned blob within its compatibility scope and still prefers its exact target', async () => {
   const mismatchedRules = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
   const carrier = await codec.wrap(
     'encrypted',
@@ -103,7 +140,7 @@ test('restores an owned blob only for its exact target without changing item ids
     summary: [{ type: 'summary_text', text: 'visible' }],
   }]);
   expect(projectionA.degrades).toBe(false);
-  expect(mismatchedProjection.degrades).toBe(true);
+  expect(mismatchedProjection.degrades).toBe(false);
   expect(select([mismatchedRules, candidateA], prepared).candidates).toEqual([candidateA, mismatchedRules]);
 });
 
@@ -281,6 +318,27 @@ test('treats compaction_summary as force state across alias-rule variants', asyn
   });
 });
 
+test('replays required compaction state to another model in the same compatibility scope', async () => {
+  const main = candidate('copilot-a', 'gpt-main', { bindToUpstream: true, key: 'openai' });
+  const reviewer = candidate('copilot-a', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
+  const otherAccount = candidate('copilot-b', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
+  const carrier = await codec.wrap(
+    'compaction-state',
+    targetFor(main),
+    carrierDomain('compaction', 'encrypted_content'),
+  );
+  const prepared = await analyzeOpenAIResponsesAffinity({
+    model: 'gpt-reviewer',
+    input: [{ type: 'compaction', id: 'cmp_client', encrypted_content: carrier }],
+  }, codec);
+
+  expect(prepared.evaluateCandidate(reviewer)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(prepared.evaluateCandidate(otherAccount)).toEqual({ kind: 'rejected' });
+  expect(select([reviewer, otherAccount], prepared).payloadFor(reviewer).input[0]).toMatchObject({
+    encrypted_content: 'compaction-state',
+  });
+});
+
 test('lets originless context compaction follow candidate order while natural encrypted state forces', async () => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
   const originlessItem = {
@@ -323,7 +381,7 @@ test('evaluates required eligibility and optional degradation in one candidate p
     ] as CanonicalOpenAIResponsesPayload['input'],
   }, codec);
 
-  expect(prepared.evaluateCandidate(high)).toMatchObject({ kind: 'accepted', degrades: true });
+  expect(prepared.evaluateCandidate(high)).toMatchObject({ kind: 'accepted', degrades: false });
   expect(prepared.evaluateCandidate(low)).toMatchObject({ kind: 'accepted', degrades: false });
   expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
   expect(select([high, low, candidateB], prepared).candidates).toEqual([low, high]);

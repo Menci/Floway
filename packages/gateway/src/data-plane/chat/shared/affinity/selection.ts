@@ -1,17 +1,18 @@
 import { isEqual } from 'es-toolkit';
 
-import type { AffinityTarget, DecodedAffinityBlob } from './carrier.ts';
+import type { AffinityIdentity, AffinityTarget, DecodedAffinityBlob, OpaqueBlobCompatibilityIdentity } from './carrier.ts';
 import type { ChatServeFailure } from '../errors.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import { materializeOpaqueBlobCompatibilityIdentity } from '@floway-dev/protocols/common';
+import { providerModelOf, type ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityRequestAnalysis<T> {
-  readonly requiredTargets: readonly AffinityTarget[];
+  readonly requiredTargets: readonly AffinityIdentity[];
   readonly evaluateCandidate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>;
 }
 
 export type CandidateAffinityEvaluation<T> =
   | { readonly kind: 'rejected' }
-  | { readonly kind: 'accepted'; readonly degrades: boolean; readonly materialize: () => T };
+  | { readonly kind: 'accepted'; readonly degrades: boolean; readonly preferred?: boolean; readonly materialize: () => T };
 
 export interface AffinityCandidateSelection<T> {
   readonly candidates: readonly ModelCandidate[];
@@ -21,15 +22,17 @@ export interface AffinityCandidateSelection<T> {
 export type AffinitySelectionFailure = Extract<ChatServeFailure, { kind: 'routing-unavailable' }>;
 
 export type OptionalAffinityBlobProjection =
-  | { readonly kind: 'preserve'; readonly value: string }
-  | { readonly kind: 'remove'; readonly degrades: boolean };
+  | { readonly kind: 'preserve'; readonly value: string; readonly preferred: boolean }
+  | { readonly kind: 'remove'; readonly degrades: boolean; readonly preferred: boolean };
 
 export type RequiredAffinityBlobProjection =
   | OptionalAffinityBlobProjection
-  | { readonly kind: 'reject'; readonly requiredTarget: AffinityTarget };
+  | { readonly kind: 'reject'; readonly requiredTarget: AffinityIdentity };
 
-const sameRequiredTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
-  left.upstreamId === right.upstreamId && left.modelId === right.modelId;
+const sameCompatibilityIdentity = (
+  left: OpaqueBlobCompatibilityIdentity,
+  right: OpaqueBlobCompatibilityIdentity,
+): boolean => left.upstreamId === right.upstreamId && left.key === right.key;
 
 const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstreamId === affinity.upstreamId
@@ -40,36 +43,63 @@ const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: Affini
   // same-name alias starts shadowing that model.
   && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
-export const candidateSatisfiesAffinityTarget = (candidate: ModelCandidate, target: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === target.upstreamId && candidate.model.id === target.modelId;
+const candidateMatchesPhysicalTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
+  candidate.provider.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
+
+export const compatibilityIdentityForCandidate = (candidate: ModelCandidate): OpaqueBlobCompatibilityIdentity => {
+  const model = providerModelOf(candidate);
+  return materializeOpaqueBlobCompatibilityIdentity(
+    model.opaqueBlobCompatibilityScope,
+    candidate.provider.upstreamId,
+    model.upstreamModelId,
+  );
+};
+
+export const candidateSatisfiesAffinityIdentity = (candidate: ModelCandidate, target: AffinityIdentity): boolean =>
+  sameCompatibilityIdentity(compatibilityIdentityForCandidate(candidate), target.opaqueBlobCompatibilityIdentity);
 
 export const projectOptionalAffinityBlob = (
   decoded: DecodedAffinityBlob,
   candidate: ModelCandidate,
 ): OptionalAffinityBlobProjection => {
-  if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value };
-  const compatible = candidateMatchesExactTarget(candidate, decoded.affinity);
-  if (!compatible || decoded.value === undefined) return { kind: 'remove', degrades: decoded.value !== undefined };
-  return { kind: 'preserve', value: decoded.value };
+  if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value, preferred: true };
+  const target = {
+    ...decoded.affinity,
+    opaqueBlobCompatibilityIdentity: decoded.opaqueBlobCompatibilityIdentity,
+  };
+  const compatible = candidateSatisfiesAffinityIdentity(candidate, target);
+  const preferred = compatible && candidateMatchesExactTarget(candidate, decoded.affinity);
+  if (!compatible || decoded.value === undefined) {
+    return { kind: 'remove', degrades: decoded.value !== undefined, preferred: decoded.value === undefined || preferred };
+  }
+  return { kind: 'preserve', value: decoded.value, preferred };
 };
 
 export const projectRequiredAffinityBlob = (
   decoded: DecodedAffinityBlob,
   candidate: ModelCandidate,
 ): RequiredAffinityBlobProjection => {
-  if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value };
-  if (!candidateSatisfiesAffinityTarget(candidate, decoded.affinity)) return { kind: 'reject', requiredTarget: decoded.affinity };
-  if (decoded.value === undefined) return { kind: 'remove', degrades: false };
-  return { kind: 'preserve', value: decoded.value };
+  if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value, preferred: true };
+  const target = {
+    ...decoded.affinity,
+    opaqueBlobCompatibilityIdentity: decoded.opaqueBlobCompatibilityIdentity,
+  };
+  if (!candidateSatisfiesAffinityIdentity(candidate, target)) return { kind: 'reject', requiredTarget: target };
+  const preferred = candidateMatchesPhysicalTarget(candidate, decoded.affinity);
+  if (decoded.value === undefined) return { kind: 'remove', degrades: false, preferred };
+  return { kind: 'preserve', value: decoded.value, preferred };
 };
 
 export const defineAffinityRequest = <T>(
-  requiredTargets: readonly AffinityTarget[],
+  requiredTargets: readonly AffinityIdentity[],
   evaluate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>,
 ): AffinityRequestAnalysis<T> => {
-  const uniqueRequiredTargets: AffinityTarget[] = [];
+  const uniqueRequiredTargets: AffinityIdentity[] = [];
   for (const target of requiredTargets) {
-    if (!uniqueRequiredTargets.some(existing => sameRequiredTarget(existing, target))) uniqueRequiredTargets.push(target);
+    if (!uniqueRequiredTargets.some(existing => sameCompatibilityIdentity(
+      existing.opaqueBlobCompatibilityIdentity,
+      target.opaqueBlobCompatibilityIdentity,
+    ))) uniqueRequiredTargets.push(target);
   }
   const evaluations = new WeakMap<ModelCandidate, CandidateAffinityEvaluation<T>>();
   return {
@@ -78,7 +108,7 @@ export const defineAffinityRequest = <T>(
       const existing = evaluations.get(candidate);
       if (existing !== undefined) return existing;
       const candidateEvaluation = evaluate(candidate);
-      const satisfiesRequirements = uniqueRequiredTargets.every(target => candidateSatisfiesAffinityTarget(candidate, target));
+      const satisfiesRequirements = uniqueRequiredTargets.every(target => candidateSatisfiesAffinityIdentity(candidate, target));
       if ((candidateEvaluation.kind === 'accepted') !== satisfiesRequirements) {
         throw new Error('Affinity candidate evaluation disagrees with the request requirement analysis');
       }
@@ -90,6 +120,7 @@ export const defineAffinityRequest = <T>(
       const accepted: CandidateAffinityEvaluation<T> = {
         kind: 'accepted',
         degrades: candidateEvaluation.degrades,
+        preferred: candidateEvaluation.preferred !== false,
         materialize: () => {
           materialized ??= { value: candidateEvaluation.materialize() };
           return materialized.value;
@@ -128,12 +159,17 @@ export const selectAffinityCandidates = <T>(
     };
   }
 
-  const nonDegrading: typeof accepted = [];
+  const preferred: typeof accepted = [];
+  const compatible: typeof accepted = [];
   const degrading: typeof accepted = [];
   for (const item of accepted) {
-    (item.evaluation.degrades ? degrading : nonDegrading).push(item);
+    if (item.evaluation.degrades) degrading.push(item);
+    else if (item.evaluation.preferred) preferred.push(item);
+    else compatible.push(item);
   }
-  const ordered = nonDegrading.length === 0 ? accepted : [...nonDegrading, ...degrading];
+  const ordered = preferred.length === 0 && compatible.length === 0
+    ? accepted
+    : [...preferred, ...compatible, ...degrading];
   const evaluations = new WeakMap(ordered.map(item => [item.candidate, item.evaluation]));
   return {
     candidates: ordered.map(item => item.candidate),

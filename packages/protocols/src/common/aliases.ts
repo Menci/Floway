@@ -46,6 +46,20 @@ export type Verbosity = 'low' | 'medium' | 'high' | (string & {});
 // as `ReasoningEffort`.
 export type ServiceTier = 'default' | 'flex' | 'priority' | 'scale' | 'fast' | (string & {});
 
+// The accelerated lane, in the two spellings OpenAI treats as one: priority
+// processing was renamed Fast mode on 2026-07-30 and `service_tier` accepts
+// `priority` and `fast` interchangeably, while responses report `priority`.
+// Anthropic reaches the same lane through its own `speed: 'fast'` field
+// rather than through `service_tier`.
+// https://platform.openai.com/docs/guides/fast-mode
+// https://docs.claude.com/en/build-with-claude/fast-mode
+export const isFastServiceTier = (tier: string | null | undefined): boolean => tier === 'priority' || tier === 'fast';
+
+// The spelling we put on an OpenAI-shaped wire when we ask for that lane.
+// Requests may say either word; `priority` is the one responses come back
+// with, so using it keeps the request and the reported tier in one vocabulary.
+export const FAST_SERVICE_TIER = 'priority';
+
 // Rule overlay applied to a chat-kind alias target. Every field is optional;
 // an absent field leaves the inbound request value untouched. Rule values
 // are forwarded verbatim to the upstream — the gateway does not narrow them

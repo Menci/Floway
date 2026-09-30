@@ -1,13 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
-import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
-const affinity: AffinityTarget = {
+const affinity: AffinityIdentity = {
   upstreamId: 'up-a',
   modelId: 'model-a',
+  opaqueBlobCompatibilityIdentity: { upstreamId: 'up-a', key: 'model-a' },
 };
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;

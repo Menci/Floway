@@ -1,11 +1,13 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
-import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
+import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 type JsonObject = Record<string, any>;
 
@@ -153,12 +155,8 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  // Stub every outbound request: the post-save warm tries to mint a Copilot
-  // token + fetch the model catalog, neither of which the test cares about.
-  // 403 is the terminal status the Copilot auth retry loop short-circuits on,
-  // so the warm fails fast instead of burning ~7s of exponential backoff.
   const created = await withMockedFetch(
-    () => jsonResponse({ error: 'forbidden' }, 403),
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', name: 'Copilot', config: copilotConfig })));
       assertEquals(resp.status, 201);
@@ -190,9 +188,9 @@ test('POST /api/upstreams rejects a codex create with null state', async () => {
   // POST /api/upstreams with the config intact but a null state to prove
   // the create-time state reader rejects it (before the state-hardening
   // fix a client bypassing the exchange could persist this).
-  const exchange = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  const exchange = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: blueprintEnvelope('codex'),
-    auth_json: codexAuthJsonImport().auth_json,
+    json: codexJsonImport().json,
   }));
   assertEquals(exchange.status, 200);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
@@ -258,6 +256,7 @@ test('PATCH /api/upstreams rejects kind changes and preserves the row', async ()
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
+  assertEquals((await repo.upstreams.getById(created.id))?.configVersion, 1);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
@@ -273,29 +272,39 @@ test('PATCH /api/upstreams rejects kind changes and preserves the row', async ()
   assertEquals((await repo.upstreams.getById(created.id))?.kind, 'custom');
 });
 
-test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cache', async () => {
+test('PATCH /api/upstreams reports a concurrent save as a conflict', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string };
+  const replace = vi.spyOn(repo.upstreams, 'replaceForModels').mockResolvedValueOnce(null);
+
+  const response = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ name: 'Concurrent edit' }),
+  });
+  replace.mockRestore();
+
+  assertEquals(response.status, 409);
+  assertEquals((await response.json() as { error: string }).error, `Upstream ${created.id} changed concurrently`);
+  assertEquals((await repo.upstreams.getById(created.id))?.name, 'Test custom upstream');
+});
+
+test('PATCH /api/upstreams preserves omitted secrets and invalidates the old catalog without fetching', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
-  // Plant a stale row so the post-PATCH read can verify the warm overwrote
-  // it with the new upstream-supplied catalog rather than leaving the old
-  // models in place.
-  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
+  // A changed model configuration cannot serve the previous catalog.
+  await seedModelsCache(repo.upstreams, created.id, await getRefreshIdentity(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
-    models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'stale-model', upstreamModelId: 'stale-model', endpoints: {} })],
   });
 
   await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'fresh-model' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const patch = await requestApp(`/api/upstreams/${created.id}`, {
         method: 'PATCH',
@@ -311,23 +320,25 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
         }),
       });
       assertEquals(patch.status, 200);
+      const response = (await patch.json()) as JsonObject;
+      assertEquals(response.config.apiKey, 'sk-test');
+      assertEquals(response.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
     },
   );
 
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
+  assertEquals(updated?.configVersion, 2);
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { openaiResponses: {} });
   assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
-  const cached = updated?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
-  assertEquals(cached!.fetchedAt > 1, true);
+  assertEquals(updated?.modelsCache, null);
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_azure_single_endpoint',
     kind: 'azure',
     name: 'Azure Single Endpoint',
@@ -374,7 +385,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
 test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_azure_flag_overrides',
     kind: 'azure',
     name: 'Azure Per-Model Flags',
@@ -420,7 +431,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.deleteAll();
 
   // Three upstreams cover the three cache states: no row, warm row, warm row
-  // with a follow-up failure annotated via saveModelsCacheError.
+  // with a follow-up failure annotation.
   const baseRow = {
     kind: 'custom' as const,
     enabled: true,
@@ -436,21 +447,24 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
-  await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });
-  await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
-  await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
+  const freshRecord = { ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 };
+  const warmRecord = { ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 };
+  const failedRecord = { ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 };
+  await saveUpstreamForTest(repo.upstreams, freshRecord);
+  await saveUpstreamForTest(repo.upstreams, warmRecord);
+  await saveUpstreamForTest(repo.upstreams, failedRecord);
 
-  await repo.upstreams.saveModelsCache('up_warm', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
+  await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsRefreshIdentity(repo.upstreams, 'up_warm'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
-    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
   });
-  await repo.upstreams.saveModelsCache('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
+  await seedModelsCache(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
-    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
   });
-  await repo.upstreams.saveModelsCacheError('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, { message: 'boom', at: 1_700_000_500_000 });
+  await seedModelsCacheError(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -466,9 +480,49 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   });
 });
 
+test('GET /api/upstreams/:id exposes cached editor rows without an upstream request', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const createdResponse = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    kind: 'copilot',
+    name: 'Cached Copilot',
+    config: copilotConfig,
+    disabled_public_model_ids: ['hidden-model'],
+  })));
+  assertEquals(createdResponse.status, 201);
+  const created = (await createdResponse.json()) as { id: string };
+  const read = () => requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+
+  const cold = await read();
+  assertEquals(cold.status, 200);
+  assertEquals(((await cold.json()) as JsonObject).cachedModels, null);
+
+  await seedModelsCache(repo.upstreams, created.id, await storedModelsRefreshIdentity(repo.upstreams, created.id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [
+      stubProviderModel({ id: 'visible-model', upstreamModelId: 'visible-model', display_name: 'Visible' }),
+      stubProviderModel({ id: 'hidden-model', upstreamModelId: 'hidden-model' }),
+    ],
+  });
+
+  await withMockedFetch(
+    request => { throw new Error(`Editor read unexpectedly fetched ${request.url}`); },
+    async () => {
+      const response = await read();
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as JsonObject;
+      assertEquals(body.modelsCache.modelCount, 1);
+      assertEquals(body.cachedModels.map((model: { publicModelId: string }) => model.publicModelId), ['visible-model', 'hidden-model']);
+      assertEquals(body.cachedModels[0].display_name, 'Visible');
+      assertEquals(body.cachedModels[0].providerData, undefined);
+    },
+  );
+});
+
 test('GET /api/upstream-options returns the minimal picker shape to admin and non-admin callers', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'up_disabled_custom',
     kind: 'custom',
     name: 'Disabled Custom',
@@ -487,12 +541,12 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
   // comes from the catalog it stored while it was on.
-  await repo.upstreams.saveModelsCache('up_disabled_custom', await getCacheGeneration(repo, 'up_disabled_custom'), {
+  await seedModelsCache(repo.upstreams, 'up_disabled_custom', await getRefreshIdentity(repo, 'up_disabled_custom'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
-      { id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
-      { id: 'm2', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} },
+      stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} }),
+      stubProviderModel({ id: 'm2', upstreamModelId: 'm2', endpoints: {} }),
     ],
   });
 
@@ -515,7 +569,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   }
 });
 
-test('POST /api/upstreams/list-models fetches a draft custom upstream model list', async () => {
+test('POST /api/upstreams/preview-models fetches a draft custom upstream model list', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -528,18 +582,26 @@ test('POST /api/upstreams/list-models fetches a draft custom upstream model list
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
-      assertEquals(body.data.map(m => m.id), ['gpt-a', 'gpt-b']);
+      assertEquals(body.data.map(m => m.upstreamModelId), ['gpt-a', 'gpt-b']);
       assertEquals(body.data[1].display_name, 'GPT B');
     },
   );
 });
 
-test('POST /api/upstreams/list-models projects an ollama draft into UpstreamModelConfig rows with capability-derived endpoints', async () => {
+test('POST /api/upstreams/preview-models requires the draft egress policy', async () => {
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+    record: { ...blueprintEnvelope('custom', { config: customConfig }), proxy_fallback_list: undefined },
+  }));
+  assertEquals(resp.status, 400);
+});
+
+test('POST /api/upstreams/preview-models projects an ollama draft into UpstreamModelConfig rows with capability-derived endpoints', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -568,7 +630,7 @@ test('POST /api/upstreams/list-models projects an ollama draft into UpstreamMode
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
         record: blueprintEnvelope('ollama', {
           config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
         }),
@@ -587,7 +649,7 @@ test('POST /api/upstreams/list-models projects an ollama draft into UpstreamMode
   );
 });
 
-test('POST /api/upstreams/list-models surfaces upstream model-listing failures as 502', async () => {
+test('POST /api/upstreams/preview-models surfaces upstream model-listing failures as 502', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -599,18 +661,37 @@ test('POST /api/upstreams/list-models surfaces upstream model-listing failures a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string; upstreamResponse: { status: number; body: string } } };
       assertEquals(body.error.type, 'api_error');
-      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
+      assertEquals(body.error.code, 'upstream_model_listing_failed');
+      assertEquals(body.error.upstreamResponse.status, 401);
+      assertEquals(body.error.upstreamResponse.body, '{\n  "error": "unauthorized"\n}');
     },
   );
 });
 
-test('POST /api/upstreams/list-models surfaces an ollama /api/tags failure as 502', async () => {
+test('POST /api/upstreams/preview-models shows a network failure cause', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    () => { throw new Error('dial timed out'); },
+    async () => {
+      const response = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+        record: blueprintEnvelope('custom', { config: customConfig }),
+      }));
+      assertEquals(response.status, 502);
+      const failure = (await response.json() as JsonObject).error;
+      assertEquals(failure.message, 'dial timed out');
+      assertEquals(failure.upstreamResponse, null);
+    },
+  );
+});
+
+test('POST /api/upstreams/preview-models surfaces an ollama /api/tags failure as 502', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -622,25 +703,27 @@ test('POST /api/upstreams/list-models surfaces an ollama /api/tags failure as 50
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
         record: blueprintEnvelope('ollama', {
           config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
         }),
       }));
       assertEquals(resp.status, 502);
-      const body = (await resp.json()) as { error: { message: string; type: string; code: string } };
+      const body = (await resp.json()) as { error: { message: string; type: string; code: string; upstreamResponse: { status: number; body: string } } };
       assertEquals(body.error.type, 'api_error');
-      assertEquals(body.error.code, MODEL_LISTING_FAILURE_CODE);
+      assertEquals(body.error.code, 'upstream_model_listing_failed');
+      assertEquals(body.error.upstreamResponse.status, 401);
+      assertEquals(body.error.upstreamResponse.body, '{\n  "error": "unauthorized"\n}');
     },
   );
 });
 
-test('POST /api/upstreams/list-models rejects a malformed draft config with 400', async () => {
+test('POST /api/upstreams/preview-models rejects a malformed draft config with 400', async () => {
   const { adminSession } = await setupAppTest();
 
   // Blank token with no id and no stored secret to substitute: the runtime
   // assert rejects the empty apiKey, surfaced as a 400 validation error.
-  const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
     record: blueprintEnvelope('custom', { config: { ...customConfig, apiKey: '' } }),
   }));
   assertEquals(resp.status, 400);
@@ -648,7 +731,7 @@ test('POST /api/upstreams/list-models rejects a malformed draft config with 400'
   assertEquals(body.error.includes('apiKey'), true);
 });
 
-test('POST /api/upstreams/list-models with a persisted id forces a fresh upstream fetch and updates the SWR cache', async () => {
+test('POST /api/upstreams/:id/list-models reads the saved config and publishes a fresh snapshot', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const savedRecord: UpstreamRecord = {
@@ -668,7 +751,7 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
     config: { ...customConfig, apiKey: 'sk-refresh' },
     state: null,
   };
-  await repo.upstreams.save(savedRecord);
+  await saveUpstreamForTest(repo.upstreams, savedRecord);
 
   let upstreamCalls = 0;
   await withMockedFetch(
@@ -681,104 +764,247 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
-        record: envelopeFromRecord(savedRecord),
-      }));
+      const resp = await requestApp(`/api/upstreams/${savedRecord.id}/list-models`, {
+        method: 'POST',
+        headers: { 'x-floway-session': adminSession },
+      });
       assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { data: Array<{ id?: string }> };
-      // Custom returns the raw upstream row shape (id-keyed), not the
-      // dashboard-projected UpstreamModelConfig — the SPA translates
-      // through the draft's endpoints.
-      assertEquals(body.data.map(m => m.id), ['fresh-model']);
+      const body = (await resp.json()) as { data: Array<{ upstreamModelId?: string }>; modelsCache: { fetchedAt: number | null; modelCount: number | null } };
+      assertEquals(body.data.map(m => m.upstreamModelId), ['fresh-model']);
+      assertEquals(body.modelsCache.modelCount, 1);
+      assertEquals(typeof body.modelsCache.fetchedAt, 'number');
       assertEquals(upstreamCalls, 1);
       const cached = (await repo.upstreams.getById(savedRecord.id))?.modelsCache;
       assertEquals(cached?.models.map((model: { id: string }) => model.id), ['fresh-model']);
+      assertEquals(cached?.discovered?.map(model => model.upstreamModelId), ['fresh-model']);
+      const stored = await requestApp(`/api/upstreams/${savedRecord.id}`, { headers: { 'x-floway-session': adminSession } });
+      assertEquals(stored.status, 200);
+      assertEquals(((await stored.json()) as JsonObject).cachedModels.map((model: { upstreamModelId: string }) => model.upstreamModelId), ['fresh-model']);
+      assertEquals(upstreamCalls, 1);
     },
   );
 });
 
-test('POST /api/upstreams/list-models rejects an invalid kind with 400', async () => {
+test('Custom cache retains discovered rows excluded from its routable catalog', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const response = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      ...customConfig,
+      modelsFetch: { enabled: true },
+      models: [{ upstreamModelId: 'overridden', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
+    },
+  })));
+  assertEquals(response.status, 201);
+  const { id } = (await response.json()) as { id: string };
+
+  await seedModelsCache(repo.upstreams, id, await storedModelsRefreshIdentity(repo.upstreams, id), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 100,
+    models: [stubProviderModel({ id: 'overridden', upstreamModelId: 'overridden' })],
+  });
+  const previous = await requestApp(`/api/upstreams/${id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(((await previous.json()) as JsonObject).cachedModels, null);
+
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).hostname !== 'custom.example.com') throw new Error(`Unexpected fetch ${request.url}`);
+      return jsonResponse({
+        data: [
+          { id: 'overridden' },
+          { id: 'auto-only' },
+          { id: 'rerank-only', kind: 'rerank' },
+        ],
+      });
+    },
+    async () => {
+      const fetched = await requestApp(`/api/upstreams/${id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      assertEquals(fetched.status, 200);
+    },
+  );
+
+  const cache = (await repo.upstreams.getById(id))?.modelsCache;
+  assertEquals(cache?.models.map(model => model.upstreamModelId), ['overridden', 'auto-only']);
+  assertEquals(cache?.discovered?.map(model => model.upstreamModelId), ['overridden', 'auto-only', 'rerank-only']);
+  const stored = await requestApp(`/api/upstreams/${id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(stored.status, 200);
+  assertEquals(((await stored.json()) as JsonObject).cachedModels.map((model: { upstreamModelId: string }) => model.upstreamModelId), ['overridden', 'auto-only', 'rerank-only']);
+});
+
+test('POST /api/upstreams/:id/list-models rejects a missing saved upstream', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/upstreams/up_missing/list-models', {
+    method: 'POST',
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 404);
+});
+
+test('POST /api/upstreams/:id/list-models rejects an unknown saved proxy', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_bad_proxy', proxyFallbackList: [{ id: 'missing', colos: ['NRT'] }] }));
+
+  const response = await requestApp('/api/upstreams/up_bad_proxy/list-models', {
+    method: 'POST',
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 400);
+  assertStringIncludes(JSON.stringify(await response.json()), 'unknown proxy id');
+});
+
+test('saved model fetch rejects a config edit that wins before a failed response', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  let release: ((response: Response) => void) | undefined;
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { release = resolve; }),
+    async () => {
+      const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      await vi.waitFor(() => assertEquals(typeof release, 'function'));
+      const current = await repo.upstreams.getById(record.id);
+      if (current === null) throw new Error('upstream missing');
+      await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, config: { ...current.config as Record<string, unknown>, apiKey: 'changed' } } });
+      release!(new Response('old failure', { status: 503 }));
+      assertEquals((await pending).status, 409);
+    },
+  );
+  assertEquals((await repo.upstreams.getById(record.id))?.modelsCache, null);
+});
+
+test('saved model fetch reports a deleted row as a conflict after discovery', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  let release: ((response: Response) => void) | undefined;
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { release = resolve; }),
+    async () => {
+      const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      await vi.waitFor(() => assertEquals(typeof release, 'function'));
+      await repo.upstreams.delete(record.id);
+      release!(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
+      assertEquals((await pending).status, 409);
+    },
+  );
+});
+
+test('saved model fetch rejects obsolete proxy validation errors', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const record = buildCustomUpstreamRecord({ proxyFallbackList: [{ id: 'missing' }] });
+  await saveUpstreamForTest(repo.upstreams, record);
+  let releaseProxies: ((proxies: Awaited<ReturnType<typeof repo.proxies.list>>) => void) | undefined;
+  vi.spyOn(repo.proxies, 'list').mockImplementation(() => new Promise(resolve => { releaseProxies = resolve; }));
+
+  const pending = requestApp(`/api/upstreams/${record.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } });
+  await vi.waitFor(() => assertEquals(typeof releaseProxies, 'function'));
+  const current = await repo.upstreams.getById(record.id);
+  if (current === null) throw new Error('upstream missing');
+  await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, proxyFallbackList: [{ id: 'direct_fetch' }] } });
+  releaseProxies!([]);
+  assertEquals((await pending).status, 409);
+});
+
+test('POST /api/upstreams/preview-models rejects an invalid kind with 400', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
-    record: { id: '', kind: 'bogus-kind', config: {}, state: null },
+  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+    record: { id: '', kind: 'bogus-kind', config: {}, state: null, proxy_fallback_list: [] },
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { message: string; type: string } };
   assertEquals(body.error.type, 'invalid_request_error');
 });
 
-test('POST /api/upstreams warms the models cache before responding', async () => {
+test('POST /api/upstreams/preview-models refuses OAuth drafts without a persisted credential row', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+    record: blueprintEnvelope('copilot', { config: copilotConfig }),
+  }));
+  assertEquals(response.status, 400);
+  const body = (await response.json()) as JsonObject;
+  assertEquals(body.error.type, 'invalid_request_error');
+});
+
+test('POST /api/upstreams saves without starting model discovery', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const created = await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-create' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
+    request => { throw new Error(`Save unexpectedly fetched ${request.url}`); },
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
       assertEquals(resp.status, 201);
-      return (await resp.json()) as { id: string; modelsCache: { fetchedAt: number | null; lastError: unknown } };
+      return (await resp.json()) as JsonObject;
     },
   );
 
-  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['warmed-on-create']);
-  // The dashboard re-seeds its draft from this body, so it has to carry the
-  // freshness the warm just produced rather than the record's pre-warm one.
-  assertEquals(created.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
-  assertEquals(created.modelsCache.lastError, null);
+  assertEquals((await repo.upstreams.getById(created.id))?.modelsCache, null);
+  assertEquals(created.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
+  assertEquals('modelDiscovery' in created, false);
 });
 
-test('PATCH /api/upstreams warms the models cache before responding', async () => {
+test('model-listing failure belongs to the explicit Fetch after a successful Save', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
+  const savedResponse = await withMockedFetch(
+    () => new Response('unavailable', { status: 503 }),
+    () => requestApp('/api/upstreams', authed(adminSession, createBody())),
+  );
+  assertEquals(savedResponse.status, 201);
+  const saved = (await savedResponse.json()) as JsonObject;
+  assertEquals(saved.modelsCache.lastError, null);
+  const fetchResponse = await withMockedFetch(
+    () => new Response('unavailable', { status: 503 }),
+    () => requestApp(`/api/upstreams/${saved.id}/list-models`, { method: 'POST', headers: { 'x-floway-session': adminSession } }),
+  );
+  assertEquals(fetchResponse.status, 502);
+  const failedFetch = await fetchResponse.json() as JsonObject;
+  const failure = failedFetch.error;
+  assertEquals(failure.code, 'upstream_model_listing_failed');
+  assertEquals(failure.message.startsWith('HTTP 503: unavailable'), true);
+  assertEquals(failure.upstreamResponse, { status: 503, headers: [['content-type', 'text/plain;charset=UTF-8']], body: 'unavailable' });
+  assertEquals(failedFetch.modelsCache.lastError.message, failure.message);
+  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.failureCount, 1);
+  assertEquals((await repo.upstreams.getById(saved.id))?.modelsCache?.lastError?.message, failure.message);
+});
 
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
-  const created = (await create.json()) as { id: string };
-  // Overwrite whatever the create-time warm landed on the row with a marker
-  // catalog, so the assertion below can only pass if the PATCH-time warm wrote
-  // over it.
-  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
+test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string };
+  await seedModelsCache(repo.upstreams, created.id, await getRefreshIdentity(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1,
-    models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
   });
-  // …and annotate it with an error the successful PATCH-time warm must clear,
-  // so the response body cannot pass by echoing the pre-warm row.
-  await repo.upstreams.saveModelsCacheError(created.id, await getCacheGeneration(repo, created.id), { message: 'stale failure', at: 1 });
+  const configVersion = (await repo.upstreams.getById(created.id))?.configVersion;
+  let modelRequests = 0;
 
-  const patched = await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-update' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
+  await withMockedFetch(
+    () => {
+      modelRequests++;
+      return jsonResponse({ object: 'list', data: [{ id: 'unexpected-model' }] });
     },
     async () => {
-      const patch = await requestApp(`/api/upstreams/${created.id}`, {
+      const response = await requestApp(`/api/upstreams/${created.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-        body: JSON.stringify({ name: 'Renamed' }),
+        body: JSON.stringify({ name: 'Metadata only' }),
       });
-      assertEquals(patch.status, 200);
-      return (await patch.json()) as { modelsCache: { fetchedAt: number | null; lastError: unknown } };
+      assertEquals(response.status, 200);
     },
   );
 
-  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['warmed-on-update']);
-  assertEquals(patched.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
-  assertEquals(patched.modelsCache.lastError, null);
+  assertEquals(modelRequests, 0);
+  assertEquals((await repo.upstreams.getById(created.id))?.configVersion, configVersion);
+  assertEquals((await repo.upstreams.getById(created.id))?.modelsCache?.models.map(model => model.id), ['cached-model']);
 });
 
-test('POST /api/upstreams/list-models without an id still serves draft preview', async () => {
+test('POST /api/upstreams/preview-models without an id still serves draft preview', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -790,12 +1016,12 @@ test('POST /api/upstreams/list-models without an id still serves draft preview',
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
         record: blueprintEnvelope('custom', { config: customConfig }),
       }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
-      assertEquals(body.data.map(m => m.id), ['draft-only']);
+      assertEquals(body.data.map(m => m.upstreamModelId), ['draft-only']);
     },
   );
 });
@@ -803,7 +1029,7 @@ test('POST /api/upstreams/list-models without an id still serves draft preview',
 // --- Codex routes ---
 //
 // The auth.json import path lets us drive the OAuth ingestion deterministically
-// without mocking the token-exchange roundtrip: parseCodexIdTokenClaims decodes
+// without mocking the token-exchange roundtrip: parseCodexTokenClaims decodes
 // the id_token JWT directly. Build a fake JWT that carries the identity claims
 // the production parser requires.
 const encodeBase64Url = (input: string): string =>
@@ -823,15 +1049,20 @@ const fakeIdToken = (claims: Record<string, unknown>): string => {
   return `${header}.${payload}.fake-signature`;
 };
 
-const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
-  auth_json: JSON.stringify({
-    tokens: {
-      access_token: 'at_test',
-      refresh_token: 'rt_test',
-      id_token: fakeIdToken({}),
-    },
-    ...overrides,
-  }),
+// The `~/.codex/auth.json` envelope, which the import path detects by its
+// `tokens` key and exposes as a single selectable source.
+const codexJsonImport = (overrides: Record<string, unknown> = {}) => ({
+  json: {
+    raw_json: JSON.stringify({
+      tokens: {
+        access_token: 'at_test',
+        refresh_token: 'rt_test',
+        id_token: fakeIdToken({}),
+      },
+      ...overrides,
+    }),
+    source_index: 0,
+  },
 });
 
 // Two-step create flow: (1) exchange endpoint yields a codex config+state
@@ -840,33 +1071,36 @@ const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
 // touching subsequent codex actions see the same row a real user would
 // have.
 const createCodexUpstreamViaExchange = async (adminSession: string, overrides: Record<string, unknown> = {}): Promise<{ id: string }> => {
-  const exchange = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  const exchange = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: blueprintEnvelope('codex'),
-    auth_json: codexAuthJsonImport(overrides).auth_json,
+    json: codexJsonImport(overrides).json,
   }));
   if (exchange.status !== 200) throw new Error(`codex exchange failed: ${exchange.status} ${await exchange.text()}`);
   const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
-  const create = await requestApp('/api/upstreams', authed(adminSession, {
-    kind: 'codex',
-    name: 'ChatGPT Codex',
-    hue: 210,
-    config: patch.config,
-    state: patch.state,
-    proxy_fallback_list: MOCKED_FETCH_EGRESS,
-  }));
+  const create = await withMockedFetch(
+    () => jsonResponse({ error: 'forbidden' }, 403),
+    () => requestApp('/api/upstreams', authed(adminSession, {
+      kind: 'codex',
+      name: 'ChatGPT Codex',
+      hue: 210,
+      config: patch.config,
+      state: patch.state,
+      proxy_fallback_list: MOCKED_FETCH_EGRESS,
+    })),
+  );
   if (create.status !== 201) throw new Error(`codex create failed: ${create.status} ${await create.text()}`);
   return (await create.json()) as { id: string };
 };
 
-const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string): Promise<UpstreamRecord> => {
+const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string): Promise<StoredUpstreamRecord> => {
   const record = await repo.upstreams.getById(id);
   if (!record) throw new Error(`Expected upstream ${id} to exist`);
   return record;
 };
 
-const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string) => {
+const getRefreshIdentity = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string) => {
   const record = await getRecord(repo, id);
-  return { updatedAt: record.updatedAt, config: record.config };
+  return modelsRefreshIdentity(record);
 };
 
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
@@ -885,14 +1119,14 @@ test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challeng
   assertEquals(url.searchParams.get('state'), 'TEST_STATE');
 });
 
-test('POST /api/upstreams/codex/oauth/exchange in create state (callback) returns a codex config+state patch from the SPA-supplied verifier', async () => {
+test('POST /api/upstreams/codex/import/exchange in create state (callback) returns a codex config+state patch from the SPA-supplied verifier', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
     async () => {
       const resp = await requestApp(
-        '/api/upstreams/codex/oauth/exchange',
+        '/api/upstreams/codex/import/exchange',
         authed(adminSession, {
           record: blueprintEnvelope('codex'),
           callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
@@ -908,12 +1142,12 @@ test('POST /api/upstreams/codex/oauth/exchange in create state (callback) return
   );
 });
 
-test('POST /api/upstreams/codex/oauth/exchange in create state (auth_json) returns a codex config+state patch derived from the JWT', async () => {
+test('POST /api/upstreams/codex/import/exchange in create state (json) returns a codex config+state patch derived from the JWT', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: blueprintEnvelope('codex'),
-    auth_json: codexAuthJsonImport().auth_json,
+    json: codexJsonImport().json,
   }));
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { patch: { config: JsonObject; state: JsonObject } };
@@ -924,18 +1158,150 @@ test('POST /api/upstreams/codex/oauth/exchange in create state (auth_json) retur
   assertEquals(body.patch.state.accounts[0].refresh_token, 'rt_test');
 });
 
-test('POST /api/upstreams/codex/oauth/exchange in edit state persists the patch to the stored row', async () => {
+test('POST /api/upstreams/codex/import/exchange imports a root account JSON object', async () => {
+  const { adminSession } = await setupAppTest();
+  const raw = JSON.stringify({
+    name: 'Primary',
+    platform: 'openai',
+    type: 'oauth',
+    credentials: {
+      access_token: 'opaque-root',
+      refresh_token: 'refresh-root',
+      chatgpt_account_id: 'acc_root',
+      email: 'root@example.test',
+    },
+  });
+
+  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('codex'),
+    json: { raw_json: raw, source_index: 0 },
+  }));
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as { patch: { config: JsonObject; state: JsonObject } };
+  assertEquals(body.patch.config.accounts[0].chatgptAccountId, 'acc_root');
+  assertEquals(body.patch.config.accounts[0].email, 'root@example.test');
+  assertEquals(body.patch.state.accounts[0].refresh_token, 'refresh-root');
+});
+
+test('POST /api/upstreams/codex/import/exchange imports a manual access-only credential without reaching the network', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    () => { throw new Error('manual import must not fetch'); },
+    async () => {
+      const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+        record: blueprintEnvelope('codex'),
+        manual: { access_token: 'opaque' },
+      }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { patch: { config: JsonObject; state: JsonObject } };
+      assertEquals(body.patch.config.accounts[0].chatgptAccountId, null);
+      assertEquals(body.patch.config.accounts[0].email, null);
+      assertEquals(body.patch.state.accounts[0].refresh_token, null);
+      assertEquals(body.patch.state.accounts[0].accessToken.expiresAt, null);
+    },
+  );
+});
+
+test('POST /api/upstreams/codex/import/exchange accepts optional manual email and plan for an opaque credential', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    () => { throw new Error('manual import must not fetch'); },
+    async () => {
+      const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+        record: blueprintEnvelope('codex'),
+        manual: {
+          access_token: 'opaque',
+          account_id: 'acc_manual',
+          email: 'operator@example.test',
+          plan_type: 'team',
+        },
+      }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { patch: { config: JsonObject } };
+      assertEquals(body.patch.config.accounts[0].email, 'operator@example.test');
+      assertEquals(body.patch.config.accounts[0].planType, 'team');
+      assertEquals(body.patch.config.accounts[0].chatgptAccountId, 'acc_manual');
+    },
+  );
+});
+
+test('POST /api/upstreams/codex/import/preview lists selectable candidates and no credential material', async () => {
+  const { adminSession } = await setupAppTest();
+  const raw = JSON.stringify({
+    accounts: [
+      { platform: 'anthropic', type: 'oauth', credentials: { access_token: 'ignore-me' } },
+      {
+        platform: 'openai',
+        type: 'oauth',
+        name: 'Primary',
+        credentials: {
+          access_token: 'opaque',
+          refresh_token: 'rt_secret_preview',
+          email: 'person@example.test',
+        },
+      },
+    ],
+  });
+
+  await withMockedFetch(
+    () => { throw new Error('preview must not fetch'); },
+    async () => {
+      const resp = await requestApp('/api/upstreams/codex/import/preview', authed(adminSession, { raw_json: raw }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { candidates: unknown };
+      assertEquals(body.candidates, [{
+        sourceIndex: 1,
+        name: 'Primary',
+        email: 'person@example.test',
+        chatgptAccountId: null,
+        chatgptUserId: null,
+        planType: null,
+        renewable: true,
+        expiresAt: null,
+        issues: [],
+      }]);
+      const serialized = JSON.stringify(body);
+      assertEquals(serialized.includes('opaque'), false);
+      assertEquals(serialized.includes('rt_secret_preview'), false);
+    },
+  );
+});
+
+test('POST /api/upstreams/codex/import/exchange re-parses and imports the selected JSON source index', async () => {
+  const { adminSession } = await setupAppTest();
+  const raw = JSON.stringify({
+    data: {
+      accounts: [
+        { platform: 'openai', type: 'oauth', credentials: { access_token: 'first', chatgpt_account_id: 'acc_first' } },
+        { platform: 'openai', type: 'oauth', credentials: { access_token: 'second', chatgpt_account_id: 'acc_second' } },
+      ],
+    },
+  });
+  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
+    record: blueprintEnvelope('codex'),
+    json: { raw_json: raw, source_index: 1 },
+  }));
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as { patch: { config: JsonObject; state: JsonObject } };
+  assertEquals(body.patch.config.accounts.length, 1);
+  assertEquals(body.patch.config.accounts[0].chatgptAccountId, 'acc_second');
+  assertEquals(body.patch.state.accounts[0].accessToken.token, 'second');
+});
+
+test('POST /api/upstreams/codex/import/exchange in edit state persists the patch to the stored row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const initial = await createCodexUpstreamViaExchange(adminSession);
   // Re-import with a rotated refresh_token to prove the exchange overwrites
   // config + state on the existing row rather than appending an account.
-  await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: envelopeFromRecord(await getRecord(repo, initial.id)),
-    auth_json: codexAuthJsonImport({
+    json: codexJsonImport({
       tokens: { access_token: 'at_v2', refresh_token: 'rt_v2', id_token: fakeIdToken({}) },
-    }).auth_json,
+    }).json,
   }));
 
   const stored = await repo.upstreams.getById(initial.id);
@@ -943,16 +1309,16 @@ test('POST /api/upstreams/codex/oauth/exchange in edit state persists the patch 
   assertEquals(storedState.accounts[0].refresh_token, 'rt_v2');
 });
 
-test('POST /api/upstreams/codex/oauth/exchange rejects when both auth_json and callback are absent', async () => {
+test('POST /api/upstreams/codex/import/exchange rejects when no import source is supplied', async () => {
   const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: blueprintEnvelope('codex'),
   }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { issues?: Array<{ message: string }> } | string };
   // The schema-level XOR refine surfaces as a zod validation error envelope.
-  assertEquals(JSON.stringify(body).includes('Provide exactly one of auth_json or callback'), true);
+  assertEquals(JSON.stringify(body).includes('Provide exactly one of json, callback, or manual'), true);
 });
 
 test('POST /api/upstreams/codex/oauth/refresh rejects a non-codex record with 400', async () => {
@@ -973,7 +1339,7 @@ test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal sta
   const created = await createCodexUpstreamViaExchange(adminSession);
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...stored!,
     state: { accounts: storedState.accounts.map(a => ({ ...a, state: 'session_terminated' })) },
   });
@@ -984,6 +1350,30 @@ test('POST /api/upstreams/codex/oauth/refresh rejects a record in a terminal sta
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('session_terminated'), true);
+});
+
+test('POST /api/upstreams/codex/oauth/refresh rejects an access-only credential before touching proxy or OAuth', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await createCodexUpstreamViaExchange(adminSession);
+  const stored = await getRecord(repo, created.id);
+  const state = stored.state as { accounts: Array<Record<string, unknown>> };
+  await saveUpstreamForTest(repo.upstreams, {
+    ...stored,
+    state: { accounts: state.accounts.map(account => ({ ...account, refresh_token: null })) },
+  });
+
+  await withMockedFetch(
+    () => { throw new Error('access-only refresh must not fetch'); },
+    async () => {
+      const resp = await requestApp('/api/upstreams/codex/oauth/refresh', authed(adminSession, {
+        record: envelopeFromRecord(await getRecord(repo, created.id)),
+      }));
+      assertEquals(resp.status, 400);
+      const body = (await resp.json()) as { error: string };
+      assertEquals(body.error.includes('access-only credentials cannot be refreshed'), true);
+    },
+  );
 });
 
 test('POST /api/upstreams/codex/oauth/refresh rotates the refresh token and persists to the row when the record has an id', async () => {
@@ -1212,20 +1602,41 @@ test('PATCH /api/upstreams rejects config edits on a claude-code row', async () 
   assertEquals(body.error.toLowerCase().includes('claude-code'), true);
 });
 
-test('PATCH /api/upstreams rejects config edits on a codex row', async () => {
+test('PATCH /api/upstreams accepts Codex display metadata edits', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
   const created = await createCodexUpstreamViaExchange(adminSession);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ config: { accounts: [] } }),
+    body: JSON.stringify({
+      config: { accounts: [{ email: null, chatgptAccountId: 'acc_test', planType: 'pro' }] },
+    }),
+  });
+  assertEquals(patch.status, 200);
+  const body = (await patch.json()) as { config: { accounts: Array<Record<string, unknown>> } };
+  assertEquals(body.config.accounts[0], {
+    email: null,
+    chatgptAccountId: 'acc_test',
+    chatgptUserId: 'usr_test',
+    planType: 'pro',
+  });
+});
+
+test('PATCH /api/upstreams rejects Codex account ID changes', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await createCodexUpstreamViaExchange(adminSession);
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ config: { accounts: [{ chatgptAccountId: 'acc_other' }] } }),
   });
   assertEquals(patch.status, 400);
   const body = (await patch.json()) as { error: string };
-  assertEquals(body.error.toLowerCase().includes('codex'), true);
+  assertEquals(body.error.includes('only be changed by re-importing'), true);
 });
 
 test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
@@ -1277,7 +1688,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh rejects a record in a termin
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...stored!,
     state: {
       accounts: storedState.accounts.map(a => ({
@@ -1441,7 +1852,7 @@ test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping dir
   // A proxy delete is refused while an upstream still names it, so reach past
   // the route to reproduce a raced delete or a hand-edited row.
   const stored = await repo.upstreams.getById(created.id);
-  await repo.upstreams.save({ ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
 
   const single = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(single.status, 200);
@@ -1492,7 +1903,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh honors the record.proxy_fall
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   // Persist a non-direct fallback list so a successful default-path refresh
   // would route through `p_real`. The envelope's list should win.
-  await repo.upstreams.save({ ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_real' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_real' }] });
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
   envelope.proxy_fallback_list = [{ id: 'p_unknown' }];
@@ -1585,19 +1996,35 @@ test('POST /api/upstreams/claude-code/oauth/exchange rejects a record.proxy_fall
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-test('POST /api/upstreams/codex/oauth/exchange rejects a record.proxy_fallback_list referencing an unknown proxy id', async () => {
+// Only the callback source talks to auth.openai.com, so it is the only one
+// whose egress chain has to resolve. A pasted document is parsed locally and
+// must import even when the draft names a proxy that no longer exists.
+test('POST /api/upstreams/codex/import/exchange rejects a record.proxy_fallback_list referencing an unknown proxy id on the callback source', async () => {
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
-    '/api/upstreams/codex/oauth/exchange',
+    '/api/upstreams/codex/import/exchange',
     authed(adminSession, {
       record: blueprintEnvelope('codex', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
-      ...codexAuthJsonImport(),
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
     }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/codex/import/exchange imports a pasted document without resolving egress', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const resp = await requestApp(
+    '/api/upstreams/codex/import/exchange',
+    authed(adminSession, {
+      record: blueprintEnvelope('codex', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
+      ...codexJsonImport(),
+    }),
+  );
+  assertEquals(resp.status, 200);
 });
 
 // --- claude-code Setup-Token routes ---
@@ -1829,14 +2256,12 @@ test('POST /api/upstreams/claude-code/probe mints a fresh access token when the 
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  // Create with a fresh access token so the create-time cache warm doesn't
-  // trip an unwanted refresh through the (unmocked) globalThis.fetch, then
-  // stale the persisted state directly so the probe's
-  // ensureClaudeCodeAccessToken call falls through to the refresh path.
+  // Stale the persisted state so the probe's ensureClaudeCodeAccessToken
+  // call falls through to the refresh path.
   const created = await createClaudeCodeUpstreamViaExchange(adminSession);
   const staleRow = await getRecord(repo, created.id);
   const staleState = staleRow.state as { accounts: Array<Record<string, unknown> & { accessToken: Record<string, unknown> | null }> };
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     ...staleRow,
     state: {
       accounts: staleState.accounts.map(a => ({
@@ -1946,9 +2371,6 @@ test('spec invariant (3): POST /api/upstreams/copilot/oauth/device-login/poll ig
       if (request.url === 'https://api.github.com/copilot_internal/v2/token') {
         return jsonResponse({ token: 'ct_rotated', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800, endpoints: { api: 'https://api.githubcopilot.com' } });
       }
-      // The post-save models-cache warm hits `/models` on the copilot API
-      // host; 403 short-circuits the auth retry loop instead of racing the
-      // ~7s exponential backoff.
       return jsonResponse({ error: 'forbidden' }, 403);
     },
     async () => {
@@ -1988,7 +2410,7 @@ test('spec invariant (3): POST /api/upstreams/copilot/quota ignores record.flag_
   assertEquals(stored?.flagOverrides, originalFlags);
 });
 
-test('spec invariant (3): POST /api/upstreams/codex/oauth/exchange (edit state) ignores record.name mutation', async () => {
+test('spec invariant (3): POST /api/upstreams/codex/import/exchange (edit state) ignores record.name mutation', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -1998,11 +2420,11 @@ test('spec invariant (3): POST /api/upstreams/codex/oauth/exchange (edit state) 
   const envelope = envelopeFromRecord(record);
   envelope.name = 'Mutated';
 
-  const resp = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+  const resp = await requestApp('/api/upstreams/codex/import/exchange', authed(adminSession, {
     record: envelope,
-    auth_json: codexAuthJsonImport({
+    json: codexJsonImport({
       tokens: { access_token: 'at_v2', refresh_token: 'rt_v2', id_token: fakeIdToken({}) },
-    }).auth_json,
+    }).json,
   }));
   assertEquals(resp.status, 200);
 
@@ -2117,7 +2539,7 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
   // Persist a non-default fallback list — this is what MUST survive the
   // probe. The envelope's list serves ONLY as a per-request routing
   // override; the probe endpoint never writes it back.
-  await repo.upstreams.save({ ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_persisted' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_persisted' }] });
   const originalList = (await getRecord(repo, created.id)).proxyFallbackList;
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
@@ -2135,17 +2557,12 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
   assertEquals(stored?.proxyFallbackList, originalList);
 });
 
-test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mutation on a saved row', async () => {
+test('POST /api/upstreams/preview-models never writes the matching saved row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // Azure sits in the SWR-cached branch alongside copilot / codex /
-  // claude-code, so this exercises the `fetchUpstreamModelsCached` path a
-  // future "refresh row metadata" regression would land in. Azure's
-  // getProvidedModels reads directly from config.models — no upstream mock
-  // needed, no credential mint.
   const savedRecord: UpstreamRecord = {
     id: 'up_invariant_list_models',
-    kind: 'azure',
+    kind: 'custom',
     name: 'Original',
     enabled: true,
     sortOrder: 0,
@@ -2153,27 +2570,30 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: {
-      endpoint: 'https://invariant.openai.azure.com',
-      apiKey: 'sk-invariant',
-      models: [{ upstreamModelId: 'gpt-4o', publicModelId: 'gpt-4o', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
-    },
+    config: { ...customConfig, models: [] },
     state: null,
   };
-  await repo.upstreams.save(savedRecord);
+  await saveUpstreamForTest(repo.upstreams, savedRecord);
 
   const envelope = envelopeFromRecord(savedRecord);
   envelope.name = 'Mutated';
 
-  const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, { record: envelope }));
-  assertEquals(resp.status, 200);
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'draft-only' }] }),
+    async () => {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record: envelope }));
+      assertEquals(resp.status, 200);
+      assertEquals(((await resp.json()) as JsonObject).data[0].upstreamModelId, 'draft-only');
+    },
+  );
 
   const stored = await repo.upstreams.getById(savedRecord.id);
   assertEquals(stored?.name, savedRecord.name);
+  assertEquals(stored?.modelsCache, null);
 });
 
 // --- Group B: endpoint tests for surfaces with zero coverage ---
@@ -2458,7 +2878,7 @@ test('POST /api/upstreams/codex/oauth/refresh recovers as success when a sibling
         // a rotated refresh_token + a fresh access token.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({
@@ -2508,7 +2928,7 @@ test('POST /api/upstreams/codex/oauth/refresh surfaces terminal error when a sib
         // returns null, and the original invalid_grant propagates.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({
@@ -2557,7 +2977,7 @@ test('POST /api/upstreams/claude-code/oauth/refresh recovers as success when a s
         // fresh accessToken and returns success without a re-mint.
         const row = await repo.upstreams.getById(created.id);
         const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
-        await repo.upstreams.save({
+        await saveUpstreamForTest(repo.upstreams, {
           ...row!,
           state: {
             accounts: rowState.accounts.map(a => ({

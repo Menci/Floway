@@ -3,6 +3,7 @@ import { beforeEach, test, vi } from 'vitest';
 import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { initRepo } from '../../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
+import { saveUpstreamForTest } from '../../../../../repo/upstreams.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -196,7 +197,7 @@ beforeEach(async () => {
   // production code path. Seed the in-memory repo with the mocked candidate's
   // upstream id so the fetcher mapper resolves it instead of throwing
   // "unknown upstream id: u".
-  await repo.upstreams.save({
+  await saveUpstreamForTest(repo.upstreams, {
     id: 'u',
     kind: 'custom',
     name: 'mock-image',
@@ -599,7 +600,7 @@ test('an image sub-call records its own perf row attributed to the image backend
   assertEquals(imageRows[0].model, 'gpt-image-2');
   // The image shim runs on a local AttemptState distinct from the outer
   // OpenAI Responses turn's — no image-call stamps may leak onto ctx.attempt.
-  assertEquals(ctx.attempt.upstreamCallStartedAt, null);
-  assertEquals(ctx.attempt.firstOutputTokenAt, null);
+  assertEquals(ctx.attempt.timing.upstreamCallStartedAt, null);
+  assertEquals(ctx.attempt.timing.firstOutputTokenAt, null);
   assertEquals(ctx.attempt.telemetry, undefined);
 });

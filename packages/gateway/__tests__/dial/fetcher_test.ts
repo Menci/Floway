@@ -319,6 +319,107 @@ describe('createFetcher', () => {
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
+  it('uses one implicit fetch for a Cloudflare CONNECT rejection when the current colo has no fetch entry', async () => {
+    const repo = new InMemoryRepo();
+    const blocked = new Error('blocked by workerd');
+    const dial: SocketDial & { shouldConnectErrorFallbackToFetch(error: unknown): boolean } = {
+      ...stubSocketDial,
+      shouldConnectErrorFallbackToFetch: error => error === blocked,
+    };
+    const calls: string[] = [];
+    const body = new FormData();
+    body.set('prompt', 'hello');
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_connect' }, { id: 'a' }, { id: 'direct_fetch', colos: ['NRT'] }],
+      runtimeLocation: 'HKG',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw new Error('unexpected proxy'); },
+      runDirectConnect: async () => {
+        calls.push('connect');
+        throw new ProxyDialError('tcp connect failed', 'tcp-connect', { cause: blocked });
+      },
+      runDirectFetch: async (_url, init) => {
+        calls.push('fetch');
+        expect(new Headers(init.headers).get('content-type')).toMatch(/^multipart\/form-data; boundary=/);
+        if (!(init.body instanceof Uint8Array)) throw new Error('expected buffered fetch body');
+        expect(new TextDecoder().decode(init.body)).toContain('hello');
+        return new Response('fetched', { status: 503 });
+      },
+      socketDial: () => dial,
+    });
+
+    const response = await fetcher('https://example.com/generate', { method: 'POST', body });
+
+    expect(await response.text()).toBe('fetched');
+    expect(response.status).toBe(503);
+    expect(calls).toEqual(['connect', 'fetch']);
+    expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
+  });
+
+  it('treats the implicit fetch failure as authoritative', async () => {
+    const blocked = new Error('blocked by workerd');
+    const fetchError = new Error('fetch failed');
+    const fetcher = createFetcher({
+      repo: new InMemoryRepo(),
+      upstreamId: 'u',
+      fallbackList: [],
+      runtimeLocation: 'HKG',
+      proxyById: new Map(),
+      runProxied: async () => { throw new Error('unexpected proxy'); },
+      runDirectConnect: async () => { throw new ProxyDialError('tcp connect failed', 'tcp-connect', { cause: blocked }); },
+      runDirectFetch: async () => { throw fetchError; },
+      socketDial: () => ({ ...stubSocketDial, shouldConnectErrorFallbackToFetch: error => error === blocked }),
+    });
+
+    await expect(fetcher('https://example.com', { method: 'GET' })).rejects.toBe(fetchError);
+  });
+
+  it('keeps the configured order when a fetch entry matches the current colo', async () => {
+    const blocked = new Error('blocked by workerd');
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo: new InMemoryRepo(),
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_connect' }, { id: 'a' }, { id: 'direct_fetch', colos: ['HKG'] }],
+      runtimeLocation: 'HKG',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { calls.push('proxy'); return new Response('proxied'); },
+      runDirectConnect: async () => {
+        calls.push('connect');
+        throw new ProxyDialError('tcp connect failed', 'tcp-connect', { cause: blocked });
+      },
+      runDirectFetch: async () => { calls.push('fetch'); return new Response('fetched'); },
+      socketDial: () => ({ ...stubSocketDial, shouldConnectErrorFallbackToFetch: error => error === blocked }),
+    });
+
+    expect(await (await fetcher('https://example.com', { method: 'GET' })).text()).toBe('proxied');
+    expect(calls).toEqual(['connect', 'proxy']);
+  });
+
+  it('does not implicitly fetch on other direct-connect failures', async () => {
+    const blocked = new Error('blocked by workerd');
+    const fetch = vi.fn(async () => new Response('fetched'));
+    const run = (stage: ProxyDialError['stage'], cause: Error, socketDial: SocketDial) => createFetcher({
+      repo: new InMemoryRepo(),
+      upstreamId: 'u',
+      fallbackList: [],
+      runtimeLocation: 'HKG',
+      proxyById: new Map(),
+      runProxied: async () => { throw new Error('unexpected proxy'); },
+      runDirectConnect: async () => { throw new ProxyDialError('dial failed', stage, { cause }); },
+      runDirectFetch: fetch,
+      socketDial: () => socketDial,
+    });
+    const cloudflareDial = { ...stubSocketDial, shouldConnectErrorFallbackToFetch: (error: unknown) => error === blocked };
+
+    await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    await expect(run('tcp-connect', blocked, stubSocketDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('skips entries whose colos whitelist excludes the current colo', async () => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];

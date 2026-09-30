@@ -1,3 +1,4 @@
+import type { InfoButtonProps } from '@fluentui/react-components';
 import { useId } from 'react';
 import type { ReactNode } from 'react';
 
@@ -12,11 +13,12 @@ const { Text } = fluentComponents;
 // credential flow, a proxy list, a row of endpoint checkboxes -- is a composite
 // no single Fluent Field can speak for, so the block names itself as a group
 // instead.
-export function EditorSection({ children, description, error, hint, inline = false, level = 2, title }: {
+export function EditorSection({ children, description, error, hint, info, inline = false, level = 2, title }: {
   children: ReactNode;
   description?: string;
   error?: string;
   hint?: string;
+  info?: InfoButtonProps['info'];
   inline?: boolean;
   level?: 2 | 3;
   title: string;
@@ -32,7 +34,7 @@ export function EditorSection({ children, description, error, hint, inline = fal
     className={layout}
     role="group"
   >
-    <SectionHeader description={description} level={level} title={title} titleId={`${id}-title`} />
+    <SectionHeader description={description} info={info} level={level} title={title} titleId={`${id}-title`} />
     {children}
     {hint && <Text id={`${id}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
     {error && <Text className={`${dangerText} ${inline ? 'col-span-2' : ''}`} role="alert" size={200}>{error}</Text>}

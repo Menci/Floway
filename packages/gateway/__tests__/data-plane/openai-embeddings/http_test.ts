@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -46,7 +47,7 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -101,7 +102,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -165,7 +166,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -198,7 +199,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,
@@ -242,7 +243,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -272,7 +273,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'Chat Only Provider',
     enabled: true,
@@ -303,7 +304,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -331,7 +332,7 @@ test('/v1/embeddings reports the failed upstream parenthetically when /v1/models
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,
@@ -359,7 +360,7 @@ test('/v1/embeddings reports the failed upstream parenthetically when /v1/models
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -390,7 +391,7 @@ test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s
   const { apiKey, repo } = await setupAppTest();
   clearInProcessCopilotTokenCache();
 
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
     enabled: true,
@@ -432,7 +433,7 @@ test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -475,7 +476,7 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/embeddings', {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

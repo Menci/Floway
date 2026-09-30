@@ -30,6 +30,9 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
     const output = intersectArrays(chats.map(chat => chat.modalities!.output));
     if (input.length && output.length) result.modalities = { input, output };
   }
+  if (chats.every(chat => chat.image_detail_original !== undefined)) {
+    result.image_detail_original = chats.every(chat => chat.image_detail_original === true);
+  }
   if (chats.every(chat => chat.reasoning)) {
     const blocks = chats.map(chat => chat.reasoning!);
     const reasoning: NonNullable<ChatModelInfo['reasoning']> = {};

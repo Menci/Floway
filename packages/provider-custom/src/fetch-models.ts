@@ -11,8 +11,8 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -37,6 +37,7 @@ export interface CustomRawModel {
   // Optional chat metadata from Floway-shaped upstreams; absent on plain
   // OpenAI-compat upstreams.
   chat?: UpstreamChatModelConfig;
+  opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
 }
 
 export interface CustomModelsResponse {
@@ -121,6 +122,10 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   try {
     const chat = chatField(value.chat, `${value.id}.chat`);
     if (chat !== undefined) model.chat = chat;
+  } catch { /* skip */ }
+  try {
+    const scope = opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${value.id}.opaqueBlobCompatibilityScope`);
+    if (scope !== undefined) model.opaqueBlobCompatibilityScope = scope;
   } catch { /* skip */ }
   return model;
 };

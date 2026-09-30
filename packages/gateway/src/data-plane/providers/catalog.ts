@@ -1,9 +1,9 @@
 import { unionEndpoints } from './endpoint-union.ts';
-import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
+import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
+import type { InternalModel, Provider, ProviderModel, UpstreamChatModelConfig, UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -12,39 +12,67 @@ interface ProviderModelsResult {
   // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
   // the alias listing reads it to project per-target upstream chips.
   upstreamsByPublicId: Map<string, Provider[]>;
-  sawSuccess: boolean;
-  lastError: unknown;
-  // Upstream names whose catalog fetch rejected this round, in the same
-  // order as the input `providers` list so the model-missing renderer can
-  // surface a stable, dashboard-aligned list.
+  // Upstreams carrying a persisted catalog-refresh error, in provider order.
   failedUpstreams: string[];
 }
+
+const mergedOpaqueBlobCompatibilityScope = (
+  models: readonly ProviderModel[],
+): OpaqueBlobCompatibilityScope => {
+  const [first, ...rest] = models;
+  if (first !== undefined && rest.every(model =>
+    model.opaqueBlobCompatibilityScope.bindToUpstream === first.opaqueBlobCompatibilityScope.bindToUpstream
+    && model.opaqueBlobCompatibilityScope.key === first.opaqueBlobCompatibilityScope.key)) {
+    return first.opaqueBlobCompatibilityScope;
+  }
+  return { bindToUpstream: true };
+};
+
+// A public id may route to any chat provider behind it, so this safety
+// capability is the conjunction of their explicit answers. Other chat metadata
+// retains the catalog's established first-provider-wins behavior.
+const mergedChatMetadata = (
+  first: UpstreamChatModelConfig | undefined,
+  providerModels: Readonly<Record<string, ProviderModel>>,
+): UpstreamChatModelConfig | undefined => {
+  const chatModels = Object.values(providerModels).filter(model => model.kind === 'chat');
+  if (chatModels.length === 0) return first;
+  return {
+    ...(first ?? {}),
+    image_detail_original: chatModels.every(model => model.chat?.image_detail_original === true),
+  };
+};
 
 // Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
 // `providerModels` with the sole entry keyed on the emitting upstream id.
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const providerModels = { [upstreamId]: providerModel };
+  const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {
     ...metadata,
+    ...(chat === undefined ? {} : { chat }),
     endpoints: { ...endpoints },
-    providerModels: { [upstreamId]: providerModel },
+    providerModels,
   };
 };
 
-// When multiple upstreams expose the same public model id, the first wins
-// for `/models` metadata and later ones union-merge their endpoint capability
-// map — the merged `endpoints` is the gateway-wide reach for that public id.
+// When multiple upstreams expose the same surfaced model id, the first wins
+// for metadata and later ones union-merge their endpoint capability map — the
+// merged `endpoints` is the gateway-wide reach for that id.
+// `chat.image_detail_original` is the safety exception: it is true only when
+// every chat provider behind the id explicitly accepts it.
 // `kind` is recomputed from the union so a chat-only id that later acquires
 // an embedding-capable upstream gets correctly reclassified. Each contribution
 // adds its own entry to `providerModels` keyed on the contributing upstream id
-// with the emitted `ProviderModel` stored verbatim, so the same public id
+// with the emitted `ProviderModel` stored verbatim, so the same id
 // carrying data from N upstreams ends up with N entries. The reverse index
 // `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
 // enumeration order, so the control plane can render its per-model upstream
 // chips without re-walking the catalog.
-const mergeIntoCatalog = (
+export const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
   upstreamsByPublicId: Map<string, Provider[]>,
   instance: Provider,
@@ -65,14 +93,18 @@ const mergeIntoCatalog = (
     throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
   }
   const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
+  const providerModels = {
+    ...existing.providerModels,
+    [instance.upstreamId]: surfacedModel,
+  };
+  const chat = mergedChatMetadata(existing.chat, providerModels);
   byId.set(publicId, {
     ...existing,
+    ...(chat === undefined ? {} : { chat }),
+    opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(Object.values(providerModels)),
     endpoints,
     kind: kindForEndpoints(endpoints),
-    providerModels: {
-      ...existing.providerModels,
-      [instance.upstreamId]: surfacedModel,
-    },
+    providerModels,
   });
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch
@@ -82,46 +114,23 @@ const mergeIntoCatalog = (
   instances.push(instance);
 };
 
-const collectProviderModels = async (
+const collectProviderModels = (
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<ProviderModelsResult> => {
+  scheduleRefresh: ModelsRefreshScheduler,
+): ProviderModelsResult => {
   const byId = new Map<string, InternalModel>();
   const upstreamsByPublicId = new Map<string, Provider[]>();
-  let sawSuccess = false;
-  let lastError: unknown = null;
   const failedUpstreams: string[] = [];
 
-  // Fan out per-upstream so a slow provider does not stall the rest. The SWR
-  // cache layer dedupes concurrent in-flight fetches per upstream and serves
-  // the SOFT-fresh row without an upstream round trip, so the parallel walk
-  // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
-  // the cold path.
-  const fetchOne = (instance: GatewayProvider) =>
-    fetchUpstreamModelsCached(instance, {
-      scheduler,
-      fetcher: fetcherForUpstream(instance.upstreamId),
-    }).then(models => ({ instance, models }));
-
-  const settled = await Promise.allSettled(providers.map(fetchOne));
-
-  for (const [index, result] of settled.entries()) {
-    if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate. Burying it in lastError
-      // and letting an earlier sawSuccess return a partially-populated
-      // model list would mask the abort and let the rest of the data-plane
-      // request build a Response against a stale catalog. `isAbortError`
-      // walks the cause chain so an AbortError wrapped inside
-      // ProviderModelsUnavailableError still surfaces here.
-      const error = result.reason;
-      if (isAbortError(error)) throw error;
-      lastError = error;
-      failedUpstreams.push(providers[index].name);
-      continue;
+  // Catalog reads never await upstream I/O. Each result is the persisted
+  // snapshot carried by the provider; a cold or stale snapshot separately
+  // triggers background refresh through the supplied scheduler.
+  for (const instance of providers) {
+    const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, scheduleRefresh);
+    const { models: providedModels, lastError: cachedError } = snapshot;
+    if (cachedError) {
+      failedUpstreams.push(instance.name);
     }
-    sawSuccess = true;
-    const { instance, models: providedModels } = result.value;
     // Operator-disabled public model ids vanish entirely for this upstream:
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,
@@ -157,7 +166,7 @@ const collectProviderModels = async (
     }
   }
 
-  return { models: [...byId.values()], upstreamsByPublicId, sawSuccess, lastError, failedUpstreams };
+  return { models: [...byId.values()], upstreamsByPublicId, failedUpstreams };
 };
 
 // How many catalog entries this upstream's stored catalog would surface, under
@@ -219,20 +228,17 @@ export const compareModelIds = (a: string, b: string): number => {
 // shares its provider list across the alias resolver and the candidate
 // walk — pass providers through to avoid the duplicate upstreams.list()
 // DB query.
-export const getModelsFromProviders = async (
+export const getModelsFromProviders = (
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
+  scheduleRefresh: ModelsRefreshScheduler,
+): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
   if (providers.length === 0) {
     throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
-  const { models, upstreamsByPublicId, sawSuccess, lastError, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
+  const { models, upstreamsByPublicId, failedUpstreams } = collectProviderModels(providers, scheduleRefresh);
 
   // TODO: surface `failedUpstreams` on each listing endpoint's wire response
   // so partial-listing failures reach clients.
-  if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
-  if (lastError) throw lastError;
-  return { models: [], upstreamsByPublicId, failedUpstreams };
+  return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
 };

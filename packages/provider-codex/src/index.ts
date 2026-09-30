@@ -8,6 +8,7 @@ export const codexProviderModule: ProviderModule = {
 };
 
 export * from './access-token.ts';
+export * from './auth/credential.ts';
 export * from './auth/import.ts';
 export * from './auth/oauth.ts';
 export * from './constants.ts';
@@ -15,3 +16,4 @@ export * from './config.ts';
 export * from './state.ts';
 export * from './quota.ts';
 export { pricingForCodexModelKey } from './pricing.ts';
+export { codexModelContextWindow, type CodexContextWindow } from './models.ts';

@@ -9,4 +9,4 @@ export const customProviderModule: ProviderModule = {
 
 export { assertCustomUpstreamRecord, type CustomIngressHeaderRule, type CustomModelsFetch, type CustomUpstreamConfig } from './config.ts';
 export { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-export { projectCustomModels } from './provider.ts';
+export { projectCustomModels, projectCustomDiscoveredModels } from './provider.ts';

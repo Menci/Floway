@@ -13,6 +13,18 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('bundles the current GPT-6.1 Sol catalog entry for offline fallback', () => {
+    const sol = bundled.models.find(model => model.slug === 'gpt-6.1-sol') as Record<string, unknown> | undefined;
+    expect(sol).toMatchObject({
+      display_name: 'GPT-6.1-Sol',
+      context_window: 272000,
+      max_context_window: 872000,
+      default_reasoning_level: 'low',
+      minimal_client_version: '0.153.0',
+    });
+    expect(bundled.models.map(model => model.slug)).toEqual(expect.arrayContaining(['gpt-6-sol', 'gpt-6-luna']));
+  });
+
   it.each([
     'codex-tui/0.145.0 (Mac OS 26.5.0; arm64)',
     'codex_cli_rs/0.144.1 (Linux 6.8; x86_64)',

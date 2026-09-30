@@ -9,13 +9,29 @@ import {
 } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
-export interface CodexOAuthTokens {
+// What /token actually guarantees. A refresh response has been observed to
+// omit `id_token`, so the field is optional here and each caller states
+// whether its own path needs one.
+export interface CodexOAuthRefreshTokens {
   access_token: string;
   refresh_token: string;
-  id_token: string;
   // Lifetime in seconds, relative to the server's clock at issue time.
   expires_in: number;
+  // Present only when the upstream supplies it. Refresh re-mints the bearer
+  // only — identity was settled at import — but the id_token does carry the
+  // account's latest plan, which refresh-side plan observation reads.
+  id_token?: string;
 }
+
+export interface CodexOAuthTokens extends CodexOAuthRefreshTokens {
+  id_token: string;
+}
+
+// OAuth `expires_in` is a lifetime in seconds measured from issue; callers
+// store an absolute unix-ms expiry, so convert it anchored at the current
+// wall clock. The gap between that anchor and the server's issue time sits
+// inside the refresh window the access-token module already tolerates.
+export const codexTokenExpiresAt = (expiresInSeconds: number): number => Date.now() + expiresInSeconds * 1000;
 
 export const buildCodexAuthorizeUrl = (input: { state: string; codeChallenge: string }): string => {
   const url = new URL(CODEX_AUTHORIZE_URL);
@@ -85,7 +101,7 @@ const codexTokenRequest = async (
   body: URLSearchParams,
   terminalCodes: ReadonlySet<string>,
   fetcher: Fetcher,
-): Promise<CodexOAuthTokens> => {
+): Promise<CodexOAuthRefreshTokens> => {
   const response = await fetcher(CODEX_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -127,7 +143,7 @@ const codexTokenRequest = async (
   }
 
   if (root === null) throw new Error('Codex OAuth /token response is not an object');
-  for (const key of ['access_token', 'refresh_token', 'id_token'] as const) {
+  for (const key of ['access_token', 'refresh_token'] as const) {
     if (typeof root[key] !== 'string' || root[key] === '') {
       throw new Error(`Codex OAuth /token response missing ${key}`);
     }
@@ -138,7 +154,7 @@ const codexTokenRequest = async (
   return {
     access_token: root.access_token as string,
     refresh_token: root.refresh_token as string,
-    id_token: root.id_token as string,
+    ...(typeof root.id_token === 'string' && root.id_token !== '' ? { id_token: root.id_token } : {}),
     expires_in: root.expires_in as number,
   };
 };
@@ -163,13 +179,20 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
     redirect_uri: CODEX_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   });
-  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  const tokens = await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  // The authorization-code grant is the one path that must return an
+  // id_token: it is a fresh consent, and the identity claims it carries are
+  // the only ones this flow ever gets to see.
+  if (tokens.id_token === undefined) {
+    throw new Error('Codex OAuth /token response missing id_token');
+  }
+  return { ...tokens, id_token: tokens.id_token };
 };
 
 // `fetcher` is required because the refresh has an associated upstream
 // and must flow through that upstream's proxy-aware fallback chain rather
 // than direct egress.
-export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthTokens> => {
+export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthRefreshTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
@@ -181,5 +204,9 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
   // worker raced us, won the rotation, and our copy is now stale. The
   // access-token module's `recoverFromRefreshRace` distinguishes by re-reading
   // upstream state; the other codes here always mean credential death.
-  return await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  const tokens = await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  // A refresh only re-mints the bearer. Whatever identity the account has was
+  // settled at import, so the id_token here (when present) is used for the
+  // account's latest plan observation, never to re-litigate identity.
+  return tokens;
 };

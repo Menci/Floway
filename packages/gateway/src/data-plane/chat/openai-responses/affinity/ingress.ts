@@ -1,14 +1,16 @@
 import {
   type AffinityCodec,
+  type AffinityIdentity,
   type AffinityRequestAnalysis,
-  type AffinityTarget,
-  candidateSatisfiesAffinityTarget,
+  affinityIdentityOf,
+  candidateSatisfiesAffinityIdentity,
   type DecodedAffinityBlob,
   defineAffinityRequest,
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
+import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -27,11 +29,11 @@ interface OpenAIResponsesItemAnalysis {
   readonly itemIndex: number;
   readonly synthetic: boolean;
   readonly blobs: readonly OpenAIResponsesBlobAnalysis[];
-  readonly inheritedRequiredTarget?: AffinityTarget;
+  readonly inheritedRequiredTarget?: AffinityIdentity;
 }
 
 interface OpenAIResponsesRequestAnalysis {
-  readonly requiredTargets: readonly AffinityTarget[];
+  readonly requiredTargets: readonly AffinityIdentity[];
   readonly items: readonly OpenAIResponsesItemAnalysis[];
 }
 
@@ -47,7 +49,8 @@ const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const itemInheritsRequiredTarget = (item: OpenAIResponsesInputItem): boolean =>
-  ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
+  !isOpenAIResponsesCompactShimItem(item)
+  && ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
 const blobRequiresOriginalTarget = (item: OpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
   item.type === 'context_compaction'
@@ -61,7 +64,7 @@ const opaqueBlobLocations = async (
   const locations: OpenAIResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
     const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
-    if (typeof topLevel === 'string') {
+    if (typeof topLevel === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
       locations.push({
         itemIndex,
         slot: 'encrypted_content',
@@ -97,16 +100,16 @@ const analyzeOpenAIResponsesRequest = (
   locations: readonly OpenAIResponsesBlobLocation[],
 ): OpenAIResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
-  const requiredTargets: AffinityTarget[] = [];
+  const requiredTargets: AffinityIdentity[] = [];
   const itemAnalyses: OpenAIResponsesItemAnalysis[] = [];
-  let latestOwnedTarget: AffinityTarget | undefined;
+  let latestOwnedTarget: AffinityIdentity | undefined;
 
   for (const [itemIndex, item] of items.entries()) {
     const itemLocations = locationsByItem.get(itemIndex) ?? [];
     const blobs = itemLocations.map(location => {
       const required = blobRequiresOriginalTarget(item, location.decoded);
       if (location.decoded.kind === 'owned') {
-        latestOwnedTarget = location.decoded.affinity;
+        latestOwnedTarget = affinityIdentityOf(location.decoded);
         if (required) requiredTargets.push(latestOwnedTarget);
       }
       return { ...location, required };
@@ -171,14 +174,14 @@ const evaluateOpenAIResponsesCandidate = (
   analysis: OpenAIResponsesRequestAnalysis,
   candidate: ModelCandidate,
 ) => {
-  const unsatisfiedTargets: AffinityTarget[] = [];
+  const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
   let degrades = false;
 
   for (const item of analysis.items) {
     if (
       item.inheritedRequiredTarget !== undefined
-      && !candidateSatisfiesAffinityTarget(candidate, item.inheritedRequiredTarget)
+      && !candidateSatisfiesAffinityIdentity(candidate, item.inheritedRequiredTarget)
     ) unsatisfiedTargets.push(item.inheritedRequiredTarget);
 
     const projections: OpenAIResponsesBlobCandidateProjection[] = [];
@@ -204,6 +207,16 @@ const evaluateOpenAIResponsesCandidate = (
   return {
     kind: 'accepted' as const,
     degrades,
+    preferred: analysis.items.every(item => {
+      if (item.inheritedRequiredTarget !== undefined) {
+        const target = item.inheritedRequiredTarget;
+        if (
+          candidate.provider.upstreamId !== target.upstreamId
+          || candidate.model.id !== target.modelId
+        ) return false;
+      }
+      return (projectionsByItem.get(item.itemIndex) ?? []).every(projection => projection.projection.preferred);
+    }),
     materialize: () => materializeOpenAIResponsesPayload(payload, projectionsByItem),
   };
 };

@@ -2,8 +2,10 @@ import type {
   DumpBody,
   DumpRecord,
   DumpResponseBody,
+  DumpUpstreamResponse,
   StoredDumpRecord,
   StoredDumpResponseBody,
+  StoredDumpUpstreamResponse,
 } from './types.ts';
 import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
@@ -13,10 +15,10 @@ const contentTypeOf = (headers: ReadonlyArray<readonly [string, string]>): strin
 // Wire encoding decision: textual content-types try UTF-8 first and fall
 // back to base64 when the bytes do not decode cleanly (a content-type
 // that lied about being text).
-const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => {
+export const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => {
   if (isTextualMediaType(contentType)) {
     try {
-      return { encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+      return { encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
     } catch {}
   }
   return { encoding: 'base64', data: encodeBase64(bytes) };
@@ -30,9 +32,22 @@ const responseBodyToWire = (body: StoredDumpResponseBody, contentType: string): 
   }
 };
 
-// Sole place the storage shape crosses into the wire shape. Called once,
-// at the control-plane HTTP boundary, just before `c.json(...)`.
+export const upstreamResponseToWire = (
+  upstream: StoredDumpUpstreamResponse | undefined,
+): DumpUpstreamResponse | undefined => {
+  if (upstream === undefined) return undefined;
+  // The upstream body's content-type comes from the upstream response headers
+  // (api-error path); the `stream` branch ignores it.
+  return {
+    status: upstream.status,
+    headers: upstream.headers,
+    body: responseBodyToWire(upstream.body, contentTypeOf(upstream.headers)),
+  };
+};
+
+// Converts stored bytes to the JSON representation served by the control plane.
 export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
+  ...(record.capture === undefined ? {} : { capture: record.capture }),
   meta: record.meta,
   request: {
     method: record.request.method,
@@ -44,5 +59,8 @@ export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
     status: record.response.status,
     headers: record.response.headers,
     body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
+    ...(record.response.upstream !== undefined ? {
+      upstream: upstreamResponseToWire(record.response.upstream),
+    } : {}),
   },
 });

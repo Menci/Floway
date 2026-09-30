@@ -9,7 +9,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { traverseTranslation } from '../shared/translate-traverse.ts';
+import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -75,6 +75,7 @@ export const anthropicMessagesAttempt = {
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
+          captureFromDump(ctx.dump, targetApi),
         );
       }
       if (targetApi === 'openaiChatCompletions') {
@@ -84,6 +85,7 @@ export const anthropicMessagesAttempt = {
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
+          captureFromDump(ctx.dump, targetApi),
         );
       }
       throw new Error(`anthropicMessagesAttempt.generate: unexpected targetApi '${targetApi as string}'`);

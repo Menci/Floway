@@ -31,6 +31,7 @@ const announcedMetadataSchema = z.object({
       input: z.array(z.enum(['text', 'image'])),
       output: z.array(z.enum(['text', 'image'])),
     }).passthrough().optional(),
+    image_detail_original: z.boolean().optional(),
     reasoning: z.object({
       effort: z.object({ supported: z.array(z.string()), default: z.string() }).passthrough().optional(),
       budget_tokens: z.object({ min: z.number().optional(), max: z.number().optional() }).passthrough().optional(),

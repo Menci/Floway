@@ -1,134 +1,90 @@
-import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
-import type { ListedUpstreamModel } from './types.ts';
-import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
-import { createProvider } from '../../data-plane/providers/registry.ts';
+import { modelsCacheStatus, reshapeModelForDashboard } from './models-cache-projection.ts';
+import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
+import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import type { listModelsBody } from '../schemas.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
+import type { previewModelsBody } from '../schemas.ts';
+import { ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
 
-// `upstreamModelId` is the wire-side identifier the provider will send when
-// a caller invokes the public `model.id` — Claude Code exposes
-// `claude-sonnet-4-5` publicly while sending `claude-sonnet-4-5-20250929`
-// on the wire. `providerData` is opaque provider-private invocation data,
-// not a universal upstream-id field: only the providers that shape it as
-// `{ upstreamModelId }` surface a distinct wire id here, and the rest
-// (Copilot carries its raw variant list there) report the public id.
-const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
-  const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
-  const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
-  return {
-    upstreamModelId: wireId,
-    publicModelId: model.id,
-    kind: model.kind,
-    endpoints: model.endpoints,
-    ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-    ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
-    ...(model.pricing ? { pricing: model.pricing } : {}),
-    ...(model.chat ? { chat: model.chat } : {}),
-    ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
-  };
-};
+const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
 
-// Unified model catalog fetch for both draft preview and saved-record
-// refresh. Always live-fetches on the control plane; when
-// record.id !== '' the request also warms/refreshes the SWR cache via
-// `fetchUpstreamModelsCached` so a subsequent data-plane call picks up
-// the fresh catalog. Custom's response stays the raw upstream row shape
-// (dashboard translates through the draft's endpoints); every other
-// kind returns UpstreamModelConfig-shaped rows.
-export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
+const malformedConfigResponse = (error: unknown): boolean =>
+  error instanceof Error && /Malformed .* upstream config/.test(error.message);
+
+// A draft never reads or writes its upstream row. Proxy resolution can still
+// access proxy records and backoff state; matching a saved id cannot publish
+// the draft's model catalog.
+export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) => {
   const { record } = c.req.valid('json');
-  if (!isValidProviderKind(record.kind)) {
-    return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
-  }
   const kind = record.kind;
-  const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
-  if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
-
-  const scheduler = backgroundSchedulerFromContext(c);
-  const now = new Date().toISOString();
+  if (kind !== 'custom' && kind !== 'ollama') {
+    return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);
+  }
   const synthRecord: UpstreamRecord = {
     id: record.id || 'draft',
     kind,
-    name: 'draft',
-    enabled: true,
-    sortOrder: 0,
-    createdAt: now,
-    updatedAt: persisted?.updatedAt ?? now,
-    flagOverrides: {},
-    disabledPublicModelIds: [],
-    proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
-    modelPrefix: null,
-    // A draft only lists models; nothing renders its badge.
-    hue: 0,
+    name: record.name ?? 'draft',
+    enabled: record.enabled ?? true,
+    sortOrder: record.sort_order ?? 0,
+    createdAt: record.created_at ?? '',
+    updatedAt: record.updated_at ?? '',
+    flagOverrides: record.flag_overrides ?? {},
+    disabledPublicModelIds: record.disabled_public_model_ids ?? [],
+    proxyFallbackList: record.proxy_fallback_list,
+    modelPrefix: record.model_prefix ?? null,
+    hue: record.hue ?? 0,
     config: record.config,
     state: record.state,
-    // A draft is built from the request envelope and lists models live, so it
-    // never carries a cached catalog.
     modelsCache: null,
   };
-  const cacheGeneration = persisted === null
-    ? { updatedAt: synthRecord.updatedAt, config: synthRecord.config }
-    : { updatedAt: persisted.updatedAt, config: persisted.config };
-
-  let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({
-      override: record.proxy_fallback_list,
-      upstreamId: record.id || undefined,
-      runtimeLocation: getRuntimeLocation(c.req.raw),
-    });
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 400);
-  }
-
-  try {
-    if (kind === 'custom') {
-      const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const provider = createProvider(synthRecord, cacheGeneration);
-      let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
-      if (record.id === '') {
-        result = await fetchCustomModels(assertedConfig, fetcher);
-      } else {
-        await fetchUpstreamModelsCached(provider, {
-          scheduler,
-          fetcher,
-          force: true,
-          loadProvidedModels: async () => {
-            result = await fetchCustomModels(assertedConfig, fetcher);
-            return projectCustomModels(synthRecord, result);
-          },
-        });
-        // A concurrent refresh may already own the cache's in-flight slot, in
-        // which case our raw-shape loader was not invoked. The dashboard still
-        // needs its raw response, so only that joined-flight case fetches it
-        // separately.
-        result ??= await fetchCustomModels(assertedConfig, fetcher);
-      }
-      return c.json({ kind, data: result.data });
-    }
-    // Copilot / codex / claude-code / azure / ollama — use the provider factory.
-    // Force through the SWR cache when the record is persisted so the
-    // side-effect refresh keeps the data-plane cache in step; otherwise
-    // live-fetch without any caching.
-    const provider = createProvider(synthRecord, cacheGeneration);
-    const models = record.id !== ''
-      ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
-      : await provider.instance.getProvidedModels(fetcher);
-    return c.json({ kind, data: models.map(reshapeModelForDashboard) });
+    const result = await discoverDraftModels(synthRecord, getRuntimeLocation(c.req.raw));
+    if (result.kind !== 'discovered') throw new Error('Draft discovery did not run');
+    const data = kind === 'custom' ? result.discovered : result.models.map(reshapeModelForDashboard);
+    if (data === undefined) throw new Error('Custom draft discovery did not return a catalog');
+    return c.json({ kind, data });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
+      return c.json({ error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse } }, 502);
     }
-    if (e instanceof Error && /Malformed .* upstream config/.test(e.message)) {
+    if (malformedConfigResponse(e) || isModelsRefreshConfigurationError(e)) {
       return c.json({ error: errorMessage(e) }, 400);
     }
     throw e;
+  }
+};
+
+// The route pins the version; the cell loads the authoritative row and rejects
+// an edit that wins before discovery begins.
+export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => {
+  const id = c.req.param('id');
+  const record = await getRepo().upstreams.getById(id);
+  if (record === null) return c.json({ error: 'Upstream not found' }, 404);
+  const target = modelsRefreshTarget(record);
+  const runtimeLocation = getRuntimeLocation(c.req.raw);
+
+  try {
+    const result = await refreshModelsExplicit(target, runtimeLocation);
+    if (result.kind !== 'discovered') return c.json({ error: 'Upstream changed during models refresh' }, 409);
+    const refreshed = await getRepo().upstreams.getById(id);
+    if (refreshed === null || modelsRefreshTarget(refreshed).inputHash !== target.inputHash
+      || refreshed.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
+    const data = record.kind === 'custom' ? result.discovered : result.models.map(reshapeModelForDashboard);
+    if (data === undefined) throw new Error(`Upstream ${id} models refresh did not return a catalog`);
+    return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed) });
+  } catch (e) {
+    if (!(e instanceof ProviderModelsUnavailableError) && !isModelsRefreshConfigurationError(e) && !malformedConfigResponse(e)) throw e;
+    const afterFailure = await getRepo().upstreams.getById(id);
+    if (afterFailure === null || modelsRefreshTarget(afterFailure).inputHash !== target.inputHash
+      || afterFailure.configVersion !== target.configVersion) return c.json({ error: 'Upstream changed during models refresh' }, 409);
+    if (e instanceof ProviderModelsUnavailableError) {
+      return c.json({
+        error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse },
+        modelsCache: modelsCacheStatus(afterFailure),
+      }, 502);
+    }
+    return c.json({ error: errorMessage(e) }, 400);
   }
 };

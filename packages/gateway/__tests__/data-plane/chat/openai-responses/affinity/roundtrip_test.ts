@@ -2,11 +2,13 @@ import { expect, test } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
+import { expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
+import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -59,7 +61,11 @@ test('affinity selects the route while item storage preserves the exact emitted 
   };
   const withAffinity = wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidateA.provider.upstreamId, modelId: candidateA.model.id },
+    affinity: {
+      upstreamId: candidateA.provider.upstreamId,
+      modelId: candidateA.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+    },
   });
   const client = wrapOpenAIResponsesClientOutput(withAffinity, {
     store,
@@ -79,7 +85,11 @@ test('affinity selects the route while item storage preserves the exact emitted 
   await store.loadInputItems(input, input);
   const hydrated = hydrateOpenAIResponsesPayload({ model: 'model-a', input }, store);
   const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, codec);
-  expect(affinity.requiredTargets).toEqual([{ upstreamId: candidateA.provider.upstreamId, modelId: candidateA.model.id }]);
+  expect(affinity.requiredTargets).toEqual([{
+    upstreamId: candidateA.provider.upstreamId,
+    modelId: candidateA.model.id,
+    opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+  }]);
   expect(affinity.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
   expect(affinity.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
   const selection = selectAffinityCandidates([candidateB, candidateA], affinity);
@@ -114,7 +124,11 @@ test('agent-message natural and originless nested carriers round-trip without ch
   let clientResponse: OpenAIResponsesResult | undefined;
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id },
+    affinity: {
+      upstreamId: candidate.provider.upstreamId,
+      modelId: candidate.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+    },
   })) if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   if (clientResponse === undefined) throw new Error('Expected completed client response');
 
@@ -150,7 +164,11 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   let wrapped: string | undefined;
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id },
+    affinity: {
+      upstreamId: candidate.provider.upstreamId,
+      modelId: candidate.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+    },
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.completed') {
       wrapped = (frame.event.response.output[0] as { encrypted_content?: string }).encrypted_content;
@@ -160,7 +178,11 @@ test('compaction_summary carrier authenticates after alias canonicalization with
 
   const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as OpenAIResponsesInputItem;
   const prepared = await analyzeOpenAIResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
-  expect(prepared.requiredTargets).toEqual([{ upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id }]);
+  expect(prepared.requiredTargets).toEqual([{
+    upstreamId: candidate.provider.upstreamId,
+    modelId: candidate.model.id,
+    opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+  }]);
   const evaluation = prepared.evaluateCandidate(candidate);
   if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
   expect(evaluation.materialize().input[0]).toMatchObject({
@@ -168,4 +190,82 @@ test('compaction_summary carrier authenticates after alias canonicalization with
     id: 'cmp_public',
     encrypted_content: 'opaque',
   });
+});
+
+test('gateway-owned compaction round-trips across affinity targets and expands without losing agent state', async () => {
+  const candidateA = modelCandidate('upstream-a');
+  const candidateB = modelCandidate('upstream-b');
+  const codec = new AffinityCodec('22'.repeat(32));
+  const recovered = [
+    {
+      type: 'message' as const,
+      role: 'user' as const,
+      content: [{ type: 'input_text' as const, text: 'Project fact: the release codename is Aster.' }],
+    },
+    {
+      type: 'agent_message' as const,
+      author: 'planner',
+      recipient: 'implementer',
+      content: [{ type: 'input_text' as const, text: 'Continue by changing src/release.ts and then run pnpm test.' }],
+    },
+  ];
+  const encryptedContent = encodeBase64UrlJson(recovered);
+  const compaction = {
+    type: 'compaction' as const,
+    id: 'cmp_portable',
+    encrypted_content: encryptedContent,
+  };
+  const upstreamResponse: OpenAIResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response.compaction',
+    model: 'model-a',
+    status: 'completed',
+    output: [compaction],
+    error: null,
+    incomplete_details: null,
+  };
+  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...upstreamResponse, status: 'in_progress' } });
+    yield eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: compaction });
+    yield eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item: compaction });
+    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: upstreamResponse });
+  };
+
+  const events: OpenAIResponsesStreamEvent[] = [];
+  for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
+    codec,
+    affinity: {
+      upstreamId: candidateA.provider.upstreamId,
+      modelId: candidateA.model.id,
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+    },
+  })) if (frame.type === 'event') events.push(frame.event);
+
+  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
+  const compactionEvents = events.filter(event =>
+    (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
+    && event.item.type === 'compaction');
+  expect(compactionEvents).toHaveLength(2);
+  for (const event of compactionEvents) {
+    if (event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done') continue;
+    expect(event.output_index).toBe(1);
+    expect(event.item).toMatchObject({ encrypted_content: encryptedContent });
+  }
+  const terminal = events.at(-1);
+  if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
+  expect(terminal.response.output).toHaveLength(2);
+  expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning' });
+  expect(terminal.response.output[1]).toEqual(compaction);
+
+  const prepared = await analyzeOpenAIResponsesAffinity({
+    model: 'model-a',
+    input: terminal.response.output as unknown as OpenAIResponsesInputItem[],
+  }, codec);
+  expect(prepared.requiredTargets).toEqual([]);
+  const evaluation = prepared.evaluateCandidate(candidateB);
+  expect(evaluation).toMatchObject({ kind: 'accepted', degrades: false });
+  if (evaluation.kind === 'rejected') throw new Error('Expected portable compaction to be accepted');
+  const materialized = evaluation.materialize();
+  expect(materialized.input).toEqual([compaction]);
+  expect(expandShimCompactionItems(materialized).input).toEqual(recovered);
 });

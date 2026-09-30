@@ -1,6 +1,8 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
+import { withOpenAIResponsesCollaborationShim } from './collaboration-shim.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
@@ -24,10 +26,15 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
+//   - withOpenAIResponsesCollaborationShim: keeps one plaintext namespace around
+//     the complete server-tool loop and restores client identities on egress.
 //   - withOpenAIResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
+//   - withEmptyToolsToolChoiceNormalized: gated by
+//     `empty-tools-tool-choice-none`. Runs inside the server-tool shim so a
+//     tool injected by that shim prevents the empty-list rewrite.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
 //     `system → developer → system → user`; later rewrites are authoritative
 //     when flags overlap, and the final step affects only mid-conversation system.
@@ -47,11 +54,13 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     body.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
   withOpenAIResponsesCompactShim,
+  withOpenAIResponsesCollaborationShim,
   withOpenAIResponsesServerToolShim([
     webSearchServerTool,
     imageGenerationServerTool,
   ]),
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,

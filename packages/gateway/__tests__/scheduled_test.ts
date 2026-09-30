@@ -57,6 +57,7 @@ const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord 
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   let imageSwept = false;
   initImageCacheStore({
@@ -68,7 +69,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
-    await runScheduledMaintenance();
+    await runScheduledMaintenance('TEST', () => {});
   } finally {
     error.mockRestore();
   }
@@ -78,6 +79,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
 
 test('scheduled maintenance collects exact spilled files after expiration work', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   const files = new MemoryFileStore();
   initFileStore(files);
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
@@ -87,9 +89,29 @@ test('scheduled maintenance collects exact spilled files after expiration work',
   vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
   vi.spyOn(repo.spilledFiles, 'acknowledge').mockResolvedValue(1);
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
 
   expect(await files.get(key)).toBeNull();
+});
+
+test('scheduled maintenance does not collect spilled files before expiration work finishes', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  initFileStore(new MemoryFileStore());
+  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
+  let releaseExpiration: (() => void) | null = null;
+  vi.spyOn(repo.expirationSweeps, 'claim').mockImplementation(async () => {
+    await new Promise<void>(resolve => { releaseExpiration = resolve; });
+    return null;
+  });
+  const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+
+  const maintenance = runScheduledMaintenance('TEST', () => {});
+  await vi.waitFor(() => expect(releaseExpiration).not.toBeNull());
+  expect(collect).not.toHaveBeenCalled();
+  releaseExpiration!();
+  await maintenance;
+  expect(collect).toHaveBeenCalledOnce();
 });
 
 test('one maintenance tick collects every file retired by its four dump units', async () => {
@@ -116,7 +138,7 @@ test('one maintenance tick collects every file retired by its four dump units', 
     .all<{ file_key: string }>();
   expect(ownedFiles).toHaveLength(400);
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
 
   expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>()).toEqual({ count: 0 });
@@ -129,6 +151,7 @@ test('scheduled maintenance lease keeps overlapping ticks within one budget', as
   vi.useFakeTimers();
   vi.setSystemTime(now);
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
   let enterClaim!: () => void;
@@ -142,10 +165,10 @@ test('scheduled maintenance lease keeps overlapping ticks within one budget', as
   });
   const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
 
-  const first = runScheduledMaintenance();
+  const first = runScheduledMaintenance('TEST', () => {});
   await claimEntered;
   await vi.advanceTimersByTimeAsync(6 * 60_000);
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
   finishClaim();
   await first;
 
@@ -158,6 +181,7 @@ test('scheduled maintenance reclaims an abandoned lease after five minutes', asy
   vi.useFakeTimers();
   vi.setSystemTime(now);
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
   expect(await repo.scheduledMaintenance.tryClaim('abandoned', now, 0)).toBe(true);
@@ -165,11 +189,11 @@ test('scheduled maintenance reclaims an abandoned lease after five minutes', asy
   const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
 
   vi.setSystemTime(now + 5 * 60_000);
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
   expect(claim).not.toHaveBeenCalled();
 
   vi.setSystemTime(now + 5 * 60_000 + 1);
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
   expect(claim).toHaveBeenCalledOnce();
   expect(collect).toHaveBeenCalledOnce();
 });
@@ -179,6 +203,7 @@ test('a failed maintenance heartbeat stops later phases and releases the tick', 
   vi.useFakeTimers();
   vi.setSystemTime(now);
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
   let enterClaim!: () => void;
@@ -197,19 +222,20 @@ test('a failed maintenance heartbeat stops later phases and releases the tick', 
     .mockResolvedValue();
   const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
 
-  const first = runScheduledMaintenance();
+  const first = runScheduledMaintenance('TEST', () => {});
   await claimEntered;
   await vi.advanceTimersByTimeAsync(60_000);
   finishClaim();
   await expect(first).rejects.toThrow('lease renewal failed');
   expect(collect).not.toHaveBeenCalled();
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
   expect(collect).toHaveBeenCalledOnce();
 });
 
 test('scheduled maintenance unreferences and clears its Node heartbeat timer', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
   vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
@@ -220,7 +246,7 @@ test('scheduled maintenance unreferences and clears its Node heartbeat timer', a
   const clear = vi.spyOn(globalThis, 'clearInterval');
   vi.spyOn(globalThis, 'setInterval').mockReturnValue(timer);
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
 
   expect(unref).toHaveBeenCalledOnce();
   expect(clear).toHaveBeenCalledWith(timer);
@@ -231,6 +257,7 @@ test('final heartbeat and release failures are both preserved', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   let enterImageSweep!: () => void;
   let finishImageSweep!: () => void;
@@ -254,7 +281,7 @@ test('final heartbeat and release failures are both preserved', async () => {
   const releaseError = new Error('release failed');
   vi.spyOn(repo.scheduledMaintenance, 'release').mockRejectedValueOnce(releaseError);
 
-  const maintenance = runScheduledMaintenance();
+  const maintenance = runScheduledMaintenance('TEST', () => {});
   await imageSweepEntered;
   await vi.advanceTimersByTimeAsync(60_000);
   finishImageSweep();

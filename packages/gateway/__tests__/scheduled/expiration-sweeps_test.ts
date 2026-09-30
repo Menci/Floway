@@ -306,9 +306,18 @@ test('expiration backfill rejects malformed legacy dump descriptors with row con
        VALUES (?, ?, ?, NULL, '{}', '[]', NULL, ?, NULL)`,
       ['key-legacy', recordId, 1_000, JSON.stringify({ key: 'dumps/v1/key-legacy/old.req.gz', type: 'chunks' })],
     );
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0066_expiration_sweeps.sql');
-    if (migration === undefined) throw new Error('missing migration 0066_expiration_sweeps.sql');
-    db.run(migration[1]);
+    // Run 0066 and every migration after it so the schema reaches the present
+    // (incl. columns like `response_upstream_body_descriptor` that the backfill
+    // SQL selects). The malformed descriptor was seeded before the validate
+    // trigger existed, so it survives the migration run.
+    let started = false;
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (!started) {
+        if (filename === '0066_expiration_sweeps.sql') started = true;
+        else continue;
+      }
+      db.run(sql);
+    }
 
     const repo = new SqlRepo(wrapSqlJsDatabase(db));
     await expect(repo.expirationSweeps.backfillCleanupTracking(500)).rejects.toThrow(
@@ -397,6 +406,17 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
     await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
     await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
+    // Run 0082 and every migration after it so the backfill SQL finds the
+    // columns later migrations added (e.g. the upstream body descriptor from
+    // 0089). The orphan row was seeded before the validate trigger existed.
+    let started = false;
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (!started) {
+        if (filename === '0082_expiration_sweep_integrity.sql') started = true;
+        else continue;
+      }
+      raw.run(sql);
+    }
 
     await repo.expirationSweeps.backfillCleanupTracking(500);
     expect(await db.prepare(

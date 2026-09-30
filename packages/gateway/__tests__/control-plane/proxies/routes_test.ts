@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, test } from 'vitest';
 
 import type { SerializedBackoffRow, SerializedProxyRecord } from '../../../src/control-plane/proxies/serialize.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -180,7 +181,7 @@ test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy'
 test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, dialTimeoutSeconds: null });
-  await repo.upstreams.save({ ...copilotUpstream, proxyFallbackList: [{ id: 'p_ref' }] });
+  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, proxyFallbackList: [{ id: 'p_ref' }] });
 
   const resp = await requestApp('/api/proxies/p_ref', deleteAuthed(adminSession));
   assertEquals(resp.status, 409);

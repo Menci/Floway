@@ -30,6 +30,8 @@ export interface DialedSocket {
 
 export interface SocketDial {
   connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
+  /** Whether an error thrown by connect() permits retrying the HTTP request through runtime fetch. */
+  shouldConnectErrorFallbackToFetch?(error: unknown): boolean;
 }
 
 let current: SocketDial | null = null;

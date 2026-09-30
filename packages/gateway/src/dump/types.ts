@@ -12,6 +12,7 @@
 import type { z } from 'zod';
 
 import type {
+  dumpCaptureSchema,
   dumpErrorSchema,
   dumpMetadataSchema,
   dumpStreamEventSchema,
@@ -19,6 +20,7 @@ import type {
 } from './schemas.ts';
 
 export type DumpRecordId = string;
+export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 
 export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 
@@ -73,19 +75,37 @@ export type StoredDumpResponseBody =
   | { type: 'bytes'; body: Uint8Array }
   | { type: 'none' };
 
-export interface StoredDumpResponse {
+// The pre-translation (target-protocol) view of what the upstream returned.
+// Present only for turns that traversed a translation (`traverseTranslation`)
+// and only when the inner attempt produced events or an upstream api-error.
+// Native turns and gateway-synthesized errors have no upstream view.
+export interface StoredDumpUpstreamResponse {
   status: number | null;
   headers: Array<[string, string]>;
   body: StoredDumpResponseBody;
 }
 
+export interface StoredDumpResponse {
+  status: number | null;
+  headers: Array<[string, string]>;
+  body: StoredDumpResponseBody;
+  // Parallel pre-translation upstream body. Absent on native turns and on
+  // records written before this field existed. Named `upstream` here (the
+  // response body — what the upstream sent before Floway translated it)
+  // independently of `DumpMetadata.upstream` (a provider identity); the two
+  // live on different objects.
+  readonly upstream?: StoredDumpUpstreamResponse;
+}
+
 export type StoredDumpRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: StoredDumpRequest;
   response: StoredDumpResponse;
 };
 
 export type DumpWriteRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpWriteRequest;
   response: StoredDumpResponse;
@@ -113,13 +133,21 @@ export type DumpResponseBody =
   | { type: 'bytes'; body: DumpBody }
   | { type: 'none' };
 
-interface DumpResponse {
+export interface DumpUpstreamResponse {
   status: number | null;
   headers: Array<[string, string]>;
   body: DumpResponseBody;
 }
 
+interface DumpResponse {
+  status: number | null;
+  headers: Array<[string, string]>;
+  body: DumpResponseBody;
+  readonly upstream?: DumpUpstreamResponse;
+}
+
 export type DumpRecord = {
+  capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpRequest;
   response: DumpResponse;

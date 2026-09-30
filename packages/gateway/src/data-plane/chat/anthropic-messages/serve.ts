@@ -26,7 +26,6 @@ export const anthropicMessagesServe = {
   generate: async (args: AnthropicMessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
-    const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
@@ -34,6 +33,7 @@ export const anthropicMessagesServe = {
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
+    const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => anthropicMessagesGenerateTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderAnthropicMessagesFailure(selection, 'generate');
@@ -61,7 +61,6 @@ export const anthropicMessagesServe = {
   countTokens: async (args: AnthropicMessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
-    const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
@@ -69,6 +68,7 @@ export const anthropicMessagesServe = {
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
+    const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => anthropicMessagesCountTokensTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderAnthropicMessagesFailure(selection, 'countTokens');

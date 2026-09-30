@@ -9,8 +9,11 @@ import { UpstreamConfigSidebar } from './config-sidebar';
 import { refineCustomIngressHeaderRules } from './custom-ingress-header-rules-validation';
 import {
   createBody,
-  fetchModelCatalog,
+  fetchSavedModelCatalog,
+  hasUnsavedDiscoveryInputs,
+  isPersisted,
   modelPrefixIsValid,
+  previewDraftModelCatalog,
   updateBody,
   valuesFromRecord,
   type ModelListingFailure,
@@ -36,6 +39,11 @@ import { useRefresh } from '../ui/use-refresh';
 
 const { Button, Spinner, Text } = fluentComponents;
 
+const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
+  item !== null && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).toSorted().map(key => [key, item[key]]))
+    : item);
+
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -53,7 +61,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setRecord(next);
   }, []);
   const [discovered, setDiscovered] = useState(data.discovered);
-  const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
+  const catalogAvailable = discovered !== null;
+  const [modelsError, setModelsError] = useState<ModelListingFailure | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [modelsYamlDraft, setModelsYamlDraft] = useState<ModelsYamlDraft | null>(null);
@@ -136,16 +145,38 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
+  const manualModelsDirty = Boolean(formState.dirtyFields.manualModels);
+  const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields)
+    || (record.kind === 'ollama' && manualModelsDirty);
+  const oauth = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
+  const fetchDialog = useDialogInvocation<void>();
+  // Save resets the form and record in one commit. The immediately following
+  // Fetch must use that saved record even before React commits the new render.
+  const savedFetchAfterSave = useRef<UpstreamRecord | null>(null);
   // The workspace's refresh button and the custom provider's fetch switch both
   // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
-  const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
+  const { refresh: refreshModels, cancel: cancelModelsRefresh, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setModelsError(null);
-    const catalog = await fetchModelCatalog(record, getValues(), { signal });
+    const saved = savedFetchAfterSave.current;
+    savedFetchAfterSave.current = null;
+    const catalog = saved !== null
+      ? await fetchSavedModelCatalog(saved, { signal })
+      : isPersisted(record) && !discoveryInputsDirty
+        ? await fetchSavedModelCatalog(record, { signal })
+        : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
-    if (catalog.discovered) setDiscovered(catalog.discovered);
-    if (catalog.refreshed) updateRecord({ ...recordRef.current, modelsCache: catalog.refreshed.modelsCache } as UpstreamRecord);
-  }, [getValues, record, updateRecord]));
+    if (catalog.discovered !== null) {
+      setDiscovered(catalog.discovered);
+    } else if (catalog.modelsCache?.fetchedAt === null) setDiscovered(null);
+    if (catalog.modelsCache) updateRecord({ ...recordRef.current, modelsCache: catalog.modelsCache } as UpstreamRecord);
+  }, [discoveryInputsDirty, getValues, record, updateRecord]));
+
+  const requestModels = () => {
+    if (saving) return;
+    if (oauth && discoveryInputsDirty) fetchDialog.open();
+    else void refreshModels();
+  };
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
@@ -168,43 +199,54 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     });
   };
 
-  const submitForm = () => {
+  const submitForm = async (): Promise<UpstreamRecord | null> => {
+    if (oauth && isPersisted(record) && (formState.dirtyFields.config || formState.dirtyFields.state)) {
+      setSaveError(t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'));
+      return null;
+    }
+    let yamlModelsChanged = false;
     if (modelsYamlDraft !== null) {
       const parsed = parseModels(modelsYamlDraft.text, { allowRerank: record.kind === 'custom' });
       if (!parsed.ok) {
         setModelsYamlDraft({ ...modelsYamlDraft, error: parsed.message });
-        return;
+        return null;
       }
+      yamlModelsChanged = canonicalJson(parsed.models) !== canonicalJson(getValues('manualModels'));
       setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
       setModelsYamlDraft(null);
     }
-    return handleSubmit(async values => {
+    const invalidatesPendingFetch = hasUnsavedDiscoveryInputs(formState.dirtyFields) || manualModelsDirty || yamlModelsChanged;
+    const invalidatesDiscovered = discoveryInputsDirty || (record.kind === 'ollama' && yamlModelsChanged);
+    let savedRecord: UpstreamRecord | null = null;
+    await handleSubmit(async values => {
       setSaving(true); setSaveError(null);
-      // A save is one round-trip on create and two on edit, so it announces
-      // itself while it runs. The dashboard's toaster sits above the outlet, so
+      // The dashboard's toaster sits above the outlet, so
       // the create branch's toast outlives the navigation that follows it.
       const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
       const result = data.mode === 'create'
-        ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
+        ? await callApi(() => api.api.upstreams.$post({
+            json: createBody(record, values, data.preserveCredentials === true ? { preserveStoredSecret: true } : undefined),
+          }))
         : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
-      let saved: UpstreamRecord = result.data;
-      if (data.mode === 'edit') {
-        const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-        if (!full.error) saved = full.data;
-      }
+      const saved: UpstreamRecord = result.data;
+      if (invalidatesPendingFetch) cancelModelsRefresh();
       updateRecord(saved);
       reset(valuesFromRecord(saved));
+      if (invalidatesDiscovered) { setModelsError(null); setDiscovered(null); }
       handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
-      // `saving` is left set on create: the created record's loader probes the
-      // provider for its catalog, so the page stays mounted and interactive
-      // across the hand-off, and a Save left live there posts a second create.
-      if (data.mode === 'create') setCreatedUpstreamId(saved.id); else setSaving(false);
+      savedRecord = saved;
+      // `saving` stays set during the route handoff; the old form is still
+      // mounted until navigation commits, and another Save would create twice.
+      if (data.mode === 'create') {
+        setCreatedUpstreamId(saved.id);
+      } else setSaving(false);
     }, () => {
       // Field rejections render on the control that produced them; the
       // page-level bar is only where a server says no.
       setSaveError(null);
     })();
+    return savedRecord;
   };
 
   return <FormProvider {...form}>
@@ -229,17 +271,17 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       <div className={`grid grid-cols-[380px_minmax(0,1fr)] ${PANE_GAP_CLASS} min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1`}>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamConfigSidebar
-            catalogAvailable={modelsError === null}
-            discovered={discovered}
+            catalogAvailable={catalogAvailable}
+            discovered={discovered ?? []}
             onPatch={applyProviderPatch}
-            onRefreshModels={() => void refreshModels()}
+            onRefreshModels={requestModels}
             proxies={data.proxies}
             record={record}
             runtime={data.runtime}
           />
         </Panel>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamWorkspace record={record} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={() => void refreshModels()} />
+          <UpstreamWorkspace record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
         </Panel>
       </div>
     </div>
@@ -254,6 +296,24 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       onExited={() => { if (blocker.state === 'blocked') blocker.proceed(); }}
       onOpenChange={open => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
       title={t('dashboard.upstreamEditor.leave.title')}
+    />}
+    {fetchDialog.invocation && <ConfirmDialog
+      actionIntent="primary"
+      actionLabel={t('dashboard.upstreamEditor.fetchDirty.saveAndFetch')}
+      key={fetchDialog.invocation.key}
+      message={t('dashboard.upstreamEditor.fetchDirty.message')}
+      onConfirm={() => {
+        fetchDialog.close();
+        void (async () => {
+          const saved = await submitForm();
+          if (saved === null) return;
+          savedFetchAfterSave.current = saved;
+          await refreshModels();
+        })();
+      }}
+      onOpenChange={open => { if (!open) fetchDialog.close(); }}
+      open={fetchDialog.isOpen}
+      title={t('dashboard.upstreamEditor.fetchDirty.title')}
     />}
   </FormProvider>;
 }

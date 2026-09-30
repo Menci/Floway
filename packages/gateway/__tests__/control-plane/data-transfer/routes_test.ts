@@ -1,15 +1,5 @@
 import { Hono } from 'hono';
-import { expect, test, vi } from 'vitest';
-
-// The import handler warms the SWR models cache for every saved upstream by
-// calling each provider's getProvidedModels, which for Copilot / Custom would
-// make real upstream HTTP requests the test sandbox cannot serve and hang
-// until the vitest timeout. Stub the cache layer to a no-op so the import
-// path's own behavior (upserts, identity validation, etc.) is what the tests
-// exercise — the warm itself has dedicated coverage in models-cache_test.ts.
-vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
-  fetchUpstreamModelsCached: () => Promise.resolve([]),
-}));
+import { expect, test } from 'vitest';
 
 import { exportData, importData } from '../../../src/control-plane/data-transfer/routes.ts';
 import { exportQuery, importBody } from '../../../src/control-plane/schemas.ts';
@@ -18,11 +8,12 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-sea
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, StoredUpstreamRecord, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import { ALL_PROVIDER_KINDS, type UpstreamRecord } from '@floway-dev/provider';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -74,7 +65,7 @@ const USER_BOB: User = {
   deletedAt: null,
 };
 
-const CUSTOM_UPSTREAM: UpstreamRecord = {
+const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_custom_a',
   kind: 'custom',
   name: 'Custom A',
@@ -86,6 +77,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -102,7 +94,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const COPILOT_UPSTREAM: UpstreamRecord = {
+const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_copilot_a',
   kind: 'copilot',
   name: 'GitHub Copilot (alice)',
@@ -114,6 +106,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -129,7 +122,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const AZURE_UPSTREAM: UpstreamRecord = {
+const AZURE_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_azure_a',
   kind: 'azure',
   name: 'Azure A',
@@ -141,6 +134,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -163,7 +157,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const OLLAMA_UPSTREAM: UpstreamRecord = {
+const OLLAMA_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_ollama_a',
   kind: 'ollama',
   name: 'Ollama A',
@@ -175,6 +169,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -192,7 +187,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const CODEX_UPSTREAM: UpstreamRecord = {
+const CODEX_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_codex_a',
   kind: 'codex',
   name: 'ChatGPT Codex (alice)',
@@ -204,6 +199,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -348,6 +344,28 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+test('export and import preserve empty upstream restrictions separately from unrestricted access', async () => {
+  const { app, repo } = setup();
+  const restrictedUser = { ...USER_BOB, upstreamIds: [] };
+  const restrictedKey = { ...KEY_B, userId: USER_BOB.id, upstreamIds: [] };
+  await repo.users.save(SEED_ADMIN);
+  await repo.users.save(restrictedUser);
+  await repo.apiKeys.save(KEY_A);
+  await repo.apiKeys.save(restrictedKey);
+
+  const exported = await doExport(app);
+  await repo.users.save(USER_BOB);
+  await repo.apiKeys.save({ ...restrictedKey, upstreamIds: null });
+
+  const imported = await doImport(app, 'replace', exported.data, exported.version);
+  assertEquals(imported.status, 200);
+  assertEquals((await repo.users.getById(SEED_ADMIN.id))?.upstreamIds, null);
+  assertEquals((await repo.users.getById(USER_BOB.id))?.upstreamIds, []);
+  assertEquals((await repo.apiKeys.getById(KEY_A.id))?.upstreamIds, null);
+  assertEquals((await repo.apiKeys.getById(KEY_B.id))?.upstreamIds, []);
+  assertEquals((await doExport(app)).data, exported.data);
+});
+
 test('import round-trips a usage record carrying a positive input-length coordinate', async () => {
   const { app, repo } = setup();
   const longRow: UsageRecord = { ...USAGE_2, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } };
@@ -390,9 +408,9 @@ test('export emits the v20 envelope with users and upstreams', async () => {
 test('export includes full upstream configs and omits performance by default', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(COPILOT_UPSTREAM);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.upstreams.save(AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, COPILOT_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.performance.set(PERFORMANCE_1);
@@ -439,7 +457,7 @@ test('export includes performance only when requested', async () => {
 test('import rejects any version other than the current one before deleting data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   const VERSION_ERROR = 'version must be 20 — older export formats are not supported; re-export from the current deployment';
   const previousV19 = await doImport(app, 'replace', latestImportData(), 19);
@@ -467,7 +485,7 @@ test('import rejects any version other than the current one before deleting data
 test('import replace writes upstreams and clears replaced collections', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, openaiResponsesRetentionSeconds: 24 * 60 * 60 });
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.openaiResponsesItems.insertMany([STORED_OPENAI_RESPONSES_ITEM], 0);
@@ -536,11 +554,11 @@ test('replace import preserves API-key IDs and imported references', async () =>
 test('import merge upserts by repository key without clearing unrelated rows', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.usage.set({ ...USAGE_1, requests: 10 });
   await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
-  const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies UpstreamRecord;
+  const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies StoredUpstreamRecord;
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, name: 'Alice Updated' }, KEY_B],
     upstreams: [upstreamRecordToFullJson(updatedCustom), upstreamRecordToFullJson(COPILOT_UPSTREAM)],
@@ -695,7 +713,7 @@ test('import rejects performance records that break the recorder invariants', as
 test('import rejects missing upstreams before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
 
   const result = await doImport(app, 'replace', {
@@ -716,7 +734,7 @@ test('import rejects missing upstreams before clearing existing data', async () 
 
 test('ollama upstreams export and import round-trip', async () => {
   const { app, repo } = setup();
-  await repo.upstreams.save(OLLAMA_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, OLLAMA_UPSTREAM);
   await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
 
   const result = await doExport(app);
@@ -738,7 +756,7 @@ test('ollama upstreams export and import round-trip', async () => {
 
 test('codex upstreams export and import round-trip with state intact', async () => {
   const { app, repo } = setup();
-  await repo.upstreams.save(CODEX_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CODEX_UPSTREAM);
   await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
 
   const result = await doExport(app);
@@ -834,7 +852,7 @@ test('v20 import validates usage metric rows', async () => {
 test('import rejects invalid records before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
   const badApiKeys = await doImport(app, 'replace', {
@@ -1036,6 +1054,17 @@ test('import reports the earliest duplicate before later malformed records', asy
   assertEquals(duplicateBucket.body.error, 'invalid performance record at index 0: duplicate bucket entry for {metric: ttft_ms, lower: 0}');
 });
 
+test('import rejects duplicate upstream ids before applying any records', async () => {
+  const { app, repo } = setup();
+  const upstream = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const result = await doImport(app, 'replace', latestImportData({
+    upstreams: [upstream, { ...upstream, name: 'Duplicate' }],
+  }));
+
+  assertEquals(result.body.error, `invalid upstreams: duplicate upstream id ${upstream.id} at indexes 0 and 1`);
+  assertEquals(await repo.upstreams.list(), []);
+});
+
 test('import preserves staged intra-record error precedence', async () => {
   const { app } = setup();
   const badUpstream = await doImport(app, 'replace', latestImportData({
@@ -1093,7 +1122,7 @@ test('import preserves collection-specific array-record boundaries', async () =>
 test('import rejects api key unique identity conflicts before mutating', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   const duplicateRawKey = await doImport(app, 'replace', latestImportData({
     apiKeys: [KEY_B, { ...KEY_A, id: 'key-c', key: KEY_B.key }],
@@ -1202,7 +1231,7 @@ test('import rejects api keys whose dumpRetentionSeconds is out of range', async
 test('import rejects legacy provider-prefixed upstream identities before mutating', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   const legacyUpstreamId = await doImport(app, 'replace', latestImportData({
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), id: 'openai:up_custom_a' }],
@@ -1228,7 +1257,7 @@ test('import rejects legacy provider-prefixed upstream identities before mutatin
 test('import rejects legacy enabled_fixes payloads before mutating', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   const { flag_overrides: _flagOverrides, ...customWithoutFlagOverrides } = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
   const legacyEnabledFixes = await doImport(app, 'replace', latestImportData({
@@ -1249,7 +1278,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
 test('import rejects missing latest-v20 arrays before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
@@ -1298,8 +1327,8 @@ test('export includes proxies with full credential URIs and round-trips through 
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 });
   await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
-  const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }] };
-  await repo.upstreams.save(upstreamWithFallback);
+  const upstreamWithFallback: StoredUpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }] };
+  await saveUpstreamForTest(repo.upstreams, upstreamWithFallback);
 
   const exported = await doExport(app);
 
@@ -1339,7 +1368,7 @@ test('import rejects proxy rows that collide with built-in direct transports', a
 
 test('import in replace mode rejects an upstream fallback reference that does not resolve to an imported proxy', async () => {
   const { app, repo } = setup();
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   const result = await doImport(app, 'replace', latestImportData({
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), proxy_fallback_list: [{ id: 'p_missing' }, { id: 'direct_fetch' }] }],
@@ -1418,7 +1447,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   // cool-down row from the prior catalog.
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, 'transport reset');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
 
@@ -1597,10 +1626,10 @@ test('a full v20 export re-imports verbatim — the export→import round trip i
   await repo.users.save(USER_BOB);
   await repo.apiKeys.save(KEY_A);
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
-  await repo.upstreams.save(COPILOT_UPSTREAM);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.upstreams.save(AZURE_UPSTREAM);
-  await repo.upstreams.save(CODEX_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, COPILOT_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CODEX_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.usage.set(USAGE_2);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
@@ -1641,7 +1670,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.apiKeys.save(KEY_A);
-  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
   // A perfectly well-formed current-version payload — only the version stamp
   // is historical. It must still be refused on the version alone.

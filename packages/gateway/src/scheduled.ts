@@ -1,8 +1,9 @@
 import { getRepo } from './repo/index.ts';
 import type { ScheduledMaintenanceRepo } from './repo/types.ts';
 import { sweepExpirations } from './scheduled/expiration-sweeps.ts';
+import { scheduleModelsCacheRefreshes } from './scheduled/models-refresh.ts';
 import { collectSpilledFiles } from './scheduled/spilled-files.ts';
-import { getImageCacheStore } from '@floway-dev/platform';
+import { getImageCacheStore, type BackgroundScheduler } from '@floway-dev/platform';
 
 const MAINTENANCE_CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
 const MAINTENANCE_HEARTBEAT_INTERVAL_MS = 60 * 1000;
@@ -55,35 +56,44 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
   }
 };
 
-export const runScheduledMaintenance = async (): Promise<void> => {
+export const runScheduledMaintenance = async (
+  runtimeLocation: string | null,
+  backgroundScheduler: BackgroundScheduler,
+): Promise<void> => {
   const nowMs = Date.now();
-  const token = crypto.randomUUID();
-  const maintenance = getRepo().scheduledMaintenance;
-  if (!await maintenance.tryClaim(token, nowMs, nowMs - MAINTENANCE_CLAIM_TIMEOUT_MS)) return;
-  const heartbeat = startMaintenanceHeartbeat(maintenance, token);
-  const failures: unknown[] = [];
-  const capture = (error: unknown): void => {
-    if (!failures.includes(error)) failures.push(error);
+  const storageMaintenance = async (): Promise<void> => {
+    const token = crypto.randomUUID();
+    const maintenance = getRepo().scheduledMaintenance;
+    if (!await maintenance.tryClaim(token, nowMs, nowMs - MAINTENANCE_CLAIM_TIMEOUT_MS)) return;
+    const heartbeat = startMaintenanceHeartbeat(maintenance, token);
+    const failures: unknown[] = [];
+    const capture = (error: unknown): void => {
+      if (!failures.includes(error)) failures.push(error);
+    };
+    try {
+      await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
+      await heartbeat.assertOwned();
+      await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
+      await heartbeat.assertOwned();
+      await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
+    } catch (error) {
+      capture(error);
+    }
+    try {
+      await heartbeat.stop();
+    } catch (error) {
+      capture(error);
+    }
+    try {
+      await maintenance.release(token);
+    } catch (error) {
+      capture(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Scheduled maintenance failed');
   };
-  try {
-    await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
-    await heartbeat.assertOwned();
-    await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
-    await heartbeat.assertOwned();
-    await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
-  } catch (error) {
-    capture(error);
-  }
-  try {
-    await heartbeat.stop();
-  } catch (error) {
-    capture(error);
-  }
-  try {
-    await maintenance.release(token);
-  } catch (error) {
-    capture(error);
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, 'Scheduled maintenance failed');
+  await Promise.all([
+    runSweep('models.refresh', () => scheduleModelsCacheRefreshes(runtimeLocation, backgroundScheduler)),
+    storageMaintenance(),
+  ]);
 };

@@ -43,6 +43,10 @@ export interface TranslatedApiError {
  * translator closure mapping target-protocol events into source-protocol
  * events, and an optional upstream-error rewriter.
  *
+ * The target owns its mutable JSON objects and arrays. Downstream rules and
+ * providers can mutate it while the source request and other trips remain
+ * live, so pair builders clone values borrowed from their source.
+ *
  * `apiError` is optional: when the target upstream returns a non-2xx HTTP
  * body (rather than an SSE stream), the pair may rewrite it into the source
  * protocol's envelope. Returning `undefined` — or omitting the field

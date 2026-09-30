@@ -8,6 +8,8 @@ import { assertEquals } from '@floway-dev/test-utils';
 // so `kind`/`endpoints`/`limits` can be blank shape-satisfiers.
 const model = (id: string): Omit<ProviderModel, 'enabledFlags'> => ({
   id,
+  upstreamModelId: id,
+  opaqueBlobCompatibilityScope: { bindToUpstream: true },
   kind: 'chat',
   endpoints: {},
   limits: {},

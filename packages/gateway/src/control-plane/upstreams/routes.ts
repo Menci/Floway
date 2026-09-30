@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import { cachedModelsForDashboard, modelsCacheStatus } from './models-cache-projection.ts';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
@@ -8,11 +9,12 @@ import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
+import { saveUpstream } from '../shared/save-upstreams.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
-import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import {
   normalizeModelPrefix,
   ALL_PROVIDER_KINDS,
@@ -23,7 +25,7 @@ import {
 } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { type CodexQuotaSnapshotMap, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
+import { type CodexQuotaSnapshotMap, type CodexUpstreamConfig, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota, patchCodexIdentityMetadata } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
@@ -65,7 +67,7 @@ const pruneDeletedProxyEntries = (
 // optional baseSerialize override lets callers swap in upstreamRecordToFullJson
 // to round-trip unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
-  record: UpstreamRecord,
+  record: StoredUpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
 ): Promise<UpstreamWithCacheResponse> => {
@@ -74,11 +76,7 @@ const serializeForResponse = async (
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
-    modelsCache: {
-      fetchedAt: record.modelsCache?.fetchedAt ?? null,
-      lastError: record.modelsCache?.lastError ?? null,
-      modelCount: storedCatalogSize(record),
-    },
+    modelsCache: modelsCacheStatus(record),
     ...codexQuota,
   };
 };
@@ -205,15 +203,17 @@ export const getUpstreamBlueprint = (c: Context) => {
 // Single-record read for the edit page. Returns the FULL record — no
 // secret redaction — because every editor-scoped action posts the record
 // back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). Codex quota and modelsCache are
-// response-only projections, so they are attached here alongside the
-// unredacted config/state — the edit page relies on `modelsCache` to
-// render the "last fetched / last error" panel on mount.
+// uses (refresh tokens, api keys, etc.). The cache status and editor model
+// snapshot are read from this same row, so opening the editor displays the
+// stored catalog without starting or waiting for a refresh.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson));
+  return c.json({
+    ...await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson),
+    cachedModels: cachedModelsForDashboard(record),
+  });
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
@@ -278,11 +278,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   }
 
   const record = { ...upstream, config: config.value };
-  await getRepo().upstreams.save(record);
-  // Answer with the catalog status this warm produced, not the one the record
-  // was built with — the dashboard re-seeds its draft from this body.
-  const modelsCache = await warmModelsCache(record, c);
-  return c.json(await serializeForResponse({ ...record, modelsCache }, knownProxyIds), 201);
+  const saved = await saveUpstream({ previous: null, next: record });
+  return c.json(await serializeForResponse(saved, knownProxyIds), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -295,14 +292,28 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     return c.json({ error: 'kind cannot be changed' }, 400);
   }
 
-  // OAuth-managed config slices (Copilot githubToken/user, Codex/Claude
-  // Code accounts[]) are owned by the per-provider action endpoints, not
-  // by generic PATCH. Metadata (name, enabled, sort_order, flag overrides,
-  // disabled model ids) still flows through here.
-  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'codex' || existing.kind === 'claude-code')) {
+  // OAuth-managed config slices (Copilot githubToken/user, Claude Code
+  // accounts[]) are owned by the per-provider action endpoints, not by generic
+  // PATCH. Metadata (name, enabled, sort_order, flag overrides, disabled model
+  // ids) still flows through here.
+  //
+  // Codex is narrower rather than closed: an import may leave display metadata
+  // unknown, and correcting an email or a plan should not require re-importing
+  // a working credential. The account id stays bound to re-import because it
+  // is the join key the stored credential hangs off.
+  let patchedCodexConfig: CodexUpstreamConfig | undefined;
+  if (body.config !== undefined && existing.kind === 'codex') {
+    try {
+      assertCodexUpstreamRecord(existing);
+      patchedCodexConfig = patchCodexIdentityMetadata(existing.config, body.config);
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 400);
+    }
+  }
+  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'claude-code')) {
     const endpoint = existing.kind === 'copilot'
       ? '/api/upstreams/copilot/oauth/device-login/poll'
-      : `/api/upstreams/${existing.kind}/oauth/exchange`;
+      : '/api/upstreams/claude-code/oauth/exchange';
     return c.json({ error: `Use POST ${endpoint} to update ${existing.kind} credentials` }, 400);
   }
 
@@ -326,18 +337,21 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
   if (body.hue !== undefined) next = { ...next, hue: body.hue };
   if (body.config !== undefined) {
-    const config = mergeConfigPatch(existing.kind, existing.config, body.config);
-    if (!config.ok) return c.json({ error: config.error }, 400);
-    next = { ...next, config: config.value };
+    if (patchedCodexConfig !== undefined) {
+      next = { ...next, config: patchedCodexConfig };
+    } else {
+      const config = mergeConfigPatch(existing.kind, existing.config, body.config);
+      if (!config.ok) return c.json({ error: config.error }, 400);
+      next = { ...next, config: config.value };
+    }
   }
 
   const config = normalizeConfig(next);
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
 
-  await getRepo().upstreams.save(next);
-  const modelsCache = await warmModelsCache(next, c);
-  return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
+  const saved = await saveUpstream({ previous: existing, next });
+  return c.json(await serializeForResponse(saved, knownProxyIds, upstreamRecordToFullJson));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {
