@@ -6521,11 +6521,11 @@ for (const carrier of ['tools', 'additional_tools', 'tool_search_output'] as con
       payload: carrier === 'tools'
         ? { tools }
         : {
-          tools: undefined,
-          input: [carrier === 'additional_tools'
-            ? { type: carrier, role: 'developer', tools }
-            : { type: carrier, execution: 'client', call_id: 'discovery', tools }],
-        },
+            tools: undefined,
+            input: [carrier === 'additional_tools'
+              ? { type: carrier, role: 'developer', tools }
+              : { type: carrier, execution: 'client', call_id: 'discovery', tools }],
+          },
     });
     const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
     let runCalls = 0;
