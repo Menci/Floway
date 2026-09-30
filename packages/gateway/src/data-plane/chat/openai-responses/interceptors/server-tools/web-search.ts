@@ -29,7 +29,7 @@ import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search
 import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItem, OpenAIResponsesHostedTool, OpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
-import { createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
@@ -42,9 +42,8 @@ export const WEB_SEARCH_HOSTED_TYPES: ReadonlySet<string> = new Set<string>(WEB_
 // uses the underscored form of the model's training-time `web.run`.
 export const SHIM_TOOL_NAME = 'web_search';
 
-// The hosted tool's `user_location` must surface to the model, not just
-// to the backend provider — without this hint the model asks "Which
-// city should I check?" even when the client supplied one.
+// Put the selected hosted declaration's `user_location` in the replacement
+// function description so the model can use it as the default for local searches.
 const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>): string => {
   const parts: string[] = [];
   if (loc.city) parts.push(loc.city);
@@ -332,12 +331,10 @@ const validateDomainListEntry = (
   return { ok: true };
 };
 
-// Validate the parts of a hosted-web-search entry the shim acts on.
-// Anything else (`external_web_access`, `return_token_budget`, etc.)
-// is silently dropped along with the hosted tool itself — the shim
-// replaces the hosted entry with its shim function tool, so any
-// hosted-only field the shim doesn't process never reaches upstream
-// regardless.
+// Validate the hosted web-search fields the shim interprets. The model-bound
+// replacement uses the shim command schema; backend settings such as
+// `external_web_access` are handled separately, while unhandled fields such
+// as `return_token_budget` are omitted from that request.
 const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError | null => {
   const sizeField = (tool as { search_context_size?: unknown }).search_context_size;
   if (sizeField !== undefined && sizeField !== null && !isSearchContextSize(sizeField)) {
@@ -381,18 +378,25 @@ const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError
   return null;
 };
 
-// Validation covers every hosted declaration even though only the last one
-// supplies runtime filters. Azure and Copilot both use this dedupe-to-last
-// rule for repeated web-search declarations.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+// Validate every hosted declaration before selecting the last one's runtime
+// filters, so an earlier invalid declaration cannot be masked.
 export const prepareToolsForShim = (
   tools: OpenAIResponsesTool[],
+  paths?: readonly string[],
 ): PrepareToolsResult => {
   let selectedFilters: WebSearchFilters = {};
-  for (const tool of tools) {
+  for (const [index, tool] of tools.entries()) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
-      if (reject !== null) return { ok: false, error: reject };
+      if (reject !== null) {
+        const path = paths?.[index];
+        return {
+          ok: false,
+          error: path?.startsWith('input[')
+            ? { ...reject, param: reject.param === 'tools' ? path : `${path}.search_context_size` }
+            : reject,
+        };
+      }
       selectedFilters = extractFilters(tool);
     }
   }
@@ -706,12 +710,13 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     return { type: 'inactive' };
   }
 
-  const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
+  const declarations = collectOpenAIResponsesToolEntries(invocation.payload);
+  const tools = declarations.map(entry => entry.tool);
   const hasHostedWebSearch = tools.some(isHostedWebSearchTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'web_search_call');
   if (!hasHostedWebSearch && !hasReplayInput) return { type: 'inactive' };
 
-  const prepared = prepareToolsForShim(tools);
+  const prepared = prepareToolsForShim(tools, declarations.map(entry => entry.path));
   if (!prepared.ok) {
     return {
       type: 'invalid-request',

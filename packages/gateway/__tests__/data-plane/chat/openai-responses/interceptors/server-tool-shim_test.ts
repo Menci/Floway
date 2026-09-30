@@ -13,6 +13,7 @@ import {
   type TurnSummary,
   type UpstreamTerminal,
 } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
+import { imageGenerationServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
@@ -482,6 +483,42 @@ test('shim activates when targetApi=responses and flag is on', async () => {
   assertEquals(inv.payload.tools?.[0].type, 'function');
   assertEquals((inv.payload.tools?.[0] as { name: string }).name, SHIM_TOOL_NAME);
 });
+
+for (const item of [
+  { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_1', tools: [{ type: 'web_search' as const }] },
+  { type: 'tool_search_output' as const, call_id: 'search_1', execution: 'client' as const, tools: [{ type: 'web_search' as const }] },
+]) {
+  test(`shim rewrites hosted tools inside ${item.type} at their input position`, async () => {
+    const { backend } = makeStubDeps();
+    const inv = makeInvocation({
+      targetApi: 'openaiResponses',
+      enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+      payload: {
+        tools: undefined,
+        tool_choice: { type: 'web_search' },
+        input: [
+          { type: 'message', role: 'user', content: 'before' },
+          item,
+          { type: 'message', role: 'user', content: 'after' },
+        ],
+      },
+    });
+    const args = JSON.stringify({ search_query: [{ q: 'test' }] });
+    const script = scriptedRun([fcTurn(0, 'call_1', SHIM_TOOL_NAME, args), messageTurn('done')]);
+
+    await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+
+    assertEquals(inv.payload.tools, undefined);
+    assertEquals(inv.payload.tool_choice, 'auto');
+    assertEquals(inv.payload.input[0], { type: 'message', role: 'user', content: 'before' });
+    const rewritten = inv.payload.input[1];
+    assert(rewritten.type === item.type);
+    assertEquals(rewritten.tools.map(tool => tool.type), ['function']);
+    assertEquals((rewritten.tools[0] as { name: string }).name, SHIM_TOOL_NAME);
+    assertEquals(rewritten.type === 'additional_tools' ? rewritten.id : rewritten.call_id, item.type === 'additional_tools' ? 'at_1' : 'search_1');
+    assertEquals(backend.calls.length, 1);
+  });
+}
 
 test('shim activates when targetApi=messages and flag is off', async () => {
   makeStubDeps();
@@ -1018,6 +1055,53 @@ test('invalid request registration preserves an upstream error type and null cod
     param: 'input',
     code: null,
   });
+});
+
+test('invalid hosted web search in additional_tools reports its input path', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      tools: undefined,
+      input: [{
+        type: 'additional_tools', role: 'developer',
+        tools: [{ type: 'web_search', search_context_size: 'invalid' } as unknown as OpenAIResponsesTool],
+      }],
+    },
+  });
+  const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+    throw new Error('Invalid request reached upstream');
+  });
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  assertEquals(body.error.param, 'input[0].tools[0].search_context_size');
+});
+
+test('later hosted validation keeps original paths before another tool rewrites the carrier', async () => {
+  makeStubDeps();
+  const inv = makeInvocation({
+    payload: {
+      tools: undefined,
+      input: [{
+        type: 'additional_tools', role: 'developer',
+        tools: [
+          { type: 'web_search' },
+          { type: 'web_search_preview' },
+          { type: 'image_generation', size: '512x512' },
+        ],
+      }],
+    },
+  });
+  const originalInput = structuredClone(inv.payload.input);
+  const shim = withOpenAIResponsesServerToolShim([webSearchServerTool, imageGenerationServerTool]);
+
+  const result = await shim(inv, makeGatewayCtx(), async () => {
+    throw new Error('Invalid request reached upstream');
+  });
+
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  assertEquals(body.error.param, 'input[0].tools[2].size');
+  assertEquals(inv.payload.input, originalInput);
 });
 
 test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
@@ -6429,28 +6513,41 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
 });
 
-test('the shim drains continuation streams before awaiting billable metadata', async () => {
-  const { backend } = makeStubDeps();
-  const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
-  let runCalls = 0;
-  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), async () => {
-    const frames = turns[runCalls++];
-    const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
-    let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
-    const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
-    return eventResult((async function* () {
-      for (const frame of frames) yield frame;
-      resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
-    })(), testTelemetryModelIdentity, { finalMetadata });
-  });
+for (const carrier of ['tools', 'additional_tools', 'tool_search_output'] as const) {
+  test(`the shim drains ${carrier} continuation streams before awaiting billable metadata`, async () => {
+    const { backend } = makeStubDeps();
+    const tools: OpenAIResponsesTool[] = [{ type: 'web_search' }];
+    const inv = makeInvocation({
+      payload: carrier === 'tools'
+        ? { tools }
+        : {
+            tools: undefined,
+            input: [carrier === 'additional_tools'
+              ? { type: carrier, role: 'developer', tools }
+              : { type: carrier, execution: 'client', call_id: 'discovery', tools }],
+          },
+    });
+    const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
+    let runCalls = 0;
+    const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => {
+      const frames = turns[runCalls++];
+      const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
+      let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
+      const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
+      return eventResult((async function* () {
+        for (const frame of frames) yield frame;
+        resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
+      })(), testTelemetryModelIdentity, { finalMetadata });
+    });
 
-  assert(result.type === 'events');
-  const frames = await collectFrames(result.events);
-  assertEquals(findResponseCompleted(frames).response.status, 'completed');
-  assertEquals(runCalls, 3);
-  assertEquals(backend.calls.length, 2);
-  assertEquals((await result.finalMetadata!).billableUsage, { input: 6, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 6 });
-}, 1_000);
+    assert(result.type === 'events');
+    const frames = await collectFrames(result.events);
+    assertEquals(findResponseCompleted(frames).response.status, 'completed');
+    assertEquals(runCalls, 3);
+    assertEquals(backend.calls.length, 2);
+    assertEquals((await result.finalMetadata!).billableUsage, { input: 6, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 6 });
+  }, 1_000);
+}
 
 for (const failedTurn of [1, 2]) {
   test(`the shim retains observed billing when turn ${failedTurn} throws after its usage`, async () => {

@@ -33,6 +33,11 @@ export interface OpenAIResponsesPayload {
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
+  // `false` asks for a prewarm: a response that records this request's
+  // context without generating, which the next request continues from via
+  // `previous_response_id`. Codex sends it on its WebSocket transport.
+  // https://github.com/openai/codex/blob/6989c6548b3737f108e2bb5ae1171b1d2032e30c/codex-rs/codex-api/src/common.rs#L355
+  generate?: boolean | null;
   parallel_tool_calls?: boolean | null;
   reasoning?: {
     effort?: string;
@@ -826,6 +831,19 @@ export type OpenAIResponsesTool =
   | OpenAIResponsesLocalShellTool
   | OpenAIResponsesShellTool
   | OpenAIResponsesApplyPatchTool;
+
+export const collectOpenAIResponsesToolEntries = (
+  payload: CanonicalOpenAIResponsesPayload,
+): Array<{ tool: OpenAIResponsesTool; path: string }> => [
+  ...(payload.tools ?? []).map((tool, index) => ({ tool, path: `tools[${index}]` })),
+  ...payload.input.flatMap((item, inputIndex) =>
+    item.type === 'additional_tools' || item.type === 'tool_search_output'
+      ? item.tools.map((tool, toolIndex) => ({ tool, path: `input[${inputIndex}].tools[${toolIndex}]` }))
+      : []),
+];
+
+export const collectOpenAIResponsesTools = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
+  collectOpenAIResponsesToolEntries(payload).map(entry => entry.tool);
 
 export const mapOpenAIResponsesTools = (
   payload: CanonicalOpenAIResponsesPayload,
