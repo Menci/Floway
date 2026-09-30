@@ -70,7 +70,9 @@ parallel event backlog. A caller that needs an in-memory collection can collect
 from that sink explicitly. Stage boundaries and deferred settlement await the
 sink, so storage backpressure reaches execution. Scoped `use.log` methods also
 return promises and must be awaited. The external global logger may stay
-synchronous; the scoped logger awaits both its output and the dump write.
+synchronous; the scoped logger awaits its output before the dump write. Each
+log call copies and freezes the top-level field record. Descendants remain
+shared by identity and follow the immutable value convention of facts.
 The encoder remains synchronous for one event at a time.
 
 The encoder keeps folding state for active stages. Once a stage returns or
