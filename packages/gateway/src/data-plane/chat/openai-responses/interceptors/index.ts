@@ -22,9 +22,9 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 // after pairwise translation has finished.
 //
 // Order matters: earlier entries wrap later ones.
-//   - answerWebSocketWarmup: runs outermost so a `generate: false` prewarm is
+//   - answerWebSocketWarmup: runs outermost so a WebSocket `generate: false` prewarm is
 //     answered before any shim or upstream call can turn it into a generation.
-//   - withOpenAIResponsesCompactShim: runs outermost so the action pivot
+//   - withOpenAIResponsesCompactShim: wraps the remaining shims so the action pivot
 //     ('compact' → 'generate' for the inner summarization turn) is visible
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
