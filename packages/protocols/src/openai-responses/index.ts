@@ -1375,8 +1375,9 @@ type OpenAIResponsesStreamEventVariant =
     output_index: number;
     diff: string;
   }
-  // Codex remote-compaction progress event.
-  // https://github.com/openai/codex/blob/0a2eb4696c/codex-rs/codex-api/src/sse/responses.rs
+  // Native compaction progress carries no summary; the final encrypted item
+  // arrives in output_item.done.
+  // https://github.com/openai/openai-node/blob/02f4ef94e8b3b02b43af6516c71a74c3c7a80b5d/src/resources/responses/responses.ts#L2311-L2335
   | {
     type: 'response.compaction.compacting';
     item_id: string;
