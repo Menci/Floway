@@ -5,7 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { openaiImagesServePipeline, type OpenAIImagesServeEntry } from '../../src/data-plane/openai-images/pipeline.ts';
+import { type OpenAIImagesServeEntry } from '../../src/data-plane/openai-images/facts.ts';
+import { openaiImagesServePipeline } from '../../src/data-plane/openai-images/pipeline.ts';
 import type { CanonicalOpenAIImagesRequest } from '@floway-dev/protocols/openai-images';
 
 const generations: CanonicalOpenAIImagesRequest = {

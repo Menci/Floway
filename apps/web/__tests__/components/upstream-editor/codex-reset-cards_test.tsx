@@ -124,14 +124,20 @@ describe('Codex reset cards', () => {
       .mockReturnValueOnce('00000000-0000-4000-8000-000000000002');
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    let dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const firstDialog = dialog;
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
+    const confirm = await waitFor(() => {
+      const reopened = screen.getByRole('dialog');
+      expect(reopened).not.toBe(firstDialog);
+      expect(reopened.contains(document.activeElement)).toBe(true);
+      return within(reopened).getByRole('button', { name: 'Use reset card' });
+    });
+    fireEvent.click(confirm);
     await waitFor(() => expect(consumeBodies).toHaveLength(2));
     expect(consumeBodies[0].idempotency_key).toBe(consumeBodies[1].idempotency_key);
   });

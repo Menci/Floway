@@ -176,7 +176,7 @@ const isWebSearchToolResultError = (value: unknown): value is AnthropicMessagesW
 
 const toUpstreamToolUseId = (toolUseId: string): string => (toolUseId.startsWith('srvtoolu_') ? `toolu_${toolUseId.slice('srvtoolu_'.length)}` : toolUseId);
 
-const toNativeServerToolUseId = (toolUseId: string): string => (toolUseId.startsWith('toolu_') ? `srvtoolu_${toolUseId.slice('toolu_'.length)}` : toolUseId);
+const toNativeHostedToolUseId = (toolUseId: string): string => (toolUseId.startsWith('toolu_') ? `srvtoolu_${toolUseId.slice('toolu_'.length)}` : toolUseId);
 
 const buildUpstreamSearchResultBlock = (result: AnthropicMessagesWebSearchResultBlock, decoded: NonNullable<ReturnType<typeof decodeWebSearchResultPayload>>): AnthropicMessagesSearchResultBlock => ({
   type: 'search_result',
@@ -188,14 +188,14 @@ const buildUpstreamSearchResultBlock = (result: AnthropicMessagesWebSearchResult
 
 const buildNativeWebSearchErrorResultBlock = (toolUseId: string, errorCode: AnthropicMessagesWebSearchErrorCode): Extract<AnthropicMessagesAssistantContentBlock, { type: 'web_search_tool_result' }> => ({
   type: 'web_search_tool_result',
-  tool_use_id: toNativeServerToolUseId(toolUseId),
+  tool_use_id: toNativeHostedToolUseId(toolUseId),
   content: { type: 'web_search_tool_result_error', error_code: errorCode },
   caller: { type: 'direct' },
 });
 
-const buildNativeWebSearchServerToolUseBlock = (toolUseId: string, query: string): Extract<AnthropicMessagesAssistantContentBlock, { type: 'server_tool_use' }> => ({
+const buildNativeWebSearchHostedToolUseBlock = (toolUseId: string, query: string): Extract<AnthropicMessagesAssistantContentBlock, { type: 'server_tool_use' }> => ({
   type: 'server_tool_use',
-  id: toNativeServerToolUseId(toolUseId),
+  id: toNativeHostedToolUseId(toolUseId),
   name: WEB_SEARCH_TOOL_NAME,
   input: { query },
 });
@@ -213,12 +213,12 @@ const buildNativeWebSearchResultBlock = (result: Extract<WebSearchProviderResult
 // Error-only replay blocks do not carry our encoded payload marker, so the
 // safest replay rule is structural: only decode results that are paired with
 // a same-message `server_tool_use` we can turn back into upstream tool history.
-const collectOwnedReplayResultsByServerToolUseId = (content: AnthropicMessagesAssistantInputContentBlock[]): Map<string, OwnedReplayToolResult> => {
-  const pairedServerToolUseIds = new Set(content.flatMap(block => (block.type === 'server_tool_use' && block.name === WEB_SEARCH_TOOL_NAME ? [block.id] : [])));
-  const ownedReplayResultsByServerToolUseId = new Map<string, OwnedReplayToolResult>();
+const collectOwnedReplayResultsByHostedToolUseId = (content: AnthropicMessagesAssistantInputContentBlock[]): Map<string, OwnedReplayToolResult> => {
+  const pairedHostedToolUseIds = new Set(content.flatMap(block => (block.type === 'server_tool_use' && block.name === WEB_SEARCH_TOOL_NAME ? [block.id] : [])));
+  const ownedReplayResultsByHostedToolUseId = new Map<string, OwnedReplayToolResult>();
 
   for (const block of content) {
-    if (block.type !== 'web_search_tool_result' || !pairedServerToolUseIds.has(block.tool_use_id)) {
+    if (block.type !== 'web_search_tool_result' || !pairedHostedToolUseIds.has(block.tool_use_id)) {
       continue;
     }
 
@@ -227,10 +227,10 @@ const collectOwnedReplayResultsByServerToolUseId = (content: AnthropicMessagesAs
       continue;
     }
 
-    ownedReplayResultsByServerToolUseId.set(block.tool_use_id, ownedReplayResult);
+    ownedReplayResultsByHostedToolUseId.set(block.tool_use_id, ownedReplayResult);
   }
 
-  return ownedReplayResultsByServerToolUseId;
+  return ownedReplayResultsByHostedToolUseId;
 };
 
 const messageHasOwnedReplayMarkers = (message: AnthropicMessagesMessage): boolean => {
@@ -239,7 +239,7 @@ const messageHasOwnedReplayMarkers = (message: AnthropicMessagesMessage): boolea
   }
 
   return (
-    collectOwnedReplayResultsByServerToolUseId(message.content).size > 0 ||
+    collectOwnedReplayResultsByHostedToolUseId(message.content).size > 0 ||
     message.content.some(block => {
       if (block.type !== 'text' || !block.citations) {
         return false;
@@ -380,15 +380,15 @@ const prepareAnthropicMessagesWebSearchReplay = (messages: AnthropicMessagesMess
       continue;
     }
 
-    const ownedReplayResultsByServerToolUseId = collectOwnedReplayResultsByServerToolUseId(message.content);
+    const ownedReplayResultsByHostedToolUseId = collectOwnedReplayResultsByHostedToolUseId(message.content);
 
-    for (const ownedReplayResult of ownedReplayResultsByServerToolUseId.values()) {
+    for (const ownedReplayResult of ownedReplayResultsByHostedToolUseId.values()) {
       priorSearchUseCount += 1;
       pendingOwnedReplayToolResults.push(ownedReplayResult);
     }
 
     const rewrittenContent = message.content.flatMap((block): AnthropicMessagesAssistantInputContentBlock[] => {
-      if (block.type === 'server_tool_use' && ownedReplayResultsByServerToolUseId.has(block.id)) {
+      if (block.type === 'server_tool_use' && ownedReplayResultsByHostedToolUseId.has(block.id)) {
         return [
           {
             type: 'tool_use',
@@ -399,7 +399,7 @@ const prepareAnthropicMessagesWebSearchReplay = (messages: AnthropicMessagesMess
         ];
       }
 
-      if (block.type === 'web_search_tool_result' && ownedReplayResultsByServerToolUseId.has(block.tool_use_id)) {
+      if (block.type === 'web_search_tool_result' && ownedReplayResultsByHostedToolUseId.has(block.tool_use_id)) {
         return [];
       }
 
@@ -556,7 +556,7 @@ const buildNativeWebSearchResultBlockFromProviderResult = (result: WebSearchProv
 
   return {
     type: 'web_search_tool_result',
-    tool_use_id: toNativeServerToolUseId(toolUseId),
+    tool_use_id: toNativeHostedToolUseId(toolUseId),
     content: result.results.map(buildNativeWebSearchResultBlock),
     caller: { type: 'direct' },
   };
@@ -571,7 +571,7 @@ type ActiveBlock =
   | {
     kind: 'web-search-tool-use';
     upstreamToolUseId: string;
-    serverToolUseIndex: number;
+    hostedToolUseIndex: number;
     resultIndex: number;
     inputJson: string;
   };
@@ -631,7 +631,7 @@ const rewriteContentBlockDeltaCitations = (
 // Synthesised events use the canonical Anthropic Messages SSE shape for `server_tool_use`
 // and `web_search_tool_result` blocks (input baked into the start event, no
 // `input_json_delta`) so downstream clients see the same bytes Anthropic would
-// emit for native server tools.
+// emit for native hosted tools.
 const runWebSearchStopHandler = async function* (
   block: Extract<ActiveBlock, { kind: 'web-search-tool-use' }>,
   shimState: ShimStreamingState,
@@ -654,10 +654,10 @@ const runWebSearchStopHandler = async function* (
 
   yield eventFrame({
     type: 'content_block_start',
-    index: block.serverToolUseIndex,
-    content_block: buildNativeWebSearchServerToolUseBlock(block.upstreamToolUseId, query ?? ''),
+    index: block.hostedToolUseIndex,
+    content_block: buildNativeWebSearchHostedToolUseBlock(block.upstreamToolUseId, query ?? ''),
   });
-  yield eventFrame({ type: 'content_block_stop', index: block.serverToolUseIndex });
+  yield eventFrame({ type: 'content_block_stop', index: block.hostedToolUseIndex });
 
   const resultBlock = await (async () => {
     if (state.maxUses !== undefined && shimState.currentSearchUseCount >= state.maxUses) {
@@ -747,7 +747,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         activeBlock = {
           kind: 'web-search-tool-use',
           upstreamToolUseId: event.content_block.id,
-          serverToolUseIndex: downstreamBase,
+          hostedToolUseIndex: downstreamBase,
           resultIndex: downstreamBase + 1,
           inputJson: '',
         };
@@ -891,15 +891,15 @@ export const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessag
 };
 
 /**
- * Anthropic exposes native `web_search_*` server tools, but non-Anthropic-Messages
- * targets cannot run Anthropic server tools. This shim rewrites the native tool
+ * Anthropic exposes native `web_search_*` hosted tools, but non-Anthropic-Messages
+ * targets cannot run Anthropic hosted tools. This shim rewrites the native tool
  * definition into an ordinary client `web_search` tool, executes each search
  * the model issues using the gateway's configured provider, and rewrites the
  * response back to the Anthropic native `server_tool_use` /
  * `web_search_tool_result` / `web_search_result_location` shape.
  *
  * The shim is unconditional for non-native Anthropic Messages targets (OpenAI Responses /
- * OpenAI Chat Completions cannot carry Anthropic server tools), and gated by the
+ * OpenAI Chat Completions cannot carry Anthropic hosted tools), and gated by the
  * `anthropic-messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
  * may or may not be able to serve web_search natively).
  */

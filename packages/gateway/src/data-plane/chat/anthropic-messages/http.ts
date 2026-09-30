@@ -7,8 +7,9 @@
 // stages.
 
 import { anthropicMessagesCountTokensPipeline } from './count-tokens.ts';
+import { anthropicMessagesKeepAlive } from './emit.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
-import { anthropicMessagesKeepAlive, anthropicMessagesServePipeline } from './pipeline.ts';
+import { anthropicMessagesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';

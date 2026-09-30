@@ -8,8 +8,8 @@
 // the stage that dials asks for them back by selector, which is the same shape the shared
 // services already use for the candidate itself.
 
+import type { ChatServices } from './services.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from './shared/gateway-ctx.ts';
-import type { ChatServices } from './stages.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
 import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
@@ -29,7 +29,7 @@ export const openChatPrologue = (
     readonly wantsStream: boolean;
     readonly model?: string;
     /** Native OpenAI Responses entries persist their items; every other source gets a scratchpad,
-     *  so the server-tool shim's request-private state always has a home. */
+     *  so the hosted-tool shim's request-private state always has a home. */
     readonly storeFactory: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore;
   },
 ): ChatPrologue => {

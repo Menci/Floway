@@ -1,7 +1,7 @@
+import type { OpenAIResponsesFacts } from './facts.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import type { OpenAIResponsesFacts } from './pipeline.ts';
 import { telemetryModelIdentity } from '../../shared/telemetry/attribution.ts';
-import type { ChatServices } from '../stages.ts';
+import type { ChatServices } from '../services.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';

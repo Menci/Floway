@@ -18,7 +18,7 @@ import type {
 // the only place Floway states one, and only where the wire schema forbids both
 // omission and `null`.
 //
-// The other half of that rule lives in the server-tool shim, which shipped
+// The other half of that rule lives in the hosted-tool shim, which shipped
 // "absent-echo (no tools synthesized when upstream omits it)" in 44322150d
 // (#125) and whose synthesis paths throw on an absent `upstreamResponseSnapshot`
 // rather than fabricate a resource never captured. The two rules do not conflict
@@ -169,7 +169,7 @@ export const completeResponseResource = (
     // Gateway state. `created_at` and `store` have no candidate chain because no
     // other source can know them. `completed_at` overrides any upstream value
     // because one client turn can span several upstream calls behind the
-    // server-tool runtime, so no single upstream's completion instant describes
+    // hosted-tool runtime, so no single upstream's completion instant describes
     // it.
     created_at: sources.createdAt,
     completed_at: terminal ? Math.floor(Date.now() / 1000) : null,

@@ -863,8 +863,8 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
   const indexed = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_stop' || event.type === 'content_block_delta');
   assertEquals(indexed.map(event => (event as { index: number }).index), [0, 0, 0, 1, 1, 2, 2, 3, 3, 3]);
 
-  const serverToolUse = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'server_tool_use');
-  assertEquals(serverToolUse?.type === 'content_block_start' ? serverToolUse.content_block : undefined, {
+  const hostedToolUse = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'server_tool_use');
+  assertEquals(hostedToolUse?.type === 'content_block_start' ? hostedToolUse.content_block : undefined, {
     type: 'server_tool_use',
     id: 'srvtoolu_1',
     name: 'web_search',

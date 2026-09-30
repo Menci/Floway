@@ -7,33 +7,31 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  normalizeEmptyToolsForOpenAIChatCompletions,
-  normalizeEmptyToolsForOpenAIResponses,
-  normalizeEmptyToolsForAnthropicMessages,
-  applyRoleCompatibilityToOpenAIChatCompletions,
-  applyRoleCompatibilityToAnthropicMessages,
-  applyRoleCompatibilityToOpenAIResponses,
-  disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
-  disableReasoningOnForcedToolChoiceForAnthropicMessages,
-  disableReasoningOnForcedToolChoiceForOpenAIResponses,
-  includeUsageStreamOptionsForOpenAIChatCompletions,
-  normalizeExclusiveCachedTokensForOpenAIChatCompletions,
-  normalizeExclusiveCachedTokensForOpenAIResponses,
-  normalizeUsageForOpenAIChatCompletions,
-  stripBillingAttributionFromAnthropicMessages,
-  stripPromptCacheKeyForOpenAIChatCompletions,
-  stripPromptCacheKeyForOpenAIResponses,
-  stripSafetySettingsFromGeminiGenerateContent,
-  stripUnsupportedPartFieldsFromGeminiGenerateContent,
-  stripUnsupportedToolsFromGeminiGenerateContent,
-  suppressThoughtPartsFromGeminiGenerateContent,
-  vendorDeepSeekNormalizeForOpenAIChatCompletions,
-  vendorDeepSeekNormalizeForOpenAIResponses,
-  vendorKimiNormalizeForOpenAIChatCompletions,
-  vendorQwenNormalizeForOpenAIChatCompletions,
-  vendorQwenNormalizeForOpenAIResponses,
-} from '../../src/data-plane/chat/rules.ts';
+import { applyRoleCompatibilityToAnthropicMessages } from '../../src/data-plane/chat/anthropic-messages/apply-role-compatibility.ts';
+import { disableReasoningOnForcedToolChoiceForAnthropicMessages } from '../../src/data-plane/chat/anthropic-messages/disable-reasoning-on-forced-tool-choice.ts';
+import { normalizeEmptyToolsForAnthropicMessages } from '../../src/data-plane/chat/anthropic-messages/normalize-empty-tools-tool-choice.ts';
+import { stripBillingAttributionFromAnthropicMessages } from '../../src/data-plane/chat/anthropic-messages/strip-billing-attribution.ts';
+import { stripSafetySettingsFromGeminiGenerateContent } from '../../src/data-plane/chat/gemini-generate-content/strip-safety-settings.ts';
+import { stripUnsupportedPartFieldsFromGeminiGenerateContent } from '../../src/data-plane/chat/gemini-generate-content/strip-unsupported-part-fields.ts';
+import { stripUnsupportedToolsFromGeminiGenerateContent } from '../../src/data-plane/chat/gemini-generate-content/strip-unsupported-tools.ts';
+import { suppressThoughtPartsFromGeminiGenerateContent } from '../../src/data-plane/chat/gemini-generate-content/suppress-thought-parts.ts';
+import { applyRoleCompatibilityToOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/apply-role-compatibility.ts';
+import { disableReasoningOnForcedToolChoiceForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/disable-reasoning-on-forced-tool-choice.ts';
+import { includeUsageStreamOptionsForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/include-usage-stream-options.ts';
+import { normalizeEmptyToolsForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/normalize-empty-tools-tool-choice.ts';
+import { normalizeExclusiveCachedTokensForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/normalize-exclusive-cached-tokens.ts';
+import { normalizeUsageForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/normalize-usage.ts';
+import { stripPromptCacheKeyForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/strip-prompt-cache-key.ts';
+import { vendorDeepSeekNormalizeForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/vendor-deep-seek-normalize.ts';
+import { vendorKimiNormalizeForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/vendor-kimi-normalize.ts';
+import { vendorQwenNormalizeForOpenAIChatCompletions } from '../../src/data-plane/chat/openai-chat-completions/vendor-qwen-normalize.ts';
+import { applyRoleCompatibilityToOpenAIResponses } from '../../src/data-plane/chat/openai-responses/apply-role-compatibility.ts';
+import { disableReasoningOnForcedToolChoiceForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/disable-reasoning-on-forced-tool-choice.ts';
+import { normalizeEmptyToolsForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/normalize-empty-tools-tool-choice.ts';
+import { normalizeExclusiveCachedTokensForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/normalize-exclusive-cached-tokens.ts';
+import { stripPromptCacheKeyForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/strip-prompt-cache-key.ts';
+import { vendorDeepSeekNormalizeForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/vendor-deep-seek-normalize.ts';
+import { vendorQwenNormalizeForOpenAIResponses } from '../../src/data-plane/chat/openai-responses/vendor-qwen-normalize.ts';
 import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';

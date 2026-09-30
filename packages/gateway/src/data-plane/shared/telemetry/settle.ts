@@ -10,7 +10,7 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 // the caller sample the stream-end monotonic timestamp at exactly the
 // moment the token stream terminates, so TPOT measures the stream
 // itself rather than the settle path. Callers with no such distinction
-// (passthrough JSON, the image-generation server tool) omit it and get
+// (passthrough JSON, the image-generation hosted tool) omit it and get
 // the call-time stamp.
 //
 // The usage-record D1 write is fire-and-forget. A transient repo failure

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { driveCollaborationStage as withOpenAIResponsesCollaborationShim } from './collaboration-drive.ts';
-import { driveServerToolStage as withOpenAIResponsesServerToolShim } from './server-tools/drive.ts';
+import { driveHostedToolStage as withHostedTools } from './hosted-tools/drive.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputFunctionCall, OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
@@ -490,7 +490,7 @@ test('keeps the namespace across an actual hosted-tool loop and restores only th
   ctx.payload.tool_choice = 'auto';
   const gatewayCtx = mockChatGatewayCtx();
   let upstreamCalls = 0;
-  const serverShim = withOpenAIResponsesServerToolShim([() => ({
+  const serverShim = withHostedTools([() => ({
     type: 'active', baseToolName: 'search', hosted: {
       hostedTypes: ['web_search'],
       canonicalize: tool => tool.type === 'web_search' ? tool : undefined,

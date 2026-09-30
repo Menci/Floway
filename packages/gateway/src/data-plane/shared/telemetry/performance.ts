@@ -9,7 +9,7 @@ export type { PerformanceTelemetryContext };
 
 // Structural view of the fields recordPerformance actually reads. Every chat /
 // passthrough call site passes its full `GatewayCtx`; the OpenAI Responses image-
-// generation server tool synthesizes a per-dispatch object because each image
+// generation hosted tool synthesizes a per-dispatch object because each image
 // call carries its own TTFT window and can't share `ctx.attempt` with the
 // enclosing OpenAI Responses turn.
 type PerformanceRecordScope = Pick<GatewayCtx, 'attempt' | 'backgroundScheduler'>;

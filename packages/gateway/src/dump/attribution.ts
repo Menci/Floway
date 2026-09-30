@@ -19,7 +19,7 @@
 //     (`kind` matches `ApiErrorResult.source`). Real upstream non-2xx pass
 //     `upstream` so a 4xx/5xx row in the dashboard names the upstream that
 //     rejected the call; the gateway arm may also pass it when a candidate
-//     was already chosen (item-not-found rewrite, server-tool input
+//     was already chosen (item-not-found rewrite, hosted-tool input
 //     rejection).
 //   • `failed(reason)` records an uncategorized terminal failure: a thrown
 //     exception, a source-emitted error frame, a downstream cancel, or a

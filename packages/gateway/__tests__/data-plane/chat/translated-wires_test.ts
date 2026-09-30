@@ -14,7 +14,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { anthropicMessagesServePipeline, anthropicMessagesWire } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { anthropicMessagesWire } from '../../../src/data-plane/chat/anthropic-messages/wire.ts';
 import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { handOff } from '../../../src/data-plane/chat/handoff.ts';
 import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';

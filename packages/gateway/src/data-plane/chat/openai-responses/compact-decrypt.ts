@@ -5,8 +5,8 @@ import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import type { ChatFacts, ChatAnswer } from '../facts.ts';
-import type { ChatWire } from '../handoff.ts';
-import type { ChatServices } from '../stages.ts';
+import type { ChatServices } from '../services.ts';
+import type { ChatWire } from '../wire.ts';
 import { defer, defineStage, move, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {

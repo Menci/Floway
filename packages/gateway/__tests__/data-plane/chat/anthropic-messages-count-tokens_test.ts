@@ -182,7 +182,7 @@ describe('the messages count-tokens chain', () => {
     });
   });
 
-  // Anthropic's native server tool never reaches an upstream as itself — the shim sends an
+  // Anthropic's native hosted tool never reaches an upstream as itself — the shim sends an
   // ordinary client tool — so a count taken on the client's own body would measure a request
   // nobody is sent.
   it('measures the client-tool shape the web-search shim would actually send', async () => {

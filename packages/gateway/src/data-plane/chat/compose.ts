@@ -1,5 +1,5 @@
 import type { ChatAnswer } from './facts.ts';
-import type { ChatServices } from './stages.ts';
+import type { ChatServices } from './services.ts';
 import { recordStream } from '../../dump/run-sink.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import { compose, isStreamFact, move, type Stage, type Use } from '@floway-dev/pipeline';

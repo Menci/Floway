@@ -17,7 +17,7 @@
 // the class from coming back the next time a rule is added.
 
 import type { ChatAnswer, ChatFacts } from './facts.ts';
-import type { ChatServices } from './stages.ts';
+import type { ChatServices } from './services.ts';
 import { streamReferenceOf } from '../../dump/run-sink.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';

@@ -37,7 +37,7 @@ export interface OpenAIResponsesStatefulStore {
   persistOutputItem(row: StoredOpenAIResponsesItem): Promise<void>;
   commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
-  // scratchpad from hydrated items; a server tool can add server-only state
+  // scratchpad from hydrated items; a hosted tool can add server-only state
   // during the turn and output capture persists it with the exact wire item.
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
   registerPrivatePayload(id: string, privatePayload: unknown): void;
@@ -400,7 +400,7 @@ export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolic
 
 // Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat Completions) never persist
 // OpenAI Responses items, even when translation enters an OpenAI Responses attempt — but the
-// server-tool stage still runs there, and its request-private payload
+// hosted-tool stage still runs there, and its request-private payload
 // scratchpad lives on the store. So they get a store with no backing: it holds
 // per-attempt state in memory and reads/writes nothing durable, keeping the
 // store present on every chat ctx.

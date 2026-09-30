@@ -1,6 +1,6 @@
-// Anthropic's web-search server tool, as a stage.
+// Anthropic's web-search hosted tool, as a stage.
 //
-// Anthropic exposes `web_search_*` as native server tools. An upstream that cannot serve them —
+// Anthropic exposes `web_search_*` as native hosted tools. An upstream that cannot serve them —
 // every non-Anthropic-Messages target, and a native one whose operator says so — gets the tool
 // rewritten into an ordinary client tool on the way down, each search the model issues executed
 // by this gateway, and the answer rewritten back into Anthropic's own
@@ -19,7 +19,7 @@ import {
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { ChatAnswer, ChatFacts } from '../facts.ts';
-import type { ChatServices } from '../stages.ts';
+import type { ChatServices } from '../services.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -40,7 +40,7 @@ const refusal = (message: string): Failure => ({
 });
 
 /** What the stage is told rather than reaching for: which wire this candidate is reachable on,
- *  which is what decides whether the upstream can carry Anthropic's server tools at all. */
+ *  which is what decides whether the upstream can carry Anthropic's hosted tools at all. */
 export interface WebSearchWiring {
   readonly targetOf: (candidate: ModelCandidate) => ChatTargetApi;
 }

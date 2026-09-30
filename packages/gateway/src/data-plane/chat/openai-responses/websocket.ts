@@ -10,8 +10,9 @@
 
 import type { Context } from 'hono';
 
+import { type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './facts.ts';
 import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
-import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
+import { openaiResponsesServePipeline } from './pipeline.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
