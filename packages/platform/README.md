@@ -4,6 +4,21 @@ This package defines portable runtime services. Implementations live in the
 platform applications; runtime composition installs them through the exported
 initializers.
 
+## Durable file writes
+
+`FileStore.put(key, body)` accepts bytes or a `ReadableStream<Uint8Array>`.
+It consumes the stream with storage backpressure and publishes the complete
+object at EOF. Until then, readers see the previous value or a missing key.
+Failures preserve the prior object and expose the original error; cleanup
+failures retain it in the error chain. `get` still returns complete bytes.
+
+Node writes to a same-directory staging file and atomically renames it after
+closing. Cloudflare uses bounded 5 MiB multipart parts for unknown-length
+streams, since R2's single put requires a known length. Short and empty streams
+use a single byte put. A storage/source failure cancels the source and cleans
+up unfinished multipart state; live-view degradation does not affect this path.
+The in-memory implementation collects bytes as part of its storage semantics.
+
 ## Transient run streams
 
 `LogStreamStore.open(id)` asynchronously creates or opens a writer's stream.
