@@ -10,26 +10,16 @@
 // them compose into a pipeline over any family's larger space with no variance question to
 // lose: assembly reasons over declarations, which are strings.
 
-import type { AttemptSelector, GatewayFacts } from './facts.ts';
+import type { BillableEntity, GatewayFacts } from './facts.ts';
+import type { StreamOutcome } from './serve.ts';
 import type { GatewayServices } from './services.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
-import { defineStage, move } from '@floway-dev/pipeline';
-import type { Facts } from '@floway-dev/pipeline';
+import { defer, defineStage, move, type Facts, type Deferred } from '@floway-dev/pipeline';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
-
-/** Everything about a candidate that is data. The live half — the provider instance, the
- *  fetcher, the models cache — stays out of the record and is looked back up by the
- *  resolver service at the moment of the call. */
-export const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
-  upstreamId: candidate.provider.upstreamId,
-  modelId: candidate.model.id,
-  flags: [...providerModelOf(candidate).enabledFlags],
-});
 
 /** What a family narrows its candidates by, and what it says when nothing is left. A
  *  candidate that resolves but cannot serve this request — no endpoint for the kind, or a
@@ -109,14 +99,13 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       return why === null;
     });
     // The live half stays with the resolver; only selectors travel.
-    use.rememberCandidates(viable);
     if (viable.length === 0) {
       use.log.debug('no viable candidate', { model, refused: [...refused] });
       return refuse(400, appendFailedUpstreams(narrowing.unsupported(model, [...refused]), failedUpstreams));
     }
 
     use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(viable.map(selectorFor)) });
+    return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(viable)) });
   },
 });
 
@@ -141,35 +130,51 @@ export interface Forking {
    *  produce and hands up makes it throw the other way. Which keys carry a resource is a
    *  statement only the family can make. */
   readonly owns: readonly string[];
+  readonly streamedUsage?: string;
 }
 
-export const failover = ({ failed, owns }: Forking) => defineStage<
+export const failover = ({ failed, owns, streamedUsage }: Forking) => defineStage<
   Slice<'serve.candidates'>,
   Slice<'serve.candidates' | 'route.attempt'>,
-  Slice<'response.usage.billable'>,
-  Slice<'response.usage.billable'>,
+  Slice<'response.usage.billable'> & Record<string, unknown>,
+  Slice<'response.usage.billable'> & Record<string, unknown>,
   GatewayServices
 >({
   name: 'failover',
   through: {
     request: { needs: ['serve.candidates'], consumes: [], provides: ['route.attempt'] },
     response: {
-      needs: ['response.usage.billable'],
+      needs: ['response.usage.billable', ...(streamedUsage === undefined ? [] : [streamedUsage])],
       // Owned on the way up and handed onward: every attempt's is this stage's to release,
       // and the one it adopts rides up with ownership going with it.
       consumes: owns as never,
-      provides: owns as never,
+      provides: [...owns, 'response.usage.billable', ...(streamedUsage === undefined ? [] : [streamedUsage])] as never,
     },
   },
   execute: async (facts, next, use) => {
     let last: Slice<'response.usage.billable'> | undefined;
-    for (const candidate of facts['serve.candidates']) {
+    const prior: BillableEntity[] = [];
+    const keepPriorCalls = (back: Slice<'response.usage.billable'>): Slice<'response.usage.billable'> => {
+      if (prior.length === 0) return back;
+      const record = back as unknown as Facts;
+      const pending = streamedUsage === undefined ? null : record[streamedUsage] as Deferred<StreamOutcome> | null;
+      const calls = move([...prior]);
+      return move({
+        ...back,
+        'response.usage.billable': move([...calls, ...back['response.usage.billable']]),
+        ...(streamedUsage === undefined || pending === null ? {} : {
+          [streamedUsage]: move(defer(pending.then(outcome => ({ ...outcome, billable: move([...calls, ...outcome.billable]) })))),
+        }),
+      });
+    };
+    for (const [index, candidate] of facts['serve.candidates'].entries()) {
       // Per-attempt telemetry state, cleared before control leaves, so a mid-attempt throw
       // still attributes its performance row to the candidate that was being tried.
-      use.gateway.attempt.upstreamCallStartedAt = null;
-      use.gateway.attempt.firstOutputTokenAt = null;
+      use.gateway.attempt.timing.upstreamCallStartedAt = null;
+      use.gateway.attempt.timing.firstOutputTokenAt = null;
       last = await next({ ...facts, 'route.attempt': move(candidate) });
-      if (!failed(last as Facts)) return last;
+      if (!failed(last as Facts) || index === facts['serve.candidates'].length - 1) return keepPriorCalls(last);
+      if (streamedUsage !== undefined) prior.push(...last['response.usage.billable']);
       use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
     }
     if (last === undefined) throw new Error('failover: assembly handed it an empty candidate list');

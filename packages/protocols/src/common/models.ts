@@ -36,6 +36,11 @@ export interface ChatModelInfo {
     input: readonly Modality[];
     output: readonly Modality[];
   };
+  // Whether the upstream accepts image detail 'original' — Codex's
+  // `supports_image_detail_original`. A provider whose own catalog carries the
+  // fact fills it there; elsewhere the operator's model config states it. A
+  // client that reads `true` here will send `original`.
+  image_detail_original?: boolean;
   reasoning?: {
     // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
     effort?: { supported: readonly string[]; default: string };
@@ -71,6 +76,29 @@ export interface PublicModelLimits {
   max_prompt_tokens?: number;
 }
 
+// Declares which models may replay an opaque blob emitted by this model. The
+// optional key deliberately remains unmaterialized on the catalog surface: an
+// omitted key means the upstream model id, while bindToUpstream controls
+// whether the concrete upstream instance participates in compatibility.
+export interface OpaqueBlobCompatibilityScope {
+  bindToUpstream: boolean;
+  key?: string;
+}
+
+export interface OpaqueBlobCompatibilityIdentity {
+  upstreamId?: string;
+  key: string;
+}
+
+export const materializeOpaqueBlobCompatibilityIdentity = (
+  scope: OpaqueBlobCompatibilityScope,
+  upstreamId: string,
+  upstreamModelId: string,
+): OpaqueBlobCompatibilityIdentity => ({
+  ...(scope.bindToUpstream ? { upstreamId } : {}),
+  key: scope.key ?? upstreamModelId,
+});
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -101,6 +129,7 @@ export interface PublicModel {
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;
+  opaqueBlobCompatibilityScope: OpaqueBlobCompatibilityScope;
   // Present only on entries the gateway synthesized from an operator-defined
   // alias; absent for entries that came from an upstream catalog.
   aliasedFrom?: PublicModelAliasedFrom;

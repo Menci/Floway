@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { anthropicMessagesCountTokensPipeline } from '../../../src/data-plane/chat/anthropic-messages/count-tokens.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
@@ -95,7 +96,7 @@ const count = async (
     {
       gateway,
       background: () => {},
-      rememberCandidates: () => {},
+      ...createCandidateRegistry(),
       rememberChatSelection: () => {},
       chatPayloadFor: () => affinityPayload,
       selectAffinity: () => { throw new Error('a measurement pins nothing; it must not select affinity'); },

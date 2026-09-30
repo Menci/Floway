@@ -8,14 +8,16 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
 const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const partial: Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
+    upstreamModelId: model.id,
     limits: model.limits ? { ...model.limits } : {},
+    opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
   };
   if (model.owned_by !== undefined) partial.owned_by = model.owned_by;
   // OpenAI carries unix `created`; Anthropic carries ISO `created_at`; our
@@ -47,6 +49,30 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
   return inferEndpointsFromModelId(model.id) ?? configured;
 };
 
+export const projectCustomDiscoveredModels = (
+  record: UpstreamRecord,
+  response: CustomModelsResponse,
+): UpstreamModelConfig[] => {
+  const { config } = assertCustomUpstreamRecord(record);
+  return response.data.map(model => {
+    const endpoints = model.kind === 'rerank' ? { rerank: {} } : autoModelEndpoints(model, config.endpoints);
+    const kind = model.kind === 'rerank' ? 'rerank' : kindForEndpoints(endpoints);
+    const projected: UpstreamModelConfig = {
+      upstreamModelId: model.id,
+      publicModelId: model.id,
+      kind,
+      endpoints,
+    };
+    const displayName = model.display_name ?? model.name;
+    if (displayName !== undefined) projected.display_name = displayName;
+    if (model.limits !== undefined) projected.limits = { ...model.limits };
+    if (model.pricing !== undefined) projected.pricing = model.pricing;
+    if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
+    projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
+    return projected;
+  });
+};
+
 const finalizeCustomModels = (
   response: CustomModelsResponse,
   configuredEndpoints: ModelEndpoints,
@@ -60,12 +86,14 @@ const finalizeCustomModels = (
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    const kind = kindForEndpoints(endpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: rawModel.id,
       enabledFlags,
+      ...(kind === 'chat' && rawModel.chat ? { chat: rawModel.chat } : {}),
     });
   }
   return models;
@@ -86,18 +114,21 @@ export const projectCustomModels = (
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
     const internal: ProviderModel = {
       id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
       limits: { ...(model.limits ?? {}) },
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
       ...(model.rerankTarget ? { rerankTarget: model.rerankTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
-    if (model.chat) internal.chat = model.chat;
+    if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
   if (!config.modelsFetch.enabled || response === undefined) return manualModels;

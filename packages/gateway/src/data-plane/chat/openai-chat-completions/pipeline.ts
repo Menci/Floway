@@ -20,6 +20,8 @@
 // protocol never carries it. Said by position rather than by a guard: a stage below the fork
 // runs only when this is the wire the fork chose.
 
+import { composeChat as compose } from '../compose.ts';
+import { projectOpenAIResponsesCollaboration } from '../openai-responses/collaboration-shim.ts';
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
@@ -49,6 +51,7 @@ import {
   vendorDeepSeekNormalizeForOpenAIChatCompletions,
   vendorKimiNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
+  normalizeEmptyToolsForOpenAIChatCompletions,
 } from '../rules.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
@@ -56,10 +59,9 @@ import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defer, defineStage, move, type Deferred, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
+import { defer, defineStage, move, type Deferred, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
-  OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
   openaiChatCompletionsErrorPayloadMessage,
   openaiChatCompletionsProtocolFrameToSSEFrame,
   collectOpenAIChatCompletionsProtocolEventsToResult,
@@ -98,7 +100,7 @@ const emitOpenAIChatCompletions = defineStage<
   C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
     | 'response.chat.openaiChatCompletions' | 'response.http.headers'>,
-  C<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
+  C<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
   ChatServices
 >({
   name: 'emitOpenAIChatCompletions',
@@ -111,7 +113,7 @@ const emitOpenAIChatCompletions = defineStage<
     response: {
       needs: ['response.chat.openaiChatCompletions', 'response.http.headers'],
       consumes: ['response.chat.openaiChatCompletions', 'response.http.headers'],
-      provides: ['response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next, use) => {
@@ -127,6 +129,7 @@ const emitOpenAIChatCompletions = defineStage<
       const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(failure.body),
         'response.http.status': failure.status,
@@ -135,6 +138,7 @@ const emitOpenAIChatCompletions = defineStage<
     if (answer.kind === 'value') {
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(answer.body as Record<string, unknown>),
         'response.http.status': 200,
@@ -155,6 +159,7 @@ const emitOpenAIChatCompletions = defineStage<
     if (!back['ingress.chat.openaiChatCompletions.wantsStream']) {
       return {
         ...rest,
+        'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(
           await collectOpenAIChatCompletionsProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
@@ -164,6 +169,7 @@ const emitOpenAIChatCompletions = defineStage<
     }
     return {
       ...rest,
+      'response.chat.clientFrames': move(frames),
       'response.http.headers': forClient,
       'response.chat.openaiChatCompletions.rendered': move(renderSSE(frames, back['ingress.chat.openaiChatCompletions.wantsUsageChunk'])),
       'response.http.status': 200,
@@ -305,6 +311,7 @@ const callOpenAIChatCompletionsUpstream = defineStage<
  * and the field an upstream would reject is gone before a vendor rewrites what is left.
  */
 export const openaiChatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
+  normalizeEmptyToolsForOpenAIChatCompletions,
   meterChatWire({
     wire: 'openaiChatCompletions',
     answer: 'response.chat.openaiChatCompletions',
@@ -352,6 +359,7 @@ const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCan
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         trip: async payload => await translateOpenAIChatCompletionsViaOpenAIResponses(payload, { model: candidate.model.id }),
       }),
+      projectOpenAIResponsesCollaboration,
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
   }
@@ -369,9 +377,9 @@ const meterOpenAIChatCompletions = (
   // Declared as this run's own unfinished work, so the runner waits for it at teardown where
   // it can see it rather than the reading being started and forgotten.
   const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
-  // Running out without the terminal frame is what "it did not finish" means, and it is known
-  // at the same moment the usage is.
-  let sawTerminal = false;
+  // A clean EOF completes Chat Completions even when no [DONE] frame was sent.
+  let completed = false;
+  let failed = false;
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
     try {
@@ -385,19 +393,21 @@ const meterOpenAIChatCompletions = (
           const usage = billableUsageFromOpenAIChatCompletionsEvent(frame.event);
           if (usage !== null) reported = usage;
         }
+        if (isTerminal(frame)) {
+          completed = true;
+          failed = frame.type === 'event' && 'error' in frame.event;
+        }
         yield frame;
         // The terminator is written out before the read stops, because it is what the client
         // reads as the end. Stopping here also drops anything an upstream sends after it.
-        if (isTerminal(frame)) { sawTerminal = true; return; }
+        if (isTerminal(frame)) return;
       }
-      // A stream that ran out without saying it ended is not a turn that finished. Serving
-      // what arrived would present a truncated answer as a whole one.
-      throw new Error(OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+      completed = true;
     } finally {
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billedEntity(reported, identity)], failed: !sawTerminal });
+      settle({ billable: [billedEntity(reported, identity)], failed: failed || !completed });
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
@@ -469,6 +479,7 @@ export const openaiChatCompletionsServePipeline = (payload: OpenAIChatCompletion
       owns: [],
     }),
     materializeAttempt('request.chat.openaiChatCompletions'),
+    normalizeEmptyToolsForOpenAIChatCompletions,
     dialChatWire({
       source: 'request.chat.openaiChatCompletions',
       needs: ['request.chat.openaiChatCompletions', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

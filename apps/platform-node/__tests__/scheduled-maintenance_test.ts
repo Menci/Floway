@@ -1,11 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { startScheduledMaintenance } from '../src/scheduled-maintenance.ts';
-import { runScheduledMaintenance } from '@floway-dev/gateway';
-
-vi.mock('@floway-dev/gateway', () => ({
-  runScheduledMaintenance: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,7 +32,7 @@ test('maintenance starts after 30 seconds and repeats every minute', async () =>
   await vi.waitFor(() => expect(runMaintenance).toHaveBeenCalledTimes(2));
 });
 
-test('production defaults schedule the gateway maintenance callback', async () => {
+test('default timers schedule the supplied maintenance callback', async () => {
   const callbacks: Array<() => void> = [];
   const handle = setTimeout(() => {}, 60_000);
   clearTimeout(handle);
@@ -51,9 +46,10 @@ test('production defaults schedule the gateway maintenance callback', async () =
     return handle;
   });
 
-  startScheduledMaintenance();
+  const runMaintenance = vi.fn<() => Promise<void>>().mockResolvedValue();
+  startScheduledMaintenance(runMaintenance);
   callbacks.forEach(callback => callback());
 
   expect(unref).toHaveBeenCalledTimes(2);
-  await vi.waitFor(() => expect(runScheduledMaintenance).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(runMaintenance).toHaveBeenCalledTimes(2));
 });

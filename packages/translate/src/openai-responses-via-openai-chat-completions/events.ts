@@ -1,4 +1,4 @@
-import { hasReadableSummary, toOpenAIResponsesReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { hasReadableSummary, openAIChatCompletionsScalarReasoningText, toOpenAIResponsesReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -40,15 +40,11 @@ const mapOpenAIChatCompletionsUsageToOpenAIResponsesUsage = (usage: OpenAIChatCo
   };
 };
 
-const UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream OpenAI Chat Completions stream ended without a DONE sentinel.';
-
 const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<OpenAIChatCompletionsStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') return;
     yield frame.event;
   }
-
-  throw new Error(UPSTREAM_OPENAI_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE);
 };
 
 interface PendingScalarReasoningItem {
@@ -428,16 +424,17 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
       if (hadPendingScalarReasoning) {
         events.push(...commitReasoningAndReplayDeferredDeltas(state));
       }
-    } else if (choice.delta.reasoning_text) {
+    } else if (openAIChatCompletionsScalarReasoningText(choice.delta) !== undefined) {
       if (!state.reasoningItemsSeen) {
         if (!state.pendingScalarReasoning) {
           events.push(...closeText(state));
           events.push(...closeRefusal(state));
         }
         const reasoning = openScalarReasoning(state);
+        const reasoningText = openAIChatCompletionsScalarReasoningText(choice.delta);
 
-        if (choice.delta.reasoning_text) {
-          reasoning.text += choice.delta.reasoning_text;
+        if (reasoningText) {
+          reasoning.text += reasoningText;
         }
       }
     }

@@ -38,9 +38,8 @@ export interface Provider {
   // record so registry helpers — routing and listing — read it from the
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
-  // The row's cached catalog, mirrored for the same reason: the SWR layer
-  // reads it from the instance instead of paying a second round trip that the
-  // row read already covered.
+  // The row's persisted catalog snapshot, mirrored so resolution does not pay
+  // a second round trip after the row has already been loaded.
   modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
@@ -111,15 +110,13 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
-  // Providers wrap the dispatch that fires the outbound fetch. The wrap
-  // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
-  // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
-  // (which live inside the returned promise's async body under a proxied
-  // fetcher). The interval anchored here therefore includes the gateway's
-  // own egress work — proxy-backoff lookup, dial, TLS, CONNECT — and
-  // excludes everything the gateway does before dispatch (routing,
-  // translation, interceptor entry). Candidate iteration clears the anchors
-  // per candidate, so after a failover the recorded interval is shorter
+  // Providers wrap the dispatch that fires the outbound fetch. Before the
+  // first output, the wrapper records its start synchronously ahead of dial,
+  // TLS, and CONNECT. Further dispatches after output preserve the measured
+  // first-token interval, including internal server-tool continuations.
+  // This interval includes data-plane egress and excludes model routing, translation,
+  // and interceptor preparation before dispatch. Candidate iteration clears
+  // both timing anchors on failover, so the recorded interval can be shorter
   // than the latency the client observed.
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }

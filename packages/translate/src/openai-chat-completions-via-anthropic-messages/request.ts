@@ -1,5 +1,7 @@
+
 import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
@@ -22,7 +24,7 @@ interface BuildTargetRequestOptions {
 
 const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(message.reasoning_text, message.reasoning_opaque);
+  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(message), message.reasoning_opaque);
 
   if (thinkingBlock) blocks.push(thinkingBlock);
 
@@ -178,7 +180,7 @@ const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[])
   }));
 
 const translateOpenAIChatCompletionsToolChoice = (toolChoice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): AnthropicMessagesPayload['tool_choice'] => {
-  if (typeof toolChoice === 'string') return CHAT_TOOL_CHOICES[toolChoice];
+  if (typeof toolChoice === 'string') return { ...CHAT_TOOL_CHOICES[toolChoice] };
 
   return { type: 'tool', name: toolChoice.function.name };
 };
@@ -207,9 +209,9 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   const tools = payload.tools?.length ? translateOpenAIChatCompletionsTools(payload.tools) : undefined;
-  applyLastSystemCacheBreakpoint(systemBlocks);
-  applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  const cachedSystem = withLastSystemCacheBreakpoint(systemBlocks);
+  const cachedTools = withLastToolCacheBreakpoint(tools);
+  const cachedMessages = withLastMessageCacheBreakpoint(messages);
 
   // Merge OpenAI Chat Completions `reasoning_effort` + `response_format` into a single Anthropic Messages
   // `output_config` so a chat-source structured-output request survives
@@ -235,9 +237,9 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
     model: payload.model,
-    messages,
+    messages: cachedMessages,
     max_tokens: maxTokens,
-    ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
+    ...(cachedSystem?.length ? { system: cachedSystem } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     ...(payload.stop != null
@@ -246,7 +248,7 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
         }
       : {}),
     stream: true,
-    ...(tools ? { tools } : {}),
+    ...(cachedTools ? { tools: cachedTools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateOpenAIChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),

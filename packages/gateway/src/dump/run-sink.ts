@@ -16,6 +16,7 @@
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type { DumpMetadata } from './types.ts';
+import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -24,9 +25,7 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-// What the client sent, as the metadata needs it. The headers and the body are
-// facts the run itself records, so nothing is snapshotted here beyond what a
-// list row shows without opening the record.
+// Only metadata is snapshotted here; request contents are facts recorded by the run.
 interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
@@ -47,6 +46,8 @@ export class RunDump {
     private readonly requestSnapshot: RequestSnapshot,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly wantsStream: boolean,
+    private readonly timing: AttemptTiming,
   ) {}
 
   /** What the prologue hands to `run` as `services.dump`. Bound to this
@@ -103,20 +104,14 @@ export class RunDump {
     this.attribution.success(identity, usage);
   }
 
-  /**
-   * A record for a run this one started.
-   *
-   * A sub-request is an independent run — its own prologue, its own settlement — and its record
-   * has to be its own too: a second run numbers its stages from 1 again, so its events landing
-   * here would collide with this run's ids and the tree would read as one turn that entered the
-   * same stage twice. Same key, same scheduler, so it is retained and swept by the same rule.
-   */
-  openSubRequest(turn: { readonly method: string; readonly path: string }): RunDump {
+  openSubRequest(turn: { readonly method: string; readonly path: string }, wantsStream: boolean, timing: AttemptTiming): RunDump {
     return new RunDump(
       this.apiKey,
       { method: turn.method, path: turn.path, bodyByteLength: 0, streamError: null },
       Date.now(),
       this.backgroundScheduler,
+      wantsStream,
+      timing,
     );
   }
 
@@ -126,9 +121,7 @@ export class RunDump {
   //
   //   • `(status, responseBytes)` — the caller already knows what it wrote.
   //   • `(response)` — tees the answer so the client gets bytes flowing while a
-  //     background reader measures the other half. Only the byte count is kept:
-  //     what the client was sent is already in the run's own record, so
-  //     retaining a second copy of a streamed answer would buy nothing.
+  //     background reader measures the other half. Protocol contents live in the run events.
   //
   // The drain → encode → store put → broker publish runs on the runtime's
   // BackgroundScheduler so a dump write failure cannot turn a served answer
@@ -169,6 +162,8 @@ export class RunDump {
         }
       } catch (err) {
         streamError = oneLineError(err);
+      } finally {
+        reader.releaseLock();
       }
       await this.write(response.status, payloadBytes, streamError);
     })());
@@ -194,6 +189,7 @@ export class RunDump {
       status,
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes,
+      ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
       fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
     });
 
@@ -223,6 +219,8 @@ export const openRunDump = (
   apiKey: ApiKey,
   turn: { readonly method: string; readonly path: string; readonly body: RequestBody },
   backgroundScheduler: BackgroundScheduler,
+  wantsStream: boolean,
+  timing: AttemptTiming,
 ): RunDump | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   return new RunDump(
@@ -235,6 +233,8 @@ export const openRunDump = (
     },
     Date.now(),
     backgroundScheduler,
+    wantsStream,
+    timing,
   );
 };
 

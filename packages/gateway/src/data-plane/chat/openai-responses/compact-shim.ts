@@ -34,7 +34,7 @@
 
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -120,6 +120,9 @@ const SUMMARY_PREFIX
 
 export { SUMMARY_PREFIX };
 
+export const EXACT_REPEAT_PREFIX = 'Repeat the following text exactly, which may contain a compaction summary, character for character.';
+export const EXACT_REPEAT_SUFFIX = 'Output only the exact summary text, with no preface, explanation, markdown fence, or changes.';
+
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
 // Structural validator: a shim payload is an array of input-item objects each
@@ -129,11 +132,25 @@ const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputI
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
 
+export const isOpenAIResponsesCompactShimItem = (
+  item: { readonly type: string; readonly encrypted_content?: unknown },
+): boolean =>
+  isOpenAIResponsesCompactionItem(item)
+  && typeof item.encrypted_content === 'string'
+  && isShimCompactionPayload(decodeBase64UrlJson(item.encrypted_content));
+
+export const encodeShimCompactionPayload = (text: string): string =>
+  encodeBase64UrlJson([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text }],
+  } satisfies OpenAIResponsesInputItem]);
+
 export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
   const rewritten: OpenAIResponsesInputItem[] = [];
   let changed = false;
   for (const item of payload.input) {
-    if (item.type !== 'compaction') {
+    if (!isOpenAIResponsesCompactionItem(item)) {
       rewritten.push(item);
       continue;
     }
@@ -157,15 +174,7 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 
 // ── Outbound summarization ────────────────────────────────────────────────────
 
-// The spec makes the item lifecycle the authority and requires nothing of the
-// terminal's `output`; a Codex upstream states an `output` that omits the
-// assistant message it just closed. A turn that closed nothing falls back to
-// the terminal, as the client-facing egress does.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-export const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated: readonly OpenAIResponsesOutputItem[]): string => {
-  const items = closed.size === 0
-    ? stated
-    : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
+export const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string => {
   const parts: string[] = [];
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -295,3 +304,35 @@ export const EMPTY_SUMMARY_MESSAGE = 'OpenAI Responses compact shim: the summari
 
 export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
+
+type ResponseUsage = NonNullable<OpenAIResponsesResult['usage']>;
+
+export const sumResponseUsage = (left: ResponseUsage | null | undefined, right: ResponseUsage | null | undefined): ResponseUsage | undefined => {
+  if (left == null) return right ?? undefined;
+  if (right == null) return left;
+  return {
+    input_tokens: left.input_tokens + right.input_tokens,
+    output_tokens: left.output_tokens + right.output_tokens,
+    total_tokens: left.total_tokens + right.total_tokens,
+    ...(left.input_tokens_details !== undefined || right.input_tokens_details !== undefined
+      ? {
+          input_tokens_details: {
+            cached_tokens: (left.input_tokens_details?.cached_tokens ?? 0) + (right.input_tokens_details?.cached_tokens ?? 0),
+            ...(
+              left.input_tokens_details?.cache_write_tokens !== undefined
+              || right.input_tokens_details?.cache_write_tokens !== undefined
+                ? { cache_write_tokens: (left.input_tokens_details?.cache_write_tokens ?? 0) + (right.input_tokens_details?.cache_write_tokens ?? 0) }
+                : {}
+            ),
+          },
+        }
+      : {}),
+    ...(left.output_tokens_details !== undefined || right.output_tokens_details !== undefined
+      ? {
+          output_tokens_details: {
+            reasoning_tokens: (left.output_tokens_details?.reasoning_tokens ?? 0) + (right.output_tokens_details?.reasoning_tokens ?? 0),
+          },
+        }
+      : {}),
+  };
+};

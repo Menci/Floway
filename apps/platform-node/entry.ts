@@ -26,14 +26,18 @@ setGlobalDispatcher(new Agent({
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
 import { startScheduledMaintenance } from './src/scheduled-maintenance.ts';
+import { createNodeFetchHandler, nodeWebDistDir } from './src/static-web.ts';
 import {
   app,
+  handleExecutionRequest,
   initBackgroundSchedulerResolver,
+  initExecutionCellNamespace,
   initRepo,
   initOpenAIResponsesWebSocketUpgradeResolver,
+  runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
-import { getEnvOptional } from '@floway-dev/platform';
+import { getEnvOptional, InProcessExecutionCellNamespace } from '@floway-dev/platform';
 
 // In Node we don't have Workers' executionCtx.waitUntil — there's no request
 // lifecycle to attach background work to — so the resolver fire-and-forgets
@@ -48,6 +52,9 @@ initOpenAIResponsesWebSocketUpgradeResolver((c, events) =>
 
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
+const scheduledRuntimeLocation = getEnvOptional('RUNTIME_LOCATION', 'LOCAL').toUpperCase() || 'LOCAL';
+const hostname = getEnvOptional('HOST', '127.0.0.1');
+const fetch = createNodeFetchHandler(app.fetch, { distDir: nodeWebDistDir() });
 
 // Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
 // local instance grants seed-admin access). Refuse to boot the Node
@@ -61,11 +68,16 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
+initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
 
-startScheduledMaintenance();
+const scheduleBackground = (promise: Promise<unknown>): void => {
+  promise.catch(err => console.error('[scheduled-maintenance background]', err));
+};
+startScheduledMaintenance(() => runScheduledMaintenance(scheduledRuntimeLocation, scheduleBackground));
 
 serve({
-  fetch: app.fetch,
+  fetch,
+  hostname,
   port,
   websocket: { server: new WebSocketServer({ noServer: true }) },
 }, info => {

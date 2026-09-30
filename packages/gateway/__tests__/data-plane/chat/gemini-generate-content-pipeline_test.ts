@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
@@ -139,7 +140,7 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: 
   {
     gateway,
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
@@ -386,10 +387,10 @@ describe('the Gemini generateContent pipeline', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts, drain } = await serveWith(gateway, entryFacts());
-    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeNull();
     await collect(facts['response.chat.geminiGenerateContent.rendered']);
 
-    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeTypeOf('number');
     await drain();
   });
 

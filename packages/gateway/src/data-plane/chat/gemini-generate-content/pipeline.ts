@@ -47,6 +47,8 @@
 // states its code twice, so `mintGeminiGenerateContentFailure` decides the two together and a
 // code this protocol cannot name is sent as the 500 that `INTERNAL` means.
 
+import { composeChat as compose } from '../compose.ts';
+import { projectOpenAIResponsesCollaboration } from '../openai-responses/collaboration-shim.ts';
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import { mintGeminiGenerateContentFailure } from './errors.ts';
@@ -70,7 +72,7 @@ import {
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, transform, type Deferred, type Pipeline } from '@floway-dev/pipeline';
+import { defineStage, move, transform, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
@@ -112,7 +114,7 @@ const emitGeminiGenerateContent = defineStage<
   C<'ingress.chat.geminiGenerateContent.wantsStream'>,
   C<'ingress.chat.geminiGenerateContent.wantsStream'>,
   C<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers'>,
-  C<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers'>,
+  C<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
   ChatServices
 >({
   name: 'emitGeminiGenerateContent',
@@ -125,7 +127,7 @@ const emitGeminiGenerateContent = defineStage<
     response: {
       needs: ['response.chat.geminiGenerateContent', 'response.http.headers'],
       consumes: ['response.chat.geminiGenerateContent', 'response.http.headers'],
-      provides: ['response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next, use) => {
@@ -141,6 +143,7 @@ const emitGeminiGenerateContent = defineStage<
       const failure = renderFailure(answer, mintGeminiGenerateContentFailure);
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(failure.body),
         'response.http.status': failure.status,
@@ -149,6 +152,7 @@ const emitGeminiGenerateContent = defineStage<
     if (answer.kind === 'value') {
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(answer.body as Record<string, unknown>),
         'response.http.status': 200,
@@ -169,6 +173,7 @@ const emitGeminiGenerateContent = defineStage<
     if (!back['ingress.chat.geminiGenerateContent.wantsStream']) {
       return {
         ...rest,
+        'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(
           await collectGeminiGenerateContentProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
@@ -178,6 +183,7 @@ const emitGeminiGenerateContent = defineStage<
     }
     return {
       ...rest,
+      'response.chat.clientFrames': move(frames),
       'response.http.headers': forClient,
       'response.chat.geminiGenerateContent.rendered': move(renderSSE(frames)),
       'response.http.status': 200,
@@ -291,6 +297,7 @@ const geminiGenerateContentWireFor = (target: ChatTargetApi, candidate: ModelCan
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         trip: async payload => await translateGeminiGenerateContentViaOpenAIResponses(payload, context),
       }),
+      projectOpenAIResponsesCollaboration,
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
   }

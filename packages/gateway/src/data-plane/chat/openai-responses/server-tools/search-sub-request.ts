@@ -16,7 +16,7 @@ import type { GatewayFacts } from '../../../pipeline/facts.ts';
 import { prologueFor } from '../../../pipeline/serve.ts';
 import type { GatewayServices } from '../../../pipeline/services.ts';
 import { writeSettlement } from '../../../pipeline/settlement.ts';
-import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
+import type { AttemptState, GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { WebSearchCallIR } from '../../../tools/web-search/operations.ts';
 import { compose, defineStage, move, run, type Pipeline } from '@floway-dev/pipeline';
 
@@ -63,11 +63,12 @@ export const runWebSearchSubRequest = async (
   parent: GatewayCtx,
   call: WebSearchSubRequestFacts['request.webSearch.call'],
 ): Promise<WebSearchCallIR> => {
-  const dump = parent.dump?.openSubRequest({ method: 'POST', path: '/alpha/search' }) ?? null;
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
+  const dump = parent.dump?.openSubRequest({ method: 'POST', path: '/alpha/search' }, false, attempt.timing) ?? null;
   const gateway: GatewayCtx = {
     ...parent,
     requestStartedAt: Date.now(),
-    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
+    attempt,
     dump,
   };
   const prologue = prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }, dump);

@@ -14,6 +14,8 @@ const LIST_LIMIT_MAX = 200;
 const listQuery = z.object({
   limit: z.coerce.number().int().positive().max(LIST_LIMIT_MAX).optional(),
   before: z.string().min(1).optional(),
+  q: z.string().trim().max(200).optional(),
+  failures: z.enum(['true', 'false']).optional(),
 });
 
 const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id: null; error: string }> => {
@@ -30,9 +32,10 @@ export const dumpRoutes = new Hono()
   .get('/keys/:keyId/records', zValidator('query', listQuery), async c => {
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
-    const { limit, before } = c.req.valid('query');
+    const { limit, before, q, failures } = c.req.valid('query');
     const records = await getDumpStore().list(owned.id, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
+      q, failures: failures === 'true',
       ...(before !== undefined ? { before } : {}),
     });
     return c.json({ records });
@@ -44,7 +47,8 @@ export const dumpRoutes = new Hono()
     if (!record) return c.json({ error: 'Record not found' }, 404);
     return c.json(dumpRecordToWire(record));
   })
-  .get('/keys/:keyId/stream', async c => {
+  .get('/keys/:keyId/stream', zValidator('query', listQuery), async c => {
+    const { q, failures } = c.req.valid('query');
     // Browsers cannot set custom headers on EventSource, so this SSE route
     // accepts the session token via `?session=` (path-pinned in
     // authMiddleware).
@@ -57,7 +61,7 @@ export const dumpRoutes = new Hono()
     const subscription = getDumpBroker().subscribe(owned.id, controller.signal);
     let snapshot;
     try {
-      snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT });
+      snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT, q, failures: failures === 'true' });
     } catch (err) {
       controller.abort();
       throw err;
@@ -70,6 +74,8 @@ export const dumpRoutes = new Hono()
         await stream.writeSSE({ event: 'snapshot', data: JSON.stringify({ records: snapshot }) });
         try {
           for await (const meta of subscription) {
+            if (failures === 'true' && meta.error === null && (meta.status ?? 0) < 400) continue;
+            if (q && ![meta.id, meta.path, meta.model, meta.upstream?.name, meta.status, meta.error?.kind === 'failed' ? meta.error.reason : meta.error?.kind].join(' ').toLowerCase().includes(q.toLowerCase())) continue;
             await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
           }
         } catch (err) {

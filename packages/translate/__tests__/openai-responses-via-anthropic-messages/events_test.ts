@@ -829,41 +829,12 @@ test('synthesized function_call item carries a stable id consistent across added
   ]);
 });
 
-test('flattened namespace tool calls recover their source OpenAI Responses name', () => {
-  const state = createAnthropicMessagesToOpenAIResponsesStreamState(
-    'resp_test',
-    'claude-test',
-    new Set(),
-    new Map([['web_run', { namespace: 'web', name: 'run' }]]),
-  );
-
-  translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_web', name: 'web_run', input: {} } } as AnthropicMessagesStreamEvent,
-    state,
-  );
-  translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"search_query":[]}' } } as AnthropicMessagesStreamEvent,
-    state,
-  );
-  translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent,
-    state,
-  );
-
-  const [item] = state.completedItems;
-  assertEquals(item.type, 'function_call');
-  if (item.type !== 'function_call') throw new Error('expected function_call');
-  assertEquals(item.namespace, 'web');
-  assertEquals(item.name, 'run');
-  assertEquals(item.arguments, '{"search_query":[]}');
-});
-
 // ── speed / service_tier pass-through ──
 
-test('Anthropic speed:fast maps to service_tier:fast on the OpenAI Responses result', () => {
+test('Anthropic speed:fast maps to service_tier:priority on the OpenAI Responses result', () => {
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5 }, { speed: 'fast' });
 
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('Anthropic service_tier:standard with no speed passes service_tier:standard through', () => {
@@ -885,7 +856,7 @@ test('Anthropic Messages message_start service_tier survives when message_delta 
 
 test('Anthropic Messages message_start speed:fast survives when message_delta omits it', () => {
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' });
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('Anthropic Messages delta atomically replaces tier and merges late cache accounting into OpenAI Responses', () => {

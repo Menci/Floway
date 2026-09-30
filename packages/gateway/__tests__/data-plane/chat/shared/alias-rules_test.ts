@@ -199,10 +199,10 @@ test('anthropic-messages: serviceTier=fast maps to speed=fast (cross-protocol br
   assertEquals(applied.service_tier, undefined);
 });
 
-test('anthropic-messages: non-fast serviceTier lands on service_tier directly', () => {
+test('anthropic-messages: non-accelerated serviceTier lands on service_tier directly', () => {
   const body = msgPayload();
-  const applied = applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
-  assertEquals(applied.service_tier, 'priority');
+  const applied = applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'flex' });
+  assertEquals(applied.service_tier, 'flex');
   assertEquals(applied.speed, undefined);
 });
 
@@ -217,10 +217,10 @@ test('anthropic-messages: serviceTier=fast clears a pre-existing body.service_ti
   assertEquals(applied.service_tier, undefined);
 });
 
-test('anthropic-messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
+test('anthropic-messages: non-accelerated serviceTier clears a pre-existing body.speed on the same payload', () => {
   const body = msgPayload({ speed: 'fast' });
-  const applied = applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
-  assertEquals(applied.service_tier, 'priority');
+  const applied = applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'flex' });
+  assertEquals(applied.service_tier, 'flex');
   assertEquals(applied.speed, undefined);
 });
 
@@ -270,4 +270,12 @@ test('anthropic-messages: produces a payload without writing into the frozen one
   assertEquals(applied.service_tier, undefined);
   assertEquals(body.thinking?.type, 'enabled');
   assertEquals(body.service_tier, 'priority');
+});
+
+test('anthropic-messages: priority selects native fast speed without mutating the input', () => {
+  const body = Object.freeze(msgPayload({ service_tier: 'flex' }));
+  const applied = applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
+  assertEquals(applied.speed, 'fast');
+  assertEquals(applied.service_tier, undefined);
+  assertEquals(body.service_tier, 'flex');
 });

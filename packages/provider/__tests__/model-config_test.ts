@@ -61,6 +61,23 @@ describe('chatField', () => {
     expect(chat?.reasoning).toEqual({ budget_tokens: { min: 100, max: 5000 } });
   });
 
+  // Unlike reasoning.adaptive / reasoning.mandatory, `false` here is the
+  // upstream stating it rejects detail 'original', not the absence of a
+  // statement.
+  test('preserves image_detail_original: false rather than stripping it', () => {
+    const chat = chatField({ image_detail_original: false }, 'm.chat');
+    expect(chat).toEqual({ image_detail_original: false });
+  });
+
+  test('keeps a chat block that carries only image_detail_original', () => {
+    expect(chatField({ image_detail_original: true }, 'm.chat')).toEqual({ image_detail_original: true });
+  });
+
+  test('rejects non-boolean image_detail_original', () => {
+    expect(() => chatField({ image_detail_original: 'yes' }, 'm.chat'))
+      .toThrow(/image_detail_original.*boolean/);
+  });
+
   test('parses reasoning with empty budget_tokens (bounds unknown)', () => {
     const chat = chatField({ reasoning: { budget_tokens: {} } }, 'm.chat');
     expect(chat?.reasoning).toEqual({ budget_tokens: {} });
@@ -290,6 +307,7 @@ test('modelsField parses a full model entry', () => {
         limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
         pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
         flagOverrides: { 'vendor-deepseek': false },
+        opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared-model' },
       },
     ],
     'azure',
@@ -305,8 +323,21 @@ test('modelsField parses a full model entry', () => {
       limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
       pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
       flagOverrides: { 'vendor-deepseek': false },
+      opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared-model' },
     },
   ]);
+});
+
+test('modelsField rejects malformed opaque blob compatibility scopes', () => {
+  assertThrows(
+    () => modelsField([{
+      upstreamModelId: 'gpt-prod',
+      endpoints: { openaiChatCompletions: {} },
+      opaqueBlobCompatibilityScope: { bindToUpstream: true, key: '' },
+    }], 'azure'),
+    Error,
+    'Malformed azure models[0].opaqueBlobCompatibilityScope.key: must be a non-empty string',
+  );
 });
 
 test('modelsField parses a minimal model entry', () => {

@@ -41,6 +41,26 @@ const listed = (models: readonly InternalModel[]): AddressableIdEntry[] =>
 const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [] });
 
 describe('synthesizeListedAliases', () => {
+  test('publishes a common opaque-blob scope and falls back for mixed targets', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const common = { bindToUpstream: true, key: 'openai' } as const;
+    const matching = [
+      realModel({ id: 'a', opaqueBlobCompatibilityScope: common }),
+      realModel({ id: 'b', opaqueBlobCompatibilityScope: common }),
+    ];
+    const [shared] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(matching), callerAddressableModelIds: listed(matching), narrowTargets: false });
+    expect(shared.opaqueBlobCompatibilityScope).toEqual(common);
+
+    const mixed = [matching[0], realModel({ id: 'b', opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'openai' } })];
+    const [fallback] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(mixed), callerAddressableModelIds: listed(mixed), narrowTargets: false });
+    expect(fallback.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true });
+  });
+
   test('single-target alias with a pinned reasoning.effort drops the effort block', () => {
     const aliases = [aliasFixture({
       name: 'gpt-fast',
@@ -130,6 +150,55 @@ describe('synthesizeListedAliases', () => {
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
+  });
+
+  test('multi-target alias announces detail original only when every target accepts it', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { image_detail_original: true } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBe(true);
+  });
+
+  test('a split verdict on detail original announces false rather than dropping the field', () => {
+    // Conjunction, not agreement: the announced metadata must not promise detail
+    // 'original' above any single target's own answer. Both targets declare the
+    // field here, so the split yields a stated `false` — the field's own answer,
+    // not a re-encoding of absence.
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { image_detail_original: false } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBe(false);
+  });
+
+  test('detail original drops when a target does not declare it at all', () => {
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { image_detail_original: true } }),
+      realModel({ id: 'b', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
+    expect(entry.chat?.image_detail_original).toBeUndefined();
   });
 
   test('multi-target with disjoint output modalities omits the modalities block entirely', () => {

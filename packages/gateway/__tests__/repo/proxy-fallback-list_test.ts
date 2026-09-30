@@ -13,12 +13,14 @@ describe('isDirectFallbackId', () => {
 describe('entryMatchesColo', () => {
   it('treats missing colos as "active in all colos"', () => {
     expect(entryMatchesColo({ id: 'a' }, 'HKG')).toBe(true);
+    expect(entryMatchesColo({ id: 'a' }, null)).toBe(true);
   });
 
   it('matches by exact case (CF returns uppercase, normalize already upper-cased the whitelist)', () => {
     expect(entryMatchesColo({ id: 'a', colos: ['HKG', 'NRT'] }, 'HKG')).toBe(true);
     expect(entryMatchesColo({ id: 'a', colos: ['HKG', 'NRT'] }, 'NRT')).toBe(true);
     expect(entryMatchesColo({ id: 'a', colos: ['HKG', 'NRT'] }, 'LAX')).toBe(false);
+    expect(entryMatchesColo({ id: 'a', colos: ['HKG', 'NRT'] }, null)).toBe(false);
     // The contract is that callers feed already-normalised values; we don't
     // re-normalise here so a lower-case `currentColo` (a hypothetical bug
     // upstream) is intentionally a miss rather than a silent recovery.

@@ -7,7 +7,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
+import { copilotModels, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const withOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>

@@ -82,7 +82,6 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
 });
 
 test.each([
-  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as OpenAIResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
@@ -118,22 +117,11 @@ test('buildTargetRequest accepts null tool_choice', async () => {
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test('buildTargetRequest rejects multimodal custom tool output', async () => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects input_file in %s', async type => {
   await assertRejects(
     () => buildTargetRequest({
       ...minimalPayload,
-      input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'multimodal custom_tool_call_output',
-  );
-});
-
-test('buildTargetRequest rejects file tool output', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+      input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
     Error,
     'input_file tool output',
@@ -195,14 +183,29 @@ test('buildTargetRequest rejects file_id-only images', async () => {
   );
 });
 
-test('buildTargetRequest rejects file_id-only image tool output', async () => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects file_id-only images in %s', async type => {
   await assertRejects(
     () => buildTargetRequest({
       ...minimalPayload,
-      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+      input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
     }),
     Error,
     'file_id-only image tool output',
+  );
+});
+
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects unavailable images in %s', async type => {
+  await assertRejects(
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{
+        type,
+        call_id: 'call_1',
+        output: [{ type: 'input_image', image_url: 'https://example.com/unavailable.png' }],
+      }],
+    }, { loadRemoteImage: stubRemoteImageLoader(null) }),
+    Error,
+    'unavailable or unsupported image tool output',
   );
 });
 
@@ -215,11 +218,11 @@ test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier o
   assertFalse('service_tier' in result.target);
 });
 
-test('buildTargetRequest passes service_tier:priority through as service_tier (no speed override)', async () => {
+test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
   const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'priority' });
 
-  assertEquals(result.target.service_tier, 'priority');
-  assertFalse('speed' in result.target);
+  assertEquals(result.target.speed, 'fast');
+  assertFalse('service_tier' in result.target);
 });
 
 test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
@@ -530,14 +533,18 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
         },
       },
       // Single (only) function-tool entry receives the breakpoint as the last
-      // function tool; applyLastToolCacheBreakpoint walks right-to-left.
+      // function tool; withLastToolCacheBreakpoint walks right-to-left.
       cache_control: { type: 'ephemeral' },
     },
   ]);
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
 });
 
-test('buildTargetRequest projects custom_tool_call history into wrapped tool_use shape', async () => {
+test.each([
+  { name: 'string', output: 'ok', expected: 'ok' },
+  { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }] },
+  { name: 'empty array', output: [], expected: '' },
+])('buildTargetRequest projects custom_tool_call history with $name output into wrapped tool_use shape', async ({ output, expected }) => {
   const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
@@ -551,7 +558,7 @@ test('buildTargetRequest projects custom_tool_call history into wrapped tool_use
       {
         type: 'custom_tool_call_output',
         call_id: 'call_1',
-        output: 'ok',
+        output,
       },
     ],
     instructions: null,
@@ -583,9 +590,9 @@ test('buildTargetRequest projects custom_tool_call history into wrapped tool_use
       {
         type: 'tool_result',
         tool_use_id: 'call_1',
-        content: 'ok',
+        content: expected,
         // Last block of the last message — cache_control attached by
-        // applyLastMessageCacheBreakpoint.
+        // withLastMessageCacheBreakpoint.
         cache_control: { type: 'ephemeral' },
       },
     ],
@@ -619,7 +626,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   });
 
   assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run' }]]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
@@ -629,7 +636,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     },
     {
       name: 'web_run_2',
-      description: 'Access the web.',
+      description: 'Web tools.\n\nAccess the web.',
       input_schema: { type: 'object', properties: { search_query: { type: 'array' } } },
       strict: false,
       cache_control: { type: 'ephemeral' },
@@ -690,13 +697,15 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
   assertEquals(toolResult.content, 'plain text body');
 });
 
-test('buildTargetRequest maps multimodal function_call_output into tool_result image and text blocks', async () => {
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest maps multimodal %s into tool_result image and text blocks', async type => {
   const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
-      { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
+      type === 'function_call_output'
+        ? { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' }
+        : { type: 'custom_tool_call', call_id: 'call_1', name: 'screenshot', input: 'capture()' },
       {
-        type: 'function_call_output',
+        type,
         call_id: 'call_1',
         output: [
           { type: 'input_text', text: 'captured' },
@@ -725,6 +734,61 @@ test('buildTargetRequest maps multimodal function_call_output into tool_result i
     { type: 'text', text: 'captured' },
     { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
   ]);
+});
+
+test('buildTargetRequest maps incomplete function output to an Anthropic tool error', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'function_call', call_id: 'call_exec', name: 'exec', arguments: '{}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'call_exec', status: 'incomplete', output: 'failed' },
+    ],
+  });
+
+  assertEquals(result.target.messages[1], {
+    role: 'user',
+    content: [{
+      type: 'tool_result', tool_use_id: 'call_exec', content: 'failed', is_error: true,
+      cache_control: { type: 'ephemeral' },
+    }],
+  });
+});
+
+test('buildTargetRequest loads custom tool result images without interpreting its open status', async () => {
+  const loaded: string[] = [];
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'custom_tool_call', call_id: 'call_exec', name: 'exec', input: 'capture()' },
+      {
+        type: 'custom_tool_call_output', call_id: 'call_exec', status: 'incomplete',
+        output: [
+          { type: 'input_text', text: 'partial capture' },
+          { type: 'input_image', image_url: 'https://example.com/capture.png' },
+          { type: 'input_text', text: 'capture failed' },
+        ],
+      },
+    ],
+  }, {
+    loadRemoteImage: url => {
+      loaded.push(url);
+      return Promise.resolve({ mediaType: 'image/png', data: new Uint8Array([1, 2, 3]) });
+    },
+  });
+
+  assertEquals(loaded, ['https://example.com/capture.png']);
+  assertEquals(result.target.messages[1], {
+    role: 'user',
+    content: [{
+      type: 'tool_result', tool_use_id: 'call_exec',
+      content: [
+        { type: 'text', text: 'partial capture' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+        { type: 'text', text: 'capture failed' },
+      ],
+      cache_control: { type: 'ephemeral' },
+    }],
+  });
 });
 
 test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', async () => {

@@ -1,24 +1,5 @@
-// Per-API-key request-dump types. Three shapes split by lifecycle:
-//
-//   - the write shape (`DumpWrite*`) carries a request body prepared while the
-//     upstream is running, so persistence does not need the original bytes;
-//   - the storage/read shape (`Stored*`, with `body: Uint8Array`) is what the
-//     store rehydrates and what flows in-process to the dashboard's reader;
-//   - the wire shape (`Dump*`, with `body: DumpBody`) is the JSON-friendly
-//     view served to the dashboard by `dumpRecordToWire`.
-//
-// `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
-//
-// Across all three, a record is one of two shapes, and `shape` is what a reader
-// dispatches on. An endpoint served by the onion records its **edges** — what
-// the client sent and what the client got back. An endpoint served by a
-// pipeline records the **whole run**: every stage, both directions, as the
-// NDJSON event stream `@floway-dev/pipeline` encodes. The edges are still in
-// that stream; they are the first and last things it holds. The shape follows
-// the endpoint, so both are alive for as long as the two mechanisms are.
-//
-// What stays common is `DumpMetadata`: the dashboard lists both kinds together,
-// and one turn's attribution does not depend on which mechanism served it.
+// A dump stores the complete run's NDJSON event stream. Metadata is shared by storage,
+// broker notifications and the dashboard; only the event bytes differ at the wire boundary.
 
 import type { z } from 'zod';
 
@@ -49,7 +30,7 @@ export type DumpErrorMeta = z.infer<typeof dumpErrorSchema>;
 
 export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 
-// Canonical protocol frame the gateway's respond layer fans out to every
+// Canonical protocol frame the gateway records for every
 // dump-enabled key. Stored as ProtocolFrame (not the SSE-serialized form)
 // so the gateway's live fold and the dashboard's cold fold can share the
 // same `collectXProtocolEventsToResult` reducer; the SSE wire view is

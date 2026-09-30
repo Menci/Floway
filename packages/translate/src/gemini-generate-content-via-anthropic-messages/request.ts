@@ -1,3 +1,4 @@
+
 import {
   geminiGenerateContentFunctionCallingIntent,
   geminiGenerateContentFunctionCallPart,
@@ -12,7 +13,7 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -200,11 +201,9 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
 };
 
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
-  if (parameters !== undefined) return parameters;
-
   // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
   // declarations use the smallest object schema rather than dropping the tool.
-  return { type: 'object', properties: {} };
+  return parameters ?? { type: 'object', properties: {} };
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesTool[] | undefined => {
@@ -239,8 +238,7 @@ export const buildTargetRequest = (
   const system = geminiGenerateContentText(payload.systemInstruction);
   if (system !== null) {
     const systemBlocks: AnthropicMessagesTextBlock[] = [{ type: 'text', text: system }];
-    applyLastSystemCacheBreakpoint(systemBlocks);
-    request.system = systemBlocks;
+    request.system = withLastSystemCacheBreakpoint(systemBlocks);
   }
 
   payload.contents?.forEach((content, turnIndex) => {
@@ -273,10 +271,9 @@ export const buildTargetRequest = (
   if (thinking !== undefined) request.thinking = thinking;
   if (!hasGenerationOutputConfig && Object.keys(outputConfig).length > 0) attachOutputConfig();
 
-  const tools = buildTools(payload);
+  const tools = withLastToolCacheBreakpoint(buildTools(payload));
   if (tools) request.tools = tools;
-  applyLastToolCacheBreakpoint(request.tools);
-  applyLastMessageCacheBreakpoint(request.messages);
+  request.messages = withLastMessageCacheBreakpoint(request.messages);
 
   const intent = geminiGenerateContentFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {

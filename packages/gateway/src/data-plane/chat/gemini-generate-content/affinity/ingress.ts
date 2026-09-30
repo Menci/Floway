@@ -31,9 +31,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
-      // Rebuilt rather than cloned: the payload is the record's, so it is frozen, and a content
-      // no projection touches rides through by identity. What one candidate is owed differs from
-      // what the next is by a handful of objects, not by a copy of the conversation.
+      preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
         const contents = payload.contents;
         if (contents === undefined) return payload;

@@ -7,7 +7,7 @@
 // Two id shapes coexist on the wire today. Pre-4.6 models (4.5 / 4.1)
 // return with a `-YYYYMMDD` date suffix; their public alias is the
 // de-dated form (`claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`).
-// 4.6+ and `claude-fable-5` return with the alias already (no date),
+// 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
 // always the alias; the original /v1/models id rides on
 // `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
@@ -15,7 +15,7 @@
 
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
-import type { Fetcher, FlagId, ProviderModel, UpstreamChatModelConfig } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface ClaudeCodeProviderData {
   readonly upstreamModelId: string;
@@ -67,8 +67,7 @@ export const fetchClaudeCodeModelsList = async (
   };
   const response = await fetcher(ANTHROPIC_MODELS_ENDPOINT, { method: 'GET', headers });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Claude Code /v1/models fetch failed: ${response.status} ${body.slice(0, 200)}`);
+    throw new ProviderModelsUnavailableError({ status: response.status, headers: new Headers(response.headers), body: await response.text() });
   }
   const parsed = await response.json() as { data?: unknown };
   if (!Array.isArray(parsed.data)) throw new Error('Claude Code /v1/models response missing data array');
@@ -78,7 +77,7 @@ export const fetchClaudeCodeModelsList = async (
 const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
   if (typeof value !== 'object' || value === null) throw new TypeError('Claude Code /v1/models entry is not an object');
   const { id, display_name, max_input_tokens, capabilities } = value as Record<string, unknown>;
-  if (typeof id !== 'string') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
+  if (typeof id !== 'string') throw new TypeError('Claude Code /v1/models entry missing id');
   if (typeof display_name !== 'string') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
   if (typeof max_input_tokens !== 'number') throw new TypeError(`Claude Code /v1/models entry ${id} missing max_input_tokens`);
   return {
@@ -142,7 +141,7 @@ const parseCapabilities = (raw: unknown): ClaudeCodeApiModel['capabilities'] => 
 
 // Pre-4.6 models return as `claude-<family>-<digits>-<digits>-YYYYMMDD`;
 // the public alias is the de-dated form. Newer ids (`claude-opus-4-7`,
-// `claude-fable-5`) have no date suffix and pass through unchanged. The
+// `claude-fable-5-1`) have no date suffix and pass through unchanged. The
 // pattern is intentionally generic over the family slug — anchoring to
 // `claude-(haiku|opus|sonnet)` would silently drop a future family the
 // upstream exposes before we hard-code its name.
@@ -200,11 +199,13 @@ export const buildClaudeCodeCatalog = (
   const chat = chatFromCapabilities(api.capabilities);
   return {
     id: alias,
+    upstreamModelId: api.id,
     display_name: api.display_name,
     owned_by: 'anthropic',
     kind: 'chat',
     endpoints: { anthropicMessages: {} },
     enabledFlags,
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
     limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,
     ...(pricing ? { pricing } : {}),

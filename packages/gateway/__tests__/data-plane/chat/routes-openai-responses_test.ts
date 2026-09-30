@@ -11,7 +11,7 @@
 
 import { expect, test } from 'vitest';
 
-import { copilotModels, requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const ANSWER = 'hello from copilot';

@@ -28,20 +28,22 @@ export const dumpMetadataSchema = z.object({
   requestBytes: z.number(),
   responseBytes: z.number(),
   durationMs: z.number(),
+  // Time to first token in milliseconds. Null on non-streaming responses,
+  // turns failed before any output token arrived, prewarm answers, and
+  // records written before this field was introduced.
+  ttftMs: z.number().nullish(),
   error: dumpErrorSchema.nullable(),
+  // The target protocol a translated turn spoke to its upstream. Null on
+  // native turns (no translation) and on records written before this field.
+  // `.nullish()` so old `meta_json` rows missing the key still parse.
+  targetApi: z.enum(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']).nullish(),
 }).strict();
 
 export const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: true });
 
-export const dumpHeadersSchema = z.array(z.tuple([z.string(), z.string()]));
-
-// `type` says how to read the file the descriptor points at: raw bytes, the
-// JSON array of captured protocol frames, or a run's NDJSON event stream. It is
-// also what tells the reader which shape the record is — a run's stream is one
-// more body file under the same contract, so the row needs nothing else.
 export const dumpBodyDescriptorSchema = z.object({
   key: z.string(),
-  type: z.enum(['bytes', 'events', 'run']),
+  type: z.literal('run'),
 }).strict();
 
 const dumpProtocolFrameSchema = z.discriminatedUnion('type', [
@@ -53,8 +55,6 @@ export const dumpStreamEventSchema = z.object({
   frame: dumpProtocolFrameSchema,
   ts: z.number(),
 }).strict();
-
-export const dumpStreamEventsSchema = z.array(dumpStreamEventSchema);
 
 export const dumpBrokerFrameSchema = z.object({
   event: z.literal('appended'),

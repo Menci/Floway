@@ -1,10 +1,38 @@
+export interface ProviderModelsFailureResponse {
+  status: number;
+  headers: [string, string][];
+  body: string;
+}
+
+const MAX_FAILURE_BODY_LENGTH = 12_288;
+
+const displayFailureBody = (body: string): string => {
+  let display = body;
+  try {
+    display = JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    // A non-JSON upstream error body is displayed as text.
+  }
+  return display.length > MAX_FAILURE_BODY_LENGTH
+    ? `${display.slice(0, MAX_FAILURE_BODY_LENGTH)}…`
+    : display;
+};
+
 export class ProviderModelsUnavailableError extends Error {
+  readonly displayResponse: ProviderModelsFailureResponse | null;
+
   constructor(
     readonly httpResponse: { status: number; headers: Headers; body: string } | null,
     cause?: unknown,
+    displayResponse?: ProviderModelsFailureResponse | null,
   ) {
     super('Provider model listing failed', cause !== undefined ? { cause } : undefined);
     this.name = 'ProviderModelsUnavailableError';
+    this.displayResponse = displayResponse ?? (httpResponse === null ? null : {
+      status: httpResponse.status,
+      headers: [...httpResponse.headers],
+      body: displayFailureBody(httpResponse.body),
+    });
   }
 }
 

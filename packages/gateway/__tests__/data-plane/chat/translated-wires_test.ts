@@ -19,6 +19,7 @@ import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat
 import { handOff } from '../../../src/data-plane/chat/handoff.ts';
 import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
 import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
@@ -171,7 +172,7 @@ const serve = async <Entry extends object, Exit extends object>(
   return await run(pipeline, move(facts) as never, {
     gateway,
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => attemptPayload,
     selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
@@ -481,7 +482,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
 
     const { drain } = await serveAnthropicMessages();
 
-    expect(sent?.stream_options).toEqual({ include_usage: true });
+    expect(sent?.stream_options).toEqual({ include_usage: true, continuous_usage_stats: true });
     await drain();
   });
 

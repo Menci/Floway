@@ -15,7 +15,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 /** A Copilot seat, as far as a turn can see it: the editor version probe, the token exchange,
@@ -152,16 +152,23 @@ const compactionTurn = async (apiKey: string): Promise<Response> =>
     [{ id: 'gpt-compact-frames', supported_endpoints: ['/responses'] }],
     // Copilot has no compaction endpoint of its own: it replays the protocol over `/responses`
     // with the trigger appended and `stream: false`, so the answer here is one JSON body.
-    () => jsonResponse({
-      id: 'resp_compaction',
-      object: 'response',
-      model: 'gpt-compact-frames',
-      status: 'completed',
-      output: [{ type: 'compaction', id: 'cmp_frames', encrypted_content: 'OPAQUE_COMPACTION_BLOB' }],
-      error: null,
-      incomplete_details: null,
-      usage: { input_tokens: 21, output_tokens: 4, total_tokens: 25 },
-    }),
+    async request => {
+      const body = await request.json() as { input: unknown[] };
+      return Array.isArray(body.input) && (body.input[0] as { role?: string })?.role === 'system' ? sseOpenAIResponsesResponse({
+        id: 'replay', object: 'response', model: 'gpt-compact-frames', status: 'completed',
+        output: [{ type: 'message', id: 'replay_msg', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: HISTORY, annotations: [] }] }],
+        error: null, incomplete_details: null, usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+      }) : jsonResponse({
+        id: 'resp_compaction',
+        object: 'response',
+        model: 'gpt-compact-frames',
+        status: 'completed',
+        output: [{ type: 'compaction', id: 'cmp_frames', encrypted_content: 'OPAQUE_COMPACTION_BLOB' }],
+        error: null,
+        incomplete_details: null,
+        usage: { input_tokens: 21, output_tokens: 4, total_tokens: 25 },
+      });
+    },
     async () => await requestApp('/v1/responses/compact', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey },

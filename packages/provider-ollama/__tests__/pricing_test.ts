@@ -1,8 +1,10 @@
 import { test } from 'vitest';
 
 import { pricingForOllamaModelKey } from '../src/pricing.ts';
-import { priceRequest } from '@floway-dev/protocols/common';
+import { perMillionTokenRates, priceRequest, type PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
+
+const published = (rates: PriceVector): PriceVector => perMillionTokenRates(rates);
 
 test('pricingForOllamaModelKey returns table rates for known model ids', () => {
   const gptOss = pricingForOllamaModelKey('gpt-oss:120b');
@@ -33,9 +35,35 @@ test('pricingForOllamaModelKey returns null for ids without a defensible referen
   assertEquals(pricingForOllamaModelKey('devstral-small-2:24b'), null);
   // Version that does not map to any upstream release.
   assertEquals(pricingForOllamaModelKey('qwen3.5'), null);
-  // Gemma — Vertex sells per-token only for gemma-4-26b-a4b-it (not on
-  // Ollama Cloud); every Ollama Gemma tag is self-host-on-Vertex GPU-hour,
-  // not per-token, so deliberately unpriced.
+  // Gemma 3 stays unpriced: Google sells it by Vertex GPU-hour rather than
+  // per token, and it is not an Ollama Cloud SKU, so no host meters it the
+  // way this table records.
   assertEquals(pricingForOllamaModelKey('gemma3:27b'), null);
-  assertEquals(pricingForOllamaModelKey('gemma4:31b'), null);
+});
+
+test('Ollama prices Gemma 4 31B from the commodity floor', () => {
+  // This reverses an earlier omission that reasoned only about Google's own
+  // surface. Gemma 4 is open-weights-only, which is the case the table
+  // already answers with the cheapest credible commodity host — the same
+  // branch that prices gpt-oss from Groq and Nemotron from DeepInfra — and
+  // `gemma4:31b` is a live Ollama Cloud SKU rather than a self-host-only tag.
+  const rates = published({ input_tokens: '0.13', output_tokens: '0.38' });
+  assertEquals(priceRequest(pricingForOllamaModelKey('gemma4:31b'), { inputTokens: 0 }).rates, rates);
+  assertEquals(priceRequest(pricingForOllamaModelKey('gemma4'), { inputTokens: 0 }).rates, rates);
+  // Ollama Cloud serves no other Gemma 4 size, and the cheaper 26B and E4B
+  // builds must not inherit 31B's rate on a self-hosted deployment.
+  assertEquals(pricingForOllamaModelKey('gemma4:26b'), null);
+});
+
+test('Ollama prices a dated DeepSeek V4-Flash tag as the undated one', () => {
+  const rates = published({ input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' });
+  assertEquals(priceRequest(pricingForOllamaModelKey('deepseek-v4-flash'), { inputTokens: 0 }).rates, rates);
+  assertEquals(priceRequest(pricingForOllamaModelKey('deepseek-v4-flash:0731'), { inputTokens: 0 }).rates, rates);
+});
+
+test('Ollama prices Kimi K3 from Moonshot international', () => {
+  assertEquals(
+    priceRequest(pricingForOllamaModelKey('kimi-k3'), { inputTokens: 0 }).rates,
+    published({ input_tokens: '3.0', input_cache_read_tokens: '0.3', output_tokens: '15.0' }),
+  );
 });

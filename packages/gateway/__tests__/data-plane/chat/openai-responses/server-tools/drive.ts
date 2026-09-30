@@ -33,8 +33,9 @@ const readingOf = (result: Extract<Result, { type: 'events' }>) => defer(
   (result.finalMetadata ?? Promise.resolve({ modelIdentity: result.modelIdentity, billableUsage: undefined }))
     .then((metadata: EventResultMetadata): StreamOutcome => {
       const tokens = tokenUsageFromBillableUsage(metadata.billableUsage);
+      const measurement = tokens === null ? undefined : tokenUsageMeasurement(tokens);
       return {
-        billable: [{ identity: metadata.modelIdentity, quantities: tokens === null ? {} : tokenUsageMeasurement(tokens).quantities }],
+        billable: [{ identity: metadata.modelIdentity, quantities: measurement === undefined ? {} : measurement.quantities, ...(measurement === undefined ? {} : { pricingFacts: measurement.pricingFacts }) }],
         failed: false,
       };
     }),
@@ -99,15 +100,27 @@ export const driveServerToolStage = (registrations: readonly ServerToolRegistrat
       ending,
     ]);
 
-    const { facts } = await run(chain, move({
+    const outcome = await run(chain, move({
       'request.chat.openaiResponses': invocation.payload,
-      'route.attempt': { upstreamId: 'up_test', modelId: invocation.payload.model, flags: [] },
+      'route.attempt': { candidateId: 0, upstreamId: 'up_test', modelId: invocation.payload.model, flags: [] },
       'ingress.http.headers': [...invocation.headers],
     }), {
       gateway: gatewayCtx,
       background: () => {},
       resolveAttempt: (): ModelCandidate => invocation.candidate,
     } as never);
+
+    const { facts } = outcome;
+    const result = resultOf(facts);
+    if (result.type === 'events') {
+      const source = result.events;
+      return {
+        ...result, events: (async function* () {
+          try { yield* source; } finally { await outcome.drain(); }
+        })(), reading: facts[STREAMED_USAGE] as Deferred<StreamOutcome> | null,
+      };
+    }
+    await outcome.drain();
 
     // The reading the run hands up, which is where every turn's identity and cost land now
     // that a stage observes them.

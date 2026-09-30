@@ -5,6 +5,7 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { fluentComponents } from '../fluent';
+import { LanguageSelector } from './language-selector';
 import { FlowayLogo } from './logo';
 import { Trans, useTranslation } from '../i18n/translation';
 import { Input } from './ui/fluent-form-controls';
@@ -87,9 +88,12 @@ export function LoginForm() {
   const passwordMessage = errors.password?.message ?? credentialError ?? null;
 
   return (
-    <Panel className="w-[min(440px,100%)]">
-      <header className="grid justify-items-center">
+    <Panel className="relative w-[min(440px,100%)]">
+      <header className="flex items-center">
         <FlowayLogo />
+        <div className="ml-auto flex items-center gap-2">
+          <LanguageSelector />
+        </div>
       </header>
 
       {/* The first Field carries 12px of its own above its label, so no gap is

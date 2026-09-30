@@ -28,7 +28,10 @@ import {
   materializeServerToolItems,
   resolveServerToolName,
   rewriteHostedToolChoice,
-  rewriteToolsForHostedShim,
+  rewriteHostedDeclarations,
+  hostedToolChoiceToRestore,
+  historicalClientCallableUsesName,
+  isForcedServerToolChoice,
   sumUsage,
   synthesizeTerminalEnvelope,
   transformServerToolItems,
@@ -38,6 +41,7 @@ import {
   type ServerToolHostedDispatch,
   type ServerToolLoopState,
   type ServerToolRegistration,
+  type ServerToolPrepareResult,
   type TurnSummary,
 } from './shim.ts';
 import type { BillableEntity, Failure } from '../../../pipeline/facts.ts';
@@ -52,6 +56,8 @@ import type {
   OpenAIResponsesInputItem,
   OpenAIResponsesResult,
   OpenAIResponsesStreamEvent,
+  OpenAIResponsesToolChoice,
+  OpenAIResponsesHostedTool,
 } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi, ModelCandidate, OpenAIResponsesInvocation } from '@floway-dev/provider';
 
@@ -99,29 +105,61 @@ const prepareServerTools = async (
   gateway: ChatServices['gateway'],
 ): Promise<{ readonly active: readonly ActiveServerTool[] } | { readonly refused: Failure }> => {
   const active: ActiveServerTool[] = [];
+  const preparedTools: Array<Extract<ServerToolPrepareResult, { type: 'active' }>> = [];
+
+  // Validate the original request before any hosted rewrite changes the
+  // tool-array indexes used in error paths.
   for (const prepareServerTool of registrations) {
     const prepared = await prepareServerTool(invocation, gateway);
     if (prepared.type === 'inactive') continue;
     if (prepared.type === 'invalid-request') {
       return { refused: invalidRequest(prepared.message, prepared.param, prepared.code, prepared.errorType) };
     }
+    preparedTools.push(prepared);
+  }
+
+  for (const prepared of preparedTools) {
     const currentTools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
-    const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
+    const toolName = resolveServerToolName(prepared.baseToolName, currentTools, invocation.payload.input, invocation.payload.tool_choice);
     const { hosted } = prepared;
-    let canonicalHostedTool;
-    if (hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
-      canonicalHostedTool = rewrite.canonicalHostedTool;
-      invocation.payload = { ...invocation.payload, tools: rewrite.rewritten };
+    const choice = invocation.payload.tool_choice;
+    let helperFunctionChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
+    let rewrittenHelperChoice = choice;
+    if (hosted !== undefined && toolName !== prepared.baseToolName
+      && typeof choice === 'object' && choice !== null) {
+      // Forced and allowed-tools selectors share the same ownership rule. A
+      // bare helper spelling may be rebased only when no client owns it.
+      const clientOwnsName = currentTools.some(tool =>
+        (tool.type === 'function' || tool.type === 'custom') && tool.name === prepared.baseToolName
+        && (!('namespace' in tool) || tool.namespace === undefined))
+        || historicalClientCallableUsesName(prepared.baseToolName, invocation.payload.input);
+      if (!clientOwnsName) {
+        const rebaseSelector = <T>(selector: T): T => {
+          if (typeof selector !== 'object' || selector === null || !('type' in selector) || selector.type !== 'function'
+            || !('name' in selector) || selector.name !== prepared.baseToolName
+            || ('namespace' in selector && selector.namespace !== undefined)) return selector;
+          return { ...selector, name: toolName };
+        };
+        if (choice.type === 'allowed_tools' && Array.isArray(choice.tools)) {
+          const tools = choice.tools.map(rebaseSelector);
+          if (tools.some((tool, index) => tool !== choice.tools[index])) rewrittenHelperChoice = { ...choice, tools };
+        } else rewrittenHelperChoice = rebaseSelector(choice);
+        if (rewrittenHelperChoice !== choice) helperFunctionChoice = choice;
+      }
     }
-    const originalToolChoice = hosted !== undefined
-      && typeof invocation.payload.tool_choice === 'object'
-      && invocation.payload.tool_choice !== null
-      && hosted.hostedTypes.includes(invocation.payload.tool_choice.type)
-      ? invocation.payload.tool_choice
-      : undefined;
+    let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
+    if (hosted !== undefined) {
+      const rewrite = rewriteHostedDeclarations(invocation.payload, hosted, toolName);
+      canonicalHostedTool = rewrite.canonicalTopLevelHostedTool;
+      invocation.payload = rewrite.payload;
+    }
+    const originalToolChoice = helperFunctionChoice ?? hostedToolChoiceToRestore(choice, hosted, toolName);
+    if (helperFunctionChoice !== undefined) {
+      invocation.payload = { ...invocation.payload, tool_choice: rewrittenHelperChoice };
+    }
     active.push({ ...prepared, toolName, canonicalHostedTool, originalToolChoice });
   }
+
   return { active };
 };
 
@@ -211,11 +249,7 @@ export const runOpenAIResponsesServerTools = (
       remainingToolCalls: typeof invocation.payload.max_tool_calls === 'number' ? invocation.payload.max_tool_calls : undefined,
     };
     const finalToolChoice = invocation.payload.tool_choice;
-    const demoteForcedServerToolChoiceAfterFirstTurn = finalToolChoice === 'required'
-      || (typeof finalToolChoice === 'object'
-        && finalToolChoice !== null
-        && finalToolChoice.type === 'function'
-        && dispatchers.has(finalToolChoice.name));
+    const demoteForcedServerToolChoiceAfterFirstTurn = isForcedServerToolChoice(finalToolChoice, dispatchers);
     const back = await descend(next, facts, invocation.payload) as Answered & Record<string, unknown>;
     const first = turnOf(back, wiring.streamedUsage);
     // An upstream that refused, or a compaction, is not a turn the loop can splice: it rides up
@@ -287,6 +321,19 @@ const accumulate = async (billed: BillableEntity[], turn: Turn): Promise<boolean
   return outcome.failed;
 };
 
+async function* consumeBilledTurn(
+  frames: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
+  turn: Turn,
+  billed: BillableEntity[],
+  failed: (value: boolean) => void,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary> {
+  try {
+    return yield* frames;
+  } finally {
+    failed(await accumulate(billed, turn));
+  }
+}
+
 async function* spliceTurns(args: {
   next: (facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>) => Promise<Answered>;
   facts: R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>;
@@ -306,16 +353,15 @@ async function* spliceTurns(args: {
   const { invocation, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, dispatchers, store, active, billed, settle } = args;
   const baseInput = args.canonicalInput;
   let failed = false;
-  let midStreamError: unknown = undefined;
   try {
-    let currentTurn: TurnSummary = yield* consumeTurnStreaming(args.first.frames, merge, true, dispatchers, loopState, active);
-    failed = await accumulate(billed, args.first) || failed;
+    let currentTurn: TurnSummary = yield* consumeBilledTurn(consumeTurnStreaming(args.first.frames, merge, true, dispatchers, loopState, active), args.first, billed, value => { failed ||= value; });
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     for (;;) {
       const turn = currentTurn;
       const executedShim = turn.dispatched.length > 0;
 
       if (turn.terminalStatus.kind === 'failed') {
+        failed = true;
         if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, store);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
@@ -326,6 +372,7 @@ async function* spliceTurns(args: {
         return;
       }
       if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
+        failed = true;
         yield synthesizeTerminalEnvelope(merge, {
           kind: 'failed',
           error: { code: turn.terminalStatus.error.code, message: turn.terminalStatus.error.message },
@@ -357,26 +404,24 @@ async function* spliceTurns(args: {
         ...withoutCap,
         input: transformServerToolItems(nextCanonicalInput, active),
         ...(loopState.remainingToolCalls === undefined ? {} : { max_tool_calls: Math.max(0, loopState.remainingToolCalls) }),
-        ...(demoteForcedServerToolChoiceAfterFirstTurn ? { tool_choice: 'auto' as const } : {}),
+        ...(demoteForcedServerToolChoiceAfterFirstTurn ? { tool_choice: typeof withoutCap.tool_choice === 'object' && withoutCap.tool_choice?.type === 'allowed_tools' ? { ...withoutCap.tool_choice, mode: 'auto' as const } : 'auto' as const } : {}),
       };
       loopState.iterationCount += 1;
 
       const back = await descend(args.next, args.facts, invocation.payload);
       const nextTurn = turnOf(back, args.streamedUsage);
       if (nextTurn === null) {
+        failed = true;
+        billed.push(...back['response.usage.billable']);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: errorOf(back) }, active);
         return;
       }
-      failed = await accumulate(billed, nextTurn) || failed;
-      currentTurn = yield* consumeTurnStreaming(nextTurn.frames, merge, false, dispatchers, loopState, active);
+      currentTurn = yield* consumeBilledTurn(consumeTurnStreaming(nextTurn.frames, merge, false, dispatchers, loopState, active), nextTurn, billed, value => { failed ||= value; });
       merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     }
   } catch (error) {
-    if (merge.lastSeenModel === null) {
-      midStreamError = error;
-      throw error;
-    }
     failed = true;
+    if (merge.lastSeenModel === null) throw error;
     yield synthesizeTerminalEnvelope(merge, {
       kind: 'failed',
       error: {
@@ -385,9 +430,7 @@ async function* spliceTurns(args: {
       },
     }, active);
   } finally {
-    // A run that threw before a model was known has no answer to settle from; every other way
-    // out of the loop leaves what each call billed, and whether the turn got where it said.
-    if (midStreamError === undefined) settle({ billable: billed, failed });
+    settle({ billable: billed, failed });
   }
 }
 

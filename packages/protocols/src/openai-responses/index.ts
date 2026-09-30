@@ -227,6 +227,9 @@ export interface OpenAIResponsesFunctionToolCallItem {
   call_id: string;
   name: string;
   namespace?: string;
+  // An empty list selects Codex plaintext collaboration dispatch.
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+  encrypted_function_args?: string[] | null;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: OpenAIResponsesToolCaller | null;
@@ -474,11 +477,18 @@ export interface OpenAIResponsesContextCompactionItem extends OpenAIResponsesPer
 
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
 export interface OpenAIResponsesCompactionItem {
-  type: 'compaction';
+  // Codex accepts compaction_summary as the wire alias of compaction.
+  // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1233
+  type: 'compaction' | 'compaction_summary';
   id?: string | null;
   encrypted_content: string;
   created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
+
+export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
+  item.type === 'compaction' || item.type === 'compaction_summary';
 
 // Payload-free trailing input item for a RemoteCompactionV2 round trip.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902
@@ -817,6 +827,19 @@ export type OpenAIResponsesTool =
   | OpenAIResponsesShellTool
   | OpenAIResponsesApplyPatchTool;
 
+export const collectOpenAIResponsesToolEntries = (
+  payload: CanonicalOpenAIResponsesPayload,
+): Array<{ tool: OpenAIResponsesTool; path: string }> => [
+  ...(payload.tools ?? []).map((tool, index) => ({ tool, path: `tools[${index}]` })),
+  ...payload.input.flatMap((item, inputIndex) =>
+    item.type === 'additional_tools' || item.type === 'tool_search_output'
+      ? item.tools.map((tool, toolIndex) => ({ tool, path: `input[${inputIndex}].tools[${toolIndex}]` }))
+      : []),
+];
+
+export const collectOpenAIResponsesTools = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
+  collectOpenAIResponsesToolEntries(payload).map(entry => entry.tool);
+
 export const mapOpenAIResponsesTools = (
   payload: CanonicalOpenAIResponsesPayload,
   transform: (tool: OpenAIResponsesTool) => OpenAIResponsesTool,
@@ -843,8 +866,8 @@ export type OpenAIResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
-  | { type: 'function'; name: string }
-  | { type: 'custom'; name: string }
+  | { type: 'function'; name: string; namespace?: string }
+  | { type: 'custom'; name: string; namespace?: string }
   | { type: 'mcp'; server_label: string; name?: string | null }
   | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
   | { type: 'shell' }
@@ -1080,6 +1103,9 @@ export interface OpenAIResponsesOutputFunctionCall {
   call_id: string;
   name: string;
   namespace?: string;
+  // An empty list selects Codex plaintext collaboration dispatch.
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+  encrypted_function_args?: string[] | null;
   arguments: string;
   status: string;
   caller?: OpenAIResponsesToolCaller | null;
@@ -1361,6 +1387,14 @@ type OpenAIResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
     diff: string;
+  }
+  // Native compaction progress carries no summary; the final encrypted item
+  // arrives in output_item.done.
+  // https://github.com/openai/openai-node/blob/02f4ef94e8b3b02b43af6516c71a74c3c7a80b5d/src/resources/responses/responses.ts#L2311-L2335
+  | {
+    type: 'response.compaction.compacting';
+    item_id: string;
+    output_index: number;
   }
   | { type: 'response.completed'; response: OpenAIResponsesResult }
   | { type: 'response.incomplete'; response: OpenAIResponsesResult }

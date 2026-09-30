@@ -7,12 +7,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -109,7 +110,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => affinityPayload,
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
@@ -217,6 +218,7 @@ describe('the chat completions chain', () => {
 
     expect(facts['response.http.status']).toBe(200);
     expect(rendered.choices[0]!.message.content).toBe('hello');
+    expect((await facts['response.chat.openaiChatCompletions.streamedUsage']!).failed).toBe(false);
   });
 
   // Content-length would misdescribe a body this gateway serialized itself; a vendor trace
@@ -401,10 +403,10 @@ describe('the chat completions chain', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
-    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeNull();
     for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
 
-    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeTypeOf('number');
   });
 
   // A refusal the gateway made itself has no upstream body to forward, and that is the one
@@ -421,10 +423,7 @@ describe('the chat completions chain', () => {
     });
   });
 
-  // Serving what arrived would present a truncated answer as a whole one, and a client has no
-  // way to tell the difference. The streaming path is where this has to be caught: nothing
-  // folds those frames, so the collector's own check never runs on them.
-  it('fails a stream that ran out without saying it ended', async () => {
+  it('accepts normal EOF without a terminal marker', async () => {
     resolves([candidate(async () => truncated(chunk('he'), chunk('llo')))]);
 
     const { facts } = await serve(true);
@@ -432,7 +431,8 @@ describe('the chat completions chain', () => {
       for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
     };
 
-    await expect(drain()).rejects.toThrow(OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+    await expect(drain()).resolves.toBeUndefined();
+    expect((await facts['response.chat.openaiChatCompletions.streamedUsage']!).failed).toBe(false);
   });
 
   // Anything an upstream keeps sending after its terminator is not part of the answer.

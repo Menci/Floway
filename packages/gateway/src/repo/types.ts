@@ -3,6 +3,10 @@ import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
+// Provider config, flag overrides, and catalog transport advance this version;
+// runtime state and non-model metadata do not.
+export type StoredUpstreamRecord = UpstreamRecord & { configVersion: number };
+
 export interface ApiKey {
   id: string;
   userId: number;
@@ -341,10 +345,13 @@ export interface WebSearchConfigRepo {
 }
 
 export interface UpstreamRepo {
-  list(): Promise<UpstreamRecord[]>;
-  getById(id: string): Promise<UpstreamRecord | null>;
-  save(upstream: UpstreamRecord): Promise<void>;
-  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
+  list(): Promise<StoredUpstreamRecord[]>;
+  getById(id: string): Promise<StoredUpstreamRecord | null>;
+  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
+  replaceForModels(input: {
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -354,16 +361,29 @@ export interface UpstreamRepo {
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
-  // Catalog-cache writes are conditional on the row generation that started
-  // the fetch. A superseded provider can finish serving its own request, but
-  // cannot publish models or errors under newer credentials/configuration.
-  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
-  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
+  recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
 
-export interface ModelsCacheGeneration {
-  updatedAt: string;
-  config: unknown;
+export interface ModelsRefreshIdentity {
+  id: string;
+  configVersion: number;
+  cacheEpoch: number;
+  refreshInputs: {
+    provider: UpstreamRecord['kind'];
+    configJson: string;
+    flagOverridesJson: string;
+    proxyFallbackListJson: string;
+  };
+}
+
+export interface ModelsRefreshSuccessInput extends ModelsRefreshIdentity {
+  cache: Omit<UpstreamModelsCache, 'lastError'>;
+}
+
+export interface ModelsRefreshFailureInput extends ModelsRefreshIdentity {
+  error: Pick<NonNullable<UpstreamModelsCache['lastError']>, 'message' | 'at'>;
+  previousFailureCount: number;
 }
 
 export interface ProxyRecord {

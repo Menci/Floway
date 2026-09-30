@@ -18,7 +18,7 @@ import type {
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
-// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp|run}.gz`.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{run}.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
 // collection are driven by the shared spilled_files registry.
 
@@ -64,7 +64,7 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp' | 'run'): string =>
+const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'run'): string =>
   `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const putRawBody = async (
@@ -133,9 +133,7 @@ export class FileDumpStore implements DumpStore {
       NO_EDGE_HEADERS,
       null,
       null,
-      responseDescriptor === null
-        ? null
-        : encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
+      encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
     ).run();
   }
 
@@ -156,14 +154,18 @@ export class FileDumpStore implements DumpStore {
       = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
-    const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000';
-    const sql = beforeTs === null
-      ? `${select} WHERE ${visible} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
-      : `${select} WHERE ${visible} AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
-    const now = Date.now();
-    const stmt = beforeTs === null
-      ? this.db.prepare(sql).bind(keyId, now, opts.limit)
-      : this.db.prepare(sql).bind(keyId, now, beforeTs, beforeTs, beforeId, opts.limit);
+    const conditions = ['d.key_id = ?', 'd.created_at >= ? - k.dump_retention_seconds * 1000'];
+    const parameters: (string | number)[] = [keyId, Date.now()];
+    if (beforeTs !== null) {
+      conditions.push('(d.created_at < ? OR (d.created_at = ? AND d.id < ?))');
+      parameters.push(beforeTs, beforeTs, beforeId!);
+    }
+    if (opts.failures) conditions.push("(json_type(d.meta_json, '$.error') != 'null' OR json_extract(d.meta_json, '$.status') >= 400)");
+    if (opts.q) {
+      conditions.push(`instr(lower(d.id || ' ' || coalesce(json_extract(d.meta_json, '$.path'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.model'), '') || ' ' || coalesce(u.name, '') || ' ' || coalesce(json_extract(d.meta_json, '$.status'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.error.reason'), json_extract(d.meta_json, '$.error.kind'), '')), lower(?)) > 0`);
+      parameters.push(opts.q);
+    }
+    const stmt = this.db.prepare(`${select} WHERE ${conditions.join(' AND ')} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`).bind(...parameters, opts.limit);
     const { results } = await stmt.all<Pick<DumpRow, 'id' | 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
     return results.map(row => ({
       ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),

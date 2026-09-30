@@ -10,7 +10,7 @@
 import { expect, test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { copilotModels, parseSSEText, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
+import { copilotModels, parseSSEText, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -202,7 +202,7 @@ test('a turn dialled over the OpenAI Chat Completions wire still answers the cli
       expect(path).toBe('/chat/completions');
       // The usage chunk is asked for by the wire the turn landed on, not by the chain it
       // arrived from — which is what keeps a translated turn metered at all.
-      expect(body.stream_options).toEqual({ include_usage: true });
+      expect(body.stream_options).toEqual({ include_usage: true, continuous_usage_stats: true });
       return sseOpenAIChatCompletionsResponse({
         id: 'chatcmpl_route',
         object: 'chat.completion',

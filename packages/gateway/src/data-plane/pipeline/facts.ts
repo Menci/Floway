@@ -17,6 +17,7 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
  *  flags that row carries. Enough to choose, to record and to price — and to look the live
  *  candidate back up when the time comes to dial. */
 export interface AttemptSelector {
+  readonly candidateId: number;
   readonly upstreamId: string;
   readonly modelId: string;
   /** Snapshotted rather than referenced, because the record must show what was true when
@@ -102,17 +103,8 @@ export interface GatewayFacts {
   'serve.model': string;
   'serve.candidates': readonly AttemptSelector[];
 
-  /** Which upstream this attempt targets. Provided per attempt by the stage that forks.
-   *
-   *  A **selector**, not the candidate itself. A `ModelCandidate` carries the provider's
-   *  live instance, its fetcher and its models cache, and a live handle is never a fact —
-   *  the test being whether it can be rendered into the dump. Putting one in the record
-   *  deep-freezes all three, and the writes the provider relies on then fail *silently*,
-   *  because a frozen write only throws in strict mode and the provider's own code is not
-   *  the caller. The SWR models cache would stop refreshing with nothing to see.
-   *
-   *  So the resolver is a service and the selector is the fact, which is the ruling as
-   *  written. What travels is what identifies the attempt; what dials is injected. */
+  /** The selected candidate's immutable identity and flags. Provider instances, transport
+   *  handles and catalog state stay in the candidate registry and are resolved by id. */
   'route.attempt': AttemptSelector;
 
   /** There is exactly one url and one headers. Headers are rewritten the whole way down,

@@ -18,6 +18,7 @@
 
 import type { ChatAnswer, ChatFacts } from './facts.ts';
 import type { ChatServices } from './stages.ts';
+import { streamReferenceOf } from '../../dump/run-sink.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
@@ -95,11 +96,11 @@ export const meterChatWire = <Event>(spec: {
     const metered = spec.read(
       answer.frames as AsyncIterable<ProtocolFrame<Event>>,
       attributedTo(back['response.usage.billable'], spec.wire),
-      use.gateway.attempt,
+      use.gateway.attempt.timing,
     );
     return move({
       ...back,
-      [spec.answer]: { kind: 'stream' as const, frames: metered.frames },
+      [spec.answer]: { kind: 'stream' as const, frames: { ...streamReferenceOf(answer.frames), [Symbol.asyncIterator]: () => metered.frames[Symbol.asyncIterator]() } },
       [spec.streamedUsage]: metered.outcome,
     }) as never;
   },

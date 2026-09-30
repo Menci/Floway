@@ -8,8 +8,9 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/sh
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
+import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
+import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -66,6 +67,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
 };
 
 const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
+  await warmModelsForTest();
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
@@ -619,7 +621,7 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
 
 test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
   const { apiKey } = await setupAppTest();
-  await withWorkerWebSocketRuntime(async () => {
+  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const received = waitForMessages(client, messages => messages.length === 1);
 
@@ -635,12 +637,12 @@ test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupp
         message: "Unsupported WebSocket event type 'session.update'.",
       },
     }]);
-  });
+  }));
 });
 
 test('OpenAI Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
   const { apiKey } = await setupAppTest();
-  await withWorkerWebSocketRuntime(async () => {
+  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const invalidJson = waitForMessages(client, messages => messages.length === 1);
 
@@ -716,7 +718,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
         param: 'input[0]',
       },
     }]);
-  });
+  }));
 });
 
 test('OpenAI Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
@@ -1520,7 +1522,9 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.save(buildCodexUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord({
+    flagOverrides: { 'openai-responses-compact-decrypt': false },
+  }));
   const upstreamBodies: Record<string, unknown>[] = [];
 
   // The handshake carries the connection's first turn, exactly as the Codex

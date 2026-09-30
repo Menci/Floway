@@ -21,53 +21,49 @@
 // - https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
 
 import type {
-  AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesCacheControl,
   AnthropicMessagesMessage,
   AnthropicMessagesTextBlock,
   AnthropicMessagesTool,
-  AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 
-export const EPHEMERAL_CACHE_CONTROL: AnthropicMessagesCacheControl = { type: 'ephemeral' };
+const ephemeralCacheControl = (): AnthropicMessagesCacheControl => ({ type: 'ephemeral' });
 
-export const applyLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | undefined): void => {
-  if (!tools || tools.length === 0) return;
+export const withLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | undefined): AnthropicMessagesTool[] | undefined => {
+  if (!tools || tools.length === 0) return tools;
   for (let i = tools.length - 1; i >= 0; i--) {
     const tool = tools[i];
     // Native web-search tools carry a `web_search_*` discriminant and are not
     // part of the stable prefix, so the breakpoint lands on the last custom
     // tool instead.
     if (!tool.type || tool.type === 'custom') {
-      tool.cache_control = EPHEMERAL_CACHE_CONTROL;
-      return;
+      return tools.with(i, { ...tool, cache_control: ephemeralCacheControl() });
     }
   }
+  return tools;
 };
 
-export const applyLastSystemCacheBreakpoint = (system: AnthropicMessagesTextBlock[] | undefined): void => {
-  if (!system || system.length === 0) return;
-  system[system.length - 1].cache_control = EPHEMERAL_CACHE_CONTROL;
-};
+export const withLastSystemCacheBreakpoint = (system: AnthropicMessagesTextBlock[] | undefined): AnthropicMessagesTextBlock[] | undefined =>
+  system?.length ? system.with(system.length - 1, { ...system[system.length - 1], cache_control: ephemeralCacheControl() }) : system;
 
-export const applyLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessage[]): void => {
+export const withLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessage[]): AnthropicMessagesMessage[] => {
   for (let m = messages.length - 1; m >= 0; m--) {
     const message = messages[m];
 
     if (typeof message.content === 'string') {
       // AnthropicMessagesTextBlock is valid in the user, assistant, and system content
       // unions, so the union cast lets one literal serve any of the three roles.
-      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: EPHEMERAL_CACHE_CONTROL };
-      message.content = [block] as AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[] | AnthropicMessagesTextBlock[];
-      return;
+      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: ephemeralCacheControl() };
+      return messages.with(m, { ...message, content: [block] } as AnthropicMessagesMessage);
     }
 
     for (let b = message.content.length - 1; b >= 0; b--) {
       const block = message.content[b];
       if (block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result') {
-        block.cache_control = EPHEMERAL_CACHE_CONTROL;
-        return;
+        const content = message.content.map((part, index) => index === b ? { ...part, cache_control: ephemeralCacheControl() } : part);
+        return messages.with(m, { ...message, content } as AnthropicMessagesMessage);
       }
     }
   }
+  return messages;
 };

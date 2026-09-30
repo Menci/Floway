@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openaiCompletionsServePipeline } from '../../src/data-plane/openai-completions/pipeline.ts';
+import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
@@ -87,7 +88,7 @@ const serve = async (facts: Record<string, unknown>) => await run(
   {
     gateway: mockGatewayCtx({ wantsStream: facts['ingress.openaiCompletions.wantsStream'] === true }),
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     resolveAttempt,
   } as never,
 );

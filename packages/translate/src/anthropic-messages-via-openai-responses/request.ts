@@ -1,3 +1,4 @@
+
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
 import { resolveAnthropicMessagesReasoningEffort } from '../shared/anthropic-messages-via/reasoning-effort.ts';
@@ -244,7 +245,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
     max_output_tokens: payload.max_tokens,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-    ...(payload.metadata ? { metadata: { ...payload.metadata } } : {}),
+    ...(payload.metadata ? { metadata: payload.metadata } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
     ...(text ? { text } : {}),

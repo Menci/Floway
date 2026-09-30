@@ -12,7 +12,7 @@
 import { expect, test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { copilotModels, parseSSEText, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
+import { copilotModels, parseSSEText, requestAppWithWarmModels as requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 

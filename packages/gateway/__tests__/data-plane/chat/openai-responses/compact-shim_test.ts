@@ -184,7 +184,7 @@ test('a history ending on an assistant message gets a synthetic terminal user pr
 
 // ── The summary, and the envelope it is packed into ──────────────────────────
 
-test('the summary is the item the turn closed, not the output its terminal stated', () => {
+test('the summary reads the provider-restored terminal output', () => {
   const message: OpenAIResponsesOutputItem = {
     type: 'message',
     id: 'msg_1',
@@ -193,9 +193,8 @@ test('the summary is the item the turn closed, not the output its terminal state
     content: [{ type: 'output_text', text: 'CONDENSED SUMMARY', annotations: [] }],
   };
 
-  assertEquals(summaryTextFrom(new Map([[0, message]]), []), 'CONDENSED SUMMARY');
-  // A turn that closed nothing falls back to the terminal, as the client-facing egress does.
-  assertEquals(summaryTextFrom(new Map(), [message]), 'CONDENSED SUMMARY');
+  assertEquals(summaryTextFrom([message]), 'CONDENSED SUMMARY');
+  assertEquals(summaryTextFrom([]), '');
 });
 
 test('the synthesized encrypted_content decodes to a user message carrying the summary behind the handoff prefix', () => {

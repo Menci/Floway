@@ -30,9 +30,7 @@ export const analyzeAnthropicMessagesAffinity = async (
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
-      // Rebuilt rather than cloned: the payload is the record's, so it is frozen, and a message
-      // no projection touches rides through by identity. What one candidate is owed differs from
-      // what the next is by a handful of objects, not by a copy of the conversation.
+      preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
         const byMessage = Map.groupBy(projections, item => item.location.messageIndex);
         const emptiedByAffinity = new Set<number>();
@@ -43,9 +41,16 @@ export const analyzeAnthropicMessagesAffinity = async (
           for (const { location, projection } of messageProjections) {
             const block = message.content[location.blockIndex];
             if (location.kind === 'thinking') {
-              replacements.set(location.blockIndex, withKeysChanged(block, {
-                signature: projection.kind === 'preserve' ? projection.value : undefined,
-              }));
+              if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity thinking location no longer points at a thinking block');
+              // Anthropic requires an assistant thinking block to retain the
+              // signature issued by the upstream that produced it. If affinity
+              // selects another candidate, remove the complete block rather
+              // than forwarding the visible thinking without its signature.
+              // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
+              replacements.set(
+                location.blockIndex,
+                projection.kind === 'preserve' ? { ...block, signature: projection.value } : null,
+              );
             } else {
               replacements.set(
                 location.blockIndex,

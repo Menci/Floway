@@ -1,16 +1,13 @@
 import type { InferRequestType } from 'hono/client';
 
-import { configuredEndpoints, PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
+import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
-  BackoffRow,
-  ListUpstreamModelsResponse,
   ProxyRecord,
+  ProviderModelsFailureResponse,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
-import { kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
@@ -25,15 +22,17 @@ export interface RuntimeInfo {
 
 export interface EditorAuxData {
   proxies: ProxyRecord[];
-  backoffs: BackoffRow[];
   runtime: RuntimeInfo;
-  upstreams: UpstreamRecord[];
 }
 
 interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
-  discovered: UpstreamModelConfig[];
-  modelsError: ModelListingFailure | null;
+  discovered: UpstreamModelConfig[] | null;
+  // For providers whose credential is an API key, the editor can keep that
+  // stored key when the form's blank secret field is left alone; OAuth
+  // providers do not copy their tokens and start from the blueprint
+  // credential shape instead.
+  preserveCredentials?: boolean;
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
@@ -47,6 +46,10 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
 // create the editor stays mounted, on loader mode 'create', over a persisted
 // record.
 export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
+
+export const hasUnsavedDiscoveryInputs = (
+  dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
+): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList, dirtyFields.flagOverrides].some(Boolean);
 
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
@@ -81,26 +84,22 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
 };
 
 export const loadEditorAux = async (): Promise<EditorAuxData> => {
-  const [proxies, backoffs, runtime, upstreams] = await Promise.all([
+  const [proxies, runtime] = await Promise.all([
     callApi(() => api.api.proxies.$get()),
-    callApi(() => api.api.proxies.backoffs.$get()),
     callApi(() => api.api['runtime-info'].$get()),
-    callApi(() => api.api.upstreams.$get()),
   ]);
-  const error = proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
-  if (error) throw new Error(error.message);
+  if (proxies.error) throw new Error(proxies.error.message);
+  if (runtime.error) throw new Error(runtime.error.message);
   return {
-    proxies: proxies.data!,
-    backoffs: backoffs.data!,
-    runtime: runtime.data!,
-    upstreams: upstreams.data!,
+    proxies: proxies.data,
+    runtime: runtime.data,
   };
 };
 
 // Whether a listing request has anything to ask with. It reads the edited
 // config rather than the stored one, so the switch and the base URL the
-// operator is typing decide, and it is the single answer behind the loader,
-// the refresh action and the refresh button.
+// operator is typing decide, and it is the single answer behind the explicit
+// refresh actions and their buttons.
 export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEditorValues['config']): boolean => {
   switch (record.kind) {
   case 'custom': {
@@ -123,69 +122,54 @@ export const manualModelsSupported = (record: UpstreamRecord): record is Extract
   record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama';
 
 export interface ModelCatalogFetch {
-  /** Null when nothing was listed, which leaves whatever the caller already shows. */
+  /** Null when the request produced no new catalog. */
   discovered: UpstreamModelConfig[] | null;
   modelsError: ModelListingFailure | null;
-  refreshed: UpstreamRecord | null;
+  modelsCache: UpstreamRecord['modelsCache'] | null;
 }
-
-// The gateway squashes a genuine upstream failure to a message that names
-// nothing, so the editor writes that case in its own words and quotes every
-// other message. The code carries that distinction, and taking its type from
-// the gateway makes a rename there fail this declaration.
-const MODEL_LISTING_FAILURE_CODE: typeof GatewayModelListingFailureCode = 'upstream_model_listing_failed';
-
-// Hono infers one response union for the route rather than one per status, so
-// the failure body is read structurally.
-const failureCode = (raw: unknown): unknown =>
-  typeof raw === 'object' && raw !== null && 'error' in raw
-  && typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error
-    ? raw.error.code
-    : null;
 
 export interface ModelListingFailure {
   message: string;
-  upstreamListingFailed: boolean;
+  upstreamResponse: ProviderModelsFailureResponse | null;
 }
 
-// Listing re-reads the upstream afterwards: the server writes its models cache
-// as a side effect of the call, and the record the editor holds carries it.
-export const fetchModelCatalog = async (
+const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => {
+  const body = error.raw as {
+    error?: { upstreamResponse?: ProviderModelsFailureResponse | null };
+    modelsCache?: UpstreamRecord['modelsCache'];
+  } | undefined;
+  const modelsCache = body?.modelsCache ?? null;
+  return {
+    discovered: null,
+    modelsError: {
+      message: error.message,
+      upstreamResponse: body?.error?.upstreamResponse ?? null,
+    },
+    modelsCache,
+  };
+};
+
+export const previewDraftModelCatalog = async (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   init?: RequestInit,
 ): Promise<ModelCatalogFetch> => {
-  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, refreshed: null };
-
-  const result = await callApi(() => api.api.upstreams['list-models'].$post({
+  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, modelsCache: null };
+  const result = await callApi(() => api.api.upstreams['preview-models'].$post({
     json: { record: previewRecord(record, values) },
   }, { init }));
-  if (result.error) {
-    return {
-      discovered: null,
-      modelsError: {
-        message: result.error.message,
-        upstreamListingFailed: failureCode(result.error.raw) === MODEL_LISTING_FAILURE_CODE,
-      },
-      refreshed: null,
-    };
-  }
-
-  const endpoints = record.kind === 'custom'
-    ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
-    : {};
-  const discovered = discoveredModelsFromResponse(result.data, endpoints);
-  if (!isPersisted(record)) return { discovered, modelsError: null, refreshed: null };
-
-  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
-  return refreshed.error
-    ? { discovered, modelsError: { message: refreshed.error.message, upstreamListingFailed: false }, refreshed: null }
-    : { discovered, modelsError: null, refreshed: refreshed.data };
+  if (result.error) return listingFailure(result.error);
+  return { discovered: result.data.data, modelsError: null, modelsCache: null };
 };
 
-export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
-  const { discovered, modelsError, refreshed } = await fetchModelCatalog(record, valuesFromRecord(record));
-  return { discovered: discovered ?? [], modelsError, record: refreshed ?? record };
+export const fetchSavedModelCatalog = async (
+  record: UpstreamRecord,
+  init?: RequestInit,
+): Promise<ModelCatalogFetch> => {
+  if (!canFetchModelCatalog(record, record.config)) return { discovered: null, modelsError: null, modelsCache: null };
+  const result = await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init }));
+  if (result.error) return listingFailure(result.error);
+  return { discovered: result.data.data, modelsError: null, modelsCache: result.data.modelsCache };
 };
 
 // A field react-hook-form has registered owns its key from then on: mounting it
@@ -286,7 +270,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
 
 // `sort_order` is left out: the server appends a new upstream after the last
 // one when the field is absent, and the list page owns reordering afterwards.
-export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody => {
+export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues, options?: { preserveStoredSecret?: boolean }): CreateUpstreamBody => {
   return {
     kind: record.kind,
     name: values.name.trim(),
@@ -296,7 +280,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    config: configFromValues(record, values),
+    config: configFromValues(record, values, options),
     ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
@@ -314,27 +298,6 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     model_prefix: values.modelPrefix,
     ...(manualModelsSupported(record) ? { config: configFromValues(record, values) } : {}),
   } as UpdateUpstreamBody;
-};
-
-export const discoveredModelsFromResponse = (
-  response: ListUpstreamModelsResponse,
-  endpoints: ModelEndpoints,
-): UpstreamModelConfig[] => {
-  if (response.kind !== 'custom') return response.data;
-  return response.data.map(model => {
-    const kind = model.kind ?? 'chat';
-    const shape = kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints });
-    return {
-      upstreamModelId: model.id,
-      publicModelId: model.id,
-      kind,
-      ...shape,
-      ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
-      ...(model.limits ? { limits: model.limits } : {}),
-      ...(model.pricing ? { pricing: model.pricing } : {}),
-      ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
-    };
-  });
 };
 
 export const modelPrefixIsValid = (prefix: string) =>

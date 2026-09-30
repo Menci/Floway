@@ -1,9 +1,12 @@
+
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
+import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
+import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
@@ -55,10 +58,7 @@ export interface TargetRequestResult {
    * `custom_tool_call` outputs.
    */
   customToolNames: Set<string>;
-  namespaceToolNames: {
-    sourceToTarget: Map<string, string>;
-    targetToSource: Map<string, { namespace: string; name: string }>;
-  };
+  namespaceToolNames: NamespaceToolNames;
 }
 
 const translateUserMessage = async (message: OpenAIResponsesInputMessage, loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesUserMessage> => {
@@ -95,9 +95,12 @@ const translateUserMessage = async (message: OpenAIResponsesInputMessage, loadRe
   return { role: 'user', content: content.length > 0 ? content : '' };
 };
 
-// Multimodal `function_call_output` outputs carry the same content parts as a
-// user message; map them to Anthropic Messages tool_result blocks (which natively carry
-// image blocks) rather than flattening images away.
+// Function and custom tool outputs both admit text, image, and file parts.
+// Anthropic tool_result content natively carries images, so preserve them
+// rather than flattening the output.
+// https://github.com/openai/openai-node/blob/cf1b7e1cf7981ef79695c496caf14b6bb492f18e/src/resources/responses/responses.ts#L3610-L3621
+// https://github.com/openai/openai-node/blob/cf1b7e1cf7981ef79695c496caf14b6bb492f18e/src/resources/responses/responses.ts#L3157-L3169
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3c5d9c0c15bb847a628f3f2876ac09719abe3012/src/resources/messages/messages.ts#L3457-L3475
 const translateToolOutput = async (output: string | OpenAIResponsesInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
 
@@ -108,7 +111,10 @@ const translateToolOutput = async (output: string | OpenAIResponsesInputContent[
         throw new TranslatorInputError('Cannot translate file_id-only image tool output to Anthropic Messages.');
       }
       const image = await resolveImageUrlToAnthropicMessagesImage(part.image_url, loadRemoteImage);
-      if (image) blocks.push(image);
+      if (image === null) {
+        throw new TranslatorInputError('Cannot translate unavailable or unsupported image tool output to Anthropic Messages.');
+      }
+      blocks.push(image);
     } else if (part.type === 'input_file') {
       throw new TranslatorInputError('Cannot translate input_file tool output to Anthropic Messages.');
     } else if (part.type === 'refusal') {
@@ -197,7 +203,6 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
 const translateOpenAIResponsesInput = async (
   input: OpenAIResponsesInputItem[],
   loadRemoteImage: RemoteImageLoader,
-  namespaceSourceToTarget: ReadonlyMap<string, string>,
 ): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlock[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
@@ -244,21 +249,21 @@ const translateOpenAIResponsesInput = async (
       }, loadRemoteImage));
       break;
     case 'function_call': {
-      const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
-        name: namespaceSourceToTarget.get(sourceName) ?? item.name,
+        name: item.name,
         input: parseToolArgumentsObject(item.arguments),
       });
       break;
     }
     case 'function_call_output':
+    case 'custom_tool_call_output':
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
         content: await translateToolOutput(item.output, loadRemoteImage),
-        is_error: item.status === 'incomplete' ? true : undefined,
+        is_error: item.type === 'function_call_output' && item.status === 'incomplete' ? true : undefined,
       });
       break;
     case 'custom_tool_call':
@@ -269,16 +274,6 @@ const translateOpenAIResponsesInput = async (
         id: item.call_id,
         name: item.name,
         input: { input: item.input },
-      });
-      break;
-    case 'custom_tool_call_output':
-      if (typeof item.output !== 'string') {
-        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
-      }
-      appendUserBlock(messages, {
-        type: 'tool_result',
-        tool_use_id: item.call_id,
-        content: item.output,
       });
       break;
     case 'reasoning': {
@@ -306,46 +301,11 @@ const translateOpenAIResponsesInput = async (
   return { messages, systemBlocks };
 };
 
-const namespaceTargetName = (namespace: string, tool: string): string =>
-  `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
-
-const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
-  if (!reserved.has(preferred)) {
-    reserved.add(preferred);
-    return preferred;
-  }
-  for (let suffix = 2; ; suffix++) {
-    const candidate = `${preferred}_${suffix}`;
-    if (!reserved.has(candidate)) {
-      reserved.add(candidate);
-      return candidate;
-    }
-  }
-};
-
 const translateTools = (
   tools: OpenAIResponsesTool[] | null | undefined,
   customToolNames: Set<string>,
-): {
-  tools: AnthropicMessagesTool[] | undefined;
-  namespaceToolNames: TargetRequestResult['namespaceToolNames'];
-} => {
-  // Anthropic Messages has no namespace container. Flatten each namespace function to
-  // a collision-safe Anthropic Messages tool name and retain a bidirectional map so
-  // request history and target events recover the source `namespace.tool`
-  // identity. Other hosted/deferred OpenAI Responses tools still require their own
-  // boundary shim before this translator.
+): AnthropicMessagesTool[] | undefined => {
   const out: AnthropicMessagesTool[] = [];
-  const namespaceToolNames: TargetRequestResult['namespaceToolNames'] = {
-    sourceToTarget: new Map(),
-    targetToSource: new Map(),
-  };
-  const reservedNames = new Set(
-    (tools ?? []).flatMap(tool =>
-      (tool.type === 'function' || tool.type === 'custom') && typeof tool.name === 'string'
-        ? [tool.name]
-        : []),
-  );
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
@@ -374,48 +334,12 @@ const translateTools = (
       });
       continue;
     }
-    if (tool.type !== 'namespace') continue;
-    if (typeof tool.name !== 'string' || !Array.isArray(tool.tools)) {
-      throw new TranslatorInputError('Cannot translate a namespace tool without a string name and tools array to Anthropic Messages.');
-    }
-    for (const child of tool.tools) {
-      if (child === null || typeof child !== 'object' || (child as { type?: unknown }).type !== 'function') {
-        throw new TranslatorInputError(`Cannot translate non-function child in namespace '${tool.name}' to Anthropic Messages.`);
-      }
-      const functionTool = child as {
-        name?: unknown;
-        description?: unknown;
-        parameters?: unknown;
-        strict?: unknown;
-      };
-      if (typeof functionTool.name !== 'string'
-        || functionTool.parameters === null
-        || typeof functionTool.parameters !== 'object'
-        || Array.isArray(functionTool.parameters)) {
-        throw new TranslatorInputError(`Cannot translate malformed function child in namespace '${tool.name}' to Anthropic Messages.`);
-      }
-      const sourceName = `${tool.name}.${functionTool.name}`;
-      const targetName = uniqueToolName(namespaceTargetName(tool.name, functionTool.name), reservedNames);
-      namespaceToolNames.sourceToTarget.set(sourceName, targetName);
-      namespaceToolNames.targetToSource.set(targetName, { namespace: tool.name, name: functionTool.name });
-      out.push({
-        name: targetName,
-        ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),
-        input_schema: functionTool.parameters as Record<string, unknown>,
-        ...(typeof functionTool.strict === 'boolean' ? { strict: functionTool.strict } : {}),
-      });
-    }
   }
-
-  return {
-    tools: out.length > 0 ? out : undefined,
-    namespaceToolNames,
-  };
+  return out.length > 0 ? out : undefined;
 };
 
 const translateToolChoice = (
   toolChoice: OpenAIResponsesToolChoice | null | undefined,
-  namespaceSourceToTarget: ReadonlyMap<string, string>,
 ): AnthropicMessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
@@ -435,20 +359,20 @@ const translateToolChoice = (
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
+    return toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
   }
   return undefined;
 };
 
 export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
-  const payload = canonicalizeOpenAIResponsesPayload(source);
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
-  const { tools, namespaceToolNames } = translateTools(payload.tools, customToolNames);
+  const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
+  const tools = translateTools(allowed.tools, customToolNames);
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
     payload.input,
     options.loadRemoteImage ?? unavailableRemoteImageLoader,
-    namespaceToolNames.sourceToTarget,
   );
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
@@ -462,9 +386,9 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   ];
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  applyLastSystemCacheBreakpoint(systemBlocks);
-  applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  const cachedSystem = withLastSystemCacheBreakpoint(systemBlocks);
+  const cachedTools = withLastToolCacheBreakpoint(tools);
+  const cachedMessages = withLastMessageCacheBreakpoint(messages);
 
   // Merge reasoning effort + structured-output format into a single
   // `output_config`. `effort === 'none'` still maps to `thinking: {type:
@@ -491,14 +415,14 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   // semantics.
   const target: AnthropicMessagesPayload = {
     model: payload.model,
-    messages,
+    messages: cachedMessages,
     max_tokens: maxTokens,
-    ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
+    ...(cachedSystem?.length ? { system: cachedSystem } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
-    tools,
-    tool_choice: translateToolChoice(payload.tool_choice, namespaceToolNames.sourceToTarget),
+    tools: cachedTools,
+    tool_choice: translateToolChoice(allowed.choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,

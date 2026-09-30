@@ -13,11 +13,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
+import type { StreamOutcome } from '../../../src/data-plane/pipeline/serve.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { move, run } from '@floway-dev/pipeline';
+import { move, run, type Deferred } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
@@ -167,7 +169,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
@@ -230,14 +232,9 @@ const compactionItem = (answered: Record<string, unknown>): { readonly encrypted
 /** The summary a simulated compaction packed into the item the client is handed. The turn's
  *  own state is sealed around it on the way out — that is what pins the next turn to the
  *  upstream that issued this one — so the carrier is opened before the blob is read. */
-const summaryIn = async (
-  gateway: ReturnType<typeof mockChatGatewayCtx>,
-  encryptedContent: string,
-): Promise<string> => {
-  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'openai-responses.compaction.encrypted_content');
-  if (carrier.kind !== 'owned' || carrier.value === undefined) throw new Error('expected the turn-s own carrier around the blob');
-  const items = decodeBase64UrlJson(carrier.value) as { content: { text: string }[] }[] | null;
-  if (items === null) throw new Error('expected a shim-encoded compaction blob');
+const summaryIn = (encryptedContent: string): string => {
+  const items = decodeBase64UrlJson(encryptedContent) as { content: { text: string }[] }[] | null;
+  if (items === null) throw new Error('expected a portable compaction envelope');
   return items[0]!.content[0]!.text;
 };
 
@@ -438,10 +435,10 @@ describe('the responses chain', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
-    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeNull();
     await drain(facts['response.chat.openaiResponses.rendered']);
 
-    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeTypeOf('number');
   });
 
   // The turn is over at its terminal event, so what an upstream writes after it is not part
@@ -521,11 +518,10 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.openaiResponses.rendered']).toEqual(compaction);
-    expect(facts['response.chat.openaiResponses.streamedUsage']).toBeNull();
-    expect(facts['response.usage.billable']).toEqual([expect.objectContaining({
-      quantities: { input_tokens: '900', output_tokens: '40' },
-    })]);
+    expect(facts['response.chat.openaiResponses.rendered']).toMatchObject({ object: 'response.compaction', usage: compaction.usage });
+    expect(facts['response.chat.openaiResponses.streamedUsage']).not.toBeNull();
+    expect((facts['response.chat.openaiResponses.streamedUsage'] as Deferred<StreamOutcome> | null)).not.toBeNull();
+    expect((await (facts['response.chat.openaiResponses.streamedUsage'] as Deferred<StreamOutcome>)).billable).toEqual([expect.objectContaining({ quantities: { input_tokens: '900', output_tokens: '40' } })]);
   });
 
   // Content-length would misdescribe a body this gateway serialized itself; a vendor trace
@@ -626,7 +622,7 @@ describe('the responses chain', () => {
     expect(facts['response.http.status']).toBe(200);
     const answered = facts['response.chat.openaiResponses.rendered'] as Record<string, unknown>;
     expect(answered.object).toBe('response.compaction');
-    expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+    expect(summaryIn(compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
   });
 
   // The flag says where a compaction would be simulated, not that this turn asked for one —
@@ -676,7 +672,7 @@ describe('the responses chain', () => {
 
     expect(sent).toMatchObject({ input: [{ role: 'user' }, { type: 'compaction_trigger' }] });
     expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
-    expect(facts['response.chat.openaiResponses.rendered']).toEqual(upstreamCompaction);
+    expect(facts['response.chat.openaiResponses.rendered']).toMatchObject({ object: 'response.compaction', usage: upstreamCompaction.usage });
   });
 
   // No translation carries a compaction, and neither translator models the item that asks for
@@ -697,7 +693,7 @@ describe('the responses chain', () => {
     expect(JSON.stringify(seen.body)).not.toContain('compaction_trigger');
     const answered = facts['response.chat.openaiResponses.rendered'] as Record<string, unknown>;
     expect(answered.object).toBe('response.compaction');
-    expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+    expect(summaryIn(compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
   });
 
   // A compaction this gateway simulated carries the history it stood for, so an ordinary turn
@@ -738,7 +734,7 @@ describe('the responses chain', () => {
   // Only an upstream whose compactions this gateway simulates can be holding one of ours, and
   // an upstream that compacts natively is owed its own blob byte for byte — so where the shim
   // is not engaged the item travels as the client wrote it.
-  it('leaves a compaction alone where the shim is not engaged', async () => {
+  it('expands portable compactions even when both compaction flags are disabled', async () => {
     let sent: Record<string, unknown> | undefined;
     const encoded = encodeBase64UrlJson([
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'THE EARLIER HISTORY' }] },
@@ -757,6 +753,6 @@ describe('the responses chain', () => {
 
     await serve(false, continues);
 
-    expect(sent).toMatchObject({ input: [{ type: 'compaction', id: 'cmp_prior', encrypted_content: encoded }] });
+    expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'THE EARLIER HISTORY' }] }] });
   });
 });

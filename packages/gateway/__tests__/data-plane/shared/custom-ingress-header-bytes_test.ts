@@ -3,7 +3,8 @@ import { connect, type AddressInfo, type Socket } from 'node:net';
 
 import { afterEach, test } from 'vitest';
 
-import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { initSocketDial, type DialedSocket } from '@floway-dev/platform';
 import type { ProxyFallbackEntry } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -102,7 +103,7 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
   initSocketDial(socketDial);
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_bytes',
     proxyFallbackList: egress,
     config: {
@@ -115,6 +116,7 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
       models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
     },
   }));
+  await warmModelsForTest();
 
   const headers = new Headers({ 'content-type': 'application/json', 'x-api-key': apiKey.key });
   headers.append('x-passthrough', 'kept-a');

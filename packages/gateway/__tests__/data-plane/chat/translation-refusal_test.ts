@@ -17,7 +17,7 @@
 
 import { test } from 'vitest';
 
-import { copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { copilotModels, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream = (models: Parameters<typeof copilotModels>[0]) => async (request: Request): Promise<Response> => {

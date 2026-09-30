@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
@@ -119,7 +120,7 @@ const serveWith = async (
   {
     gateway,
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
@@ -362,10 +363,10 @@ describe('the messages chain', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
-    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeNull();
     await collect(facts['response.chat.anthropicMessages.rendered']);
 
-    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+    expect(gateway.attempt.timing.firstOutputTokenAt).toBeTypeOf('number');
   });
 
   // A turn is over at `message_stop`, so what an upstream writes after it is not part of the

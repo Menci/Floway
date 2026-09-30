@@ -39,12 +39,14 @@
 // from calling out on the caller's behalf. What does run is the history rewrite, so a hosted
 // tool's items echoed from an earlier turn reach the upstream in a shape it can read.
 
+import { composeChat as compose } from '../compose.ts';
 import { openaiResponsesCreatedAt, wrapOpenAIResponsesStatefulOutput } from './client-output.ts';
+import { projectOpenAIResponsesCollaboration } from './collaboration-shim.ts';
+import { decryptNativeCompaction } from './compact-decrypt.ts';
 import { completeOpenAIResponsesCompaction } from './compaction-resource.ts';
 import { syntheticEventsFromCompaction } from './items/output.ts';
 import {
   beginStoredAttempt,
-  billedOpenAIResponsesEntity,
   expandShimCompactions,
   hydrateStoredItems,
   internalErrorEnvelope,
@@ -52,6 +54,8 @@ import {
   openaiResponsesNarrowing,
   openaiResponsesTarget,
   openaiResponsesWireFor,
+  openaiResponsesWire,
+  meterOpenAIResponses,
   openaiResponsesWireRules,
   simulatesCompaction,
   summarizeForCompaction,
@@ -60,7 +64,6 @@ import {
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { runOpenAIResponsesServerTools } from './server-tools/stage.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
-import { billableUsageFromOpenAIResponsesResult } from './usage.ts';
 import { recordStream } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
@@ -72,9 +75,10 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { dialChatWire, type ChatWire } from '../handoff.ts';
+import { meterChatWire } from '../meter.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatServices } from '../stages.ts';
-import { compose, defer, defineStage, move, type Deferred, type Pipeline } from '@floway-dev/pipeline';
+import { defer, defineStage, move, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesProtocolEventsToResult,
@@ -106,7 +110,7 @@ const emitOpenAIResponsesCompaction = defineStage<
   Record<string, never>,
   Record<string, never>,
   Compacted<'response.chat.openaiResponses'> & R<'response.http.headers' | 'response.chat.openaiResponses.streamedUsage'>,
-  R<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.openaiResponses.streamedUsage'>,
+  R<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.openaiResponses.streamedUsage' | 'response.chat.clientFrames'>,
   ChatServices
 >({
   name: 'emitOpenAIResponsesCompaction',
@@ -116,6 +120,7 @@ const emitOpenAIResponsesCompaction = defineStage<
       needs: ['response.chat.openaiResponses', 'response.http.headers', 'response.chat.openaiResponses.streamedUsage'],
       consumes: ['response.chat.openaiResponses', 'response.http.headers'],
       provides: [
+        'response.chat.clientFrames',
         'response.chat.openaiResponses.rendered',
         'response.http.status',
         'response.http.headers',
@@ -136,6 +141,7 @@ const emitOpenAIResponsesCompaction = defineStage<
       const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(failure.body),
         'response.http.status': failure.status,
@@ -147,14 +153,14 @@ const emitOpenAIResponsesCompaction = defineStage<
       // the tee sits above the stateful half, where they are this protocol's own and carry
       // the ids the resource below is assembled under. Reading is what records, and the fold
       // on the next line is the read.
-      const persisted = await collectOpenAIResponsesProtocolEventsToResult(
-        recordStream(
-          wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, use.gateway),
-          use.gateway.dump,
-        ),
+      const frames = recordStream(
+        wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, use.gateway),
+        use.gateway.dump,
       );
+      const persisted = await collectOpenAIResponsesProtocolEventsToResult(frames);
       return {
         ...rest,
+        'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(
           completeOpenAIResponsesCompaction(persisted, openaiResponsesCreatedAt(use.gateway)) as unknown as Record<string, unknown>,
@@ -170,6 +176,7 @@ const emitOpenAIResponsesCompaction = defineStage<
       // stored — is not one it can answer, and the client is told what broke.
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(internalErrorEnvelope(error)),
         'response.http.status': 502,
@@ -280,7 +287,7 @@ const callOpenAIResponsesCompactUpstream = defineStage<
     // come back to.
     use.selectAffinity(candidate);
 
-    const billable = [billedOpenAIResponsesEntity(identity, billableUsageFromOpenAIResponsesResult(result.result) ?? undefined)];
+    const billable = [{ identity, quantities: {} }];
     return move({
       ...facts,
       'response.chat.openaiResponses': { kind: 'stream' as const, frames: syntheticEventsFromCompaction(result.result) },
@@ -288,7 +295,7 @@ const callOpenAIResponsesCompactUpstream = defineStage<
       // read. It travels as a reading still to come rather than as one already settled,
       // because the verdict that goes with it is the edge's to add — and it is declared as
       // this run's own, so the run waits for the verdict where it can see it.
-      [OPENAI_RESPONSES_STREAMED_USAGE]: defer(Promise.resolve({ billable, failed: false })),
+      [OPENAI_RESPONSES_STREAMED_USAGE]: null,
       'response.usage.billable': billable,
       'response.http.headers': [],
     });
@@ -305,7 +312,8 @@ const dialSummarizationWire = dialChatWire({
   wire: openaiResponsesWireFor,
 });
 
-const compactionWire: ChatWire = compose('openaiResponsesCompactNative', [...openaiResponsesWireRules, callOpenAIResponsesCompactUpstream]);
+const nativeCompactionWire: ChatWire = compose('openaiResponsesCompactNative', [meterChatWire({ wire: 'openaiResponses', answer: 'response.chat.openaiResponses', streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE, read: meterOpenAIResponses }), ...openaiResponsesWireRules, callOpenAIResponsesCompactUpstream]);
+const compactionWire: ChatWire = compose('openaiResponsesCompactDecrypted', [decryptNativeCompaction({ native: nativeCompactionWire, replay: compose('openaiResponsesCompactReplay', openaiResponsesWire(OPENAI_RESPONSES_STREAMED_USAGE)), streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE, compactEndpoint: true, asked: () => true })]);
 // The ending below picks this wire only for a candidate whose compactions are the shim's to
 // simulate, so the ask is already answered: every turn that reaches it is one to summarize.
 const simulationWire: ChatWire = compose('openaiResponsesCompactSimulated', [summarizeForCompaction(() => true), dialSummarizationWire]);
@@ -364,7 +372,7 @@ export type OpenAIResponsesCompactEntry = R<
 
 export type OpenAIResponsesCompactExit = R<
   'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage'
-  | 'response.http.status' | 'response.http.headers'
+  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
 >;
 
 export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponsesPayload): Pipeline<OpenAIResponsesCompactEntry, OpenAIResponsesCompactExit> => {
@@ -383,10 +391,12 @@ export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponses
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       owns: [],
+      streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),
     beginStoredAttempt,
     expandShimCompactions,
+    projectOpenAIResponsesCollaboration,
     // A compaction declares no hosted tool of its own, so what this does here is the other half
     // of the same rule: an `image_generation_call` or `web_search_call` echoed from an earlier
     // turn is rewritten into something the upstream can read. The loop never runs — there is no

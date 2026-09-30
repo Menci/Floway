@@ -18,7 +18,7 @@
 // with what it learned on the way down carried in the stage's own closure, because a
 // response-side `needs` can only name what the ending provides.
 
-import type { Chat, ChatAnswer } from './facts.ts';
+import type { Chat, ChatAnswer, ChatFacts } from './facts.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../shared/json-helpers.ts';
 import { isFailure, type AttemptSelector } from '../pipeline/facts.ts';
 import { foldsExclusiveCacheTokens } from '../shared/telemetry/usage.ts';
@@ -32,7 +32,7 @@ import type {
   OpenAIChatCompletionsReasoningItem,
   OpenAIChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesTools, type OpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type OpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** Removing a field inside a value is the same move as removing a fact, and a value that
  *  carried none of them comes back by identity so the rule costs nothing where it does not
@@ -1457,3 +1457,31 @@ export const vendorQwenNormalizeForOpenAIResponses = defineStage<
  *  rather than widening the protocol's own request type. */
 type OpenAIResponsesPayloadWithDeepSeekThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };
 type OpenAIResponsesPayloadWithQwenThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { enable_thinking: false };
+
+type EmptyToolsProtocol = 'request.chat.openaiChatCompletions' | 'request.chat.openaiResponses' | 'request.chat.anthropicMessages';
+
+const normalizeEmptyTools = <Key extends EmptyToolsProtocol>(key: Key, rewrite: (payload: ChatFacts[Key]) => ChatFacts[Key]) => defineStage<
+  Chat<Key | 'route.attempt'>, Chat<Key>, Record<string, never>, Record<string, never>
+>({
+  name: 'normalizeEmptyToolsToolChoice',
+  through: {
+    request: { needs: [key, 'route.attempt'], consumes: [], provides: [key] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, next) => {
+    if (!facts['route.attempt'].flags.includes('empty-tools-tool-choice-none')) return await next(facts);
+    const payload = facts[key];
+    if (!Array.isArray(payload.tools) || payload.tools.length !== 0) return await next(facts);
+    const rewritten = rewrite(payload);
+    return await next(rewritten === payload ? facts : { ...facts, [key]: move(rewritten) } as never);
+  },
+});
+
+export const normalizeEmptyToolsForOpenAIChatCompletions = normalizeEmptyTools('request.chat.openaiChatCompletions', payload =>
+  payload.tool_choice === 'none' ? payload : { ...payload, tool_choice: 'none' });
+
+export const normalizeEmptyToolsForOpenAIResponses = normalizeEmptyTools('request.chat.openaiResponses', payload =>
+  payload.tool_choice === 'none' || collectOpenAIResponsesTools(payload as CanonicalOpenAIResponsesPayload).length > 0 ? payload : { ...payload, tool_choice: 'none' });
+
+export const normalizeEmptyToolsForAnthropicMessages = normalizeEmptyTools('request.chat.anthropicMessages', payload =>
+  payload.tool_choice?.type === 'none' ? payload : { ...payload, tool_choice: { type: 'none' } });

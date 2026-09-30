@@ -19,6 +19,8 @@
 // `runAnthropicMessagesWebSearchTool` below — one stage, because Anthropic carries the tool
 // result inside the same turn and there is nothing to ask again for.
 
+import { composeChat as compose } from '../compose.ts';
+import { projectOpenAIResponsesCollaboration } from '../openai-responses/collaboration-shim.ts';
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { isClaudeCodeProbe, probeFrames } from './claude-code-probe.ts';
@@ -45,13 +47,14 @@ import {
   applyRoleCompatibilityToAnthropicMessages,
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   stripBillingAttributionFromAnthropicMessages,
+  normalizeEmptyToolsForAnthropicMessages,
 } from '../rules.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defer, defineStage, move, type Deferred, type Pipeline, type Stage } from '@floway-dev/pipeline';
+import { defer, defineStage, move, type Deferred, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import {
   collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
@@ -94,7 +97,7 @@ const emitAnthropicMessages = defineStage<
   M<'ingress.chat.anthropicMessages.wantsStream'>,
   M<'ingress.chat.anthropicMessages.wantsStream'>,
   M<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers'>,
-  M<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers'>,
+  M<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'>,
   ChatServices
 >({
   name: 'emitAnthropicMessages',
@@ -103,7 +106,7 @@ const emitAnthropicMessages = defineStage<
     response: {
       needs: ['response.chat.anthropicMessages', 'response.http.headers'],
       consumes: ['response.chat.anthropicMessages', 'response.http.headers'],
-      provides: ['response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers'],
+      provides: ['response.chat.clientFrames', 'response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next, use) => {
@@ -119,6 +122,7 @@ const emitAnthropicMessages = defineStage<
       const failure = renderFailure(answer, mintedAs(({ status, message }) => renderAnthropicMessagesError(status, message)));
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(failure.body),
         'response.http.status': failure.status,
@@ -127,6 +131,7 @@ const emitAnthropicMessages = defineStage<
     if (answer.kind === 'value') {
       return {
         ...rest,
+        'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(answer.body as Record<string, unknown>),
         'response.http.status': 200,
@@ -147,6 +152,7 @@ const emitAnthropicMessages = defineStage<
     if (!back['ingress.chat.anthropicMessages.wantsStream']) {
       return {
         ...rest,
+        'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(
           await collectAnthropicMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
@@ -156,6 +162,7 @@ const emitAnthropicMessages = defineStage<
     }
     return {
       ...rest,
+      'response.chat.clientFrames': move(frames),
       'response.http.headers': forClient,
       'response.chat.anthropicMessages.rendered': move(renderSSE(frames)),
       'response.http.status': 200,
@@ -367,6 +374,7 @@ const callAnthropicMessagesUpstream = defineStage<
  * client is shown.
  */
 export const anthropicMessagesWire = (streamedUsage: string): readonly Stage[] => [
+  normalizeEmptyToolsForAnthropicMessages,
   meterChatWire({
     wire: 'anthropicMessages',
     answer: 'response.chat.anthropicMessages',
@@ -395,6 +403,7 @@ const anthropicMessagesWireFor = (target: ChatTargetApi, candidate: ModelCandida
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         trip: async payload => await translateAnthropicMessagesViaOpenAIResponses(payload, { model: candidate.model.id }),
       }),
+      projectOpenAIResponsesCollaboration,
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
   case 'openaiChatCompletions':
@@ -425,6 +434,7 @@ const meterAnthropicMessages = (
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
+  let failed = false;
   const readBillableUsage = createAnthropicMessagesBillableUsageReader();
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
@@ -439,11 +449,15 @@ const meterAnthropicMessages = (
           const usage = readBillableUsage(frame.event);
           if (usage !== null) reported = usage;
         }
+        if (isAnthropicMessagesTerminalFrame(frame)) {
+          sawTerminal = true;
+          failed = frame.type === 'event' && frame.event.type === 'error';
+        }
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past `message_stop` would otherwise hold the client's stream open
         // with it; returning here closes the read, which cancels the upstream.
-        if (isAnthropicMessagesTerminalFrame(frame)) { sawTerminal = true; return; }
+        if (isAnthropicMessagesTerminalFrame(frame)) return;
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // message was never stopped and never failed.
@@ -452,7 +466,7 @@ const meterAnthropicMessages = (
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billedEntity(reported, identity)], failed: !sawTerminal });
+      settle({ billable: [billedEntity(reported, identity)], failed: failed || !sawTerminal });
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
@@ -523,6 +537,7 @@ export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload
     // Below the probe, because a probe turn declares no tools; above the dial, because what it
     // rewrites is the body that dial sends and the frames that dial hands back.
     runAnthropicMessagesWebSearchTool({ targetOf: candidate => anthropicMessagesTarget.pick(candidate.model.endpoints) }),
+    normalizeEmptyToolsForAnthropicMessages,
     dialChatWire({
       source: 'request.chat.anthropicMessages',
       needs: ['request.chat.anthropicMessages', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

@@ -8,6 +8,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  normalizeEmptyToolsForOpenAIChatCompletions,
+  normalizeEmptyToolsForOpenAIResponses,
+  normalizeEmptyToolsForAnthropicMessages,
   applyRoleCompatibilityToOpenAIChatCompletions,
   applyRoleCompatibilityToAnthropicMessages,
   applyRoleCompatibilityToOpenAIResponses,
@@ -41,7 +44,7 @@ import type { OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesS
 
 /** What an attempt is, to a stage that only reads flags. The selector carries them as data,
  *  so nothing here needs the live candidate the resolver kept. */
-const attemptWith = (...flags: string[]): AttemptSelector => ({ upstreamId: 'u', modelId: 'm', flags });
+const attemptWith = (...flags: string[]): AttemptSelector => ({ candidateId: 0, upstreamId: 'u', modelId: 'm', flags });
 
 /**
  * Runs a family's whole rule array, in the order its chain runs it, between stages
@@ -1135,6 +1138,7 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
     const { down, up } = await runChain('response.chat.openaiChatCompletions', [
       includeUsageStreamOptionsForOpenAIChatCompletions,
       normalizeUsageForOpenAIChatCompletions,
+      normalizeEmptyToolsForOpenAIChatCompletions,
       applyRoleCompatibilityToOpenAIChatCompletions,
       normalizeExclusiveCachedTokensForOpenAIChatCompletions,
       vendorDeepSeekNormalizeForOpenAIChatCompletions,
@@ -1170,3 +1174,27 @@ describe('a family\'s rule array, in the order its chain runs it', () => {
 
 const rolesOfPayload = (payload: Record<string, unknown>): unknown[] =>
   (payload.input as OpenAIResponsesInputItem[]).map(item => (item as { role?: unknown }).role);
+
+describe('empty-tools choice normalization', () => {
+  it.each([
+    ['openaiChatCompletions', normalizeEmptyToolsForOpenAIChatCompletions, 'none'],
+    ['openaiResponses', normalizeEmptyToolsForOpenAIResponses, 'none'],
+    ['anthropicMessages', normalizeEmptyToolsForAnthropicMessages, { type: 'none' }],
+  ] as const)('normalizes explicit empty %s tools without changing the input', async (protocol, stage, none) => {
+    const key = `request.chat.${protocol}`;
+    const payload = { model: 'm', messages: [], input: [], max_tokens: 1, tools: [], tool_choice: protocol === 'anthropicMessages' ? { type: 'auto' } : 'auto' };
+    const { down } = await runChain(`response.chat.${protocol}`, [stage], { [key]: payload, 'route.attempt': attemptWith('empty-tools-tool-choice-none') });
+    expect((down[key] as { tool_choice: unknown }).tool_choice).toEqual(none);
+    expect(payload.tool_choice).toEqual(protocol === 'anthropicMessages' ? { type: 'auto' } : 'auto');
+    const disabled = await runChain(`response.chat.${protocol}`, [stage], { [key]: payload, 'route.attempt': attemptWith() });
+    expect(disabled.down[key]).toBe(payload);
+    const missing = { ...payload, tools: undefined };
+    const absent = await runChain(`response.chat.${protocol}`, [stage], { [key]: missing, 'route.attempt': attemptWith('empty-tools-tool-choice-none') });
+    expect(absent.down[key]).toBe(missing);
+  });
+  it('retains Responses choices when deferred inventories still supply tools', async () => {
+    const payload = { model: 'm', input: [{ type: 'additional_tools', tools: [{ type: 'function', name: 'f' }] }], tools: [], tool_choice: 'auto' };
+    const { down } = await runChain('response.chat.openaiResponses', [normalizeEmptyToolsForOpenAIResponses], { 'request.chat.openaiResponses': payload, 'route.attempt': attemptWith('empty-tools-tool-choice-none') });
+    expect(down['request.chat.openaiResponses']).toBe(payload);
+  });
+});

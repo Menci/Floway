@@ -10,7 +10,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
+import { createCandidateRegistry } from './candidates.ts';
+import type { BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
 import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
@@ -18,12 +19,11 @@ import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts'
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
 import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -53,17 +53,8 @@ export interface Prologue {
   readonly headers: readonly (readonly [string, string])[];
 }
 
-/**
- * Opens a run: the request context the telemetry stages read, and the services the stages
- * are given. It takes the bytes the handler has already read and hands them to the dump,
- * which is what leaves the handler's own copy free to be released.
- *
- * The candidate store is the resolver the ruling names — "the resolver is the service and
- * the selector is a fact". A `ModelCandidate` carries the provider's instance, its fetcher
- * and its models cache; those never enter the record, because `move()` would freeze them
- * and the provider's own cache refresh would break. So the stage that enumerates hands the
- * live ones here, and the stage that dials asks for one back by selector.
- */
+/** Opens the run with the request's timing state and live candidate registry. Only
+ *  immutable selectors enter facts; provider instances and transport handles stay here. */
 export const openPrologue = (
   c: AuthedContext,
   ingress: Ingress,
@@ -83,6 +74,7 @@ export const gatewayCtxOptions = (
   options: { readonly wantsStream: boolean; readonly model?: string },
 ): CreateGatewayCtxOptions => {
   const backgroundScheduler = backgroundSchedulerFromContext(c);
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
   // stage, both directions — so it opens that recording here instead of the edge one, and
   // no turn is ever written twice.
@@ -90,9 +82,12 @@ export const gatewayCtxOptions = (
     apiKeyFromContext(c),
     { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
     backgroundScheduler,
+    options.wantsStream,
+    attempt.timing,
   );
   return {
     wantsStream: options.wantsStream,
+    attempt,
     ...(options.model === undefined ? {} : { model: options.model }),
     requestBody: takeRequestBody(ingress.body),
     backgroundScheduler,
@@ -107,7 +102,6 @@ export const runDumpOf = (options: CreateGatewayCtxOptions): RunDump | null =>
 
 /** The services every run is given, over whichever context it was opened with. */
 export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunDump | null = null): Prologue => {
-  const live = new Map<string, ModelCandidate>();
 
   return {
     gateway,
@@ -116,19 +110,11 @@ export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunD
       gateway,
       log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
-      rememberCandidates: candidates => {
-        for (const candidate of candidates) live.set(candidate.provider.upstreamId, candidate);
-      },
+      ...createCandidateRegistry(),
       // Absent when this key has no retention configured, which is what keeps recording
       // conditional: the runner does none of it rather than doing it and discarding.
       ...(runDump === null ? {} : { dump: runDump.sink }),
-      resolveAttempt: (selector: AttemptSelector) => {
-        const candidate = live.get(selector.upstreamId);
-        if (candidate === undefined) {
-          throw new Error(`resolveAttempt: nothing live for ${selector.upstreamId}; the selector did not come from this run`);
-        }
-        return candidate;
-      },
+
     },
   };
 };

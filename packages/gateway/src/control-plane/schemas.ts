@@ -11,9 +11,9 @@
 //
 // Deep upstream-config validation (e.g. Azure URL hostname rules, custom
 // pathOverrides and modelsFetch.endpoint URL parsing, per-model endpoint path
-// checks) intentionally stays in the handler functions — they own the
-// canonical error messages and downstream cache invalidation. The schemas
-// here describe the shape the dashboard sends.
+// checks) stays with provider validators and handlers, which own the canonical
+// error messages. Repository model-aware writes own catalog versions and
+// invalidation. The schemas here describe the shape the dashboard sends.
 
 import { z } from 'zod';
 
@@ -126,6 +126,10 @@ const reasoningSchema = z.object({
 
 const chatSchema = z.object({
   modalities: modalitiesSchema.optional(),
+  // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
+  // the upstream stating it rejects detail 'original', not the absence of a
+  // statement.
+  image_detail_original: z.boolean().optional(),
   reasoning: reasoningSchema.optional(),
 });
 
@@ -136,6 +140,11 @@ const limitsSchema = z.object({
   max_prompt_tokens: z.number().optional(),
   max_output_tokens: z.number().optional(),
 });
+
+const opaqueBlobCompatibilityScopeSchema = z.object({
+  bindToUpstream: z.boolean(),
+  key: z.string().min(1).optional(),
+}).strict();
 
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure, custom, and ollama upstreams share this per-model entry; the
@@ -159,6 +168,7 @@ const upstreamModelSchema = z.object({
   flagOverrides: flagOverridesSchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
@@ -237,10 +247,8 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because zero upstreams cannot serve any model.
+// null leaves this level unrestricted; an empty list grants no upstreams.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
 
@@ -396,7 +404,7 @@ export const updateUpstreamBody = z.object({
 });
 
 // Shared envelope for the record-body action contract used by every
-// action endpoint (OAuth exchange/refresh, quota, probe, list-models,
+// action endpoint (OAuth exchange/refresh, quota, probe, draft preview,
 // etc.). The client posts its full draft record; the server reads only
 // fields relevant to the specific action (credentials in config/state,
 // proxy_fallback_list for routing) and produces a targeted patch. Kind
@@ -410,9 +418,11 @@ export const upstreamRecordEnvelope = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).passthrough();
 
-// The bare envelope contract — every action endpoint that takes no extras
-// beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
+
+// Shared authorize-url contract for the codex and claude-code authorize-url
+// endpoints: the draft record plus the SPA-held PKCE challenge/state pair.
+const oauthAuthorizeUrlBody = z.object({ record: upstreamRecordEnvelope, challenge: z.string().min(1), state: z.string().min(1) });
 
 export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
 
@@ -431,22 +441,39 @@ export const copilotQuotaBody = recordOnlyBody;
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
+export const codexOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
+
+// Preview takes no record: it reads a pasted document and reports what is in
+// it, without touching any upstream.
+export const codexImportPreviewBody = z.object({
+  raw_json: z.string().min(1),
 });
 
-export const codexOAuthExchangeBody = z.object({
+export const codexImportExchangeBody = z.object({
   record: upstreamRecordEnvelope,
-  auth_json: z.string().min(1).optional(),
+  json: z.object({
+    raw_json: z.string().min(1),
+    source_index: z.number().int().nonnegative(),
+  }).optional(),
   callback: z.object({
     code: z.string().min(1),
     verifier: z.string().min(1),
   }).optional(),
+  // Only the bearer is required. Every other field is the operator stating
+  // something the tokens cannot say, so `null` and an omitted key mean the
+  // same thing and the provider decides what a value is worth.
+  manual: z.object({
+    access_token: z.string().min(1),
+    refresh_token: z.string().nullable().optional(),
+    id_token: z.string().nullable().optional(),
+    account_id: z.string().nullable().optional(),
+    email: z.string().nullable().optional(),
+    plan_type: z.string().nullable().optional(),
+    expires_at: z.union([z.number(), z.string()]).nullable().optional(),
+  }).optional(),
 }).refine(
-  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of auth_json or callback' },
+  b => [b.json, b.callback, b.manual].filter(value => value !== undefined).length === 1,
+  { message: 'Provide exactly one of json, callback, or manual' },
 );
 
 export const codexOAuthRefreshBody = recordOnlyBody;
@@ -460,11 +487,7 @@ const oauthCallbackSchema = z.object({
   state: z.string().min(1),
 });
 
-export const claudeCodeOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
@@ -477,11 +500,7 @@ export const claudeCodeOAuthExchangeBody = z.object({
 
 export const claudeCodeOAuthRefreshBody = recordOnlyBody;
 
-export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeSetupTokenAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeSetupTokenExchangeBody = z.object({
   record: upstreamRecordEnvelope,
@@ -490,15 +509,25 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
+// The editor sends every discovery input, including model projection policy,
+// while direct preview callers can omit unrelated display metadata.
+export const previewModelsBody = z.object({
+  record: upstreamRecordEnvelope.extend({
+    proxy_fallback_list: proxyFallbackListSchema,
+    name: z.string().optional(),
+    enabled: z.boolean().optional(),
+    sort_order: z.number().int().optional(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+    hue: upstreamHueSchema.optional(),
+    flag_overrides: flagOverridesSchema.optional(),
+    disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
+    model_prefix: modelPrefixSchema.optional(),
+  }),
+});
 // --- ollama ---
 
 export const ollamaUsageBody = recordOnlyBody;
-
-// Unified live-model listing for both create-time preview and edit-time
-// refresh. Custom returns the raw upstream row (dashboard translates
-// through the draft's endpoints); every other kind returns the fully
-// projected UpstreamModelConfig catalog.
-export const listModelsBody = recordOnlyBody;
 
 // --- agent setup ---
 //

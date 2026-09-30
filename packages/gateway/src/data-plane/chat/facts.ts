@@ -48,6 +48,7 @@ export interface ChatFacts extends GatewayFacts {
 
   /** A stream, a value and a failure sit at one key, so telling them apart is reading a
    *  value and no declaration ever mentions which arm is there. */
+  'response.chat.clientFrames': AsyncIterable<unknown> | null;
   'response.chat.openaiChatCompletions': ChatAnswer;
   'response.chat.anthropicMessages': ChatAnswer;
   'response.chat.openaiResponses': ChatAnswer;

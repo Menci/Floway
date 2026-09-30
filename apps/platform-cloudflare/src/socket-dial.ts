@@ -2,6 +2,14 @@ import { connect } from 'cloudflare:sockets';
 
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
+// workerd reports every non-2xx outbound CONNECT proxy status with this same
+// message; it covers Cloudflare IPs as well as other disallowed destinations.
+// Tag it only when socket.opened rejects, before any request bytes are sent.
+// https://github.com/cloudflare/workerd/blob/c889d1dd2322420cb5c58740dc28ab20b6a7f681/src/workerd/api/sockets.c%2B%2B#L969-L1017
+const PROXY_CONNECT_REJECTION = 'proxy request failed, cannot connect to the specified address';
+
+class ProxyConnectRejection extends Error {}
+
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
 // before opening a socket; once opened, an abort closes the socket so
@@ -14,6 +22,7 @@ import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } fro
 // rather than as an opaque first-read failure later.
 
 export const cloudflareSocketDial: SocketDial = {
+  shouldConnectErrorFallbackToFetch: error => error instanceof ProxyConnectRejection,
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
     const dialHost = normalizeDialHost(host);
@@ -58,7 +67,10 @@ export const cloudflareSocketDial: SocketDial = {
       // AbortError (preserving the original reason if it was an Error)
       // instead of an opaque connect failure.
       if (opts?.signal?.aborted) throwAbort(opts.signal);
-      throw new Error(`dial ${host}:${port} failed`, { cause });
+      const ConnectError = cause instanceof Error && cause.message.startsWith(PROXY_CONNECT_REJECTION)
+        ? ProxyConnectRejection
+        : Error;
+      throw new ConnectError(`dial ${host}:${port} failed`, { cause });
     }
 
     if (opts?.signal?.aborted) {

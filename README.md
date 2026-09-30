@@ -12,6 +12,8 @@ then routes each model through the API shape the client already speaks.
   APIs with cross-protocol translation where needed.
 - Discover vendor model catalogs live while retaining manual model configuration
   for providers that require or permit it.
+- Preserve client-carried opaque blobs across models that advertise the same
+  compatibility identity.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
 - Generate one-command Claude Code and Codex configurations from an API key.
@@ -28,7 +30,7 @@ cd Floway
 ADMIN_KEY='replace-with-a-secret' docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Open <http://localhost:18088>, leave the username blank, and use `ADMIN_KEY` as
+Open <http://localhost:8788>, leave the username blank, and use `ADMIN_KEY` as
 the password. Then:
 
 1. Add at least one provider under **Providers → Upstreams**.
@@ -44,6 +46,10 @@ The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,
 which performs model resolution, upstream dispatch, and any required protocol
 translation. Both planes are served by the same gateway process.
+
+**Upgrade notice:** Floway used to listen on both `0.0.0.0:8788` and
+`0.0.0.0:18088`. As a result of container image merging, Floway only listen on
+one single port now.
 
 ## Compatibility
 
@@ -67,7 +73,18 @@ translation. Both planes are served by the same gateway process.
 
 `/v1/models` and `/models` return Floway's public model superset to ordinary
 callers and select the Codex or Claude Code discovery shape for those clients'
-User-Agent.
+User-Agent. Each public model includes `opaqueBlobCompatibilityScope`: its
+optional key defaults to the immediate upstream model ID, and
+`bindToUpstream` decides whether the immediate upstream instance participates
+in the compatibility identity. A downstream Floway reads the same metadata and
+materializes the identity at its own upstream boundary.
+
+Floway wraps natural reasoning signatures, encrypted content, fingerprints,
+and other supported opaque blobs with authenticated routing metadata. New
+carriers record both their exact source target and their compatibility identity.
+Compatible targets receive the original blob; incompatible optional blobs are
+removed, while incompatible required Responses state fails routing. Existing v1
+carriers resolve their current model metadata before applying the same rule.
 
 Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
@@ -79,14 +96,24 @@ responses retain their upstream wire shape.
 
 ### Upstreams
 
+Provider-owned auto models expose a read-only opaque blob compatibility scope.
+Manual Custom, Azure, and Ollama model rows expose the same upstream-binding and
+key fields in the dashboard and model YAML.
+
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client | Live inference catalog plus the account's built-in GPT Image capability |
+| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend, plus the account's built-in GPT Image capability |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
 | Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
+
+The Codex provider repairs terminal Responses snapshots that omit items already
+closed by the stream, including native compaction output. It restores positions
+from the observed `output_index` and matches snapshot items by ID; ambiguous
+positions fail explicitly. The shared Responses collector reads terminal
+snapshots directly, with provider-specific repairs applied before collection.
 
 ## Other Deployment Options
 
@@ -111,13 +138,14 @@ update and rollback flow by default. A deployment named as new first runs an
 isolated binding-probe bootstrap and requires its `Hello World` response before
 publishing Floway.
 
-For a manual production update, configure the admin secret, apply the remote
-migrations, and deploy:
+For a manual production update, configure the admin secret, then apply the
+remote migrations and deploy as one step — publishing the code that reads a
+migration's result is part of applying it, and stopping in between leaves the
+previous build serving rewritten configuration:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
-pnpm run db:migrate:remote
-pnpm run deploy
+pnpm run db:migrate:remote && pnpm run deploy
 ```
 
 ### Node.js
@@ -130,10 +158,13 @@ pnpm install
 ADMIN_KEY='replace-with-a-secret' pnpm run dev:node
 ```
 
-It serves the data-plane and control-plane APIs but not the dashboard. Use
-Docker Compose for the complete self-hosted UI, or serve the web app separately.
-Production Node.js deployments must set both `NODE_ENV=production` and a
-non-empty `ADMIN_KEY`.
+It serves the dashboard, data-plane, and control-plane APIs from the same
+origin. `dev:node` binds `127.0.0.1` by default; set `HOST=0.0.0.0` when the
+service must accept network connections. `dev:node` builds the web bundle
+before starting; deployments that build separately may set
+`FLOWAY_WEB_DIST_DIR` to the bundle directory (default:
+`apps/web/dist/client`). Production Node.js deployments must set both
+`NODE_ENV=production` and a non-empty `ADMIN_KEY`.
 
 Podman users can instead follow the
 [systemd deployment guide](./docker/systemd/README.md).
@@ -146,14 +177,20 @@ pnpm run dev
 pnpm run verify
 ```
 
-`verify` chains every check `.github/workflows/verify.yaml` runs, so a green run
-locally is a green run on a pull request. Each link is also a script of its own,
-in the order the chain runs them: `typegen`, `lint`, `typecheck`, `test`,
-`test:installers`, `check:agents-md`, `check:generated-assets`,
-`check:verify-parity`, and `build:web`, which carries the assertions about the
-emitted bundle. `typegen` comes first because the generated route types are not
-checked in and the lint configuration is type-aware, so a fresh clone has to
-produce them before anything else can read the dashboard's sources.
+`verify` chains every check in `.github/workflows/verify.yaml`: `typegen`,
+`lint`, `typecheck`, `test`, `test:installers`, `check:agents-md`,
+`check:generated-assets`, `check:verify-parity`, and `build:web`. Each check is
+also available as a root script. Route type generation runs first because the
+web app's generated types are not checked in and its lint configuration is
+type-aware. The web build includes assertions on the emitted bundle.
+
+The protocol tests cover v1 and v2 opaque-blob carrier compatibility, lossless
+UTF-16 code-unit recovery, and retained-memory growth during history replay.
+The memory regression runs a bounded fixture in a separate Node.js process with
+explicit garbage collection, samples the retained heap before content checks
+can flatten strings, and then verifies every decoded value. It runs through
+`pnpm run test` and `pnpm run verify` without additional setup; this local
+regression is not a measurement of a production Worker's peak memory.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
 indexes its CI workflows, skills, workspace packages, and their responsibilities.

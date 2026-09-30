@@ -13,7 +13,6 @@
 
 import type { AttemptSelector, GatewayFacts } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { selectorFor } from '../pipeline/stages.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { selectAffinityCandidates } from './shared/affinity/index.ts';
@@ -75,7 +74,6 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
   return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
-    const affinity = await narrowing.affinity(use.gateway);
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: use.gateway.upstreamIds,
       model,
@@ -94,6 +92,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
         ...narrowing.refuse(status, message, reason),
       });
 
+    const affinity = await narrowing.affinity(use.gateway);
     const viable = candidates.filter(candidate => narrowing.canServe(candidate));
     const selection = selectAffinityCandidates(viable, affinity);
     // A turn whose carried state needs two upstreams at once is a request the client can fix
@@ -110,10 +109,9 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
     // The live half stays with the resolver; only selectors travel. The payload a candidate
     // is owed is part of that live half — affinity materializes it per candidate, and it
     // carries the client's own state rewritten for the upstream that will see it.
-    use.rememberCandidates(selection.candidates);
     use.rememberChatSelection(selection.payloadFor);
     use.log.debug('resolved chat candidates', { model, viable: selection.candidates.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(selection.candidates.map(selectorFor)) });
+    return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(selection.candidates)) });
   },
 });
 

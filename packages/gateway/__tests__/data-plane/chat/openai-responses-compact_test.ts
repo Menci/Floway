@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { openaiResponsesCompactPipeline } from '../../../src/data-plane/chat/openai-responses/compact.ts';
+import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
@@ -149,8 +150,8 @@ const settlements: { billable: unknown; failed: boolean }[] = [];
 
 let gateway = mockChatGatewayCtx({ wantsStream: false });
 
-const compact = async (request: CanonicalOpenAIResponsesPayload = payload) => {
-  gateway = mockChatGatewayCtx({ wantsStream: false });
+const compact = async (request: CanonicalOpenAIResponsesPayload = payload, signal?: AbortSignal) => {
+  gateway = mockChatGatewayCtx({ wantsStream: false, abortSignal: signal });
   const outcome = await run(
     openaiResponsesCompactPipeline(request),
     move({
@@ -162,7 +163,7 @@ const compact = async (request: CanonicalOpenAIResponsesPayload = payload) => {
     {
       gateway,
       background: () => {},
-      rememberCandidates: () => {},
+      ...createCandidateRegistry(),
       rememberChatSelection: () => {},
       chatPayloadFor: () => request,
       selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
@@ -176,6 +177,7 @@ const compact = async (request: CanonicalOpenAIResponsesPayload = payload) => {
   // What the epilogue would settle from, once the run has answered.
   const pending = outcome.facts['response.chat.openaiResponses.streamedUsage'];
   if (pending !== null) settlements.push(await pending);
+  await outcome.drain();
   return outcome;
 };
 
@@ -185,11 +187,9 @@ const rendered = (facts: Record<string, unknown>): Record<string, unknown> =>
 /** The summary a simulated compaction packed into the item the client is handed. The turn's
  *  own state is sealed around it on the way out — that is what pins the next turn to the
  *  upstream that issued this one — so the carrier is opened before the blob is read. */
-const summaryIn = async (encryptedContent: string): Promise<string> => {
-  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'openai-responses.compaction.encrypted_content');
-  if (carrier.kind !== 'owned' || carrier.value === undefined) throw new Error('expected the turn-s own carrier around the blob');
-  const items = decodeBase64UrlJson(carrier.value) as { content: { text: string }[] }[] | null;
-  if (items === null) throw new Error('expected a shim-encoded compaction blob');
+const summaryIn = (encryptedContent: string): string => {
+  const items = decodeBase64UrlJson(encryptedContent) as { content: { text: string }[] }[] | null;
+  if (items === null) throw new Error('expected a portable compaction envelope');
   return items[0]!.content[0]!.text;
 };
 
@@ -263,8 +263,8 @@ describe('the responses compaction chain', () => {
     expect(facts['response.http.status']).toBe(200);
     expect(rendered(facts).object).toBe('response.compaction');
     const output = rendered(facts).output as { type: string; encrypted_content: string }[];
-    expect(output[0]!.type).toBe('compaction');
-    expect(await summaryIn(output[0]!.encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+    expect(output.some(item => item.type === 'compaction')).toBe(true);
+    expect(summaryIn(output.find(item => item.type === 'compaction')!.encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
   });
 
   // The flag is the operator's opt-in for an upstream that would answer a compaction itself.
@@ -281,8 +281,8 @@ describe('the responses compaction chain', () => {
     // The ephemeral summarization turn is not persisted in the upstream's own history.
     expect(seen.body).toMatchObject({ store: false });
     expect(rendered(facts).object).toBe('response.compaction');
-    const output = rendered(facts).output as { encrypted_content: string }[];
-    expect(await summaryIn(output[0]!.encrypted_content)).toBe(`${SUMMARY_PREFIX}\nSIMULATED SUMMARY`);
+    const output = rendered(facts).output as { type: string; encrypted_content: string }[];
+    expect(summaryIn(output.find(item => item.type === 'compaction')!.encrypted_content)).toBe(`${SUMMARY_PREFIX}\nSIMULATED SUMMARY`);
   });
 
   // A compaction this gateway synthesized carries the history it stood for, so a turn that
@@ -324,6 +324,8 @@ describe('the responses compaction chain', () => {
     const { facts } = await compact();
 
     expect(tried).toEqual(['mute', 'talkative']);
+    const outcome = settlements.at(-1) as { billable: Array<{ identity: { upstream: string }; quantities: Record<string, string> }> };
+    expect(outcome.billable.map(entity => [entity.identity.upstream, entity.quantities.input_tokens])).toEqual([['up_mute', '12'], ['up_talkative', '12']]);
     expect(facts['response.http.status']).toBe(200);
     expect(rendered(facts).object).toBe('response.compaction');
   });
@@ -412,5 +414,100 @@ describe('the responses compaction chain', () => {
 
     expect(facts['response.http.status']).toBe(200);
     expect(refused).toBeInstanceOf(TypeError);
+  });
+});
+
+describe('native compaction decryption', () => {
+  const decryptFlags = new Set<FlagId>(['openai-responses-compact-decrypt']);
+  it('replays both compaction aliases on the same candidate and preserves each call cost', async () => {
+    const calls: Array<{ model: unknown; body: Record<string, unknown>; action: unknown }> = [];
+    const original = compaction({
+      output: [
+        { type: 'message', id: 'kept', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'keep me', annotations: [] }] },
+        { type: 'compaction', id: 'cmp_first', encrypted_content: 'OPAQUE_A' },
+        { type: 'compaction_summary', id: 'cmp_second', encrypted_content: 'OPAQUE_B' },
+      ] as never,
+    });
+    resolves([candidate({
+      callOpenAIResponses: async (model, body, action) => {
+        calls.push({ model, body: body as Record<string, unknown>, action });
+        if (action === 'compact') return { action: 'compact', ok: true, result: original, modelKey: 'responses-model-key' };
+        const item = (body as CanonicalOpenAIResponsesPayload).input[1];
+        return await generates('id' in item && item.id === 'cmp_first' ? 'first plaintext' : 'second plaintext')(model, body, action);
+      },
+    }, { enabledFlags: decryptFlags })]);
+    const { facts } = await compact({ ...payload, instructions: 'original instructions', tools: [{ type: 'function', name: 'f' }] });
+    expect(calls.map(call => call.action)).toEqual(['compact', 'generate', 'generate']);
+    expect(calls[1].model).toBe(calls[0].model);
+    expect(calls[2].model).toBe(calls[0].model);
+    for (const call of calls.slice(1)) {
+      expect(call.body).not.toHaveProperty('instructions');
+      expect(call.body).not.toHaveProperty('tools');
+      expect(call.body).toMatchObject({ store: false, input: [{ role: 'system' }, { type: expect.stringMatching(/^compaction/) }, { role: 'system' }] });
+    }
+    const output = rendered(facts).output as Array<{ id: string; type: string; encrypted_content?: string }>;
+    expect(output.some(item => item.id === 'kept')).toBe(true);
+    expect(summaryIn(output.find(item => 'id' in item && item.id === 'cmp_first')!.encrypted_content!)).toBe('first plaintext');
+    expect(summaryIn(output.find(item => item.id === 'cmp_second')!.encrypted_content!)).toBe('second plaintext');
+    expect(rendered(facts).object).toBe('response.compaction');
+    expect(rendered(facts).usage).toMatchObject({ input_tokens: 36, output_tokens: 9, total_tokens: 45 });
+    const outcome = settlements.at(-1) as { billable: Array<{ quantities: unknown }> };
+    expect(outcome.billable.map(entity => entity.quantities)).toEqual(Array.from({ length: 3 }, () => ({ input_tokens: '12', output_tokens: '3' })));
+  });
+
+  it('retains native cost when a replay refuses and a later candidate succeeds', async () => {
+    const initial = candidate({
+      callOpenAIResponses: async (_model, _body, action) => action === 'compact'
+        ? { action: 'compact', ok: true, result: compaction(), modelKey: 'responses-model-key' }
+        : { action: 'generate', ok: false, response: Response.json({ error: { message: 'busy' } }, { status: 429 }), modelKey: 'responses-model-key' },
+    }, { upstreamId: 'up_first', enabledFlags: decryptFlags });
+    const fallback = candidate({ callOpenAIResponses: compacts({}) }, { upstreamId: 'up_fallback' });
+    resolves([initial, fallback]);
+    const { facts } = await compact();
+    expect(facts['response.http.status']).toBe(200);
+    const outcome = settlements.at(-1) as { billable: Array<{ identity: { upstream: string }; quantities: Record<string, string> }> };
+    expect(outcome.billable.filter(entity => entity.quantities.input_tokens !== undefined).map(entity => [entity.identity.upstream, entity.quantities.input_tokens])).toEqual([['up_first', '12'], ['up_fallback', '12']]);
+  });
+
+  it('preserves observed replay usage and the original failure when a replay stream breaks', async () => {
+    const broken = new Error('replay stream broke');
+    let released = false;
+    resolves([candidate({
+      callOpenAIResponses: async (_model, _body, action) => action === 'compact'
+        ? { action: 'compact', ok: true, result: compaction(), modelKey: 'responses-model-key' }
+        : {
+            action: 'generate', ok: true, modelKey: 'responses-model-key', headers: new Headers(), events: (async function* () {
+              try {
+                yield { type: 'event' as const, event: { type: 'response.in_progress', sequence_number: 0, response: { id: 'replay', object: 'response', model: 'responses-model', status: 'in_progress', output: [], error: null, incomplete_details: null, usage: { input_tokens: 7, output_tokens: 2, total_tokens: 9 } } } as OpenAIResponsesStreamEvent };
+                throw broken;
+              } finally { released = true; }
+            })(),
+          },
+    }, { enabledFlags: decryptFlags })]);
+    const { facts } = await compact();
+    expect(facts['response.http.status']).toBe(500);
+    expect(JSON.stringify(rendered(facts))).toContain(broken.message);
+    expect(released).toBe(true);
+    const calls = facts['response.usage.billable'];
+    expect(calls.map(entity => entity.quantities)).toEqual([{ input_tokens: '12', output_tokens: '3' }, { input_tokens: '7', output_tokens: '2' }]);
+  });
+
+  it('stops before replay after cancellation and keeps the completed native reading', async () => {
+    const controller = new AbortController();
+    const cancelled = new Error('compaction cancelled');
+    let replayCalls = 0;
+    resolves([candidate({
+      callOpenAIResponses: async (_model, _body, action) => {
+        if (action !== 'compact') { replayCalls++; throw new Error('Unexpected replay'); }
+        controller.abort(cancelled);
+        return { action: 'compact', ok: true, result: compaction(), modelKey: 'responses-model-key' };
+      },
+    }, { enabledFlags: decryptFlags })]);
+    const { facts } = await compact(payload, controller.signal);
+    expect(replayCalls).toBe(0);
+    expect(facts['response.http.status']).toBe(500);
+    expect(JSON.stringify(rendered(facts))).toContain(cancelled.message);
+    const calls = facts['response.usage.billable'];
+    expect(calls.map(entity => entity.quantities)).toEqual([{ input_tokens: '12', output_tokens: '3' }]);
   });
 });

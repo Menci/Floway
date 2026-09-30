@@ -24,7 +24,7 @@ const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
 
 const requestBody = { bytes: new TextEncoder().encode('{"input":"hi"}'), streamError: null };
 
-const turn = { method: 'POST', path: '/v1/embeddings', body: requestBody };
+const turn = { method: 'POST', path: '/v1/embeddings', body: requestBody, headers: [] };
 
 // Two stages, so the record has a shape to hold: one that hands down and one
 // that answers.
@@ -65,7 +65,7 @@ const lines = (record: StoredDumpRecord): DumpEvent[] =>
 
 test('a run under a key with retention stores its whole event stream as NDJSON', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   const { facts } = await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
@@ -100,7 +100,7 @@ test('a run under a key with retention stores its whole event stream as NDJSON',
 
 test('a key without retention opens no sink, so a run records and stores nothing', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(null), turn, trackBackground);
+  const dump = openRunDump(apiKey(null), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   assertEquals(dump, null);
 
   // The absence is the mechanism: with nothing to put in `services.dump` the
@@ -119,7 +119,7 @@ test('a key without retention opens no sink, so a run records and stores nothing
 
 test('a run record carries the attribution the turn stamped on it', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   dump.requestedModel('text-embedding-3-small');
@@ -139,6 +139,8 @@ test('a run whose request never arrived intact records that as the turn\'s failu
     apiKey(3600),
     { ...turn, body: { bytes: new Uint8Array(), streamError: 'client aborted the upload' } },
     trackBackground,
+    false,
+    { upstreamCallStartedAt: null, firstOutputTokenAt: null },
   );
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
@@ -150,7 +152,7 @@ test('a run whose request never arrived intact records that as the turn\'s failu
 
 test('finalizing on a response measures what the client reads and leaves it intact', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
@@ -164,4 +166,20 @@ test('finalizing on a response measures what the client reads and leaves it inta
 
   const record = runRecordOf(stubs.stored[0]);
   assertEquals(record.meta.responseBytes, 22);
+
+});
+
+test('a run reads the stable timing state at completion alongside its stage history', async () => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const timing = { upstreamCallStartedAt: 100, firstOutputTokenAt: null as number | null };
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, true, timing);
+  if (dump === null) throw new Error('a key with retention must open a run dump');
+  await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
+  timing.firstOutputTokenAt = 225;
+  assertEquals(await dump.finalize(new Response('client')).text(), 'client');
+  await flushBackground();
+  const record = runRecordOf(stubs.stored[0]);
+  assertEquals(record.meta.ttftMs, 125);
+  assertEquals('capture' in record, false);
+  assertEquals(lines(record).some(event => event.type === 'stage.entered'), true);
 });

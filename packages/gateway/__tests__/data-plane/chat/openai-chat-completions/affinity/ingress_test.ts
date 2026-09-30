@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/ingress.ts';
-import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -16,10 +16,11 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
-const targetFor = (value: ModelCandidate): AffinityTarget => ({
+const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
 test('restores owned opaque state only for its exact candidate', async () => {

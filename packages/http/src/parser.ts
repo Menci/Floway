@@ -39,7 +39,32 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
     raw.body.cancel().catch(() => {});
     return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
-  return new Response(raw.body, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+  const headers = new Headers(raw.headers);
+  const body = decodeContentEncoding(raw.body, headers);
+  return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+};
+
+// Native fetch transparently decodes gzip/deflate responses, but the socket
+// transport starts at HTTP/1.1 framing and otherwise hands callers compressed
+// bytes. Keep both paths on the same Response contract so protocol parsers see
+// the advertised body rather than a content coding.
+// TODO: Claude Code advertises gzip, deflate, br, zstd. Add platform-injected
+// streaming br/zstd decoders before accepting those codings here; #400 requires
+// explicit client Accept-Encoding values to continue reaching the upstream.
+const decodeContentEncoding = (body: ReadableStream<Uint8Array>, headers: Headers): ReadableStream<Uint8Array> => {
+  const encoding = headers.get('content-encoding')?.toLowerCase();
+  if (encoding === undefined || encoding === 'identity') return body;
+  if (encoding !== 'gzip' && encoding !== 'deflate') {
+    void body.cancel();
+    throw new HttpProtocolError(
+      `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(encoding)}; supported codings are gzip and deflate`,
+      'UNSUPPORTED_CONTENT_ENCODING',
+    );
+  }
+
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return body.pipeThrough(new DecompressionStream(encoding) as never);
 };
 
 /**

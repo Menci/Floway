@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createCandidateRegistry } from '../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { rerankServePipeline } from '../../src/data-plane/rerank/pipeline.ts';
 import { initRepo } from '../../src/repo/index.ts';
@@ -57,7 +58,7 @@ const serve = async () => await run(
   {
     gateway: mockGatewayCtx({ wantsStream: false }),
     background: () => {},
-    rememberCandidates: () => {},
+    ...createCandidateRegistry(),
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);

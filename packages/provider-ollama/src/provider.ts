@@ -60,12 +60,14 @@ const finalizeOllamaModels = (
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
       id: raw.id,
+      upstreamModelId: raw.id,
       owned_by: 'ollama',
       limits,
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: raw.id,
       enabledFlags,
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const pricing = pricingForOllamaModelKey(raw.id);
@@ -108,18 +110,21 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
     const internal: ProviderModel = {
       id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
       limits: { ...(model.limits ?? {}) },
-      kind: kindForEndpoints(endpoints),
+      kind,
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
     if (pricing) internal.pricing = pricing;
-    if (model.chat) internal.chat = model.chat;
+    if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
   const call = (

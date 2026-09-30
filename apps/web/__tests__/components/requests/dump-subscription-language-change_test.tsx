@@ -45,7 +45,7 @@ describe('dump subscription language change', () => {
     expect(stream.liveSource()).toBe(live);
   });
 
-  // BrowserLanguageSync applies the visitor's language once the tree is
+  // LanguageSync applies the visitor's language once the tree is
   // mounted, and i18next announces the change whether or not the language it
   // lands on differs from the one it booted in.
   it('keeps the stream open when boot re-applies the language it already has', async () => {

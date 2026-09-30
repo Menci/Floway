@@ -20,6 +20,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { consoleLogSink } from '../../../runtime/log.ts';
 import { prologueFor, type Ingress } from '../../pipeline/serve.ts';
 import { settleBillable } from '../../pipeline/settlement.ts';
+import type { AttemptState } from '../../shared/gateway-ctx.ts';
 import { takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -231,13 +232,17 @@ const openOpenAIResponsesWebSocketTurn = (
   // The frame is this turn's request body, so an operator reading the dashboard sees the
   // exact `response.create` that opened it, under its own `WS /v1/responses` row rather than
   // under the upgrade that carried it.
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   const dump = openRunDump(
     apiKeyFromContext(c),
     { method: 'WS', path: new URL(c.req.raw.url).pathname, body: turn.body },
     turn.backgroundScheduler,
+    true,
+    attempt.timing,
   );
   const gateway = createChatGatewayCtxFromHono(c, {
     wantsStream: true,
+    attempt,
     model: turn.payload.model,
     requestBody: takeRequestBody(turn.body),
     downstreamAbortController: turn.downstreamAbortController,

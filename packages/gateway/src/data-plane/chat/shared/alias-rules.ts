@@ -14,7 +14,7 @@
 // it writes to, which is the shape of failure that reached a client as a 502 once already.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import type { AliasRules } from '@floway-dev/protocols/common';
+import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
@@ -74,7 +74,7 @@ export const applyRulesToUpstreamAnthropicMessages = <T extends AnthropicMessage
   // doesn't model them. Whichever branch we take, the sibling field is gone
   // so the upstream never sees two tiers in conflict.
   const { speed: _speed, service_tier: _serviceTier, ...tierless } = reasoned;
-  return (rules.serviceTier === 'fast'
+  return (isFastServiceTier(rules.serviceTier)
     ? { ...tierless, speed: 'fast' }
     : { ...tierless, service_tier: rules.serviceTier }) as T;
 };

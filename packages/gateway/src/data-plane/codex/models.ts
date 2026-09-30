@@ -14,11 +14,11 @@
 // overlays it announces, and capabilities proven by the exact client catalog
 // (see synthesize.ts for the exact field precedence rules).
 
-import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities } from './catalog.ts';
+import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities, type CodexServiceTier } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
+import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher } from '@floway-dev/provider';
+import { codexModelContextWindow } from '@floway-dev/provider-codex';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -31,6 +31,7 @@ export const assembleCodexCatalog = (
 ): CodexCatalog => {
   const catalogBySlug = new Map<string, CatalogModel>();
   for (const model of catalog.models) catalogBySlug.set(model.slug.toLowerCase(), model);
+  const catalogServiceTiers: CodexServiceTier[] = catalog.models.flatMap(model => model.service_tiers ?? []);
 
   // Match against the client catalog by walking segments from the trailing leaf back
   // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
@@ -54,7 +55,17 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities));
+    // Limits follow the registry's first-provider metadata policy. Only that
+    // provider can supply Codex's private default; a same-named model from a
+    // different provider must use its own advertised input budget.
+    const primaryUpstream = entry.upstreams[0];
+    let codexContextWindow;
+    if (primaryUpstream?.kind === 'codex') {
+      const providerModel = entry.model.providerModels?.[primaryUpstream.upstreamId];
+      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no primary provider model`);
+      codexContextWindow = codexModelContextWindow(providerModel);
+    }
+    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, codexContextWindow));
   }
   return { models };
 };
@@ -62,12 +73,11 @@ export const assembleCodexCatalog = (
 export const loadCodexCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
+  scheduleRefresh: ModelsRefreshScheduler,
 ): Promise<CodexCatalog> => {
   const [resolution, addressable] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamIds, scheduleRefresh),
   ]);
   return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };

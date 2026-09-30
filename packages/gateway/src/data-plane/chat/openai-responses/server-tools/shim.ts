@@ -6,9 +6,11 @@ import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
+  type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputItem,
+  type OpenAIResponsesOutputFunctionCall,
   type OpenAIResponsesOutputItem,
   type OpenAIResponsesResult,
   type OpenAIResponsesStreamEvent,
@@ -127,7 +129,8 @@ export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gat
 
 export type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  // Absent only for replay activation; otherwise drives `tools` echo restore.
+  // Hosted entries are rewritten at their input-item positions; only
+  // top-level replacements participate in response.tools restoration.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
@@ -224,11 +227,49 @@ export const rewriteHostedToolChoice = (
   active: readonly ActiveServerTool[],
 ): OpenAIResponsesToolChoice | null | undefined => {
   if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
+  if (toolChoice.type === 'allowed_tools' && Array.isArray(toolChoice.tools)) {
+    const tools = toolChoice.tools.map(selector => {
+      if (typeof selector !== 'object' || selector === null || typeof selector.type !== 'string' || selector.namespace !== undefined) return selector;
+      const type = selector.type;
+      const entry = active.find(entry => entry.hosted?.hostedTypes.includes(type));
+      return entry === undefined ? selector : { ...selector, type: 'function', name: entry.toolName };
+    });
+    return tools.some((tool, index) => tool !== toolChoice.tools[index]) ? { ...toolChoice, tools } : toolChoice;
+  }
   for (const entry of active) {
     if (entry.hosted === undefined) continue;
     if (entry.hosted.hostedTypes.includes(toolChoice.type)) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
+};
+
+export const hostedToolChoiceToRestore = (
+  choice: OpenAIResponsesToolChoice | null | undefined,
+  hosted: ServerToolHostedDispatch | undefined,
+  toolName: string,
+): Exclude<OpenAIResponsesToolChoice, string> | undefined => {
+  if (hosted === undefined || typeof choice !== 'object' || choice === null) return undefined;
+  if (hosted.hostedTypes.includes(choice.type)) return choice;
+  if (choice.type !== 'allowed_tools' || !Array.isArray(choice.tools)) return undefined;
+
+  const selectsHostedTool = choice.tools.some(selector => {
+    if (typeof selector?.type !== 'string' || selector.namespace !== undefined) return false;
+    if (hosted.hostedTypes.includes(selector.type)) return true;
+    return choice.mode === 'required' && selector.type === 'function' && selector.name === toolName;
+  });
+  return selectsHostedTool ? choice : undefined;
+};
+
+export const isForcedServerToolChoice = (
+  choice: OpenAIResponsesToolChoice | null | undefined,
+  dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
+): boolean => {
+  if (choice === 'required') return true;
+  if (typeof choice !== 'object' || choice === null) return false;
+  if (choice.type === 'function') return choice.namespace === undefined && dispatchers.has(choice.name);
+  if (choice.type !== 'allowed_tools' || choice.mode !== 'required' || !Array.isArray(choice.tools)) return false;
+  return choice.tools.some(selector => selector?.type === 'function' && selector.namespace === undefined
+    && typeof selector.name === 'string' && dispatchers.has(selector.name));
 };
 
 // The shim demotes forced choice to `auto` after the first turn, so synthesized
@@ -243,17 +284,16 @@ const restoreEchoedToolChoice = (
   return toolChoice;
 };
 
-// Inverse of the request-side hosted→function rewrite, applied to the
-// upstream-echoed tools array. Non-injected entries pass through
-// verbatim so upstream-side default enrichment on ordinary client
-// function tools survives.
+// Restore top-level hosted declarations in the response.tools echo.
+// Unmatched entries pass through unchanged, preserving any fields returned
+// by upstream for ordinary client tools.
 const restoreEchoedTools = (
   tools: readonly OpenAIResponsesTool[] | undefined,
   active: readonly ActiveServerTool[],
 ): OpenAIResponsesTool[] | undefined => {
   if (tools === undefined) return undefined;
   return tools.map(tool => {
-    if (tool.type !== 'function') return tool;
+    if (tool.type !== 'function' || ('namespace' in tool && tool.namespace !== undefined)) return tool;
     for (const entry of active) {
       if (entry.canonicalHostedTool !== undefined && tool.name === entry.toolName) {
         return entry.canonicalHostedTool;
@@ -263,9 +303,45 @@ const restoreEchoedTools = (
   });
 };
 
-export const resolveServerToolName = (baseName: string, tools: readonly OpenAIResponsesTool[]): string => {
+export const resolveServerToolName = (
+  baseName: string,
+  tools: readonly OpenAIResponsesTool[],
+  input: readonly OpenAIResponsesInputItem[] = [],
+  choice?: OpenAIResponsesToolChoice | null,
+): string => {
   const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
-  const taken = new Set(tools.flatMap(tool => (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
+  const taken = new Set<string>();
+  // Reserve callable leaf names in every scope. A provider may fold flat
+  // functions into a namespace; synthetic helpers must not introduce an
+  // identity collision even when that provider's naming policy is unknown here.
+  const reserveTools = (inventory: readonly OpenAIResponsesTool[]) => {
+    for (const tool of inventory) {
+      if (tool.type === 'function' || tool.type === 'custom') taken.add(tool.name);
+      else if (tool.type === 'namespace' && Array.isArray(tool.tools)) {
+        for (const child of tool.tools) {
+          if (typeof child === 'object' && child !== null && (child.type === 'function' || child.type === 'custom')) taken.add(child.name);
+        }
+      }
+    }
+  };
+  reserveTools(tools);
+  for (const item of input) {
+    if (item.type === 'function_call' || item.type === 'custom_tool_call') taken.add(item.name);
+    else if ((item.type === 'tool_search_output' || item.type === 'additional_tools') && Array.isArray(item.tools)) reserveTools(item.tools);
+  }
+  if (typeof choice === 'object' && choice !== null) {
+    const selectors = choice.type === 'allowed_tools' ? (Array.isArray(choice.tools) ? choice.tools : []) : [choice];
+    for (const selector of selectors) {
+      if (typeof selector === 'object' && selector !== null
+        && (selector.type === 'function' || selector.type === 'custom') && typeof selector.name === 'string') {
+        // Only the canonical unqualified function name can select this helper.
+        // Other selectors must not acquire it through an allocated alias.
+        const selectsHelper = selector.type === 'function' && selector.name === baseName
+          && (!('namespace' in selector) || selector.namespace === undefined);
+        if (!selectsHelper) taken.add(selector.name);
+      }
+    }
+  }
   if (!taken.has(baseName)) return baseName;
   for (let i = 2; i <= MAX_NAME_RESOLUTION_ATTEMPTS; i++) {
     const candidate = `${baseName}_${i}`;
@@ -274,11 +350,20 @@ export const resolveServerToolName = (baseName: string, tools: readonly OpenAIRe
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
-// Azure and Copilot both deduplicate repeated hosted-tool declarations as one
-// family and retain the last complete declaration, including aliases and
-// configuration. The replacement occupies the first declaration's array slot
-// so unrelated tools retain their relative order.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+export const historicalClientCallableUsesName = (name: string, input: readonly OpenAIResponsesInputItem[]): boolean =>
+  input.some(item => {
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
+      return Array.isArray(item.tools) && item.tools.some(tool =>
+        tool != null && (tool.type === 'function' || tool.type === 'custom') && tool.name === name
+        && (!('namespace' in tool) || tool.namespace === undefined));
+    }
+    return (item.type === 'function_call' || item.type === 'custom_tool_call')
+      && item.namespace === undefined && item.name === name;
+  });
+
+// Collapse matching hosted declarations within each tools array. Keep the
+// last declaration's configuration at the first matching slot so unrelated
+// tools retain their relative order.
 export const rewriteToolsForHostedShim = (
   tools: readonly OpenAIResponsesTool[],
   hosted: ServerToolHostedDispatch,
@@ -304,6 +389,34 @@ export const rewriteToolsForHostedShim = (
   }
   rewritten[replacementIndex] = hosted.buildFunctionTool(canonicalHostedTool, toolName);
   return { rewritten, canonicalHostedTool };
+};
+
+export const rewriteHostedDeclarations = (
+  payload: CanonicalOpenAIResponsesPayload,
+  hosted: ServerToolHostedDispatch,
+  toolName: string,
+): { payload: CanonicalOpenAIResponsesPayload; canonicalTopLevelHostedTool: OpenAIResponsesHostedTool | undefined } => {
+  let canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
+  const rewrite = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => {
+    if (!tools.some(tool => hosted.canonicalize(tool) !== undefined)) return tools;
+    const result = rewriteToolsForHostedShim(tools, hosted, toolName);
+    canonicalHostedTool = result.canonicalHostedTool;
+    return result.rewritten;
+  };
+  const tools = Array.isArray(payload.tools) ? rewrite(payload.tools) : undefined;
+  const canonicalTopLevelHostedTool = canonicalHostedTool;
+  const input = payload.input.map(item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const rewritten = rewrite(item.tools);
+    return rewritten === item.tools ? item : { ...item, tools: rewritten };
+  });
+  if (canonicalHostedTool === undefined) {
+    throw new Error('Hosted server-tool registration did not match any request tool');
+  }
+  return {
+    payload: { ...payload, ...(tools === undefined ? {} : { tools }), input },
+    canonicalTopLevelHostedTool,
+  };
 };
 
 export const parseServerToolArguments = (argumentsJson: string): Record<string, unknown> | null => {
@@ -467,7 +580,13 @@ export const consumeTurnStreaming = async function* (
   // until the closing `.done` parses them into `intercepted.arguments`.
   // Kept on the entry (not on `InterceptedFunctionCall`) because it's
   // streaming state, not part of the dispatcher's input.
-  const interceptedByUpstreamIndex = new Map<number, { intercepted: InterceptedFunctionCall; dispatcher: ServerToolDispatcher; reservedOutputIndex: number; argumentsJson: string }>();
+  const interceptedByUpstreamIndex = new Map<number, {
+    intercepted: InterceptedFunctionCall;
+    addedItem: OpenAIResponsesOutputFunctionCall;
+    reservedOutputIndex: number;
+    argumentsJson: string;
+    bufferedEvents: OpenAIResponsesStreamEvent[];
+  }>();
 
   const ensureModel = (): string => {
     if (merge.lastSeenModel === null) {
@@ -548,8 +667,7 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const item = event.item;
       if (item.type === 'function_call') {
-        const dispatcher = dispatchers.get(item.name);
-        if (dispatcher !== undefined) {
+        if (dispatchers.has(item.name)) {
           // Reserve the downstream index the shim call occupies now, at
           // `.added`; the actual slot count is only known at `.done`,
           // where slot 0 takes this reserved index and any further slots
@@ -557,11 +675,13 @@ export const consumeTurnStreaming = async function* (
           // output items stream sequentially — one item's `.added`…`.done`
           // completes before the next item's `.added`, so nothing
           // allocates a downstream index between this reservation and the
-          // dispatch below.
+          // dispatch below. Buffer a colliding namespaced client call too:
+          // the completed item owns the final dispatch identity.
           interceptedByUpstreamIndex.set(upstreamIndex, {
-            dispatcher,
+            addedItem: item,
             reservedOutputIndex: merge.outputIndex++,
             argumentsJson: '',
+            bufferedEvents: [],
             intercepted: {
               callId: item.call_id,
               name: item.name,
@@ -595,9 +715,35 @@ export const consumeTurnStreaming = async function* (
       const upstreamIndex = event.output_index;
       const intercepted = interceptedByUpstreamIndex.get(upstreamIndex);
       if (intercepted !== undefined) {
-        if (event.item.type === 'function_call') intercepted.argumentsJson = event.item.arguments;
+        if (event.item.type !== 'function_call' || event.item.name !== intercepted.intercepted.name
+          || event.item.call_id !== intercepted.intercepted.callId || event.item.id !== intercepted.addedItem.id) {
+          throw new Error('Upstream changed a server-tool function identity before closing its call.');
+        }
+        const finalDispatcher = event.item.namespace === undefined ? dispatchers.get(event.item.name) : undefined;
+        if (finalDispatcher === undefined) {
+          const downstreamIndex = intercepted.reservedOutputIndex;
+          const itemId = intercepted.addedItem.id ?? event.item.id;
+          const doneItem = itemId === undefined ? event.item : { ...event.item, id: itemId };
+          openItems.set(upstreamIndex, downstreamIndex);
+          if (itemId !== undefined) openItemIds.set(upstreamIndex, itemId);
+          sawClientToolCall = true;
+          yield stamp({
+            type: 'response.output_item.added', output_index: downstreamIndex,
+            item: { ...doneItem, arguments: '', status: 'in_progress' },
+          });
+          for (const buffered of intercepted.bufferedEvents) {
+            const rewritten = rewriteOutputIndex(buffered, openItems, openItemIds, merge);
+            if (rewritten !== null) yield stamp(rewritten);
+          }
+          yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
+          merge.accumulatedOutput.set(downstreamIndex, doneItem);
+          interceptedByUpstreamIndex.delete(upstreamIndex);
+          continue;
+        }
+        intercepted.intercepted.name = event.item.name;
+        intercepted.argumentsJson = event.item.arguments;
         intercepted.intercepted.arguments = parseServerToolArguments(intercepted.argumentsJson);
-        const slots = intercepted.dispatcher({ intercepted: intercepted.intercepted, loopState });
+        const slots = finalDispatcher({ intercepted: intercepted.intercepted, loopState });
         if (loopState.remainingToolCalls !== undefined) loopState.remainingToolCalls -= 1;
         const dispatchedSlots: DispatchedServerToolSlot[] = [];
         for (const [slotIndex, slot] of slots.entries()) {
@@ -625,6 +771,7 @@ export const consumeTurnStreaming = async function* (
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
         intercepted.argumentsJson += event.delta;
+        intercepted.bufferedEvents.push(event);
         continue;
       }
       const rewritten = rewriteOutputIndex(event, openItems, openItemIds, merge);
@@ -636,6 +783,7 @@ export const consumeTurnStreaming = async function* (
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
         intercepted.argumentsJson = event.arguments;
+        intercepted.bufferedEvents.push(event);
         continue;
       }
       const rewritten = rewriteOutputIndex(event, openItems, openItemIds, merge);
@@ -644,7 +792,10 @@ export const consumeTurnStreaming = async function* (
     }
 
     const maybeIndexedForIntercepted = event as OpenAIResponsesStreamEvent & { output_index?: unknown };
-    if (typeof maybeIndexedForIntercepted.output_index === 'number' && interceptedByUpstreamIndex.has(maybeIndexedForIntercepted.output_index)) {
+    const pending = typeof maybeIndexedForIntercepted.output_index === 'number'
+      ? interceptedByUpstreamIndex.get(maybeIndexedForIntercepted.output_index) : undefined;
+    if (pending !== undefined) {
+      pending.bufferedEvents.push(event);
       continue;
     }
 
