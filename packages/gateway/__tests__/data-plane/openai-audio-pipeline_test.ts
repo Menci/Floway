@@ -160,6 +160,33 @@ describe('the OpenAI Audio Transcriptions pipeline', () => {
       .toEqual(['transcript.text.delta', 'transcript.text.done']);
   });
 
+  it('preserves upstream SSE event labels and data spelling', async () => {
+    const delta = '{ "type": "transcript.text.delta", "delta": "hi", "vendor": true }';
+    const extension = '{ "vendor_extension": "no type discriminator" }';
+    const done = '{ "type": "transcript.text.done", "text": "hi", "usage": { "type": "tokens", "input_tokens": 3, "output_tokens": 1 } }';
+    resolves([candidate(async () => ({
+      response: new Response(`event: transcript.delta\ndata: ${delta}\n\nevent: vendor.extension\ndata: ${extension}\n\nevent: transcript.completed\ndata: ${done}\n\n`, {
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+      modelKey: 'whisper-key',
+    } as ProviderCallResult))]);
+
+    const { facts, drain } = await serve();
+    const frames: SseFrame[] = [];
+    for await (const frame of facts['response.openaiAudioTranscription.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    await drain();
+
+    expect(frames).toEqual([
+      { type: 'sse', event: 'transcript.delta', data: delta },
+      { type: 'sse', event: 'vendor.extension', data: extension },
+      { type: 'sse', event: 'transcript.completed', data: done },
+    ]);
+    expect(await facts['response.openaiAudioTranscription.streamedOutcome']).toMatchObject({
+      failed: false,
+      billable: [{ quantities: { input_tokens: '3', output_tokens: '1' } }],
+    });
+  });
+
   it('keeps the events view clear of what answers to release', () => {
     // Neither the generator nor the view around it is a resource. Whether the host marks a
     // generator disposable varies — Node 24 does, Node 22 does not — and the run's answer

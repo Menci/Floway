@@ -8,7 +8,7 @@ import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { defineStage, move, own, defer, type Owned, type Logger, type Deferred } from '@floway-dev/pipeline';
 import { isEventStreamMediaType, eventFrame, parseSSEStream, parseDecimalString } from '@floway-dev/protocols/common';
-import { parseOpenAIAudioTranscription, parseOpenAIAudioTranscriptionUsage, parseOpenAIAudioTranscriptionStreamEvent, isOpenAIAudioTranscriptionDoneEvent, parseOpenAIAudioTranscriptionStreamUsage, type OpenAIAudioTranscriptionResponseFormat, type CanonicalOpenAIAudioTranscription, type OpenAIAudioTranscriptionUsage } from '@floway-dev/protocols/openai-audio';
+import { parseOpenAIAudioTranscription, parseOpenAIAudioTranscriptionUsage, isOpenAIAudioTranscriptionDoneEvent, parseOpenAIAudioTranscriptionStreamUsage, type OpenAIAudioTranscriptionResponseFormat, type CanonicalOpenAIAudioTranscription, type OpenAIAudioTranscriptionUsage } from '@floway-dev/protocols/openai-audio';
 import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
 
 const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => events });
@@ -121,8 +121,7 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
       const metered = meterEvents(result.response.body, identity, use.gateway.abortSignal, use.log);
       return move({
         ...facts,
-        // This protocol's stream is bare events rather than protocol frames, so the record is
-        // told how one becomes a frame instead of being left to assume.
+        // SSE labels and data remain upstream-owned; parsing below only observes billing and completion.
         'response.openaiAudioTranscription.canonical': recordStream(metered.events, use.gateway.dump, eventFrame),
         'response.openaiAudioTranscription.mediaType': mediaType,
         'response.openaiAudioTranscription.streamedOutcome': metered.outcome,
@@ -230,17 +229,17 @@ const meterEvents = (
     let completed = false;
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
-        const event = parseOpenAIAudioTranscriptionStreamEvent(JSON.parse(frame.data) as unknown);
+        const event: unknown = JSON.parse(frame.data);
         if (isOpenAIAudioTranscriptionDoneEvent(event)) {
           usage = readUsage(() => parseOpenAIAudioTranscriptionStreamUsage(event), log);
           completed = true;
-          yield event;
+          yield frame;
           // The transcript is complete, so there is nothing further to read. An upstream that
           // holds the connection open past this point would otherwise keep the client's own
           // stream open with it; returning here closes the read, which cancels the upstream.
           return;
         }
-        yield event;
+        yield frame;
       }
     } finally {
       // Reached however the events ended — the terminal one, a client that stopped reading,

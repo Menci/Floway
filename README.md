@@ -90,9 +90,10 @@ Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
 override that protocol's canonical path; there is no upstream-wide rerank path.
 
-Audio transcription is a buffered multipart passthrough for Custom, Azure, and
-Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
-responses retain their upstream wire shape.
+Audio transcription parses multipart uploads into ordered entries and rebuilds
+them for each Custom, Azure, or Ollama-compatible upstream attempt. JSON, text,
+and subtitle responses retain their upstream document; transcription SSE
+responses preserve event labels and data while usage is observed separately.
 
 ### Upstreams
 
@@ -183,6 +184,12 @@ pnpm run verify
 also available as a root script. Route type generation runs first because the
 web app's generated types are not checked in and its lint configuration is
 type-aware. The web build includes assertions on the emitted bundle.
+
+Pipeline endpoints are assembled from individual stage modules. Each stage owns
+its request and response contract; a large stage keeps local helpers in the same
+file and can place independent parts in a sibling directory of the same name.
+Protocol-family folders own their stages, while pipeline and wire modules
+compose the stages in traversal order.
 
 The protocol tests cover v1 and v2 opaque-blob carrier compatibility, lossless
 UTF-16 code-unit recovery, and retained-memory growth during history replay.
