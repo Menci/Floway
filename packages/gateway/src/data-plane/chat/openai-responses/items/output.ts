@@ -4,39 +4,6 @@ import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
-// Floway derives canonical output identity from `response.output_item.done`
-// lifecycles. Normalize terminal snapshots from that ordered set before
-// downstream transforms so affinity, persistence, and resource completion
-// cannot interpret array positions as different items. When no item closed,
-// preserve the terminal snapshot as the sole observation.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L313-L337
-export const wrapOpenAIResponsesObservedOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const observed = new Map<number, OpenAIResponsesOutputItem>();
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    const event = frame.event;
-    if (event.type === 'response.output_item.done') {
-      observed.set(event.output_index, event.item);
-      yield frame;
-      continue;
-    }
-    if (
-      observed.size > 0
-      && (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed')
-    ) {
-      const output = [...observed].sort(([left], [right]) => left - right).map(([, item]) => item);
-      yield eventFrame({ ...event, response: { ...event.response, output } });
-      continue;
-    }
-    yield frame;
-  }
-};
-
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
@@ -110,18 +77,13 @@ export const wrapOpenAIResponsesClientOutput = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       if (store.writesState) {
-        // A terminal may restate fewer items than the turn closed, but never
-        // one that never closed: that item reached the client without the
-        // lifecycle the spec requires of it.
+        // Persisted snapshots require the lifecycle that made each item
+        // reusable. A terminal-only item has not reached that boundary.
         event.response.output.forEach((_item, outputIndex) => {
           if (!finalizedOutputIds.has(outputIndex)) {
             throw new TypeError(`OpenAI Responses terminal output_index ${outputIndex} arrived before output_item.done`);
           }
         });
-        // The snapshot a `previous_response_id` continuation replays is the
-        // items this turn closed, in `output_index` order; taking the terminal's
-        // own restatement would drop the assistant's message from the history
-        // the next turn continues from.
         const orderedOutputIds = [...finalizedOutputIds]
           .sort(([left], [right]) => left - right)
           .map(([, id]) => id);

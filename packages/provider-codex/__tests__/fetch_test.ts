@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexOpenAIImagesGenerations, callCodexOpenAI
 import * as responsesLite from '../src/responses-lite.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesInputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -228,6 +228,84 @@ describe('callCodexOpenAIResponses — token freshness', () => {
     });
     expect(result.ok).toBe(false);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/));
+  });
+});
+
+describe('Codex terminal output recovery', () => {
+  test.each([false, true])('restores native compaction before stream and result consumption with Responses Lite=%s', async useResponsesLite => {
+    const item: OpenAIResponsesOutputItem = {
+      type: 'compaction', id: 'cmp_native', encrypted_content: 'OPAQUE_NATIVE_BLOB',
+      metadata: { turn_id: 'turn_native' }, internal_chat_message_metadata_passthrough: { turn_id: 'turn_native' },
+    };
+    const terminal: OpenAIResponsesResult = {
+      id: 'resp_native', object: 'response', model: model.id, status: 'completed', output: [],
+      error: null, incomplete_details: null, usage: { input_tokens: 15, output_tokens: 25, total_tokens: 40 },
+    };
+    for (const stream of [true, false]) {
+      seedFreshAccessToken();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(sseEventsResponse([
+        { type: 'response.created', response: { ...terminal, status: 'in_progress' } },
+        { type: 'response.in_progress', response: { ...terminal, status: 'in_progress' } },
+        { type: 'response.output_item.added', output_index: 0, item },
+        { type: 'response.compaction.compacting', item_id: item.id, output_index: 0 },
+        { type: 'response.output_item.done', output_index: 0, item },
+        { type: 'response.completed', response: terminal },
+      ]));
+      const effects = makeEffects();
+      const result = await callCodexOpenAIResponses({
+        upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+        body: { input: [{ type: 'compaction_trigger' } as unknown as OpenAIResponsesInputItem], stream },
+        headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+      });
+      if (!result.ok) throw new Error('expected a successful native compaction stream');
+      if (stream) {
+        const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+        for await (const frame of result.events) frames.push(frame);
+        expect(frames[0]).toMatchObject({ event: { response: { output: [], status: 'in_progress' } } });
+        expect(frames[3]).toMatchObject({ event: { type: 'response.compaction.compacting', item_id: item.id } });
+        expect(frames[4]).toMatchObject({ event: { type: 'response.output_item.done', output_index: 0, item } });
+        expect(frames[5]).toMatchObject({ event: { type: 'response.completed', response: { ...terminal, output: [item] } } });
+        expect(frames[6]).toEqual({ type: 'done' });
+      } else {
+        expect(await collectOpenAIResponsesProtocolEventsToResult(result.events)).toMatchObject({ ...terminal, output: [item] });
+      }
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test.each([false, true])('recovers an omitted assistant message after restored callable identities with Responses Lite=%s', async useResponsesLite => {
+    seedFreshAccessToken();
+    const wireCall = {
+      type: 'function_call', id: 'fc_0', call_id: 'call_0', name: 'lookup', arguments: '{}', status: 'completed',
+      ...(useResponsesLite ? { namespace: 'functions' } : {}),
+    };
+    const message: OpenAIResponsesOutputItem = {
+      type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: 'summary answer', annotations: [] }],
+    };
+    const terminal = {
+      id: 'resp_partial', object: 'response', model: model.id, status: 'completed',
+      output: [wireCall], error: null, incomplete_details: null,
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(sseEventsResponse([
+      { type: 'response.output_item.added', output_index: 0, item: wireCall },
+      { type: 'response.output_item.done', output_index: 0, item: wireCall },
+      { type: 'response.output_item.added', output_index: 1, item: message },
+      { type: 'response.output_item.done', output_index: 1, item: message },
+      { type: 'response.completed', response: terminal },
+    ]));
+    const result = await callCodexOpenAIResponses({
+      upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+      body: { input: [], tools: [{ type: 'function', name: 'lookup', parameters: {} }], stream: false },
+      headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    if (!result.ok) throw new Error('expected a successful summary stream');
+    const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+    const expectedCall = { ...wireCall };
+    delete expectedCall.namespace;
+    expect(collected.output).toEqual([expectedCall, message]);
   });
 });
 

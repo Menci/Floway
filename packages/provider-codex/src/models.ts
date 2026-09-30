@@ -10,17 +10,22 @@ import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 interface CodexProviderData {
+  contextWindow: number;
   useResponsesLite: boolean;
+}
+
+export interface CodexContextWindow {
+  context_window: number;
+  max_context_window?: number;
 }
 
 export interface CodexRawModel {
   id: string;
   display_name: string;
-  // Per-request context window. Upstream also returns a sibling
-  // `max_context_window` field as the upper bound for config overrides
-  // (https://github.com/openai/codex/blob/d66708232299bdbf373ec55b0d6b938c246cfa60/codex-rs/protocol/src/openai_models.rs#L383-L386);
-  // Floway has no override path, so only the operational value is kept.
+  // The default and config-override ceiling are separate client settings.
+  // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/models-manager/src/model_info.rs#L19-L31
   context_window: number;
+  max_context_window?: number;
   input_modalities?: readonly ('text' | 'image')[];
   reasoning_efforts?: readonly string[];
   default_reasoning_effort?: string;
@@ -58,22 +63,27 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
 const isPlainRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-// Fail loud on malformed upstream catalog responses: a missing field
-// signals an upstream contract change we need to notice. New optional
-// fields (`input_modalities`, `supported_reasoning_levels`,
-// `default_reasoning_level`, `supports_image_detail_original`) are tolerated
-// when absent for backwards compatibility with older catalog snapshots, but
-// throw on type drift.
+const assertContextWindow = (value: unknown, id: string, field: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`Codex model entry ${id} ${field} must be a positive safe integer`);
+  }
+  return value;
+};
+
+// Optional capabilities follow the upstream schema; malformed values expose
+// contract drift instead of silently changing the advertised model behavior.
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
   if (typeof slug !== 'string') throw new TypeError('Codex model entry missing slug');
   const display_name = value.display_name;
   if (typeof display_name !== 'string') throw new TypeError(`Codex model entry ${slug} missing display_name`);
-  const context_window = value.context_window;
-  if (typeof context_window !== 'number') throw new TypeError(`Codex model entry ${slug} missing context_window`);
+  const context_window = assertContextWindow(value.context_window, slug, 'context_window');
 
   const raw: CodexRawModel = { id: slug, display_name, context_window };
+  if (value.max_context_window !== undefined && value.max_context_window !== null) {
+    raw.max_context_window = assertContextWindow(value.max_context_window, slug, 'max_context_window');
+  }
 
   if (value.input_modalities !== undefined) {
     if (!Array.isArray(value.input_modalities)) throw new TypeError(`Codex model entry ${slug} input_modalities not an array`);
@@ -121,6 +131,16 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   return raw;
 };
 
+export const codexModelContextWindow = (model: ProviderModel): CodexContextWindow => {
+  if (!isPlainRecord(model.providerData)) {
+    throw new TypeError(`Codex model ${model.id} providerData is not an object`);
+  }
+  return {
+    context_window: assertContextWindow(model.providerData.contextWindow, model.id, 'providerData.contextWindow'),
+    ...(model.limits.max_context_window_tokens === undefined ? {} : { max_context_window: model.limits.max_context_window_tokens }),
+  };
+};
+
 export const codexModelUsesResponsesLite = (model: ProviderModel): boolean => {
   const providerData = model.providerData;
   if (providerData === undefined) return false;
@@ -145,6 +165,13 @@ export const codexModelUsesResponsesLite = (model: ProviderModel): boolean => {
 // merged with the row's `flagOverrides`); it propagates per-model so
 // downstream interceptors can read the effective set without re-resolving.
 export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
+  const contextWindow = assertContextWindow(raw.context_window, raw.id, 'context_window');
+  const maxContextWindow = raw.max_context_window === undefined
+    ? undefined
+    : assertContextWindow(raw.max_context_window, raw.id, 'max_context_window');
+  if (maxContextWindow !== undefined && contextWindow > maxContextWindow) {
+    throw new RangeError(`Codex model ${raw.id} context_window exceeds max_context_window`);
+  }
   if (raw.use_responses_lite !== undefined && typeof raw.use_responses_lite !== 'boolean') {
     throw new TypeError(`Codex model entry ${raw.id} use_responses_lite not a boolean`);
   }
@@ -179,10 +206,11 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
     owned_by: 'openai',
     kind: 'chat',
     limits: {
-      max_context_window_tokens: raw.context_window,
+      ...(maxContextWindow === undefined ? {} : { max_context_window_tokens: maxContextWindow }),
     },
     endpoints: { openaiResponses: {} },
     providerData: {
+      contextWindow,
       useResponsesLite: raw.use_responses_lite ?? false,
     } satisfies CodexProviderData,
     enabledFlags,

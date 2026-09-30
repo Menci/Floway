@@ -483,6 +483,8 @@ export interface OpenAIResponsesCompactionItem {
   id?: string | null;
   encrypted_content: string;
   created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
@@ -1372,6 +1374,14 @@ type OpenAIResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
     diff: string;
+  }
+  // Native compaction progress carries no summary; the final encrypted item
+  // arrives in output_item.done.
+  // https://github.com/openai/openai-node/blob/02f4ef94e8b3b02b43af6516c71a74c3c7a80b5d/src/resources/responses/responses.ts#L2311-L2335
+  | {
+    type: 'response.compaction.compacting';
+    item_id: string;
+    output_index: number;
   }
   | { type: 'response.completed'; response: OpenAIResponsesResult }
   | { type: 'response.incomplete'; response: OpenAIResponsesResult }

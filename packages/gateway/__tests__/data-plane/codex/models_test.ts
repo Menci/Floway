@@ -4,6 +4,7 @@ import type { CodexCatalogCapabilities } from '../../../src/data-plane/codex/cat
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
 import type { InternalModel } from '@floway-dev/provider';
+import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
 const bundled = {
   models: [
@@ -14,7 +15,7 @@ const bundled = {
   ],
 };
 
-const chat = (id: string, displayName?: string, ctx = 100000): InternalModel => ({
+const chat = (id: string, displayName?: string, ctx = 100000): Extract<InternalModel, { providerModels: unknown }> => ({
   id,
   display_name: displayName,
   kind: 'chat',
@@ -37,6 +38,38 @@ const ultraCapabilities: CodexCatalogCapabilities = {
 };
 
 describe('assembleCodexCatalog', () => {
+  test('uses the primary Codex provider default for a prefixed model without a matching client entry', () => {
+    const provider = { ...stubModelCandidate().provider, kind: 'codex' as const };
+    const model = {
+      ...chat('codex/future-model', 'Future', 600000),
+      providerModels: {
+        [provider.upstreamId]: stubProviderModel({
+          limits: { max_context_window_tokens: 600000 },
+          providerData: { contextWindow: 80000, useResponsesLite: false },
+        }),
+      },
+    };
+    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [provider] }]);
+    expect(out.models[0]).toMatchObject({ slug: 'codex/future-model', context_window: 80000, max_context_window: 600000 });
+  });
+
+  test('a secondary Codex provider cannot replace the primary provider budget', () => {
+    const primary = stubModelCandidate().provider;
+    const secondary = { ...primary, upstreamId: 'secondary', kind: 'codex' as const };
+    const model = {
+      ...chat('gpt-5.5', 'Primary', 200000),
+      providerModels: {
+        [primary.upstreamId]: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }),
+        [secondary.upstreamId]: stubProviderModel({
+          limits: { max_context_window_tokens: 872000 },
+          providerData: { contextWindow: 272000, useResponsesLite: false },
+        }),
+      },
+    };
+    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [primary, secondary] }]);
+    expect(out.models[0]).toMatchObject({ context_window: 200000, max_context_window: 200000 });
+  });
+
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
     const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5', 'Custom Display Name', 200000)));
     expect(out.models).toHaveLength(1);
@@ -104,7 +137,7 @@ describe('assembleCodexCatalog', () => {
     expect(e.display_name).toBe('DeepSeek V4 Pro');
     expect(e.context_window).toBe(128000);
     expect(e.shell_type).toBe('shell_command');     // hardcoded baseline
-    expect(e.prefer_websockets).toBe(true);
+    expect(e).not.toHaveProperty('prefer_websockets');
   });
 
   test('threads exact-client Ultra capability into Max-capable synthesized entries', () => {

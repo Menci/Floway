@@ -96,6 +96,10 @@ responses retain their upstream wire shape.
 
 ### Upstreams
 
+Provider-owned auto models expose a read-only opaque blob compatibility scope.
+Manual Custom, Azure, and Ollama model rows expose the same upstream-binding and
+key fields in the dashboard and model YAML.
+
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
 | GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
@@ -105,9 +109,11 @@ responses retain their upstream wire shape.
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 
-Provider-owned auto models expose a read-only opaque blob compatibility scope.
-Manual Custom, Azure, and Ollama model rows expose the same upstream-binding and
-key fields in the dashboard and model YAML.
+The Codex provider repairs terminal Responses snapshots that omit items already
+closed by the stream, including native compaction output. It restores positions
+from the observed `output_index` and matches snapshot items by ID; ambiguous
+positions fail explicitly. The shared Responses collector reads terminal
+snapshots directly, with provider-specific repairs applied before collection.
 
 ## Other Deployment Options
 

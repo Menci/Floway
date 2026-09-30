@@ -1,6 +1,6 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
 import { reassembleOpenAIResponsesEvents } from '../../src/openai-responses/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -112,4 +112,55 @@ test('reassembleOpenAIResponsesEvents throws when stream ends without terminal e
   ]);
 
   await assertRejects(() => reassembleOpenAIResponsesEvents(body), Error, 'terminal');
+});
+
+test.each([
+  ['response.completed', 'completed'],
+  ['response.incomplete', 'incomplete'],
+  ['response.failed', 'failed'],
+] as const)('reassembleOpenAIResponsesEvents preserves the %s snapshot despite different closed items', async (type, status) => {
+  const closed: OpenAIResponsesOutputItem = { type: 'reasoning', id: 'rs_closed', summary: [] };
+  const snapshotOnly: OpenAIResponsesOutputItem = {
+    type: 'message', id: 'msg_snapshot', status: status === 'completed' ? 'completed' : 'incomplete', role: 'assistant',
+    content: [{ type: 'output_text', text: 'Snapshot content', annotations: [] }],
+  };
+  for (const output of [[], [closed, snapshotOnly]]) {
+    const terminal: OpenAIResponsesResult = {
+      id: 'resp_snapshot', object: 'response', model: 'test-model', status,
+      output, error: null, incomplete_details: null,
+    };
+    const result = await reassembleOpenAIResponsesEvents(makeEvents([
+      { data: { type: 'response.output_item.done', output_index: 0, item: closed } },
+      { data: { type, response: terminal } },
+    ]));
+    expect(result).toBe(terminal);
+    expect(result.output).toEqual(output);
+  }
+});
+
+test('reassembleOpenAIResponsesEvents preserves terminal snapshot when no closed items observed', async () => {
+  const fallbackItem: OpenAIResponsesOutputItem = {
+    type: 'message',
+    id: 'msg_snap',
+    status: 'completed',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'Snapshot only', annotations: [] }],
+  };
+
+  const body = makeEvents([
+    {
+      event: 'response.output_text.delta',
+      data: { type: 'response.output_text.delta', delta: 'Snapshot only' },
+    },
+    {
+      event: 'response.completed',
+      data: {
+        type: 'response.completed',
+        response: { id: 'resp_snap', object: 'response', model: 'gpt-test', status: 'completed', output: [fallbackItem], error: null, incomplete_details: null },
+      },
+    },
+  ]);
+
+  const result = await reassembleOpenAIResponsesEvents(body);
+  assertEquals(result.output, [fallbackItem]);
 });

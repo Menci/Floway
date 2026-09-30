@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
-import { wrapOpenAIResponsesObservedOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -253,7 +252,7 @@ describe('OpenAI Responses affinity egress', () => {
   test.each([
     ['response.completed', 'completed'],
     ['response.incomplete', 'incomplete'],
-  ] as const)('uses closed items before affinity rewrites a partial %s restatement', async (eventType, status) => {
+  ] as const)('preserves restored output indices while wrapping a %s snapshot', async (eventType, status) => {
     const reasoning: OpenAIResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
     const message = {
       type: 'message' as const,
@@ -262,18 +261,17 @@ describe('OpenAI Responses affinity egress', () => {
       status: 'completed' as const,
       content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
     };
-    const partial = response([message], status);
+    const restored = response([reasoning, message], status);
     const input = frames([
       eventFrame({ type: 'response.output_item.added', output_index: 0, item: reasoning }),
       eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
       eventFrame({ type: 'response.output_item.added', output_index: 1, item: message }),
       eventFrame({ type: 'response.output_item.done', output_index: 1, item: message }),
-      eventFrame({ type: eventType, response: partial } as OpenAIResponsesStreamEvent),
+      eventFrame({ type: eventType, response: restored } as OpenAIResponsesStreamEvent),
     ]);
 
     const output: OpenAIResponsesStreamEvent[] = [];
-    const canonical = wrapOpenAIResponsesObservedOutput(input);
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(canonical, { codec: immediateCodec, affinity })) {
+    for await (const frame of wrapOpenAIResponsesAffinityEgress(input, { codec: immediateCodec, affinity })) {
       if (frame.type === 'event') output.push(frame.event);
     }
 
@@ -288,18 +286,17 @@ describe('OpenAI Responses affinity egress', () => {
     ]);
   });
 
-  test('does not move first-item affinity onto a later carrier omitted into the terminal restatement', async () => {
+  test('keeps first-item affinity off a later carrier in restored terminal output', async () => {
     const reasoning: OpenAIResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
     const program = { type: 'program', id: 'prog_second', call_id: 'call_second', code: 'return 1' } as OpenAIResponsesOutputItem;
     const input = frames([
       eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
       eventFrame({ type: 'response.output_item.done', output_index: 1, item: program }),
-      eventFrame({ type: 'response.completed', response: response([program]) }),
+      eventFrame({ type: 'response.completed', response: response([reasoning, program]) }),
     ]);
 
     const output: OpenAIResponsesStreamEvent[] = [];
-    const canonical = wrapOpenAIResponsesObservedOutput(input);
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(canonical, { codec: immediateCodec, affinity })) {
+    for await (const frame of wrapOpenAIResponsesAffinityEgress(input, { codec: immediateCodec, affinity })) {
       if (frame.type === 'event') output.push(frame.event);
     }
 
