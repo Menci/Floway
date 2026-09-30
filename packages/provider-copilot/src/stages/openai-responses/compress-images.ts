@@ -1,6 +1,6 @@
 import type { ResponsesFacts } from '../../chat-facts.ts';
-import { memoizedDataUrlCompressor } from '../../interceptors/image-compression.ts';
-import { targetSizeForOpenAIResponsesChat } from '../../interceptors/image-size.ts';
+import { memoizedDataUrlCompressor } from '../../image-compression.ts';
+import { targetSizeForOpenAIResponsesChat } from '../../image-size.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { type ProviderModelFacts } from '@floway-dev/provider';

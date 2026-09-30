@@ -1,6 +1,6 @@
 import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
 import type { MessagesFacts } from '../../chat-facts.ts';
-import { parseUserIdMetadata } from '../../interceptors/anthropic-messages/detect-claude-code-metadata.ts';
+import { parseUserIdMetadata } from '../../claude-code-metadata.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { replaceHttpHeader } from '@floway-dev/provider';
 

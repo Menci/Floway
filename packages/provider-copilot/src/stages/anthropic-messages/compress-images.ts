@@ -1,5 +1,5 @@
 import type { MessagesFacts } from '../../chat-facts.ts';
-import { memoizedBase64Compressor } from '../../interceptors/image-compression.ts';
+import { memoizedBase64Compressor } from '../../image-compression.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload, AnthropicMessagesImageBlock, AnthropicMessagesMessage, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';

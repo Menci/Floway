@@ -19,7 +19,7 @@
 // /api/embed for native callers and /v1/embeddings for the OpenAI shim.
 
 import type { OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
+import { ollamaFetchShow, ollamaFetchTags } from './control-http.ts';
 import { discardUpstreamResponse, fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
 
 export interface OllamaRawModel {

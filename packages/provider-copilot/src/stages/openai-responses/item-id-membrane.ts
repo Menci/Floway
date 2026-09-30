@@ -1,5 +1,5 @@
 import type { ResponsesFacts } from '../../chat-facts.ts';
-import { unwrapCopilotItemId, wrapCopilotItemId } from '../../interceptors/openai-responses/item-id-carrier.ts';
+import { unwrapCopilotItemId, wrapCopilotItemId } from '../../opaque-item-id.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { encodeHex, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';

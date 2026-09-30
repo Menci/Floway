@@ -1,15 +1,26 @@
 import { test } from 'vitest';
 
-import { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import { serializeOpenAIImagesEditsJsonPayload, prepareOpenAIImagesEditsBody } from '../src/images.ts';
+import { isReplayableBody } from '../src/options.ts';
+import { serializeHttpBody, type HttpMultipartBody } from '@floway-dev/http/request-content';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const parseJsonBody = async (body: Awaited<ReturnType<typeof serializeOpenAIImagesEditsRequest>>): Promise<unknown> => {
-  if (body instanceof FormData) throw new Error('expected a JSON image-edit body');
-  return await new Response(body.open()).json();
+const encodedBody = (prepared: Awaited<ReturnType<typeof prepareOpenAIImagesEditsBody>>): Response => {
+  const body = serializeHttpBody(prepared.body, prepared.encoding);
+  if (!isReplayableBody(body)) throw new Error('Expected replayable request content');
+  return new Response(body.open(), {
+    headers: prepared.encoding === 'multipart'
+      ? { 'content-type': `multipart/form-data; boundary=${(prepared.body as HttpMultipartBody).boundary}` }
+      : { 'content-type': 'application/json' },
+  });
+};
+const parseJsonBody = async (prepared: Awaited<ReturnType<typeof prepareOpenAIImagesEditsBody>>): Promise<unknown> => {
+  if (prepared.encoding !== 'json') throw new Error('expected a JSON image-edit body');
+  return await encodedBody(prepared).json();
 };
 
-test('serializeOpenAIImagesEditsRequest preserves reference fields and encodes mixed uploads from their bytes', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
+test('prepareOpenAIImagesEditsBody preserves reference fields and encodes mixed uploads from their bytes', async () => {
+  const serialized = await prepareOpenAIImagesEditsBody({
     images: [
       { type: 'reference', reference: { image_url: 'https://example.test/image.png', detail: 'future-field' } },
       { type: 'upload', file: { bytes: new TextEncoder().encode('inline'), name: 'inline.png', type: 'image/png' } },
@@ -42,33 +53,33 @@ test('serializeOpenAIImagesEditsJsonPayload forces upload sources into data URLs
   });
 });
 
-test('serializeOpenAIImagesEditsRequest uses the singular field for one upload and the array field for many', async () => {
+test('prepareOpenAIImagesEditsBody uses the singular field for one upload and the array field for many', async () => {
   const first = { bytes: new TextEncoder().encode('first'), name: 'first.png', type: 'image/png' };
   const second = { bytes: new TextEncoder().encode('second'), name: 'second.png', type: 'image/png' };
-  const single = await serializeOpenAIImagesEditsRequest({
+  const single = await prepareOpenAIImagesEditsBody({
     images: [{ type: 'upload', file: first }],
     parameters: { prompt: 'single' },
   }, 'gpt-image');
-  assertEquals(single instanceof FormData, true);
-  const singleForm = single as FormData;
+  assertEquals(single.encoding, 'multipart');
+  const singleForm = await encodedBody(single).formData();
   assertEquals((singleForm.get('image') as File).name, first.name);
   assertEquals(new Uint8Array(await (singleForm.get('image') as File).arrayBuffer()), first.bytes);
   assertEquals(singleForm.getAll('image[]'), []);
 
-  const multiple = await serializeOpenAIImagesEditsRequest({
+  const multiple = await prepareOpenAIImagesEditsBody({
     images: [{ type: 'upload', file: first }, { type: 'upload', file: second }],
     parameters: { prompt: 'multiple' },
   }, 'gpt-image');
-  assertEquals(multiple instanceof FormData, true);
-  const multipleForm = multiple as FormData;
+  assertEquals(multiple.encoding, 'multipart');
+  const multipleForm = await encodedBody(multiple).formData();
   assertEquals(multipleForm.getAll('image[]').map(value => (value as File).name), [first.name, second.name]);
   assertEquals(await Promise.all(multipleForm.getAll('image[]').map(async value => new Uint8Array(await (value as File).arrayBuffer()))), [first.bytes, second.bytes]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
 });
 
-test('serializeOpenAIImagesEditsRequest leaves malformed inline data for upstream JSON validation', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
+test('prepareOpenAIImagesEditsBody leaves malformed inline data for upstream JSON validation', async () => {
+  const serialized = await prepareOpenAIImagesEditsBody({
     images: [{
       type: 'inline',
       reference: { image_url: 'data:image/png;base64,%%%' },
@@ -82,8 +93,8 @@ test('serializeOpenAIImagesEditsRequest leaves malformed inline data for upstrea
   });
 });
 
-test('serializeOpenAIImagesEditsRequest preserves extra inline reference fields through JSON', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
+test('prepareOpenAIImagesEditsBody preserves extra inline reference fields through JSON', async () => {
+  const serialized = await prepareOpenAIImagesEditsBody({
     images: [{
       type: 'inline',
       reference: { image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' },

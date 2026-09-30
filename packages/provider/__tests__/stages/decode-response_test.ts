@@ -67,3 +67,27 @@ test('actual HTTP replies remain failure facts when a higher decoder stage throw
     expect(getFailureFacts(caught)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'actual-wire-model', 'response.provider.previousCalls': [] });
   }
 });
+
+test('a non2xx reply remains an unchanged HTTP exchange with no decoded stream', async () => {
+  const executed = await run(pipeline, entry(), services(async () => new Response('rate limited', { status: 429, headers: { 'x-upstream': 'original' } })));
+  expect(executed.facts['response.provider.output']).toBeNull();
+  expect(executed.facts['response.http.exchange']).toMatchObject({ type: 'response', status: 429, headers: expect.arrayContaining([['x-upstream', 'original']]) });
+  expect(executed.facts['response.provider.modelKey']).toBe('actual-wire-model');
+  await executed.drain();
+});
+
+test.each([
+  { status: 204, body: null, contentType: null, phrases: ['204', 'stream is required', 'Body: <empty>'] },
+  { status: 200, body: '{"error":{"message":"azure stub"}}', contentType: 'application/json', phrases: ['200', 'application/json', 'stream is required', 'azure stub'] },
+  { status: 200, body: 'not really an event stream', contentType: 'text/event-stream-fake', phrases: ['stream is required'] },
+  { status: 200, body: '{"choices":[]}', contentType: null, phrases: ['"unknown"', '{"choices":[]}'] },
+  { status: 200, body: 'x'.repeat(2048), contentType: 'application/json', phrases: ['...[truncated]'] },
+])('successful non-stream reply $contentType keeps diagnostic context as a failure value', async ({ status, body, contentType, phrases }) => {
+  const executed = await run(pipeline, entry(), services(async () => new Response(body === null ? null : new TextEncoder().encode(body), { status, headers: contentType === null ? {} : { 'content-type': contentType } })));
+  const output = executed.facts['response.provider.output'];
+  if (output === null || 'kind' in output) throw new Error('Expected a protocol failure value');
+  expect(output.status).toBe(502);
+  for (const phrase of phrases) expect(output.message).toContain(phrase);
+  expect(executed.facts['response.provider.called']).toBe(true);
+  await executed.drain();
+});

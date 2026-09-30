@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/interceptors/shared/whitespace-overflow.ts';
 import { copilotOpenAIChatCompletionsAbortToolWhitespace } from '../../../src/stages/openai-chat-completions/abort-on-tool-argument-whitespace.ts';
+import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/tool-argument-whitespace.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';

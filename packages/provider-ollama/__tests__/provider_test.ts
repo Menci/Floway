@@ -196,8 +196,6 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       if (url.pathname === '/v1/chat/completions') {
         chatRequest = request;
         chatBody = await request.json();
-        // SSE response so streamingProviderCall does not throw on the empty
-        // body — we only assert the request shape.
         return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
       }
       return new Response('unexpected', { status: 500 });

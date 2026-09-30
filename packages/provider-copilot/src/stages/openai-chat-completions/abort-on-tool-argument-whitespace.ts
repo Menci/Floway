@@ -1,5 +1,5 @@
 
-import { checkWhitespaceOverflow } from '../../interceptors/shared/whitespace-overflow.ts';
+import { checkWhitespaceOverflow } from '../../tool-argument-whitespace.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';

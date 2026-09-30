@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/interceptors/openai-responses/item-id-carrier.ts';
+import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/opaque-item-id.ts';
 import { copilotOpenAIResponsesItemIdMembrane } from '../../../src/stages/openai-responses/item-id-membrane.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';

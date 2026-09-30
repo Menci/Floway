@@ -1,3 +1,5 @@
+export { collectPreparedProviderRequest } from './prepared-provider-request.ts';
+export { collectHttpPipeline } from './http-pipeline.ts';
 export { applyProviderStage, type ProviderStageProbe, type OpenAIChatCompletionsProbe, type OpenAIResponsesProbe, type AnthropicMessagesProbe } from './provider-stage.ts';
 export { stubChatProviderPipeline, type StubChatProviderCall } from './stub-chat-provider-pipeline.ts';
 export { collectChatProviderPipeline } from './chat-provider-pipeline.ts';
