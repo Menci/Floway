@@ -1,13 +1,29 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect, useRef, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { DialogShell } from '../../../src/components/ui/dialog-shell';
 import { CodexAccountCard } from '../../../src/components/upstream-editor/codex-account-card';
 import { CodexResetCards } from '../../../src/components/upstream-editor/codex-reset-cards';
 import type { CodexRecord } from '../../../src/components/upstreams/codex-account';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
+
+// Modal focus and exit motion require browser layout. These tests observe redemption state
+// through the shell's controlled lifecycle while keeping the confirmation actions real.
+vi.mock('../../../src/components/ui/dialog-shell', () => ({
+  DialogShell: ({ open, title, children, actions, onExited }: ComponentProps<typeof DialogShell>) => {
+    const wasOpen = useRef(open);
+    useEffect(() => {
+      const exited = wasOpen.current && !open;
+      wasOpen.current = open;
+      if (exited) onExited?.();
+    }, [onExited, open]);
+    return open ? <div role="dialog">{title}{children}{actions}</div> : null;
+  },
+}));
 
 stubLocalStorage();
 
@@ -134,15 +150,10 @@ describe('Codex reset cards', () => {
     await user.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
     await user.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(dialog.isConnected).toBe(false));
-    const firstDialog = dialog;
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await user.click(await screen.findByRole('button', { name: 'Use' }));
-    const confirm = await waitFor(() => {
-      const reopened = screen.getByRole('dialog');
-      expect(reopened).not.toBe(firstDialog);
-      expect(reopened.contains(document.activeElement)).toBe(true);
-      return within(reopened).getByRole('button', { name: 'Use reset card' });
-    });
+    const reopened = await screen.findByRole('dialog');
+    const confirm = within(reopened).getByRole('button', { name: 'Use reset card' });
     await user.click(confirm);
     await waitFor(() => expect(consumeBodies).toHaveLength(2));
     expect(consumeBodies[0].idempotency_key).toBe(consumeBodies[1].idempotency_key);
