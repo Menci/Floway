@@ -21,12 +21,14 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!kind) {
     throw redirect('/dashboard/providers/upstreams');
   }
-  const [recordResult, aux] = await Promise.all([
+  const [recordResult, aux, upstreamsResult] = await Promise.all([
     callApi(() =>
       api.api.upstreams.blueprint.$get({ query: { kind } })),
     loadEditorAux(),
+    callApi(() => api.api.upstreams.$get()),
   ]);
   if (recordResult.error) throw new Error(recordResult.error.message);
+  if (upstreamsResult.error) throw new Error(upstreamsResult.error.message);
   const record = {
     ...recordResult.data,
     name: providerDefaultName[kind],
@@ -34,9 +36,9 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     // A blueprint carries no hue: the badge only has to be told apart from the
     // ones already on screen, which is a fact the dashboard holds and the
     // server does not.
-    hue: pickDistinctHue(aux.upstreams.map(upstream => upstream.hue)),
+    hue: pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   };
-  return { ...aux, mode: 'create' as const, record, discovered: [], modelsError: null };
+  return { ...aux, mode: 'create' as const, record, discovered: null };
 }
 
 export const shouldRevalidate = revalidateOnPathnameChange;

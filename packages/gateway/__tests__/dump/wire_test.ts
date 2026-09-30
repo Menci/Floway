@@ -144,3 +144,52 @@ test('dumpRecordToWire refuses a run stream that is not UTF-8', () => {
     events: new Uint8Array([0xFF, 0xFE, 0xFD]),
   })).toThrow();
 });
+
+// The optional parallel `upstream` body (pre-translation view) round-trips
+// through the wire with the same bytes/stream semantics as the downstream
+// body. Absent on native turns and old records — `upstream` stays undefined.
+test('dumpRecordToWire maps the upstream stream body when present', () => {
+  const wire = edgeWire(baseStored({
+    meta: { ...baseStored().meta, targetApi: 'openaiResponses' },
+    response: {
+      status: 200,
+      headers: [],
+      body: { type: 'stream', events: [] },
+      upstream: {
+        status: null,
+        headers: [],
+        body: { type: 'stream', events: [{ frame: { type: 'done' }, ts: 0 }] },
+      },
+    },
+  }));
+  assertEquals(wire.response.upstream?.body.type, 'stream');
+  assertEquals(wire.meta.targetApi, 'openaiResponses');
+});
+
+test('dumpRecordToWire maps the upstream bytes body using its own content-type', () => {
+  const wire = edgeWire(baseStored({
+    meta: { ...baseStored().meta, targetApi: 'openaiChatCompletions' },
+    response: {
+      status: 200,
+      headers: [],
+      body: { type: 'none' },
+      upstream: {
+        status: 413,
+        headers: [['content-type', 'application/json']],
+        body: { type: 'bytes', body: new TextEncoder().encode('{"error":"too big"}') },
+      },
+    },
+  }));
+  if (wire.response.upstream === undefined) throw new Error('expected upstream');
+  assertEquals(wire.response.upstream.status, 413);
+  if (wire.response.upstream.body.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(wire.response.upstream.body.body.encoding, 'utf8');
+  assertEquals(wire.response.upstream.body.body.data, '{"error":"too big"}');
+});
+
+test('dumpRecordToWire omits upstream when absent (native turn / old record)', () => {
+  const wire = edgeWire(baseStored({
+    response: { status: 200, headers: [], body: { type: 'none' } },
+  }));
+  assertEquals(wire.response.upstream, undefined);
+});

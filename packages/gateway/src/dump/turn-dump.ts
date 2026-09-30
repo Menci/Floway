@@ -5,6 +5,7 @@
 // an event stream. The shape follows the endpoint — a pipelined one produces the run shape —
 // and the stages in between neither know nor care which they are stamping.
 
+import type { HttpCapture } from './http-capture.ts';
 import type { TokenUsage } from '../repo/types.ts';
 import { isStreamFact, type StreamFact } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,6 +31,7 @@ export interface StreamRecording {
 }
 
 export interface TurnDump {
+  readonly http: HttpCapture;
   requestedModel(model: string): void;
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void;
   error(kind: 'upstream' | 'gateway', upstream?: string): void;

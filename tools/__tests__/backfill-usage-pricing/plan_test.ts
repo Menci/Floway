@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { test } from 'vitest';
 
+import { renderD1Statement } from '../../src/backfill-usage-pricing/d1-database.ts';
+import type { ToolDatabase } from '../../src/backfill-usage-pricing/database.ts';
 import { openNodeDatabase } from '../../src/backfill-usage-pricing/node-database.ts';
 import { applyPlan, buildPlan, parsePlan } from '../../src/backfill-usage-pricing/plan.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -122,4 +124,69 @@ test('obsolete selectors do not block coordinates that the selected mode would n
   assertEquals(fill.plan.operations, []);
   assertEquals(overwrite.plan.blockers, []);
   assertEquals(overwrite.plan.operations, []);
+});
+
+test('an unguarded plan keeps the stored catalog out of its apply statement', async () => {
+  // `models_cache_json` is 73 KB on a live Copilot upstream and doubles under
+  // the hex encoding that renders a parameter into SQL. Every provider except
+  // a cache-priced custom one resolves its rates without the catalog and
+  // short-circuits the comparison, so carrying it into the statement bought
+  // nothing and cost a 6-row backfill, which failed with SQLITE_TOOBIG before
+  // writing a row.
+  const directory = await mkdtemp(join(tmpdir(), 'floway-tools-unguarded-'));
+  const path = join(directory, 'floway.db');
+  const catalog = JSON.stringify({ revision: 1, fetchedAt: Date.now(), models: [{ id: 'public', providerData: 'wire', filler: 'q'.repeat(120_000) }] });
+  const db = new DatabaseSync(path);
+  db.exec(`
+    CREATE TABLE upstreams (
+      id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
+      sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
+      models_cache_json TEXT
+    );
+    CREATE TABLE usage (
+      key_id TEXT NOT NULL, model TEXT NOT NULL, upstream TEXT, model_key TEXT NOT NULL,
+      hour TEXT NOT NULL, pricing_selector TEXT NOT NULL, metric TEXT NOT NULL,
+      quantity TEXT NOT NULL, unit_price TEXT
+    );
+    CREATE UNIQUE INDEX idx_usage_metric_identity
+      ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
+  `);
+  const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
+  const config = { models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing }] };
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify(config), catalog);
+  db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('key-1', 'public', 'azure-1', 'wire', '2026-01-01T00', '{}', 'input_tokens', '10', null);
+  db.close();
+
+  const read = await openNodeDatabase(path, 'read');
+  const built = await buildPlan(read, {
+    upstream: 'azure-1', model: 'public', modelKey: 'wire',
+    startHour: '2026-01-01T00', endHour: '2026-01-02T00', timezone: 'UTC',
+    mode: 'fill', metrics: ['input_tokens'],
+  }, { createdAt: '2026-01-02T00:00:00.000Z' });
+  await read.close();
+
+  // Azure prices from its own config, so the catalog guard is off.
+  assertEquals(built.guards.guardModelsCache, false);
+
+  const write = await openNodeDatabase(path, 'write');
+  const executed: string[] = [];
+  // Node runs the statement; rendering it the way the D1 connector would is
+  // what puts its size under assertion, since that is the path with a limit.
+  const recording: ToolDatabase = {
+    ...write,
+    execute: async statement => {
+      executed.push(renderD1Statement(statement));
+      return await write.execute(statement);
+    },
+  };
+  const result = await applyPlan(recording, built.plan);
+  await write.close();
+
+  assertEquals(result.rowsUpdated, 1);
+  const applyStatement = executed.find(sql => sql.includes('UPDATE usage'))!;
+  // The catalog never reaches the statement, so its size cannot bound a backfill.
+  assertEquals(applyStatement.includes(Buffer.from(catalog, 'utf8').toString('hex')), false);
+  assertEquals(applyStatement.length < catalog.length, true);
 });

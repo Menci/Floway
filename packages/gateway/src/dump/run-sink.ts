@@ -14,9 +14,12 @@
 // the result away.
 
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
+import { HttpCapture } from './http-capture.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type { StreamRecording } from './turn-dump.ts';
-import type { DumpMetadata } from './types.ts';
+import type { DumpCapture, DumpMetadata } from './types.ts';
+import { encodeBodyForWire } from './wire.ts';
+import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -25,10 +28,9 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-// What the client sent, as the metadata needs it. The headers and the body are
-// facts the run itself records, so nothing is snapshotted here beyond what a
-// list row shows without opening the record.
+// Raw ingress preserves the bytes before protocol parsing or serialization.
 interface RequestSnapshot {
+  readonly request: NonNullable<DumpCapture['request']>;
   readonly method: string;
   readonly path: string;
   readonly bodyByteLength: number;
@@ -36,6 +38,7 @@ interface RequestSnapshot {
 }
 
 export class RunDump {
+  readonly http = new HttpCapture();
   private readonly attribution = new DumpAttribution();
   private readonly encode = createRunEncoder();
   private readonly events: DumpEvent[] = [];
@@ -48,6 +51,8 @@ export class RunDump {
     private readonly requestSnapshot: RequestSnapshot,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly wantsStream: boolean,
+    private readonly timing: AttemptTiming,
   ) {}
 
   /** What the prologue hands to `run` as `services.dump`. Bound to this
@@ -110,9 +115,7 @@ export class RunDump {
   //
   //   • `(status, responseBytes)` — the caller already knows what it wrote.
   //   • `(response)` — tees the answer so the client gets bytes flowing while a
-  //     background reader measures the other half. Only the byte count is kept:
-  //     what the client was sent is already in the run's own record, so
-  //     retaining a second copy of a streamed answer would buy nothing.
+  //     background reader records the raw client bytes alongside the stage history.
   //
   // The drain → encode → store put → broker publish runs on the runtime's
   // BackgroundScheduler so a dump write failure cannot turn a served answer
@@ -143,6 +146,7 @@ export class RunDump {
     const [forClient, forMeasure] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forMeasure.getReader();
+      const chunks: Uint8Array[] = [];
       let payloadBytes = 0;
       let streamError: string | null = null;
       try {
@@ -150,11 +154,23 @@ export class RunDump {
           const { value, done } = await reader.read();
           if (done) break;
           payloadBytes += value.byteLength;
+          chunks.push(value);
         }
       } catch (err) {
         streamError = oneLineError(err);
+      } finally {
+        reader.releaseLock();
       }
-      await this.write(response.status, payloadBytes, streamError);
+      const bytes = new Uint8Array(payloadBytes);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      await this.write(response.status, payloadBytes, streamError, {
+        status: response.status,
+        headers: [...response.headers],
+        body: encodeBodyForWire(bytes, response.headers.get('content-type') ?? ''),
+        complete: streamError === null,
+        error: streamError,
+      });
     })());
 
     return new Response(forClient, {
@@ -164,7 +180,7 @@ export class RunDump {
     });
   }
 
-  private async write(status: number | null, responseBytes: number, responseStreamError: string | null): Promise<void> {
+  private async write(status: number | null, responseBytes: number, responseStreamError: string | null, response?: DumpCapture['response']): Promise<void> {
     // ULID-from-completedAt keeps ids increasing with row creation time; the
     // random tail provides the deterministic tie-breaker for one millisecond.
     const completedAt = Date.now();
@@ -178,6 +194,8 @@ export class RunDump {
       status,
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes,
+      ttftMs: this.wantsStream ? attemptTtftMs(this.timing) : null,
+      fallbackUpstreamId: this.http.exchanges.at(-1)?.upstreamId ?? null,
       fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
     });
 
@@ -185,6 +203,7 @@ export class RunDump {
     try {
       await getDumpStore().put(this.apiKey.id, {
         shape: 'run',
+        capture: { request: this.requestSnapshot.request, exchanges: this.http.exchanges, ...(response === undefined ? {} : { response }) },
         meta,
         events: new TextEncoder().encode(toNdjson(this.events)),
       });
@@ -206,13 +225,21 @@ export class RunDump {
  */
 export const openRunDump = (
   apiKey: ApiKey,
-  turn: { readonly method: string; readonly path: string; readonly body: RequestBody },
+  turn: { readonly method: string; readonly path: string; readonly body: RequestBody; readonly headers: readonly (readonly [string, string])[] },
   backgroundScheduler: BackgroundScheduler,
+  wantsStream: boolean,
+  timing: AttemptTiming,
 ): RunDump | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   return new RunDump(
     apiKey,
     {
+      request: {
+        method: turn.method,
+        path: turn.path,
+        headers: turn.headers.map(([name, value]): [string, string] => [name, value]),
+        body: encodeBodyForWire(turn.body.bytes, turn.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? ''),
+      },
       method: turn.method,
       path: turn.path,
       bodyByteLength: turn.body.bytes.byteLength,
@@ -220,5 +247,7 @@ export const openRunDump = (
     },
     Date.now(),
     backgroundScheduler,
+    wantsStream,
+    timing,
   );
 };

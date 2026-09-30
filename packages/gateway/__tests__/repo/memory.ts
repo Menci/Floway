@@ -3,6 +3,8 @@ import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.t
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
+import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
+import { matchesModelsRefreshInputs } from '../../src/repo/models-refresh-inputs.ts';
 import {
   assertSameStoredOpenAIResponsesItem,
   cloneStoredOpenAIResponsesItem,
@@ -27,7 +29,8 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsCacheGeneration,
+  ModelsRefreshFailureInput,
+  ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceDimensions,
@@ -53,6 +56,7 @@ import type {
   SessionsRepo,
   StoredOpenAIResponsesItem,
   StoredOpenAIResponsesSnapshot,
+  StoredUpstreamRecord,
   UpstreamRepo,
   UsageRecord,
   UsageOverviewAxis,
@@ -69,7 +73,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -731,36 +735,51 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 }
 
 class MemoryUpstreamRepo implements UpstreamRepo {
-  private store = new Map<string, UpstreamRecord>();
+  private store = new Map<string, StoredUpstreamRecord>();
 
-  list(): Promise<UpstreamRecord[]> {
+  list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
   }
 
-  getById(id: string): Promise<UpstreamRecord | null> {
+  getById(id: string): Promise<StoredUpstreamRecord | null> {
     const found = this.store.get(id);
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  // Mirrors the SQL INSERT/UPDATE column list, which omits the cache column:
-  // an existing row keeps whatever the refresh path last wrote there, and a new
-  // row starts uncached whatever the caller's record carried.
-  save(upstream: UpstreamRecord): Promise<void> {
-    const existing = this.store.get(upstream.id);
-    const preserved = existing
-      ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
-      : { ...upstream, modelsCache: null };
-    this.store.set(preserved.id, cloneUpstreamRecord(preserved));
-    return Promise.resolve();
+  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    if (this.store.has(upstream.id)) return Promise.resolve(null);
+    const stored = cloneUpstreamRecord({ ...upstream, configVersion: 1, modelsCache: null });
+    this.store.set(upstream.id, stored);
+    return Promise.resolve(cloneUpstreamRecord(stored));
   }
 
-  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
+  replaceForModels(input: {
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null> {
+    const { previous, upstream } = input;
+    const modelConfigChanged = previous.kind !== upstream.kind
+      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
+    const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
+    const refreshInputsChanged = modelConfigChanged || transportChanged;
+    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
     const existing = this.store.get(upstream.id);
-    const next = existing
-      ? { ...upstream, createdAt: existing.createdAt, modelsCache: null }
-      : { ...upstream, modelsCache: null };
-    this.store.set(next.id, cloneUpstreamRecord(next));
-    return Promise.resolve();
+    if (existing === undefined) return Promise.resolve(null);
+    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
+    const comparableExisting = { ...existing, modelsCache: null, state: replaceState ? existing.state : null };
+    const comparablePrevious = { ...previous, modelsCache: null, state: replaceState ? previous.state : null };
+    if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(null);
+    const next = cloneUpstreamRecord({
+      ...upstream,
+      createdAt: existing.createdAt,
+      configVersion,
+      state: replaceState ? upstream.state : existing.state,
+      modelsCache: modelConfigChanged ? null : transportChanged && existing.modelsCache
+        ? { ...existing.modelsCache, lastError: null } : existing.modelsCache,
+    });
+    this.store.set(upstream.id, next);
+    return Promise.resolve(cloneUpstreamRecord(next));
   }
 
   delete(id: string): Promise<boolean> {
@@ -785,31 +804,34 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
+    const { id, configVersion, cacheEpoch, refreshInputs, cache } = input;
     const existing = this.store.get(id);
-    if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
-    existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
+    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
+      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
+    existing.modelsCache = { ...cache, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
 
-  // No-op on a row that has never cached a catalog: the annotation belongs to a
-  // previously-successful fetch.
-  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
+    const { id, configVersion, cacheEpoch, refreshInputs, error, previousFailureCount } = input;
     const existing = this.store.get(id);
-    const cache = existing?.updatedAt === generation.updatedAt && serializeStoredConfig(existing.config) === serializeStoredConfig(generation.config)
-      ? existing.modelsCache
-      : null;
-    if (!cache) return Promise.resolve(false);
-    cache.lastError = error;
+    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
+      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
+    if ((existing.modelsCache?.lastError?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
+    const lastError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
+    if (existing.modelsCache?.revision === MODEL_CATALOG_REVISION) existing.modelsCache.lastError = lastError;
+    else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
     return Promise.resolve(true);
   }
+
 }
 
-const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
+const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamRecord => ({
   ...upstream,
   config: structuredClone(upstream.config),
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
-  modelsCache: upstream.modelsCache === null ? null : { ...upstream.modelsCache, models: [...upstream.modelsCache.models] },
+  modelsCache: structuredClone(upstream.modelsCache),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),

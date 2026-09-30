@@ -1,5 +1,5 @@
 import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type CSSProperties } from 'react';
 
 import {
   computeModelWarning,
@@ -15,11 +15,11 @@ import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
-import { ReorderButtons } from '../ui/reorder-buttons';
+import { ReorderHandle, type ReorderHandleProps } from '../ui/reorder-list';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
 
-const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip } = fluentComponents;
+const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip, mergeClasses } = fluentComponents;
 
 const suggestions = {
   effort: ['none', 'low', 'medium', 'high', 'xhigh'],
@@ -29,18 +29,17 @@ const suggestions = {
 };
 
 export function AliasTargetRow({
-  catalog, disabled, error, index, isFirst, isLast, isSole, kind, onChange, onMove, onRemove, target, targetIds,
+  catalog, disabled, error, handleProps, index, isSole, itemProps, kind, onChange, onRemove, target, targetIds,
 }: {
   disabled: boolean;
   error?: string;
+  handleProps: ReorderHandleProps;
   index: number;
-  isFirst: boolean;
-  isLast: boolean;
   isSole: boolean;
+  itemProps: { className?: string; style?: CSSProperties };
   kind: ModelKind;
   catalog: CatalogIndex;
   onChange: (target: AliasTarget) => void;
-  onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
   target: AliasTarget;
   targetIds: readonly string[];
@@ -67,8 +66,8 @@ export function AliasTargetRow({
   const toggleLabel = t('dashboard.modelAliases.target.toggle');
 
   return (
-    <div className="border-0 border-t border-solid border-fui-divider pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
-      <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
+    <div {...itemProps} className={mergeClasses('border-0 border-t border-solid border-fui-divider pt-2', itemProps.className)} role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_100px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
         <Tooltip content={toggleLabel} relationship="label">
           <Button
             appearance="subtle"
@@ -94,11 +93,11 @@ export function AliasTargetRow({
         >
           {options.map(id => <Option className="font-mono" key={id} text={id}>{id}</Option>)}
         </Combobox>
-        <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
+        <div className="grid grid-cols-3 gap-0.5 w-[100px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
           {modelWarning
             ? <Tooltip content={modelAliasWarningText(modelWarning, t)} relationship="description"><span className="winui-focus-rect grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
-          <ReorderButtons disabled={disabled} downLabel={t('dashboard.modelAliases.target.moveDown')} isFirst={isFirst} isLast={isLast} onMove={onMove} upLabel={t('dashboard.modelAliases.target.moveUp')} />
+          <ReorderHandle {...handleProps} label={t('dashboard.modelAliases.target.reorder')} />
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
         </div>
       </div>

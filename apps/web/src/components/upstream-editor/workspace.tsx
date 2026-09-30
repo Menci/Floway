@@ -41,6 +41,7 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
+import { MODEL_ERROR_EDITOR_LENGTH, modelErrorExcerpt } from '../upstreams/model-error';
 import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const {
@@ -290,7 +291,12 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
   const addModel = () => {
     const manualIndex = manual.length;
-    append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) });
+    append({
+      upstreamModelId: '',
+      kind: 'chat',
+      ...shapeForKind('chat', { endpoints: {} }),
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
+    });
     onOpenModel({ locator: '', manualIndex, rowKey: null });
   };
   useEffect(() => {
@@ -403,9 +409,22 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
       </>}
     />
     {modelsError && <OutcomeMessageBar intent="warning">
-      {modelsError.upstreamListingFailed
-        ? t('dashboard.upstreamEditor.models.listingFailed')
-        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError.message })}
+      <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <span className="min-w-0">{modelsError.upstreamResponse === null
+            ? t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
+            : t('dashboard.upstreamEditor.models.listingFailed')}</span>
+          <TooltipIconButton
+            className="flex-none"
+            icon={copyOutcomeIcon(outcomeFor('models-error'))}
+            label={copyLabel(outcomeFor('models-error'), t('dashboard.upstreamEditor.models.copyError'))}
+            onClick={() => copy(modelsError.message, 'models-error')}
+          />
+        </div>
+        {modelsError.upstreamResponse !== null && <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[var(--winui-control-corner-radius)] border border-solid border-fui-stroke1 bg-fui-bg2 p-3 font-mono text-xs">
+          {`HTTP ${modelsError.upstreamResponse.status}\n${modelsError.upstreamResponse.headers.map(([name, value]) => `${name}: ${value}`).join('\n')}\n\n${modelErrorExcerpt(modelsError.upstreamResponse.body, MODEL_ERROR_EDITOR_LENGTH)}`}
+        </pre>}
+      </div>
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
@@ -437,6 +456,9 @@ function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) 
   const { t } = useTranslation();
   const locale = useLocale();
   const now = useNow(10_000);
+  const { copy, outcomeFor } = useCopyToClipboard();
+  const copyLabel = useCopyLabel();
+  const lastError = cache.lastError;
   const label = cache.fetchedAt === null
     ? t('dashboard.upstreamEditor.models.cacheNever')
     : now - cache.fetchedAt < 10_000
@@ -444,13 +466,20 @@ function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) 
       : t('dashboard.upstreamEditor.models.cacheFetched', {
           time: relativeTime(cache.fetchedAt, locale, { now }) ?? dateTime(cache.fetchedAt, locale),
         });
-  const detail = cache.lastError
-    ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: cache.lastError.message, time: dateTime(cache.lastError.at, locale) })
+  const detail = lastError
+    ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: modelErrorExcerpt(lastError.message, MODEL_ERROR_EDITOR_LENGTH), time: dateTime(lastError.at, locale) })
     : cache.fetchedAt === null ? label : dateTime(cache.fetchedAt, locale);
-  return <Tooltip content={detail} relationship="description">
-    <span className="winui-focus-rect inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
-      {cache.lastError ? <WarningRegular /> : <CheckmarkCircleRegular />}
-      <Text size={200}>{cache.lastError ? t('dashboard.upstreamEditor.models.cacheFailed') : label}</Text>
-    </span>
-  </Tooltip>;
+  return <span className="inline-flex items-center gap-1">
+    <Tooltip content={detail} relationship="description">
+      <span className="winui-focus-rect inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
+        {lastError ? <WarningRegular /> : <CheckmarkCircleRegular />}
+        <Text size={200}>{lastError ? t('dashboard.upstreamEditor.models.cacheFailed') : label}</Text>
+      </span>
+    </Tooltip>
+    {lastError && <TooltipIconButton
+      icon={copyOutcomeIcon(outcomeFor('cache-error'))}
+      label={copyLabel(outcomeFor('cache-error'), t('dashboard.upstreamEditor.models.copyError'))}
+      onClick={() => copy(lastError.message, 'cache-error')}
+    />}
+  </span>;
 }

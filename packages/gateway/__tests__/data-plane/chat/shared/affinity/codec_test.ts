@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { AffinityIdentity, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 
 const SECRET = '00'.repeat(32);
 const OTHER_SECRET = '11'.repeat(32);
@@ -9,6 +9,10 @@ const DOMAIN = 'test.carrier';
 const affinity: AffinityTarget = {
   upstreamId: 'upstream-a',
   modelId: 'model-a',
+};
+const identity: AffinityIdentity = {
+  ...affinity,
+  opaqueBlobCompatibilityIdentity: { upstreamId: 'upstream-a', key: 'openai' },
 };
 
 // Carriers this codec issued for SECRET and DOMAIN. They are frozen wire
@@ -32,6 +36,7 @@ describe('AffinityCodec', () => {
         modelId: 'model-a',
         rules: { reasoning: { effort: 'high' } },
       },
+      opaqueBlobCompatibilityIdentity: { upstreamId: 'upstream-a', key: 'model-a' },
     });
   });
 
@@ -41,7 +46,28 @@ describe('AffinityCodec', () => {
       version: 1,
       syntheticItem: true,
       affinity,
+      opaqueBlobCompatibilityIdentity: { upstreamId: 'upstream-a', key: 'model-a' },
     });
+  });
+
+  test('materializes a frozen v1 carrier through the current model scope', async () => {
+    const codec = new AffinityCodec(SECRET, async target => ({
+      upstreamId: target.upstreamId,
+      key: 'openai',
+    }));
+
+    expect(await codec.unwrap(FROZEN_NATURAL_CARRIER, DOMAIN)).toMatchObject({
+      kind: 'owned',
+      version: 1,
+      opaqueBlobCompatibilityIdentity: { upstreamId: 'upstream-a', key: 'openai' },
+    });
+  });
+
+  test('propagates failures while resolving a v1 model scope', async () => {
+    const failure = new Error('catalog lookup failed');
+    const codec = new AffinityCodec(SECRET, async () => { throw failure; });
+
+    await expect(codec.unwrap(FROZEN_NATURAL_CARRIER, DOMAIN)).rejects.toBe(failure);
   });
 
   test.each([
@@ -51,47 +77,50 @@ describe('AffinityCodec', () => {
     ['empty raw', ''],
   ])('round-trips %s input', async (_label, original) => {
     const codec = new AffinityCodec(SECRET);
-    const wrapped = await codec.wrap(original, affinity, DOMAIN);
+    const wrapped = await codec.wrap(original, identity, DOMAIN);
     const decoded = await codec.unwrap(wrapped, DOMAIN);
 
     expect(decoded).toEqual({
       kind: 'owned',
       value: original,
-      version: 1,
+      version: 2,
       origin: _label === 'base64' ? 'base64' : _label === 'base64url' ? 'base64url' : 'raw',
       affinity,
+      opaqueBlobCompatibilityIdentity: identity.opaqueBlobCompatibilityIdentity,
     });
   });
 
   test('uses no origin for a synthetic carrier', async () => {
     const codec = new AffinityCodec(SECRET);
-    const wrapped = await codec.wrap(undefined, affinity, DOMAIN);
+    const wrapped = await codec.wrap(undefined, identity, DOMAIN);
 
     expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({
       kind: 'owned',
-      version: 1,
+      version: 2,
       affinity,
+      opaqueBlobCompatibilityIdentity: identity.opaqueBlobCompatibilityIdentity,
     });
   });
 
   test('marks a fully synthetic item independently from an originless slot', async () => {
     const codec = new AffinityCodec(SECRET);
-    const wrapped = await codec.wrap(undefined, affinity, DOMAIN, { syntheticItem: true });
+    const wrapped = await codec.wrap(undefined, identity, DOMAIN, { syntheticItem: true });
 
     expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({
       kind: 'owned',
-      version: 1,
+      version: 2,
       syntheticItem: true,
       affinity,
+      opaqueBlobCompatibilityIdentity: identity.opaqueBlobCompatibilityIdentity,
     });
-    await expect(codec.wrap('upstream', affinity, DOMAIN, { syntheticItem: true })).rejects.toThrow(TypeError);
+    await expect(codec.wrap('upstream', identity, DOMAIN, { syntheticItem: true })).rejects.toThrow(TypeError);
   });
 
   test('rejects affinity metadata outside the declared target shape', async () => {
     const codec = new AffinityCodec(SECRET);
     const wrapped = await codec.wrap(
       undefined,
-      { ...affinity, extra: 'not-part-of-the-contract' } as AffinityTarget,
+      { ...identity, extra: 'not-part-of-the-contract' } as AffinityIdentity,
       DOMAIN,
     );
 
@@ -102,7 +131,7 @@ describe('AffinityCodec', () => {
     const codec = new AffinityCodec(SECRET);
     const originalBytes = crypto.getRandomValues(new Uint8Array(48));
     const original = btoa(String.fromCharCode(...originalBytes));
-    const wrapped = await codec.wrap(original, affinity, DOMAIN);
+    const wrapped = await codec.wrap(original, identity, DOMAIN);
     const framedBytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));
 
     expect(framedBytes.subarray(0, originalBytes.length)).toEqual(originalBytes);
@@ -112,20 +141,20 @@ describe('AffinityCodec', () => {
     'round-trips raw UTF-16 code units exactly',
     async original => {
       const codec = new AffinityCodec(SECRET);
-      const wrapped = await codec.wrap(original, affinity, DOMAIN);
+      const wrapped = await codec.wrap(original, identity, DOMAIN);
       expect(await codec.unwrap(wrapped, DOMAIN)).toMatchObject({ kind: 'owned', value: original });
     },
   );
 
   test('preserves a foreign value byte-for-byte on authentication failure', async () => {
-    const wrapped = await new AffinityCodec(SECRET).wrap('opaque', affinity, DOMAIN);
+    const wrapped = await new AffinityCodec(SECRET).wrap('opaque', identity, DOMAIN);
 
     expect(await new AffinityCodec(OTHER_SECRET).unwrap(wrapped, DOMAIN)).toEqual({ kind: 'foreign', value: wrapped });
   });
 
   test('preserves malformed and tampered values as foreign', async () => {
     const codec = new AffinityCodec(SECRET);
-    const wrapped = await codec.wrap('opaque', affinity, DOMAIN);
+    const wrapped = await codec.wrap('opaque', identity, DOMAIN);
     const bytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));
     bytes[bytes.length - 3] ^= 1;
     const tampered = btoa(String.fromCharCode(...bytes));
@@ -137,8 +166,12 @@ describe('AffinityCodec', () => {
   test('unwraps nested gateway carriers one layer at a time', async () => {
     const innerCodec = new AffinityCodec(OTHER_SECRET);
     const outerCodec = new AffinityCodec(SECRET);
-    const inner = await innerCodec.wrap('upstream', affinity, DOMAIN);
-    const outer = await outerCodec.wrap(inner, { ...affinity, upstreamId: 'inner-gateway' }, DOMAIN);
+    const inner = await innerCodec.wrap('upstream', identity, DOMAIN);
+    const outer = await outerCodec.wrap(inner, {
+      ...identity,
+      upstreamId: 'inner-gateway',
+      opaqueBlobCompatibilityIdentity: { upstreamId: 'inner-gateway', key: 'openai' },
+    }, DOMAIN);
 
     const outerDecoded = await outerCodec.unwrap(outer, DOMAIN);
     expect(outerDecoded.kind).toBe('owned');
@@ -149,7 +182,7 @@ describe('AffinityCodec', () => {
 
   test('authenticates the carrier domain and original bytes', async () => {
     const codec = new AffinityCodec(SECRET);
-    const wrapped = await codec.wrap('opaque', affinity, DOMAIN);
+    const wrapped = await codec.wrap('opaque', identity, DOMAIN);
     expect(await codec.unwrap(wrapped, 'other.carrier')).toEqual({ kind: 'foreign', value: wrapped });
 
     const bytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));

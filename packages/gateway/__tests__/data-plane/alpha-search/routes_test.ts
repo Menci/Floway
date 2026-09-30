@@ -8,7 +8,8 @@ import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -165,7 +166,7 @@ describe('/alpha/search data plane', () => {
       };
       const { apiKey, repo } = await setupAppTest({ webSearchConfig });
       await repo.upstreams.deleteAll();
-      await repo.upstreams.save(buildCustomUpstreamRecord({
+      await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
         id: 'up_alpha',
         name: 'Alpha Search',
         config: {
@@ -194,6 +195,7 @@ describe('/alpha/search data plane', () => {
           throw new Error(`Unhandled fetch ${request.url}`);
         },
         async () => {
+          await warmModelsForTest();
           const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
             id: 'session-search',
             model: 'caller-model',

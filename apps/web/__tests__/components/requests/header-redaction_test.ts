@@ -10,10 +10,12 @@ describe('header redaction', () => {
     expect(isSensitiveHeader('Set-Cookie')).toBe(true);
     expect(isSensitiveHeader('X-Api-Key')).toBe(true);
     expect(isSensitiveHeader('X-Goog-Api-Key')).toBe(true);
+    expect(isSensitiveHeader('api-key')).toBe(true);
   });
 
   it('leaves a header that carries no credential alone', () => {
     expect(isSensitiveHeader('content-type')).toBe(false);
+    expect(isSensitiveHeader('anthropic-version')).toBe(false);
     expect(isSensitiveHeader('x-floway-session')).toBe(false);
   });
 

@@ -80,16 +80,20 @@ const useStyles = makeStyles({
   scroll: {
     maxHeight: '340px',
   },
+  wrappedPre: { minWidth: 0 },
+  wrappedCode: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
 });
 
-export function CodeBlock({ code, copyOutcome, disabled = false, header, language, onCopy }: {
+export function CodeBlock({ code, collapsed = false, copyOutcome, disabled = false, header, language, onCopy, wrap = false }: {
   code: string;
+  collapsed?: boolean;
   copyOutcome: CopyOutcome;
   disabled?: boolean;
   /** Replaces the language caption in the header bar, for switchers that pick which code this block shows. */
   header?: ReactNode;
   language: string;
   onCopy: () => void;
+  wrap?: boolean;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -113,14 +117,14 @@ export function CodeBlock({ code, copyOutcome, disabled = false, header, languag
           {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
-      <ScrollArea axes="both" className={mergeClasses('winui-focus-rect-within', styles.scroll)}>
-        <pre className={mergeClasses(`language-${language}`, styles.pre)}>
+      {!collapsed && <ScrollArea axes={wrap ? 'vertical' : 'both'} className={mergeClasses('winui-focus-rect-within', styles.scroll)}>
+        <pre className={mergeClasses(`language-${language}`, styles.pre, wrap && styles.wrappedPre)}>
           <code
-            className={mergeClasses(`language-${language}`, styles.code)}
+            className={mergeClasses(`language-${language}`, styles.code, wrap && styles.wrappedCode)}
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         </pre>
-      </ScrollArea>
+      </ScrollArea>}
     </div>
   );
 }

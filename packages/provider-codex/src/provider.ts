@@ -6,9 +6,8 @@ import { callCodexAlphaSearch, callCodexOpenAIImagesEdits, callCodexOpenAIImages
 import { CODEX_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
-import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
+import { assertCodexUpstreamState, findCodexAccountIndex, persistCodexRefreshTokenRotation, persistCodexTerminalState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
@@ -64,26 +63,12 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     return locateActiveAccount(fresh.state);
   };
 
-  const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
-    const rotatedAt = new Date().toISOString();
-    await getProviderRepo().upstreams.saveState(record.id, current => {
-      const { state, accountIndex } = locateActiveAccount(current);
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: rotatedAt }));
-    });
+  const effects: CodexCallEffects = {
+    persistRefreshTokenRotation: newRefreshToken =>
+      persistCodexRefreshTokenRotation(record.id, accountIdentity.chatgptAccountId, newRefreshToken, { onMissing: 'throw' }),
+    persistTerminalState: (newState, message) =>
+      persistCodexTerminalState(record.id, accountIdentity.chatgptAccountId, newState, message, { onMissing: 'throw' }),
   };
-
-  const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
-    const flippedAt = new Date().toISOString();
-    await getProviderRepo().upstreams.saveState(record.id, current => {
-      const { state, accountIndex } = locateActiveAccount(current);
-      // Clear any cached access token on the terminal flip — once the credential
-      // is dead the cached token is dead too, and leaving it would confuse the
-      // dashboard's status panel.
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
-    });
-  };
-
-  const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const instance: ProviderInstance = {
     getProvidedModels: async fetcher => {
@@ -97,10 +82,10 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       let access;
       try {
         access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+          mintCodexAccessToken(refreshToken, fetcher, effects.persistRefreshTokenRotation));
       } catch (err) {
         if (err instanceof CodexOAuthSessionTerminatedError) {
-          await persistTerminalState('refresh_failed', err.upstreamMessage);
+          await effects.persistTerminalState('refresh_failed', err.upstreamMessage);
         }
         throw err;
       }
@@ -111,7 +96,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
       const models = raw.map(r => codexRawToProviderModel(r, enabledFlags));
-      if (codexPlanSupportsImages(access.planType ?? accountIdentity.planType)) models.push(codexImageProviderModel(enabledFlags));
+      if (codexPlanSupportsImages(access.planType ?? accountIdentity.planType ?? undefined)) models.push(codexImageProviderModel(enabledFlags));
       return models;
     },
 
@@ -143,11 +128,9 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
           const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };
           switch (ctx.action) {
           case 'compact':
-            // Narrow to the compact wire shape — defends against a future
-            // interceptor that flips `ctx.action` from 'generate' to 'compact'
-            // mid-chain and leaves the generate-shaped body (tools, reasoning,
-            // etc.) in place.
-            return { action: 'compact', ...(await callCodexOpenAIResponsesCompact({ ...backendCallBase, body: toCompactPayloadShape(wireBody) })) };
+            // The fetch boundary selects the private wire format before compact
+            // projection so interceptor-provided tools and instructions survive.
+            return { action: 'compact', ...(await callCodexOpenAIResponsesCompact({ ...backendCallBase, body: wireBody })) };
           case 'generate':
             return { action: 'generate', ...(await callCodexOpenAIResponses({ ...backendCallBase, body: wireBody })) };
           default:
@@ -168,11 +151,11 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     callOpenAIEmbeddings: () => unsupportedCallResult(),
     callOpenAIImagesGenerations: async (model, body, signal, opts) => {
       const { account } = await readActiveAccount();
-      return await callCodexOpenAIImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType });
+      return await callCodexOpenAIImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType ?? undefined });
     },
     callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const { account } = await readActiveAccount();
-      return await callCodexOpenAIImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType });
+      return await callCodexOpenAIImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType ?? undefined });
     },
     callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),

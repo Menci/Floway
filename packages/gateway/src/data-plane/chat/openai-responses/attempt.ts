@@ -15,7 +15,7 @@ import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { traverseTranslation } from '../shared/translate-traverse.ts';
+import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
@@ -184,6 +184,7 @@ const dispatchOpenAIResponses = async (
       translated => anthropicMessagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       }),
+      captureFromDump(ctx.dump, targetApi),
     );
   case 'openaiChatCompletions':
     if (invocation.action === 'compact') {
@@ -195,6 +196,7 @@ const dispatchOpenAIResponses = async (
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
+      captureFromDump(ctx.dump, targetApi),
     );
   default: {
     const exhaustive: never = targetApi;

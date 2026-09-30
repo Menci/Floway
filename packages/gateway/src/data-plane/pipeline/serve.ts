@@ -18,7 +18,7 @@ import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts'
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
 import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
@@ -70,23 +70,27 @@ export const openPrologue = (
   options: { readonly wantsStream: boolean; readonly model?: string },
 ): Prologue => {
   const backgroundScheduler = backgroundSchedulerFromContext(c);
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
   // stage, both directions — so it opens that recording here instead of the edge one, and
   // no turn is ever written twice.
   const runDump = openRunDump(
     apiKeyFromContext(c),
-    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
+    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body, headers: ingress.headers },
     backgroundScheduler,
+    options.wantsStream,
+    attempt.timing,
   );
   const gateway = createGatewayCtxFromHono(c, {
     wantsStream: options.wantsStream,
+    attempt,
     ...(options.model === undefined ? {} : { model: options.model }),
     requestBody: takeRequestBody(ingress.body),
     backgroundScheduler,
     dump: runDump,
   });
 
-  const live = new Map<string, ModelCandidate>();
+  const live = new Map<number, ModelCandidate>();
 
   return {
     gateway,
@@ -96,15 +100,15 @@ export const openPrologue = (
       log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
       rememberCandidates: candidates => {
-        for (const candidate of candidates) live.set(candidate.provider.upstreamId, candidate);
+        for (const [candidateId, candidate] of candidates.entries()) live.set(candidateId, candidate);
       },
       // Absent when this key has no retention configured, which is what keeps recording
       // conditional: the runner does none of it rather than doing it and discarding.
       ...(runDump === null ? {} : { dump: runDump.sink }),
       resolveAttempt: (selector: AttemptSelector) => {
-        const candidate = live.get(selector.upstreamId);
+        const candidate = live.get(selector.candidateId);
         if (candidate === undefined) {
-          throw new Error(`resolveAttempt: nothing live for ${selector.upstreamId}; the selector did not come from this run`);
+          throw new Error(`resolveAttempt: nothing live for candidate ${selector.candidateId}; the selector did not come from this run`);
         }
         return candidate;
       },

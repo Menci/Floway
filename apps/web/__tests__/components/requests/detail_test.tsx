@@ -1,80 +1,68 @@
-import { describe, expect, it } from 'vitest';
+import { fireEvent, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { renderInApp } from '../../render';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
 
-const meta: DumpMetadata = {
-  id: 'rec-1',
-  startedAt: 0,
-  completedAt: 10,
-  method: 'POST',
-  path: '/v1/embeddings',
-  status: 200,
-  upstream: null,
-  model: 'text-embedding-3-small',
-  inputTokens: 7,
-  outputTokens: 0,
-  requestBytes: 14,
-  responseBytes: 22,
-  durationMs: 10,
-  error: null,
-};
+vi.mock('../../../src/components/ui/body-editor', () => ({ default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => <>{toolbarStart}<pre data-testid="body-content">{text}</pre></> }));
 
-const edgeRecord: DumpRecord = {
+const record: DumpEdgeRecord = {
   shape: 'edge',
-  meta,
-  request: {
-    method: 'POST',
-    path: '/v1/embeddings',
-    headers: [['content-type', 'application/json']],
-    body: { encoding: 'utf8', data: '{"input":"hi"}' },
-  },
-  response: {
-    status: 200,
-    headers: [['content-type', 'application/json']],
-    body: { type: 'bytes', body: { encoding: 'utf8', data: '{"object":"list"}' } },
-  },
+  meta: { id: 'detail', method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1, status: 200, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1, error: null },
+  request: { method: 'POST', path: '/v1/chat/completions', headers: [], body: { encoding: 'utf8', data: '{"client":"large request"}' } },
+  response: { status: 200, headers: [], body: { type: 'stream', events: [] } },
+  capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: null }, error: null }], response: { body: { encoding: 'utf8', data: 'data: downstream\n' }, complete: true, error: null } },
 };
 
-const runRecord: DumpRecord = {
-  shape: 'run',
-  meta,
-  events: '{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'
-    + '{"type":"object","fromObjectId":1,"nodes":[{"model":"text-embedding-3-small"}]}\n'
-    + '{"type":"stage.leaved","stageId":1,"facts":{"response.http.status":200}}\n',
-};
-
-const panel = (record: DumpRecord) =>
-  renderInApp(<RequestDetailPanel collected={null} error={null} record={record} recordId={record.meta.id} retainLastRecord={false} />);
-
-// The shape follows the endpoint, so the panel is handed both and has to tell
-// them apart: an endpoint on the onion is recorded as its two edges, a pipelined
-// one as the whole run.
-describe('request detail panel', () => {
-  it('draws the two edges of an edge-shaped record', () => {
-    const { container } = panel(edgeRecord);
-    const headings = [...container.querySelectorAll('h3')].map(node => node.textContent);
-    expect(headings).toEqual(['Request', 'Request body', 'Response', 'Response body']);
-    expect(container.textContent).toContain('"input": "hi"');
-    expect(container.textContent).toContain('"object": "list"');
+describe('request detail navigation', () => {
+  it('opens each body directly and preserves malformed raw response text', async () => {
+    renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={{ result: { content: 'parsed response' }, truncated: true, error: null }} upstreamCollected={null} retainLastRecord={false} />);
+    expect((await screen.findByTestId('body-content')).textContent).toContain('parsed response');
+    expect(screen.queryByText('large request')).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Client request' }));
+    expect((await screen.findByTestId('body-content')).textContent).toContain('large request');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Upstream response' }));
+    expect((await screen.findByTestId('body-content')).textContent).toContain('data: {broken\n');
+    fireEvent.click(screen.getByRole('button', { name: 'Issues (1)' }));
+    expect(screen.getByText('Capture ended before EOF. These are the bytes received so far.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Upstream request' }));
+    expect((await screen.findByTestId('body-content')).textContent).toContain('translated request');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Client response' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Response body view' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Raw bytes' }));
+    expect((await screen.findByTestId('body-content')).textContent).toBe('data: downstream\n');
   });
+});
 
-  it('draws the event stream of a run-shaped record', () => {
-    const { container } = panel(runRecord);
-    const headings = [...container.querySelectorAll('h3')].map(node => node.textContent);
-    expect(headings).toEqual(['Run']);
-    // One block per NDJSON line, each labelled with the event's own kind.
-    expect([...container.querySelectorAll('pre')]).toHaveLength(3);
-    expect(container.textContent).toContain('stage.entered');
-    expect(container.textContent).toContain('response.http.status');
-    // Nothing from the edge shape leaks into it: a run has no header tables and
-    // no separate request body.
-    expect(container.querySelector('table')).toBe(null);
-  });
+it('keeps legacy upstream streams readable without a raw exchange', async () => {
+  const legacy = { ...record, capture: undefined, response: { ...record.response, upstream: { status: 200, headers: [], body: { type: 'stream' as const, events: [] } } } };
+  renderInApp(<RequestDetailPanel record={legacy} recordId="detail" error={null} collected={null} upstreamCollected={{ result: { content: 'legacy output' }, error: null, truncated: false }} retainLastRecord={false} />);
+  fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Upstream response' }));
+  expect((await screen.findByTestId('body-content')).textContent).toContain('legacy output');
+});
 
-  it('says so when a run recorded no events at all', () => {
-    const { container } = panel({ shape: 'run', meta, events: '' });
-    expect(container.textContent).toContain('This run recorded no events.');
-  });
+it('switches upstream attempts without showing the last attempt’s payload', async () => {
+  const multiple = {
+    ...record, capture: {
+      ...record.capture!, exchanges: [
+        { ...record.capture!.exchanges[0]!, request: { ...record.capture!.exchanges[0]!.request, body: { encoding: 'utf8' as const, data: 'first attempt' } } },
+        { ...record.capture!.exchanges[0]!, request: { ...record.capture!.exchanges[0]!.request, body: { encoding: 'utf8' as const, data: 'second attempt' } } },
+      ],
+    },
+  };
+  renderInApp(<RequestDetailPanel record={multiple} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+  fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Upstream request' }));
+  expect((await screen.findByTestId('body-content')).textContent).toContain('second attempt');
+  fireEvent.click(screen.getByRole('combobox', { name: 'Upstream calls' }));
+  fireEvent.click(screen.getAllByRole('option')[0]!);
+  expect((await screen.findByTestId('body-content')).textContent).toContain('first attempt');
 });

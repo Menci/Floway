@@ -4,7 +4,7 @@ import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
-import { loadEditorAux, loadInitialModelCatalog } from '../components/upstream-editor/data';
+import { loadEditorAux } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 
@@ -20,10 +20,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw redirect('/dashboard/providers/upstreams?missing=1');
   }
   if (recordResult.error) throw new Error(recordResult.error.message);
-  const catalog = await loadInitialModelCatalog(recordResult.data);
   return {
     ...aux,
-    ...catalog,
+    record: recordResult.data,
+    discovered: recordResult.data.cachedModels,
     mode: 'edit' as const,
   };
 }

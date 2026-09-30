@@ -1,31 +1,32 @@
-// Per-request dump pipeline for an endpoint served by the onion: the record is
-// the turn's two **edges** — what the client sent, what the client got back.
-// Opens the dump session (request snapshot + opt-in decision) and exposes the
-// mid-flight hooks the respond layer calls to record outcomes and frames. When
-// the api key has no retention configured, opening returns null and the data
-// plane pays no per-request cost.
-//
-// A pipelined endpoint records the whole run instead; `run-sink.ts` is that
-// half, and both fill the same `DumpMetadata` through `DumpAttribution`.
+// Per-request dump pipeline. Opens the dump session (request snapshot +
+// opt-in decision) and exposes the mid-flight hooks the respond layer
+// calls to record outcomes and frames. When the api key has no retention
+// configured, opening returns null and the data plane pays no per-request
+// cost.
 
 import type { Context } from 'hono';
 
-import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
+import { HttpCapture } from './http-capture.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type { StreamRecording } from './turn-dump.ts';
 import type {
+  DumpErrorMeta,
   DumpMetadata,
   DumpStreamEvent,
+  DumpUpstreamRef,
   DumpWriteRecord,
   PreparedDumpRequestBody,
   StoredDumpResponseBody,
 } from './types.ts';
+import { encodeBodyForWire } from './wire.ts';
+import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
+import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
 // the handler already consumed.
@@ -40,11 +41,52 @@ interface RequestSnapshot {
 interface ResponseSnapshot {
   readonly status: number;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly isStream: boolean;
+  readonly rawCaptured: boolean;
   readonly bytes: Uint8Array;
   readonly payloadBytes: number;
   readonly streamError: string | null;
 }
+
+// Four independent attribution slots the mid-flight hooks fill: `model` and
+// `upstreamId` identify what the turn was about, `inputTokens` /
+// `outputTokens` quantify what the upstream reported. They're independent
+// because different outcomes set different subsets:
+//
+//   • Every protocol handler calls `requestedModel(model)` immediately after
+//     parsing the payload, so `model` is set regardless of outcome.
+//   • `success(identity, usage)` fills all four; the upstream-resolved model
+//     id may overwrite what `requestedModel` had.
+//   • `error(kind, upstream?)` records a categorized api-error envelope
+//     (`kind` matches `ApiErrorResult.source`). Real upstream non-2xx pass
+//     `upstream` so a 4xx/5xx row in the dashboard names the upstream that
+//     rejected the call; the gateway arm may also pass it when a candidate
+//     was already chosen (item-not-found rewrite, server-tool input
+//     rejection).
+//   • `failed(reason)` records an uncategorized terminal failure: a thrown
+//     exception (caught by the respond layer or passthrough-serve), a
+//     source-emitted error frame, a downstream cancel, or a writer error.
+//     Caller passes a string or Error; the accumulator one-line-formats
+//     it (`.message` only — never the stack, which lives in the response
+//     body's debug envelope).
+//
+// `requestedModel`-set model survives across both error variants so even an
+// outright-failed turn carries model attribution.
+
+// Anthropic-style disjoint per-category counts: input excludes cache reads
+// and cache writes; sum the present ones onto the dump's single inputTokens
+// column. Missing categories stay null (not measured) instead of zero so a
+// recorded zero genuinely means "upstream said zero".
+const tokenUsageInput = (usage: TokenUsage | null): number | null => {
+  if (!usage) return null;
+  const { input, input_cache_read, input_cache_write } = usage;
+  if (input === undefined && input_cache_read === undefined && input_cache_write === undefined) return null;
+  return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
+};
+
+const oneLineError = (err: unknown): string => {
+  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
+};
 
 const headerPairs = (headers: Headers): Array<[string, string]> => {
   const pairs: Array<[string, string]> = [];
@@ -52,11 +94,28 @@ const headerPairs = (headers: Headers): Array<[string, string]> => {
   return pairs;
 };
 
+const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | null> => {
+  if (!id) return null;
+  const upstream = await getRepo().upstreams.getById(id);
+  if (!upstream) return null;
+  return { id: upstream.id, name: upstream.name, kind: upstream.kind, hue: upstream.hue };
+};
+
 export class DumpAccumulator {
-  private readonly attribution = new DumpAttribution();
+  readonly http = new HttpCapture();
   private readonly events: DumpStreamEvent[] = [];
   private sentPayloadBytes = 0;
+  private model: string | null = null;
+  private upstreamId: string | null = null;
+  private inputTokens: number | null = null;
+  private outputTokens: number | null = null;
+  private errorMeta: DumpErrorMeta | null = null;
   private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
+  // Pre-translation (target-protocol) view. Populated only on translated turns
+  // via `traverseTranslation`'s capture hook; stays empty on native turns.
+  private readonly upstreamEvents: DumpStreamEvent[] = [];
+  private upstreamTargetApi: ChatTargetApi | null = null;
+  private upstreamApiErrorEnvelope: { status: number; headers: Array<[string, string]>; body: Uint8Array } | null = null;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -64,6 +123,8 @@ export class DumpAccumulator {
     requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
+    private readonly wantsStream: boolean = false,
+    private readonly timing?: AttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
@@ -75,15 +136,16 @@ export class DumpAccumulator {
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
   requestedModel(model: string): void {
-    this.attribution.requestedModel(model);
+    this.model = model;
   }
 
   error(kind: 'upstream' | 'gateway', upstream?: string): void {
-    this.attribution.error(kind, upstream);
+    this.errorMeta = { kind };
+    if (upstream !== undefined) this.upstreamId = upstream;
   }
 
   failed(reason: unknown): void {
-    this.attribution.failed(reason);
+    this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
   }
 
   // Records one protocol frame. Stored as the canonical ProtocolFrame so
@@ -94,12 +156,31 @@ export class DumpAccumulator {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
-  /** This shape has one frame log and no way to name anything in it, so every stream lands in
-   *  the same place, there is no terminator to write, and no fact can point at one. A turn
-   *  that opened two would have them interleaved — which the endpoints on this shape do not do,
-   *  and which the run shape is what fixes. */
   openStream(): StreamRecording {
     return { frame: frame => { this.frame(frame); }, end: () => {}, fact: null };
+  }
+
+  // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
+
+  // Stamped eagerly at capture construction so `meta.targetApi` is set even
+  // when the upstream stream produces zero frames (e.g. immediate done).
+  setUpstreamTargetApi(api: ChatTargetApi): void {
+    this.upstreamTargetApi = api;
+  }
+
+  // Records one ORIGINAL target-protocol frame, before Floway translates it
+  // into the source protocol. Same shape as `frame()` so the dashboard renders
+  // the upstream view with the same collected+events experience, dispatched
+  // by `meta.targetApi` instead of `meta.path`.
+  upstreamFrame(frame: ProtocolFrame<unknown>): void {
+    this.upstreamEvents.push({ frame, ts: Date.now() - this.startedAt });
+  }
+
+  // Captures the verbatim upstream api-error envelope (status/headers/body)
+  // BEFORE the optional `trip.apiError` rewrite. The bytes variant of the
+  // upstream body; the dashboard renders it like any non-stream response body.
+  upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void {
+    this.upstreamApiErrorEnvelope = { status: error.status, headers: headerPairs(error.headers), body: error.body };
   }
 
   recordSentPayloadBytes(byteLength: number): void {
@@ -107,7 +188,10 @@ export class DumpAccumulator {
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
-    this.attribution.success(identity, usage);
+    this.model = identity.model;
+    this.upstreamId = identity.upstream;
+    this.inputTokens = tokenUsageInput(usage);
+    this.outputTokens = usage?.output ?? null;
   }
 
   // --- response-side: handler exit ---
@@ -136,7 +220,7 @@ export class DumpAccumulator {
       this.backgroundScheduler(this.write({
         status,
         headers: headers.map(([k, v]) => [k, v]),
-        isStream: this.events.length > 0,
+        rawCaptured: this.requestSnapshot.method !== 'WS',
         bytes: new Uint8Array(),
         payloadBytes: this.sentPayloadBytes,
         streamError: null,
@@ -153,7 +237,6 @@ export class DumpAccumulator {
       return response;
     }
 
-    const isStream = isEventStreamMediaType(response.headers.get('content-type'));
     const [forClient, forCapture] = response.body.tee();
     this.backgroundScheduler((async () => {
       const reader = forCapture.getReader();
@@ -176,7 +259,7 @@ export class DumpAccumulator {
       await this.write({
         status: responseStatus,
         headers: responseHeaders,
-        isStream,
+        rawCaptured: true,
         bytes,
         payloadBytes: bytes.byteLength,
         streamError,
@@ -199,34 +282,68 @@ export class DumpAccumulator {
     const recordId = ulid(completedAt);
 
     // Prefer the accumulator's frame log so dumps reflect the gateway's
-    // frame sequence regardless of negotiated wire shape; a turn with no
-    // frames falls back to captured bytes.
+    // frame sequence regardless of negotiated wire shape; passthrough
+    // endpoints with no frames fall back to captured bytes.
     const responseBody: StoredDumpResponseBody = this.events.length > 0
       ? { type: 'stream', events: this.events }
       : response.bytes.byteLength > 0 || response.streamError !== null
-        ? response.isStream
-          ? { type: 'stream', events: [] }
-          : { type: 'bytes', body: response.bytes }
+        ? { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
-    const meta: DumpMetadata = await this.attribution.metadata({
+    const ttftMs = this.wantsStream ? attemptTtftMs(this.timing) : null;
+
+    const meta: DumpMetadata = {
       id: recordId,
       startedAt: this.startedAt,
       completedAt,
       method: this.requestSnapshot.method,
       path: this.requestSnapshot.path,
       status: response.status,
+      upstream: await resolveUpstreamRef(this.upstreamId ?? this.http.exchanges.at(-1)?.upstreamId ?? null),
+      model: this.model,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
-      // Precedence: an explicit error stamp from the respond path wins — the
-      // assembler applies this only when there is none.
-      fallbackError: streamReadError(this.requestSnapshot.streamError, response.streamError),
-    });
+      durationMs: completedAt - this.startedAt,
+      ttftMs,
+      // Precedence: an explicit error stamp from the respond path wins;
+      // otherwise a request-body read failure (operator-side payload didn't
+      // arrive intact) outranks a response-body read failure. Both stream-
+      // read failures surface as `kind: 'failed'`.
+      error: this.errorMeta
+        ?? (this.requestSnapshot.streamError !== null ? { kind: 'failed', reason: this.requestSnapshot.streamError } : null)
+        ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
+      targetApi: this.upstreamTargetApi,
+    };
+
+    // Build the parallel pre-translation upstream body ONLY when upstream
+    // data was captured. An empty upstream stream with no api-error means the
+    // turn produced nothing to show (or was native) — omit the field so old
+    // records and native turns share the same shape.
+    const hasUpstream = this.upstreamEvents.length > 0 || this.upstreamApiErrorEnvelope !== null;
+    const upstream = !hasUpstream ? undefined : {
+      status: this.upstreamApiErrorEnvelope?.status ?? null,
+      headers: this.upstreamApiErrorEnvelope?.headers ?? [],
+      body: (this.upstreamApiErrorEnvelope !== null
+        ? { type: 'bytes' as const, body: this.upstreamApiErrorEnvelope.body }
+        : { type: 'stream' as const, events: this.upstreamEvents }) satisfies StoredDumpResponseBody,
+    };
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
       const record: DumpWriteRecord = {
         shape: 'edge',
+        capture: {
+          exchanges: this.http.exchanges,
+          ...(response.rawCaptured ? {
+            response: {
+              body: encodeBodyForWire(response.bytes, response.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? ''),
+              complete: response.streamError === null,
+              error: response.streamError,
+            },
+          } : {}),
+        },
         meta,
         request: {
           method: this.requestSnapshot.method,
@@ -238,6 +355,7 @@ export class DumpAccumulator {
           status: response.status,
           headers: response.headers.map(([k, v]) => [k, v]),
           body: responseBody,
+          ...(upstream !== undefined ? { upstream } : {}),
         },
       };
       await getDumpStore().put(this.apiKey.id, record);
@@ -258,6 +376,8 @@ export const openDumpAccumulator = (
   apiKey: ApiKey,
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
+  wantsStream: boolean = false,
+  timing?: AttemptTiming,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
   const requestSnapshot: RequestSnapshot = {
@@ -267,5 +387,5 @@ export const openDumpAccumulator = (
     bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler, wantsStream, timing);
 };

@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import {
   geminiGenerateContentFunctionCallingIntent,
   geminiGenerateContentFunctionCallPart,
@@ -138,7 +140,7 @@ const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, generat
         type: 'json_schema',
         json_schema: {
           name: 'gemini_response',
-          schema: generationConfig.responseSchema,
+          schema: klona(generationConfig.responseSchema),
         },
       },
     };
@@ -160,7 +162,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
     type: 'function' as const,
     name: declaration.name,
     ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    parameters: declaration.parameters ?? { type: 'object', properties: {} },
+    parameters: klona(declaration.parameters) ?? { type: 'object', properties: {} },
     strict: false,
   }));
 

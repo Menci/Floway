@@ -1,5 +1,5 @@
+import { stampUpstreamCallStart } from './attempt-timing.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { stampUpstreamCallStart } from './gateway-ctx.ts';
 import { filterInboundHeadersForProvider } from './inbound-headers.ts';
 import type { ModelCandidate, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -10,8 +10,8 @@ export const buildUpstreamCallOptions = (
   ctx: GatewayCtx,
   headers: Headers,
 ): UpstreamCallOptions => ({
-  fetcher: candidate.fetcher,
+  fetcher: ctx.dump?.http.wrapFetcher(candidate.fetcher, candidate.provider.upstreamId) ?? candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers: filterInboundHeadersForProvider(headers, candidate.provider),
-  wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
+  wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt.timing),
 });

@@ -1,11 +1,12 @@
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
-import { clearInFlightForTesting } from '../../src/data-plane/providers/models-cache.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
-import { initRepo } from '../../src/repo/index.ts';
+import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
+import { getRepo, initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
+import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -46,6 +47,8 @@ interface SSEChunk {
   event?: string;
   data: string | Record<string, unknown>;
 }
+
+const processFetch = globalThis.fetch;
 
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 
@@ -185,7 +188,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   });
 
   clearInProcessCopilotTokenCache();
-  clearInFlightForTesting();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
@@ -224,7 +226,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     },
   };
   const copilotUpstream = options.copilotUpstream ?? buildCopilotUpstreamRecord(githubAccount);
-  await repo.upstreams.save(copilotUpstream);
+  await saveUpstreamForTest(repo.upstreams, copilotUpstream);
 
   if (options.webSearchConfig !== undefined) {
     await repo.webSearchConfig.save(options.webSearchConfig);
@@ -348,6 +350,22 @@ export function sseOpenAIResponsesResponse(response: Record<string, unknown>): R
 export async function requestApp(path: string, init: RequestInit): Promise<Response> {
   return await app.request(path, init);
 }
+
+export const requestAppWithWarmModels = async (path: string, init: RequestInit): Promise<Response> => {
+  if (globalThis.fetch !== processFetch) await warmModelsForTest();
+  return await requestApp(path, init);
+};
+
+// App fixtures write upstream rows directly because their fetch mocks are not
+// installed until the test body runs. Production create/update/OAuth flows
+// synchronously warm before returning; reproduce that lifecycle immediately
+// before a model-consuming request while leaving repository/cache unit tests
+// free to exercise genuinely cold reads.
+export const warmModelsForTest = async (): Promise<void> => {
+  const upstreams = await getRepo().upstreams.list();
+  await Promise.allSettled(upstreams.map(async upstream =>
+    await refreshModels(modelsRefreshTarget(upstream), 'TEST')));
+};
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {
   const blocks = text

@@ -69,6 +69,8 @@ export interface DumpTurnOutcome {
   readonly status: number | null;
   readonly requestBytes: number;
   readonly responseBytes: number;
+  readonly ttftMs: number | null;
+  readonly fallbackUpstreamId: string | null;
   // Applied only when no hook stamped an error, so an explicit stamp from the
   // respond path always outranks a transport-level read failure.
   readonly fallbackError: DumpErrorMeta | null;
@@ -118,13 +120,14 @@ export class DumpAttribution {
       method: outcome.method,
       path: outcome.path,
       status: outcome.status,
-      upstream: await resolveUpstreamRef(this.upstreamId),
+      upstream: await resolveUpstreamRef(this.upstreamId ?? outcome.fallbackUpstreamId),
       model: this.model,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
       requestBytes: outcome.requestBytes,
       responseBytes: outcome.responseBytes,
       durationMs: outcome.completedAt - outcome.startedAt,
+      ttftMs: outcome.ttftMs,
       error: this.errorMeta ?? outcome.fallbackError,
     };
   }

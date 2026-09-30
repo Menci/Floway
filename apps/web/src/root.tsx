@@ -9,9 +9,9 @@ import criticalCss from 'virtual:floway-critical.css?inline';
 import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
-import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
 import { GradientBackground } from './components/gradient-background';
+import { LanguageSync } from './components/language-sync';
 import { markPickerScript } from './components/logo-mark';
 import { NavigationProgress } from './components/navigation-progress';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
@@ -73,7 +73,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="text-[14px]">
         <FluentProvider theme={theme}>
-          <BrowserLanguageSync />
+          <LanguageSync />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>
         <Scripts />

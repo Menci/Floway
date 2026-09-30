@@ -7,7 +7,7 @@ import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { traverseTranslation } from '../shared/translate-traverse.ts';
+import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
@@ -57,6 +57,7 @@ export const geminiGenerateContentAttempt = {
           translated => anthropicMessagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
           }),
+          captureFromDump(ctx.dump, targetApi),
         );
       }
       if (targetApi === 'openaiResponses') {
@@ -66,6 +67,7 @@ export const geminiGenerateContentAttempt = {
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
+          captureFromDump(ctx.dump, targetApi),
         );
       }
       if (targetApi === 'openaiChatCompletions') {
@@ -75,6 +77,7 @@ export const geminiGenerateContentAttempt = {
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
+          captureFromDump(ctx.dump, targetApi),
         );
       }
       throw new Error(`geminiGenerateContentAttempt.generate: unexpected targetApi '${targetApi as string}'`);

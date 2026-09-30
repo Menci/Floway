@@ -100,6 +100,7 @@ test('getProvidedModels returns only manual models and never fetches when models
         kind: 'chat',
         endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Only',
+        chat: { image_detail_original: true },
       },
     ],
   });
@@ -115,6 +116,9 @@ test('getProvidedModels returns only manual models and never fetches when models
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'manual-only');
+      assertEquals(models[0].upstreamModelId, 'manual-only');
+      assertEquals(models[0].opaqueBlobCompatibilityScope, { bindToUpstream: true });
+      assertEquals(models[0].chat, { image_detail_original: true });
     },
   );
   assertEquals(fetchCalls, 0);
@@ -170,6 +174,55 @@ test('getProvidedModels carries pricing on auto models', async () => {
   );
 
   assertEquals(models[0]?.pricing, upstreamPricing);
+});
+
+test('getProvidedModels carries chat metadata on auto models', async () => {
+  const record = buildCustomUpstream();
+  const instance = createCustomProvider(record);
+
+  const upstreamChat = {
+    modalities: { input: ['text', 'image'], output: ['text'] } as const,
+    image_detail_original: true,
+    reasoning: { effort: { supported: ['none', 'high', 'max'], default: 'high' } },
+  };
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'vision-chat', kind: 'chat', chat: upstreamChat }],
+    }),
+    async () => {
+      return await instance.instance.getProvidedModels(directFetcher);
+    },
+  );
+
+  assertEquals(models[0]?.chat, upstreamChat);
+});
+
+test('getProvidedModels drops chat metadata from non-chat auto models', async () => {
+  const instance = createCustomProvider(buildCustomUpstream());
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'embedding-model', kind: 'embedding', chat: { image_detail_original: true } },
+        { id: 'image-model', kind: 'image', chat: { image_detail_original: true } },
+        { id: 'transcription-model', kind: 'transcription', chat: { image_detail_original: true } },
+        { id: 'text-embedding-3-small', chat: { image_detail_original: true } },
+        { id: 'gpt-image-2', chat: { image_detail_original: true } },
+        { id: 'whisper-1', chat: { image_detail_original: true } },
+      ],
+    }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+
+  assertEquals(models.map(model => ({ id: model.id, kind: model.kind, chat: model.chat })), [
+    { id: 'embedding-model', kind: 'embedding', chat: undefined },
+    { id: 'image-model', kind: 'image', chat: undefined },
+    { id: 'transcription-model', kind: 'transcription', chat: undefined },
+    { id: 'text-embedding-3-small', kind: 'embedding', chat: undefined },
+    { id: 'gpt-image-2', kind: 'image', chat: undefined },
+    { id: 'whisper-1', kind: 'transcription', chat: undefined },
+  ]);
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
@@ -241,10 +294,12 @@ test('manual runtime kind follows rerank endpoints when stored kind is stale', a
       kind: 'chat',
       endpoints: { rerank: {} },
       rerankTarget: { protocol: 'cohere-v2' },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'rerank');
+  assertEquals(model?.chat, undefined);
   assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
 });
 
@@ -255,10 +310,12 @@ test('manual runtime kind follows transcription endpoints when stored kind is st
       upstreamModelId: 'raw-transcriber',
       kind: 'chat',
       endpoints: { openaiAudioTranscriptions: {} },
+      chat: { image_detail_original: true },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertEquals(model?.kind, 'transcription');
+  assertEquals(model?.chat, undefined);
 });
 
 test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {

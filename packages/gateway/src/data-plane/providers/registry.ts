@@ -1,6 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
-import type { ModelsCacheGeneration } from '../../repo/types.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
+import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
+import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
@@ -19,26 +19,23 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 };
 
 export type GatewayProvider = Provider & {
-  readonly modelsCacheGeneration: ModelsCacheGeneration;
-  readonly modelsFetchIdentity: string;
+  readonly configVersion: number;
+  readonly modelsRefreshInputHash: string;
 };
 
 export const createProvider = (
-  record: UpstreamRecord,
-  cacheGeneration: ModelsCacheGeneration = { updatedAt: record.updatedAt, config: record.config },
+  record: StoredUpstreamRecord,
 ): GatewayProvider => {
   const provider = providersByKind[record.kind].create(record);
   return {
     ...provider,
-    modelsCacheGeneration: cacheGeneration,
-    modelsFetchIdentity: serializeStoredConfig({
-      kind: record.kind,
-      config: record.config,
-      state: record.state,
-      proxyFallbackList: record.proxyFallbackList,
-    }),
+    configVersion: record.configVersion,
+    modelsRefreshInputHash: modelsRefreshInputHash(record),
   };
 };
+
+export const createPreviewProvider = (record: UpstreamRecord): Provider =>
+  providersByKind[record.kind].create(record);
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
@@ -53,10 +50,10 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
 // this request instead of paying a second `upstreams.list()` round-trip.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
-  preFetchedUpstreams?: readonly UpstreamRecord[],
+  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<GatewayProvider[]> => {
   const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
-  const enabledById = new Map<string, UpstreamRecord>();
+  const enabledById = new Map<string, StoredUpstreamRecord>();
   for (const upstream of upstreams) {
     if (upstream.enabled) enabledById.set(upstream.id, upstream);
   }
@@ -69,7 +66,7 @@ export const listModelProviders = async (
   // selection emptied this way surfaces downstream as "no upstream provider
   // configured".
   const selection = upstreamFilter
-    ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is UpstreamRecord => u !== undefined)
+    ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is StoredUpstreamRecord => u !== undefined)
     : [...enabledById.values()];
 
   return selection.map(record => createProvider(record));

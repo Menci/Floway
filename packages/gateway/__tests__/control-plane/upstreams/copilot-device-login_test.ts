@@ -1,15 +1,7 @@
-import { afterEach, test, vi } from 'vitest';
+import { test } from 'vitest';
 
-// Copilot OAuth poll handlers warm the model cache after rotating the PAT. The
-// cache behavior has dedicated coverage; these route tests isolate credential
-// exchange and persistence.
-const modelsCacheMock = vi.hoisted<{ error: Error | null }>(() => ({ error: null }));
-
-vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
-  fetchUpstreamModelsCached: () => modelsCacheMock.error ? Promise.reject(modelsCacheMock.error) : Promise.resolve([]),
-  clearInFlightForTesting: () => {},
-}));
-
+import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -26,8 +18,36 @@ const githubAccessToken = (accessToken: string) => ({
   scope: 'read:user',
 });
 
-afterEach(() => {
-  modelsCacheMock.error = null;
+test('/api/upstreams/copilot/oauth/device-login/poll persists credentials without fetching models', async () => {
+  const { adminSession, githubAccount, repo } = await setupAppTest();
+  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_no_models_fetch' });
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, existing);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_no_models_fetch'));
+      if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'ct_no_models_fetch',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: existing.id }, deviceCode: 'device' }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
 });
 
 test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow', async () => {
@@ -268,7 +288,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_existing_copilot', name: 'Pinned Copilot', sortOrder: 9 });
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(existing);
+  await saveUpstreamForTest(repo.upstreams, existing);
 
   await withMockedFetch(
     request => {
@@ -283,9 +303,6 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
-      // Warmup probes /models on the per-tier host — return an empty catalog
-      // so the post-persist warm completes without waiting on a real fetch.
-      if (url.hostname === 'api.business.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -316,19 +333,18 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
 });
 
-test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache before warming', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache', async () => {
   const { repo, adminSession, githubAccount } = await setupAppTest({
     githubAccount: { token: 'ghu_old', user: githubUser },
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
-  await repo.upstreams.save(existing);
-  await repo.upstreams.saveModelsCache(existing.id, { updatedAt: existing.updatedAt, config: existing.config }, {
+  await saveUpstreamForTest(repo.upstreams, existing);
+  await seedModelsCache(repo.upstreams, existing.id, await storedModelsRefreshIdentity(repo.upstreams, existing.id), {
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],
   });
-  modelsCacheMock.error = new Error('new tenant catalog unavailable');
 
   await withMockedFetch(
     request => {

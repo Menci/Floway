@@ -71,25 +71,32 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   ['deepseek-v3.1:671b', tokenBasePricing({ input_tokens: '0.56', input_cache_read_tokens: '0.07', output_tokens: '1.68' })],
   ['deepseek-v3.2', tokenBasePricing({ input_tokens: '0.28', input_cache_read_tokens: '0.028', output_tokens: '0.42' })],
   ['deepseek-v4-pro', tokenBasePricing({ input_tokens: '0.435', input_cache_read_tokens: '0.003625', output_tokens: '0.87' })],
-  ['deepseek-v4-flash', tokenBasePricing({ input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' })],
+  // V4-Flash also ships under a dated tag (`deepseek-v4-flash:0731`), which
+  // is the same weights at the same price, so the rule matches the tag too
+  // rather than letting a dated pull fall through to NULL.
+  [/^deepseek-v4-flash(:|$)/, tokenBasePricing({ input_tokens: '0.14', input_cache_read_tokens: '0.0028', output_tokens: '0.28' })],
 
   // GLM 4.7 — Z.ai first-party. Priced lower than the 5.x family, so it
   // needs its own entry (don't shortcut by reusing the 5.x rule).
   // https://docs.z.ai/guides/overview/pricing
   ['glm-4.7', tokenBasePricing({ input_tokens: '0.6', input_cache_read_tokens: '0.11', output_tokens: '2.2' })],
 
-  // GLM 5.x — Z.ai first-party. Bare `glm-5` is cheaper than `glm-5.1`
-  // and `glm-5.2`, so they need separate rules.
+  // GLM 5.x — Z.ai first-party. Bare `glm-5` is cheaper than the 5.1/5.2/5.3
+  // trio, which Z.ai lists at one shared rate, so it needs its own rule.
+  // 5.3-Flash is on a limited-time promotion at half its listed
+  // $0.15/$0.03/$0.50 — recheck when Z.ai drops the strikethrough.
   // https://docs.z.ai/guides/overview/pricing
   ['glm-5', tokenBasePricing({ input_tokens: '1.0', input_cache_read_tokens: '0.2', output_tokens: '3.2' })],
-  [/^glm-5\.[12]$/, tokenBasePricing({ input_tokens: '1.4', input_cache_read_tokens: '0.26', output_tokens: '4.4' })],
+  ['glm-5.3-flash', tokenBasePricing({ input_tokens: '0.075', input_cache_read_tokens: '0.015', output_tokens: '0.25' })],
+  [/^glm-5\.[123]$/, tokenBasePricing({ input_tokens: '1.4', input_cache_read_tokens: '0.26', output_tokens: '4.4' })],
 
-  // Kimi K2.x — Moonshot international API. K2.5 has a cheaper CN-only rate;
-  // the international SKU is the defensible reference across regions.
+  // Kimi K2.x / K3 — Moonshot international API. K2.5 has a cheaper CN-only
+  // rate; the international SKU is the defensible reference across regions.
   // https://platform.kimi.ai/docs/pricing/chat
   ['kimi-k2.5', tokenBasePricing({ input_tokens: '0.55', input_cache_read_tokens: '0.1', output_tokens: '2.9' })],
   ['kimi-k2.6', tokenBasePricing({ input_tokens: '0.95', input_cache_read_tokens: '0.16', output_tokens: '4.0' })],
   ['kimi-k2.7-code', tokenBasePricing({ input_tokens: '0.95', input_cache_read_tokens: '0.19', output_tokens: '4.0' })],
+  ['kimi-k3', tokenBasePricing({ input_tokens: '3.0', input_cache_read_tokens: '0.3', output_tokens: '15.0' })],
 
   // MiniMax — international PAYGo. The cache_read rate is $0.03/M for the
   // older trio (m2 / m2.1 / m2.5) and $0.06/M for the newer m2.7 / m3 — the
@@ -141,6 +148,17 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // Gemini 3 Flash (preview) — Google AI Studio.
   // https://ai.google.dev/gemini-api/docs/pricing
   ['gemini-3-flash-preview', tokenBasePricing({ input_tokens: '0.5', input_cache_read_tokens: '0.05', output_tokens: '3.0' })],
+
+  // Gemma 4 — open weights that Google gives away on AI Studio rather than
+  // selling per token, so the commodity floor is the anchor, as for gpt-oss.
+  // Ollama Cloud serves the 31B instruction-tuned build and no other size, so
+  // the rule covers the bare tag and that one size rather than the whole
+  // family: the 26B-A4B and E4B builds are cheaper and a self-hosted
+  // deployment pulling them should not inherit 31B's rate. DeepInfra
+  // publishes no cached-input rate for the non-turbo SKU, so that metric
+  // stays absent rather than borrowed from the turbo one.
+  // https://deepinfra.com/google/gemma-4-31B-it
+  [/^gemma4(:31b)?$/, tokenBasePricing({ input_tokens: '0.13', output_tokens: '0.38' })],
 
   // Gemma 3.x and Gemma 4 31B intentionally have no entries: Vertex AI sells
   // a per-token MaaS SKU only for `gemma-4-26b-a4b-it` ($0.15/$0.60/$0.015),

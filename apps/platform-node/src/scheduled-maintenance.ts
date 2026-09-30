@@ -1,5 +1,3 @@
-import { runScheduledMaintenance } from '@floway-dev/gateway';
-
 interface TimerHandle {
   unref(): void;
 }
@@ -17,7 +15,7 @@ const STARTUP_DELAY_MS = 30 * 1000;
 const MAINTENANCE_INTERVAL_MS = 60 * 1000;
 
 export const startScheduledMaintenance = (
-  runMaintenance: () => Promise<void> = runScheduledMaintenance,
+  runMaintenance: () => Promise<void>,
   timers: MaintenanceTimers = { setTimeout, setInterval },
 ): void => {
   const sweep = (): void => {

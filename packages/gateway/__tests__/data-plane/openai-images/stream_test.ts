@@ -1,7 +1,8 @@
 import { test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { saveUpstreamForTest } from '../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -11,7 +12,7 @@ import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-ut
 const registerOpenAIImagesModel = async (repo: InMemoryRepo): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams,buildCustomUpstreamRecord({
     id: 'up_images',
     name: 'Image Provider',
     sortOrder: 100,

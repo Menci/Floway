@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { createBody, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
+import { createBody, hasUnsavedDiscoveryInputs, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
@@ -43,4 +43,13 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((updateBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
+});
+
+test('discovery input edits exclude metadata-only changes', () => {
+  expect(hasUnsavedDiscoveryInputs({})).toBe(false);
+  expect(hasUnsavedDiscoveryInputs({ config: true })).toBe(true);
+  expect(hasUnsavedDiscoveryInputs({ state: true })).toBe(true);
+  expect(hasUnsavedDiscoveryInputs({ proxyFallbackList: true })).toBe(true);
+  expect(hasUnsavedDiscoveryInputs({ flagOverrides: true })).toBe(true);
+  expect(hasUnsavedDiscoveryInputs({ name: true })).toBe(false);
 });

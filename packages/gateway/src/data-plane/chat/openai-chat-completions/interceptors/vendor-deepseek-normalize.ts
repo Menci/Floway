@@ -83,7 +83,7 @@ const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayload): OpenAICh
 const rewriteInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   let changed = false;
   const choices = chunk.choices.map(choice => {
-    const delta = choice.delta as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
+    const delta = choice.delta as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'];
     if (typeof delta.reasoning_content !== 'string') return choice;
 
     const { reasoning_content, ...rest } = delta;

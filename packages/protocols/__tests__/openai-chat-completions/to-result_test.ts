@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { doneFrame, eventFrame } from '../../src/common/index.ts';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } from '../../src/openai-chat-completions/index.ts';
 import { collectOpenAIChatCompletionsProtocolEventsToResult } from '../../src/openai-chat-completions/to-result.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic OpenAI Chat Completions chunks', async () => {
   const expected: OpenAIChatCompletionsResult = {
@@ -52,7 +52,7 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic O
   assertEquals(await collectOpenAIChatCompletionsProtocolEventsToResult(events()), expected);
 });
 
-test('collectOpenAIChatCompletionsProtocolEventsToResult rejects OpenAI Chat Completions streams without DONE', async () => {
+test('collectOpenAIChatCompletionsProtocolEventsToResult collects OpenAI Chat Completions streams without DONE', async () => {
   async function* events() {
     yield eventFrame({
       id: 'chatcmpl_truncated',
@@ -69,5 +69,6 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult rejects OpenAI Chat Com
     });
   }
 
-  await assertRejects(async () => await collectOpenAIChatCompletionsProtocolEventsToResult(events()), Error, 'OpenAI Chat Completions stream ended without a DONE sentinel.');
+  const result = await collectOpenAIChatCompletionsProtocolEventsToResult(events());
+  assertEquals(result.choices[0]?.message.content, 'partial');
 });

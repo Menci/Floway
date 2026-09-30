@@ -4,7 +4,9 @@ import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openRunDump } from '../../src/dump/run-sink.ts';
 import type { StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
+import { InMemoryRepo } from '../repo/memory.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
 import { compose, defineStage, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -24,7 +26,7 @@ const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
 
 const requestBody = { bytes: new TextEncoder().encode('{"input":"hi"}'), streamError: null };
 
-const turn = { method: 'POST', path: '/v1/embeddings', body: requestBody };
+const turn = { method: 'POST', path: '/v1/embeddings', body: requestBody, headers: [] };
 
 // Two stages, so the record has a shape to hold: one that hands down and one
 // that answers.
@@ -66,7 +68,7 @@ const lines = (record: StoredDumpRunRecord): DumpEvent[] =>
 
 test('a run under a key with retention stores its whole event stream as NDJSON', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   const { facts } = await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
@@ -101,7 +103,7 @@ test('a run under a key with retention stores its whole event stream as NDJSON',
 
 test('a key without retention opens no sink, so a run records and stores nothing', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(null), turn, trackBackground);
+  const dump = openRunDump(apiKey(null), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   assertEquals(dump, null);
 
   // The absence is the mechanism: with nothing to put in `services.dump` the
@@ -120,7 +122,7 @@ test('a key without retention opens no sink, so a run records and stores nothing
 
 test('a run record carries the attribution the turn stamped on it', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   dump.requestedModel('text-embedding-3-small');
@@ -140,6 +142,8 @@ test('a run whose request never arrived intact records that as the turn\'s failu
     apiKey(3600),
     { ...turn, body: { bytes: new Uint8Array(), streamError: 'client aborted the upload' } },
     trackBackground,
+    false,
+    { upstreamCallStartedAt: null, firstOutputTokenAt: null },
   );
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
@@ -151,7 +155,7 @@ test('a run whose request never arrived intact records that as the turn\'s failu
 
 test('finalizing on a response measures what the client reads and leaves it intact', async () => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const dump = openRunDump(apiKey(3600), turn, trackBackground);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
   if (dump === null) throw new Error('a key with retention must open a run dump');
 
   await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
@@ -165,4 +169,29 @@ test('finalizing on a response measures what the client reads and leaves it inta
 
   const record = runRecordOf(stubs.stored[0]);
   assertEquals(record.meta.responseBytes, 22);
+  assertEquals(record.capture?.response?.body, { encoding: 'utf8', data: 'data: one\n\ndata: two\n\n' });
+  assertEquals(record.capture?.response?.complete, true);
+});
+
+test('a run retains raw upstream exchanges, client bytes and the stable timing reading beside its stage history', async () => {
+  initRepo(new InMemoryRepo());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const timing = { upstreamCallStartedAt: 100, firstOutputTokenAt: null as number | null };
+  const dump = openRunDump(apiKey(3600), { ...turn, headers: [['content-type', 'application/json']] }, trackBackground, true, timing);
+  if (dump === null) throw new Error('a key with retention must open a run dump');
+  await run(pipeline, move({ 'in.text': 'hey' }), { dump: dump.sink });
+  const bytes = new Uint8Array([0xFF, 0, 0x80]);
+  const fetcher = dump.http.wrapFetcher(async () => new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } }), 'up_run');
+  const response = await fetcher('https://upstream.test/embeddings', { method: 'POST', body: '{"model":"upstream"}' });
+  assertEquals([...new Uint8Array(await response.arrayBuffer())], [...bytes]);
+  timing.firstOutputTokenAt = 225;
+  assertEquals(await dump.finalize(new Response('client', { headers: { 'content-type': 'text/plain' } })).text(), 'client');
+  await flushBackground();
+  const record = runRecordOf(stubs.stored[0]);
+  assertEquals(record.meta.ttftMs, 125);
+  assertEquals(record.capture?.request?.body, { encoding: 'utf8', data: '{"input":"hi"}' });
+  assertEquals(record.capture?.exchanges[0]?.response?.body, { encoding: 'base64', data: '/wCA' });
+  assertEquals(record.capture?.exchanges[0]?.response?.complete, true);
+  assertEquals(record.capture?.response?.body, { encoding: 'utf8', data: 'client' });
+  assertEquals(lines(record).some(event => event.type === 'stage.entered'), true);
 });

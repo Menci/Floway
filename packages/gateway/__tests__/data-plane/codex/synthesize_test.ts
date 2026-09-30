@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest';
 
 import type { CatalogModel, CodexCatalogCapabilities } from '../../../src/data-plane/codex/catalog.ts';
 import { synthesizeCatalogEntry } from '../../../src/data-plane/codex/synthesize.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const base: InternalModel = {
   id: 'deepseek-v4-pro',
@@ -11,6 +12,26 @@ const base: InternalModel = {
   limits: { max_context_window_tokens: 128000 },
   endpoints: { openaiChatCompletions: {} },
   providerModels: {},
+};
+
+// A realistic bundled entry — richer than the miss-path BASELINE and used as
+// `source` when the caller matched the registry model against the codex
+// bundled catalog.
+const bundledBase: CatalogModel = {
+  slug: 'gpt-5.5',
+  display_name: 'GPT-5.5',
+  priority: 1,
+  visibility: 'list',
+  input_modalities: ['text', 'image'],
+  supports_image_detail_original: true,
+  web_search_tool_type: 'text_and_image',
+  supported_reasoning_levels: [{ effort: 'medium', description: '' }],
+  default_reasoning_level: 'medium',
+  context_window: 272_000,
+  max_context_window: 272_000,
+  service_tiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' }],
+  base_instructions: 'BUNDLED PROMPT',
+  truncation_policy: { mode: 'tokens', limit: 20000 },
 };
 
 const ultraCapabilities: CodexCatalogCapabilities = {
@@ -29,9 +50,10 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.web_search_tool_type).toBe('text');
     expect(entry.shell_type).toBe('shell_command');
     expect(entry.support_verbosity).toBe(false);
-    expect(entry.prefer_websockets).toBe(true);
+    expect(entry).not.toHaveProperty('prefer_websockets');
     expect(entry.supports_parallel_tool_calls).toBe(true);
     expect(entry.supports_reasoning_summaries).toBe(false);
+    expect(entry.supports_reasoning_summary_parameter).toBe(false);
     expect(entry.apply_patch_tool_type).toBeNull();
     expect(entry.supported_reasoning_levels).toEqual([]);
     expect(entry.default_reasoning_level).toBeUndefined();
@@ -48,6 +70,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.base_instructions as string).toContain('You are Codex, a coding agent running in the Codex CLI.');
     expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
     expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+    expect(entry.model_messages?.instructions_template).toBe(entry.base_instructions);
   });
 
   test('base_instructions collapses to a single identity sentence when display_name equals id', () => {
@@ -64,13 +87,30 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   test('defaults context_window to 128k when registry omits max_context_window_tokens', () => {
-    // Without a value here, codex's `(cw * 9) / 10` auto-compact trigger
-    // would divide against an absent/zero window. The conservative default
-    // gives every synthesized entry a safe, low ceiling that an operator
-    // can raise by filling in the registry.
     const entry = synthesizeCatalogEntry({ ...base, limits: {} });
     expect(entry.context_window).toBe(128_000);
     expect(entry.max_context_window).toBe(128_000);
+  });
+
+  test.each([
+    { max_context_window_tokens: 1000000, max_prompt_tokens: 936000 },
+    { max_prompt_tokens: 936000 },
+  ])('uses the provider input cap for both windows: %j', limits => {
+    const entry = synthesizeCatalogEntry({ ...base, limits });
+    expect(entry.context_window).toBe(936000);
+    expect(entry.max_context_window).toBe(936000);
+  });
+
+  test('never expands beyond a smaller provider context cap', () => {
+    const entry = synthesizeCatalogEntry({ ...base, limits: { max_context_window_tokens: 100000, max_prompt_tokens: 120000 } });
+    expect(entry.context_window).toBe(100000);
+    expect(entry.max_context_window).toBe(100000);
+  });
+
+  test('preserves canonical model messages and opaque instruction sections from a matched catalog', () => {
+    const model_messages = { instructions_template: 'CURRENT PROMPT', tools: { custom: 'tool guidance' } };
+    const entry = synthesizeCatalogEntry(base, { ...bundledBase, model_messages });
+    expect(entry.model_messages).toEqual(model_messages);
   });
 
   test('derives image-aware web_search when modalities include image', () => {
@@ -80,9 +120,72 @@ describe('synthesizeCatalogEntry', () => {
     });
     expect(entry.input_modalities).toEqual(['text', 'image']);
     expect(entry.web_search_tool_type).toBe('text_and_image');
-    expect(entry.supports_image_detail_original).toBe(true);
     expect(entry.supported_reasoning_levels).toEqual([]);
     expect(entry.default_reasoning_level).toBeUndefined();
+  });
+
+  // The two facts are independent: taking images says nothing about accepting
+  // detail 'original'. `gpt-5.2` in the vendored catalog is exactly this shape
+  // — images accepted, detail 'original' rejected — so the modality list cannot
+  // stand in for the field.
+  test('image input does not imply original detail support', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+    });
+    expect(entry.supports_image_detail_original).toBe(false);
+  });
+
+  test('registry chat.image_detail_original reaches the catalog entry', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true },
+    });
+    expect(entry.input_modalities).toEqual(['text', 'image']);
+    expect(entry.supports_image_detail_original).toBe(true);
+  });
+
+  test('registry chat.image_detail_original=false overrides a base that advertises support', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { image_detail_original: false },
+    }, { ...bundledBase, supports_image_detail_original: true, input_modalities: ['text', 'image'] });
+    expect(entry.supports_image_detail_original).toBe(false);
+  });
+
+  test.each([
+    ['false', false],
+    ['an unstated value', undefined],
+  ] as const)('rejects original detail when one of several providers reports %s', (_, imageDetailOriginal) => {
+    const providerModel = (value: boolean | undefined): ProviderModel => stubProviderModel({
+      id: 'gpt-5.5',
+      upstreamModelId: 'gpt-5.5',
+      endpoints: { openaiResponses: {} },
+      ...(value === undefined ? {} : { chat: { image_detail_original: value } }),
+    });
+    const accepting = providerModel(true);
+    const rejecting = providerModel(imageDetailOriginal);
+
+    for (const providerModels of [{ accepting, rejecting }, { rejecting, accepting }]) {
+      const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat, providerModels }, bundledBase);
+      expect(entry.supports_image_detail_original).toBe(false);
+    }
+  });
+
+  test('accepts original detail when every provider explicitly supports it', () => {
+    const accepting = stubProviderModel({
+      id: 'gpt-5.5',
+      upstreamModelId: 'gpt-5.5',
+      endpoints: { openaiResponses: {} },
+      chat: { image_detail_original: true },
+    });
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: accepting.chat,
+      providerModels: { first: accepting, second: accepting },
+    }, bundledBase);
+
+    expect(entry.supports_image_detail_original).toBe(true);
   });
 
   test('propagates reasoning levels as {effort, description} preset', () => {
@@ -183,26 +286,6 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   describe('with a bundled base', () => {
-    // A realistic bundled entry — richer than the miss-path BASELINE and
-    // used as `source` when the caller matched the registry model against
-    // the codex bundled catalog.
-    const bundledBase: CatalogModel = {
-      slug: 'gpt-5.5',
-      display_name: 'GPT-5.5',
-      priority: 1,
-      visibility: 'list',
-      input_modalities: ['text', 'image'],
-      supports_image_detail_original: true,
-      web_search_tool_type: 'text_and_image',
-      supported_reasoning_levels: [{ effort: 'medium', description: '' }],
-      default_reasoning_level: 'medium',
-      context_window: 272_000,
-      max_context_window: 272_000,
-      service_tiers: [{ id: 'priority', name: 'priority', description: '' }],
-      base_instructions: 'BUNDLED PROMPT',
-      truncation_policy: { mode: 'tokens', limit: 20000 },
-    };
-
     test('slug always overrides to model.id (bundled base carries the upstream slug)', () => {
       const entry = synthesizeCatalogEntry({ ...base, id: 'openrouter/gpt-5.5:nitro' }, bundledBase);
       expect(entry.slug).toBe('openrouter/gpt-5.5:nitro');
@@ -221,21 +304,28 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 20000 });
     });
 
-    test('bundled input_modalities preserved when registry omits chat.modalities', () => {
+    test('bundled input_modalities are preserved without inheriting image-detail support', () => {
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.input_modalities).toEqual(['text', 'image']);
-      expect(entry.supports_image_detail_original).toBe(true);
+      expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text_and_image');
     });
 
-    test('registry chat.modalities overrides bundled input_modalities and redrives image-support fields', () => {
+    test('registry chat.modalities overrides bundled input_modalities and redrives web_search', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
         chat: { modalities: { input: ['text'], output: ['text'] } },
       }, bundledBase);
       expect(entry.input_modalities).toEqual(['text']);
-      expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text');
+    });
+
+    test('registry image-detail support stays independent when modalities narrow', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        chat: { modalities: { input: ['text'], output: ['text'] }, image_detail_original: true },
+      }, bundledBase);
+      expect(entry.supports_image_detail_original).toBe(true);
     });
 
     test('bundled supported_reasoning_levels preserved when registry omits chat.reasoning', () => {
@@ -298,6 +388,28 @@ describe('synthesizeCatalogEntry', () => {
         pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
+    });
+
+    test('service_tiers prefers matched-model metadata for a registry-priced tier', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+      }, bundledBase, {}, [{ id: 'priority', name: 'Accelerated', description: 'Catalog-wide fallback' }]);
+      expect(entry.service_tiers).toEqual([
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
+    });
+
+    test('service_tiers uses another catalog model metadata when the matched model lacks the tier', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
+      }, { ...bundledBase, service_tiers: [] }, {}, [
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
+      expect(entry.service_tiers).toEqual([
+        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      ]);
     });
   });
 });

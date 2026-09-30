@@ -15,7 +15,6 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
-import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const {
   Button,
@@ -66,7 +65,6 @@ export function UserDialog(props: UserDialogProps) {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
       }
-      refineUpstreamAccess(value, ctx);
     }),
     [mode],
   );
@@ -181,12 +179,11 @@ export function UserDialog(props: UserDialogProps) {
       <UpstreamAccessControl
         available={upstreams}
         disabled={saving}
-        error={errors.upstreamIds?.message ? t(errors.upstreamIds.message) : null}
         ids={values.upstreamIds}
         models={models}
         onChange={next => {
-          setValue('upstreamOverride', next.override, { shouldValidate: true });
-          setValue('upstreamIds', next.ids, { shouldValidate: true });
+          setValue('upstreamOverride', next.override);
+          setValue('upstreamIds', next.ids);
         }}
         override={values.upstreamOverride}
       />

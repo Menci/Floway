@@ -17,6 +17,7 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
  *  flags that row carries. Enough to choose, to record and to price — and to look the live
  *  candidate back up when the time comes to dial. */
 export interface AttemptSelector {
+  readonly candidateId: number;
   readonly upstreamId: string;
   readonly modelId: string;
   /** Snapshotted rather than referenced, because the record must show what was true when

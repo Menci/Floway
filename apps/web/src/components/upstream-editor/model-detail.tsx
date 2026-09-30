@@ -56,6 +56,7 @@ export function ModelDetail({
 }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
+  const imageInputLabelId = useId();
   const reasoningLabelId = useId();
   const upstreamIdRef = useRef<HTMLInputElement>(null);
   const fieldsReadOnly = readOnly || row.source !== 'manual';
@@ -99,6 +100,21 @@ export function ModelDetail({
   const budget = row.config.chat?.reasoning?.budget_tokens;
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
+  const imageInput = row.config.chat?.modalities?.input.includes('image') === true;
+  const opaqueBlobCompatibilityScope = row.config.opaqueBlobCompatibilityScope;
+  const bindOpaqueBlobsToUpstream = opaqueBlobCompatibilityScope?.bindToUpstream ?? true;
+
+  const updateOpaqueBlobCompatibilityScope = (
+    update: Partial<NonNullable<UpstreamModelConfig['opaqueBlobCompatibilityScope']>>,
+  ) => {
+    const next = {
+      bindToUpstream: bindOpaqueBlobsToUpstream,
+      ...opaqueBlobCompatibilityScope,
+      ...update,
+    };
+    if (next.key === undefined) delete next.key;
+    patch({ opaqueBlobCompatibilityScope: next });
+  };
 
   useEffect(() => {
     if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
@@ -150,6 +166,30 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
+        <EditorSection
+          info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
+          level={3}
+          title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
+        >
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Input
+              aria-label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}
+              className="min-w-[220px] flex-1 font-mono"
+              placeholder={row.config.upstreamModelId}
+              readOnly={fieldsReadOnly}
+              value={opaqueBlobCompatibilityScope?.key ?? ''}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ key: data.value || undefined })}
+            />
+            <Switch
+              checked={bindOpaqueBlobsToUpstream}
+              className="flex-none"
+              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+              readOnly={fieldsReadOnly}
+              onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
+            />
+          </div>
+        </EditorSection>
+
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
@@ -177,12 +217,27 @@ export function ModelDetail({
             <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={fieldsReadOnly} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
           </div>
           {row.config.kind === 'chat' && <>
-            <Switch
-              checked={row.config.chat?.modalities?.input.includes('image') === true}
-              readOnly={fieldsReadOnly}
-              label={t('dashboard.upstreamEditor.models.imageInput')}
-              onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
-            />
+            <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
+              <Text id={imageInputLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
+              <div className="flex flex-wrap gap-4">
+                <Switch
+                  checked={imageInput}
+                  readOnly={fieldsReadOnly}
+                  label={t('dashboard.upstreamEditor.models.imageInput')}
+                  // Dropping image input drops the detail claim with it: the detail
+                  // switch is only reachable while image input is on, so a claim
+                  // left behind would be announced while the operator can no
+                  // longer see or clear it.
+                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original ?? false : undefined }) })}
+                />
+                {imageInput && <Switch
+                  checked={row.config.chat?.image_detail_original === true}
+                  readOnly={fieldsReadOnly}
+                  label={t('dashboard.upstreamEditor.models.imageDetailOriginal')}
+                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), image_detail_original: data.checked }) })}
+                />}
+              </div>
+            </div>
             <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
               <Text id={reasoningLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
@@ -260,7 +315,7 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.reasoning ? chat : undefined;
+const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.image_detail_original !== undefined || chat.reasoning ? chat : undefined;
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);

@@ -25,7 +25,8 @@ type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 /** Everything about a candidate that is data. The live half — the provider instance, the
  *  fetcher, the models cache — stays out of the record and is looked back up by the
  *  resolver service at the moment of the call. */
-const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
+const selectorFor = (candidate: ModelCandidate, candidateId: number): AttemptSelector => ({
+  candidateId,
   upstreamId: candidate.provider.upstreamId,
   modelId: candidate.model.id,
   flags: [...providerModelOf(candidate).enabledFlags],
@@ -166,8 +167,8 @@ export const failover = ({ failed, owns }: Forking) => defineStage<
     for (const candidate of facts['serve.candidates']) {
       // Per-attempt telemetry state, cleared before control leaves, so a mid-attempt throw
       // still attributes its performance row to the candidate that was being tried.
-      use.gateway.attempt.upstreamCallStartedAt = null;
-      use.gateway.attempt.firstOutputTokenAt = null;
+      use.gateway.attempt.timing.upstreamCallStartedAt = null;
+      use.gateway.attempt.timing.firstOutputTokenAt = null;
       last = await next({ ...facts, 'route.attempt': move(candidate) });
       if (!failed(last as Facts)) return last;
       use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
