@@ -33,7 +33,7 @@ export const runWebSearchCall = defineStage<
     const dispatch: AlphaSearchDispatcher = async (body, _signal, headers) => {
       const alpha = use.webSearch.alpha;
       if (alpha === undefined) throw new Error('Alpha Search was dispatched without a selected provider');
-      const candidate = await alpha.candidate;
+      const candidate = await alpha.resolveCandidate();
       const pipeline = candidate.provider.pipelines.alphaSearch;
       if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no Alpha Search pipeline`);
       const selector = use.rememberCandidates([candidate])[0];

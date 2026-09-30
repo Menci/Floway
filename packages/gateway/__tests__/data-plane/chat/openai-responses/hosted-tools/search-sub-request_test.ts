@@ -31,13 +31,13 @@ for (const failed of [false, true]) {
     const invocation = runWebSearchSubRequest(parent, request, {
       session: { pageCache: new Map(), getProvider: () => { throw new Error('local provider must not dispatch in alpha mode'); }, apiKeyId: apiKey.id },
       alpha: {
-        sessionId: 'search-session', candidate: Promise.resolve(stubAlphaSearchCandidate(async body => {
+        sessionId: 'search-session', resolveCandidate: async () => stubAlphaSearchCandidate(async body => {
           dispatched = true;
           expect(body).toEqual({ id: 'search-session', commands: request.commands, settings: request.settings, input: request.input });
           expect(Object.isFrozen(body.commands)).toBe(true);
           if (failed) throw fault;
           return new Response(JSON.stringify({ output: 'documentation' }), { headers: { 'content-type': 'application/json' } });
-        })),
+        }),
       },
     });
     if (failed) await expect(invocation).rejects.toBe(fault);

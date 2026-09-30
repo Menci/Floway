@@ -20,6 +20,7 @@ import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/pr
 import type { ConfiguredWebSearchProvider } from '../../../tools/web-search/types.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItem, OpenAIResponsesHostedTool, OpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
@@ -602,11 +603,12 @@ export const webSearchHostedTool: HostedToolRegistration = async (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
+  let selectedAlphaCandidate: Promise<ModelCandidate> | undefined;
   const webSearch: WebSearchRuntime = {
     session,
     ...(webSearchConfig.passthroughOpenAiSearch.enabled ? {
       alpha: {
-        candidate: resolveAlphaSearchCandidate({
+        resolveCandidate: () => selectedAlphaCandidate ??= resolveAlphaSearchCandidate({
           config: webSearchConfig.passthroughOpenAiSearch,
           upstreamIds: gatewayCtx.upstreamIds,
           scheduler: gatewayCtx.backgroundScheduler,

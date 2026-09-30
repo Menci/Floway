@@ -6889,3 +6889,18 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   assertEquals(tools?.[1].type, 'web_search');
   assertEquals(findResponseCompleted(frames).response.tool_choice, choice);
 });
+
+test('an unused hosted web-search declaration starts no Alpha selection work', async () => {
+  makeStubDeps();
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily', tavily: { apiKey: 'test-key' }, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'outside-key-scope', model: 'gpt-search' },
+  } satisfies WebSearchConfig);
+  mockResolveAlpha.mockRejectedValue(new Error('Selected OpenAI search upstream is outside this API key scope'));
+  const invocation = makeInvocation({ targetApi: 'openaiResponses', enabledFlags: new Set(['openai-responses-web-search-shim']) });
+  const script = scriptedRun([messageTurn('no search requested', 0)]);
+  const result = await runHostedWebSearch(invocation, mockChatGatewayCtx(), script.run);
+  if (result.type !== 'events') throw new Error('Expected an ordinary model response');
+  await collectFrames(result.events);
+  assertEquals(mockResolveAlpha.mock.calls.length, 0);
+});
