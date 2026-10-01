@@ -56,7 +56,7 @@ const serveOpenAIImages = async (
     }) as never,
     facts => {
       const answer = facts['response.openaiImages.rendered'];
-      return isFrames(answer) ? { frames: answer } : { body: JSON.stringify(answer), contentType: 'application/json' };
+      return isFrames(answer) ? { frames: answer } : { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
     },
   );
 };

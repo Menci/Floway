@@ -5,14 +5,16 @@ import { narrowing } from './target.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
+import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
 
 export const openaiCompletionsServePipeline: Pipeline<
   Fields<'ingress.http.headers' | 'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload' | 'serve.model'>,
-  Fields<'response.openaiCompletions.rendered' | 'response.openaiCompletions.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
+  Fields<'response.http.jsonBody' | 'response.openaiCompletions.rendered' | 'response.openaiCompletions.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > = compose('openaiCompletionsServe', [
   writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, 'response.openaiCompletions.streamedUsage'),
+  serializeClientJson('response.openaiCompletions.rendered'),
   emitOpenAICompletions,
   resolveCandidates(narrowing),
   failover({

@@ -201,7 +201,8 @@ upload facts contain bytes and file metadata. The shared HTTP stage adopts each 
 once, and decoders replace its release action as ownership moves through the run. Provider
 retry observations and failed-over attempts join the same billable collection. Settlement
 wraps rendering and writes each observed call once, including calls completed before a later
-stage throws. Streaming quantities settle at the deferred exit. Explicit protocol and
+stage throws. Client JSON serialization runs inside settlement and publishes UTF-8 body bytes
+while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
 Run dumps write through the streaming `DumpStore.putRun` contract with durable storage

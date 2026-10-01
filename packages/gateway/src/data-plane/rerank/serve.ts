@@ -62,6 +62,6 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       'request.rerank.canonical': request,
       'serve.model': model,
     }) as never,
-    facts => ({ body: JSON.stringify(facts['response.rerank.rendered']), contentType: 'application/json' }),
+    facts => ({ body: facts['response.http.jsonBody']!, contentType: 'application/json' }),
   );
 };

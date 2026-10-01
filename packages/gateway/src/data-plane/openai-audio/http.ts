@@ -77,12 +77,6 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
   };
 };
 
-/** The client is sent bytes on every path, never a string, so nothing downstream of here
- *  guesses a media type: a `Response` built over a string is labelled `text/plain` by the
- *  platform, and an upstream that declared no media type has not asked for that. */
-const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
-  rendered instanceof Uint8Array ? rendered : new TextEncoder().encode(JSON.stringify(rendered));
-
 /**
  * The epilogue: what the run answered with, as a response.
  *
@@ -125,7 +119,7 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
       if (isFrames(rendered)) return { frames: rendered };
       // The upstream's own media type, or none where it declared none: a document this
       // gateway carried rather than wrote is not one it can describe.
-      return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };
+      return { body: (rendered instanceof Uint8Array ? rendered : facts['response.http.jsonBody']!) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };
     },
   );
 };

@@ -16,6 +16,23 @@ const record: DumpRecord = {
   ])),
 };
 
+it('opens stage facts and offers searchable events with timing and export controls', async () => {
+  const run: DumpRecord = {
+    meta: { ...record.meta, ttftMs: 125 },
+    events: toNdjson(encodeRun([{ type: 'stage.entered', stageId: 1, name: 'serve', parentStageId: null, facts: { 'serve.model': 'm' } }])),
+  };
+  renderInApp(<RequestDetailPanel record={run} recordId="detail" error={null} collected={null} retainLastRecord={false} />);
+  expect(screen.getByRole('treeitem', { name: 'serve #1' })).toBeTruthy();
+  expect((await screen.findByTestId('body-content')).textContent).toContain('serve.model');
+  fireEvent.click(screen.getByRole('combobox', { name: 'Response body view' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Events (1)' }));
+  expect(screen.getByRole('button', { name: '#1 stage.entered serve' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Search events' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Export record' })).toBeTruthy();
+  expect(screen.getByText('125ms')).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: 'Request details' })).toBeNull();
+});
+
 describe('request detail navigation', () => {
   it('shows run facts, searches events, and opens the collected client response', async () => {
     renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={{ result: { content: 'parsed response' }, truncated: false, error: null }} retainLastRecord={false} />);
