@@ -19,9 +19,9 @@ for (const collected of [true, false]) {
         ...collected ? [selected] : [],
       ]));
       expect(clientStreamOf(events)).toEqual({
-        events: [
-          { ts: 0, frame: { type: 'event', event: { text: 'client' } } },
-          { ts: 0, frame: { type: 'done' } },
+        frames: [
+          { type: 'event', event: { text: 'client' } },
+          { type: 'done' },
         ],
         ended,
       });
@@ -34,7 +34,7 @@ test('keeps a selected empty stream and distinguishes it from no client stream',
     { type: 'stage.entered', stageId: 1, name: 'emit', parentStageId: null, facts: {} },
     { type: 'stage.leaved', stageId: 1, facts: { 'response.chat.clientFrames': streamFact(1) } },
     { type: 'stream.end', streamId: 1 },
-  ])))).toEqual({ events: [], ended: true });
+  ])))).toEqual({ frames: [], ended: true });
   expect(clientStreamOf(toNdjson(encodeRun([
     { type: 'stage.entered', stageId: 1, name: 'emit', parentStageId: null, facts: {} },
     { type: 'stage.leaved', stageId: 1, facts: { 'response.chat.clientFrames': null } },
@@ -49,7 +49,7 @@ test('selects the rendered classic Completions stream and its own end proof', ()
     { type: 'stream.end', streamId: 2 },
     { type: 'stage.leaved', stageId: 1, facts: { 'response.openaiCompletions.rendered': streamFact(2) } },
   ]));
-  expect(clientStreamOf(events)).toMatchObject({ events: [{ frame: { event: { choices: [{ text: 'client' }] } } }, { frame: { type: 'done' } }], ended: true });
+  expect(clientStreamOf(events)).toMatchObject({ frames: [{ event: { choices: [{ text: 'client' }] } }, { type: 'done' }], ended: true });
 });
 
 test('does not select a JSON Completions extension that resembles a decoded stream reference', () => {

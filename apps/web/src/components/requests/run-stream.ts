@@ -1,8 +1,8 @@
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface RecordedClientStream {
-  readonly events: readonly DumpStreamEvent[];
+  readonly frames: readonly ProtocolFrame<unknown>[];
   readonly ended: boolean;
 }
 
@@ -10,7 +10,7 @@ export interface RecordedClientStream {
 // streaming responses consume them afterwards. Resolve the complete record before selecting.
 export const clientStreamOf = (ndjson: string): RecordedClientStream | null => {
   const read = createRunReader();
-  const streams = new Map<number, { events: DumpStreamEvent[]; ended: boolean }>();
+  const streams = new Map<number, { frames: ProtocolFrame<unknown>[]; ended: boolean }>();
   let client: number | null = null;
   for (const line of ndjson.split('\n')) {
     if (line.length === 0) continue;
@@ -24,11 +24,11 @@ export const clientStreamOf = (ndjson: string): RecordedClientStream | null => {
       }
     }
     if (event.type === 'stream.frame' || event.type === 'stream.end') {
-      const stream = streams.get(event.streamId) ?? { events: [], ended: false };
+      const stream = streams.get(event.streamId) ?? { frames: [], ended: false };
       if (event.type === 'stream.end') stream.ended = true;
-      else for (const frame of decoded?.frames ?? []) stream.events.push({ frame: frame as DumpStreamEvent['frame'], ts: 0 });
+      else for (const frame of decoded?.frames ?? []) stream.frames.push(frame as ProtocolFrame<unknown>);
       streams.set(event.streamId, stream);
     }
   }
-  return client === null ? null : streams.get(client) ?? { events: [], ended: false };
+  return client === null ? null : streams.get(client) ?? { frames: [], ended: false };
 };

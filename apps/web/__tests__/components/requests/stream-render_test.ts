@@ -22,8 +22,8 @@ test('collects normal Chat Completions EOF without inventing a done frame', asyn
   const stream = recorded([chunk], true);
   const collected = await collectStream('openai-chat-completions', stream);
   expect(collected).toMatchObject({ result: { choices: [{ message: { content: 'hello' } }] }, error: null, truncated: false });
-  expect(stream.events).toHaveLength(1);
-  expect(stream.events.map(({ frame }) => frame.type)).toEqual(['event']);
+  expect(stream.frames).toHaveLength(1);
+  expect(stream.frames.map(frame => frame.type)).toEqual(['event']);
 });
 
 for (const terminal of [false, true]) {
