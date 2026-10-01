@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
 import { buildTargetRequest } from '../../src/anthropic-messages-via-openai-chat-completions/request.ts';
 import { reassembleAnthropicMessagesEvents } from '@floway-dev/protocols/anthropic-messages';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
+import { encodeChatCompletionsReasoningData } from '@floway-dev/protocols/openai-chat-completions';
 import { flowayReasoningFields, fromFlowayOpenAIChatCompletionsReasoning, type OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 
 const dataByFormat = {
@@ -16,8 +16,8 @@ for (const standard of ['litellm-thinking-blocks', 'openrouter-reasoning-details
     test(`${standard} keeps the complete data snapshot through Messages replay (text=${text})`, async () => {
       const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
       const chunk = (delta: OpenAIChatCompletionsDelta, finish_reason: 'stop' | null = null) => ({ id: 'c', object: 'chat.completion.chunk' as const, created: 1, model: 'm', choices: [{ index: 0, delta, finish_reason }] });
-      const partial = encodeReasoningData(standard, dataByFormat[standard].slice(0, 1));
-      const complete = encodeReasoningData(standard, dataByFormat[standard]);
+      const partial = encodeChatCompletionsReasoningData(standard, dataByFormat[standard].slice(0, 1));
+      const complete = encodeChatCompletionsReasoningData(standard, dataByFormat[standard]);
       const events = [
         ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk(flowayReasoningFields(text, partial)), state),
         ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'Answer' }), state),

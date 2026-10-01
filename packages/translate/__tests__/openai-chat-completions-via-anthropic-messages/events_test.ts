@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createAnthropicMessagesToOpenAIChatCompletionsStreamState, translateAnthropicMessagesEventToOpenAIChatCompletionsChunks } from '../../src/openai-chat-completions-via-anthropic-messages/events.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { FlowayOpenAIChatCompletionsReasoning } from '@floway-dev/protocols/openai-chat-completions';
+import { decodeChatCompletionsReasoningData, FlowayOpenAIChatCompletionsReasoning } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
@@ -148,7 +148,7 @@ test('redacted_thinking content_block_start → reasoning_opaque chunk', () => {
   );
   const chunks = result as OpenAIChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 1);
-  assertEquals(chunks[0].choices[0].delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque, 'opaque_xyz');
+  assertEquals(decodeChatCompletionsReasoningData(chunks[0].choices[0].delta[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, [{ type: 'redacted_thinking', data: 'opaque_xyz' }]);
 });
 
 // ── content_block_start: tool_use ──
@@ -286,7 +286,7 @@ test('signature_delta → reasoning_opaque delta', () => {
       delta: { type: 'signature_delta', signature: 'sig_abc' },
     },
   ]);
-  assertEquals(d[2][FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque, 'sig_abc');
+  assertEquals(decodeChatCompletionsReasoningData(d[2][FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, [{ type: 'thinking', thinking: 'thoughts', signature: 'sig_abc' }]);
 });
 
 // ── content_block_delta: input_json_delta ──
@@ -682,8 +682,8 @@ test('full thinking + text stream scenario', () => {
   ]);
   assertEquals(d[0].role, 'assistant');
   assertEquals(d[1][FlowayOpenAIChatCompletionsReasoning]?.reasoning, 'Let me think');
-  assertEquals(d[2][FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque, 'sig');
-  assertEquals(d[3].content, 'Answer');
+  assertEquals(decodeChatCompletionsReasoningData(d[2][FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, [{ type: 'thinking', thinking: 'Let me think', signature: 'sig' }]);
+  assertEquals(d.filter(delta => delta.content).map(delta => delta.content), ['Answer']);
 });
 
 test('full tool_use stream scenario', () => {
@@ -757,11 +757,11 @@ test('full redacted_thinking + text stream scenario', () => {
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
   assertEquals(d[0].role, 'assistant');
-  assertEquals(d[1][FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque, 'opaque_blob');
-  assertEquals(d[2].content, 'Response');
+  assertEquals(decodeChatCompletionsReasoningData(d[1][FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, [{ type: 'redacted_thinking', data: 'opaque_blob' }]);
+  assertEquals(d.filter(delta => delta.content).map(delta => delta.content), ['Response']);
 });
 
-test('later reasoning blocks are ignored for OpenAI Chat Completions scalar streaming', () => {
+test('all thinking groups preserve readable text and complete native blocks', () => {
   const d = deltas([
     MSG_START,
     {
@@ -799,11 +799,12 @@ test('later reasoning blocks are ignored for OpenAI Chat Completions scalar stre
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
 
-  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning).filter(Boolean), ['first']);
-  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque).filter(Boolean), ['sig_1']);
+  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning).filter(Boolean), ['first', 'second']);
+  const opaque = d.findLast(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque)?.[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque;
+  assertEquals(decodeChatCompletionsReasoningData(opaque!)?.value, [{ type: 'thinking', thinking: 'first', signature: 'sig_1' }, { type: 'thinking', thinking: 'second', signature: 'sig_2' }]);
 });
 
-test('first redacted_thinking block suppresses later readable thinking in OpenAI Chat Completions scalar streaming', () => {
+test('redacted thinking keeps its order alongside later readable thinking', () => {
   const d = deltas([
     MSG_START,
     {
@@ -826,8 +827,9 @@ test('first redacted_thinking block suppresses later readable thinking in OpenAI
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
 
-  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque).filter(Boolean), ['opaque_first']);
-  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning).filter(Boolean), []);
+  const opaque = d.findLast(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque)?.[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque;
+  assertEquals(decodeChatCompletionsReasoningData(opaque!)?.value, [{ type: 'redacted_thinking', data: 'opaque_first' }, { type: 'thinking', thinking: 'later' }]);
+  assertEquals(d.map(delta => delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning).filter(Boolean), ['later']);
 });
 
 test('thinking + tool_use stream (interleaved thinking)', () => {
@@ -864,9 +866,8 @@ test('thinking + tool_use stream (interleaved thinking)', () => {
   ]);
   assertEquals(d[0].role, 'assistant');
   assertEquals(d[1][FlowayOpenAIChatCompletionsReasoning]?.reasoning, 'I need a tool');
-  assertEquals(d[2][FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque, 'sig_1');
-  assertEquals(d[3].tool_calls![0].id, 'tu_1');
-  assertEquals(d[4].tool_calls![0].function!.arguments, '{"x":1}');
+  assertEquals(decodeChatCompletionsReasoningData(d[2][FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value, [{ type: 'thinking', thinking: 'I need a tool', signature: 'sig_1' }]);
+  assertEquals(d.filter(delta => delta.tool_calls).map(delta => delta.tool_calls![0]).map(call => call.id ?? call.function?.arguments), ['tu_1', '{"x":1}']);
 });
 
 test('multiple tool_use blocks in stream', () => {

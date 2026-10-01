@@ -13,9 +13,8 @@ import {
   translateOpenAIResponsesViaOpenAIChatCompletions,
 } from '../src/index.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -36,7 +35,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
   messages: [
-    { role: 'assistant', content: 'hello', ...flowayReasoningFields('', (encodeReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }])) ?? '') },
+    { role: 'assistant', content: 'hello', ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }])) ?? '') },
     { role: 'user', content: 'hi' },
   ],
   tools: [{ type: 'function', function: { name: 'f', parameters: schema } }],

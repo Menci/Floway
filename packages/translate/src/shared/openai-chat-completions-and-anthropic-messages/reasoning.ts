@@ -1,6 +1,5 @@
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesRedactedThinkingBlock, AnthropicMessagesThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
-import { decodeReasoningData } from '@floway-dev/protocols/common';
-import { validateStructuredReasoning } from '@floway-dev/protocols/openai-chat-completions';
+import { decodeChatCompletionsReasoningData, validateStructuredReasoning } from '@floway-dev/protocols/openai-chat-completions';
 
 export interface OpenAIChatCompletionsScalarReasoning {
   reasoningText: string | null;
@@ -39,7 +38,7 @@ export const openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock = (b
 };
 
 export const anthropicMessagesBlocksFromChatCompletionsReasoning = (text: string | undefined, opaque: string | undefined): (AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock)[] => {
-  const envelope = opaque === undefined ? undefined : decodeReasoningData(opaque);
+  const envelope = opaque === undefined ? undefined : decodeChatCompletionsReasoningData(opaque);
   if (envelope?.type === 'litellm-thinking-blocks') {
     return validateStructuredReasoning(envelope.value, 'litellm-thinking-blocks').flatMap<AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock>(item => {
       if (item.type === 'redacted_thinking') return typeof item.data === 'string' ? [{ type: 'redacted_thinking' as const, data: item.data }] : [];

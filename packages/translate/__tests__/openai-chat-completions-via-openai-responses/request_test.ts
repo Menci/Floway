@@ -1,8 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
-import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
@@ -61,14 +60,14 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
   });
 });
 
-test('buildTargetRequest prefers reasoning envelope over scalar reasoning', () => {
+test('buildTargetRequest restores native items including empty-summary history', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
         role: 'assistant',
         content: 'answer',
-        ...flowayReasoningFields('legacy trace', (encodeReasoningData('openai-responses-reasoning-items', [
+        ...flowayReasoningFields('legacy trace', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_existing',
@@ -76,6 +75,7 @@ test('buildTargetRequest prefers reasoning envelope over scalar reasoning', () =
           },
           {
             type: 'reasoning',
+            id: 'rs_empty',
             summary: [],
           },
         ])) ?? ''),
@@ -91,6 +91,7 @@ test('buildTargetRequest prefers reasoning envelope over scalar reasoning', () =
       id: 'rs_existing',
       summary: [{ type: 'summary_text', text: 'first' }],
     },
+    { type: 'reasoning', id: 'rs_empty', summary: [] },
   ]);
 });
 

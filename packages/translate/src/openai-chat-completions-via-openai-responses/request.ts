@@ -1,8 +1,9 @@
 import { klona } from 'klona/json';
 
+import { openAIChatCompletionsReasoningItems, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from './reasoning.ts';
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
-import { openAIChatCompletionsReasoningItems, openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';

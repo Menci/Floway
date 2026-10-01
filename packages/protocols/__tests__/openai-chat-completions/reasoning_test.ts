@@ -1,6 +1,6 @@
 import { describe, expect, it, test, vi } from 'vitest';
 
-import { decodeReasoningData, encodeReasoningData } from '../../src/common/index.ts';
+import { decodeChatCompletionsReasoningData, encodeChatCompletionsReasoningData } from '../../src/openai-chat-completions/index.ts';
 import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning, reassembleOpenAIChatCompletionsEvents, mergeReasoningStreamItems } from '../../src/openai-chat-completions/index.ts';
 
 const formats: ChatCompletionsReasoningDataStandard[] = ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm-thinking-blocks'];
@@ -24,6 +24,17 @@ const wire = (data: ChatCompletionsReasoningDataStandard) => ({
 });
 
 describe('Floway Chat Completions reasoning conversion', () => {
+  it.each([
+    { standard: 'openrouter-reasoning-details', field: 'reasoning_details', items: router },
+    { standard: 'litellm-thinking-blocks', field: 'thinking_blocks', items: blocks },
+  ] as const)('uses the specified base64 JSON structure for $standard', ({ standard, field, items }) => {
+    const message = toFlowayOpenAIChatCompletionsReasoning({ [field]: items }, format(standard), { warn: vi.fn() });
+    const opaque = message[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque;
+    const json = JSON.stringify({ type: standard, [field]: items });
+    expect(opaque).toBe(Buffer.from(json, 'utf8').toString('base64'));
+    expect(JSON.parse(Buffer.from(opaque, 'base64').toString('utf8'))).toEqual({ type: standard, [field]: items });
+  });
+
   it.each(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS.filter(text => text !== 'passthrough'))('shares the %s parser between response and history messages', text => {
     const field = text.replaceAll('-', '_');
     const warn = vi.fn();
@@ -70,7 +81,7 @@ describe('Floway Chat Completions reasoning conversion', () => {
     const warn = vi.fn();
     const input = { reasoning_details: [{ type: 'reasoning.encrypted', data: 'native', id: 'native-id', format: 'unknown' }] };
     const internal = toFlowayOpenAIChatCompletionsReasoning(input, format('openrouter-reasoning-details'), { warn });
-    expect(decodeReasoningData(internal[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value).toEqual(input.reasoning_details);
+    expect(decodeChatCompletionsReasoningData(internal[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque)?.value).toEqual(input.reasoning_details);
     expect(fromFlowayOpenAIChatCompletionsReasoning(internal, format('openrouter-reasoning-details'), { warn })).toEqual(input);
   });
 
@@ -192,7 +203,7 @@ describe('Floway Chat Completions reasoning conversion', () => {
       const message = toFlowayOpenAIChatCompletionsReasoning({ reasoning_details }, format('openrouter-reasoning-details'), { warn, stream: { previousOpaque } });
       previousOpaque = message[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque;
     }
-    expect(decodeReasoningData(previousOpaque)?.value).toEqual([
+    expect(decodeChatCompletionsReasoningData(previousOpaque)?.value).toEqual([
       { type: 'reasoning.summary', summary: 'First summary.', index: 0 },
       { type: 'reasoning.encrypted', data: 'cipher-one', id: 'rs_one', index: 0 },
       { type: 'reasoning.text', text: 'Signed.', signature: 'signature', index: 1 },
@@ -213,17 +224,16 @@ describe('Floway Chat Completions reasoning conversion', () => {
       const message = toFlowayOpenAIChatCompletionsReasoning({ thinking_blocks }, format('litellm-thinking-blocks'), { warn, stream: { previousOpaque } });
       previousOpaque = message[FlowayOpenAIChatCompletionsReasoning]!.reasoning_opaque;
     }
-    expect(decodeReasoningData(previousOpaque)?.value).toEqual([
+    expect(decodeChatCompletionsReasoningData(previousOpaque)?.value).toEqual([
       { type: 'thinking', thinking: 'First thought.', signature: 'sig-one' },
       { type: 'redacted_thinking', data: 'hidden' },
       { type: 'thinking', thinking: 'Second.', signature: 'sig-two' },
     ]);
   });
 
-  it('rejects damaged owned envelopes with the original error chain', () => {
+  it('rejects malformed selected structured reasoning data', () => {
     const warn = vi.fn();
-    expect(() => toFlowayOpenAIChatCompletionsReasoning({ reasoning_opaque: 'floway-reasoning-v1:invalid' }, format('reasoning-opaque'), { warn })).toThrow('Malformed Floway reasoning data envelope');
-    const invalid = encodeReasoningData('openrouter-reasoning-details', [{ type: 'reasoning.encrypted', data: 7 }]);
+    const invalid = encodeChatCompletionsReasoningData('openrouter-reasoning-details', [{ type: 'reasoning.encrypted', data: 7 }]);
     const message = { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: '', reasoning_opaque: invalid }) };
     expect(() => fromFlowayOpenAIChatCompletionsReasoning(message, format('openrouter-reasoning-details'), { warn })).toThrow(TypeError);
   });

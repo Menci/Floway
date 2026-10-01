@@ -1,7 +1,6 @@
 import { klona } from 'klona/json';
 
 import { anthropicMessagesBlocksFromChatCompletionsReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
-import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
@@ -10,6 +9,7 @@ import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText, decodeChatCompletionsReasoningData } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
@@ -24,6 +24,12 @@ interface BuildTargetRequestOptions {
 }
 
 const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicMessagesAssistantInputContentBlock[] => {
+  const opaque = openAIChatCompletionsReasoningOpaque(message);
+  const data = opaque === undefined ? undefined : decodeChatCompletionsReasoningData(opaque);
+  if (data?.type === 'anthropic-messages-content-blocks') {
+    if (!Array.isArray(data.value) || data.value.some(block => typeof block !== 'object' || block === null || Array.isArray(block) || typeof block.type !== 'string')) throw new TypeError('Malformed Anthropic Messages content blocks');
+    return klona(data.value) as AnthropicMessagesAssistantInputContentBlock[];
+  }
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
   const thinkingBlocks = anthropicMessagesBlocksFromChatCompletionsReasoning(openAIChatCompletionsScalarReasoningText(message), openAIChatCompletionsReasoningOpaque(message));
 

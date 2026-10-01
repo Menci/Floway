@@ -4,7 +4,8 @@ import { decodeChatCompletionsFrames, encodeChatCompletionsFrames } from '../../
 import { AffinityCodec } from '../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import { decodeReasoningData, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { decodeChatCompletionsReasoningData } from '@floway-dev/protocols/openai-chat-completions';
 import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent, type ChatCompletionsReasoningFormat } from '@floway-dev/protocols/openai-chat-completions';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
@@ -52,7 +53,7 @@ for (const data of ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm
         const unwrapped = await codec.unwrap(assistant.reasoning_opaque as string, 'openai-chat-completions.reasoning_opaque');
         expect(unwrapped.kind).toBe('owned');
         if (unwrapped.kind !== 'owned' || unwrapped.value === undefined) throw new Error('Missing original reasoning data');
-        expect(data === 'reasoning-opaque' ? unwrapped.value : decodeReasoningData(unwrapped.value)?.value).toEqual(original);
+        expect(data === 'reasoning-opaque' ? unwrapped.value : decodeChatCompletionsReasoningData(unwrapped.value)?.value).toEqual(original);
         const replay = await requestAppWithWarmModels('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'model', messages: [{ role: 'user', content: 'Hello' }, assistant, { role: 'user', content: 'Continue' }] }) });
         expect(replay.status).toBe(200);
         await replay.text();

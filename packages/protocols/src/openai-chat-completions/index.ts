@@ -2,6 +2,7 @@
 import type { ChatCompletionsReasoningWireFields, FlowayOpenAIChatCompletionsReasoningCarrier } from './reasoning-format.ts';
 
 export * from './reasoning-format.ts';
+export * from './reasoning-data.ts';
 export * from './reasoning.ts';
 
 export interface OpenAIChatCompletionsPayload {

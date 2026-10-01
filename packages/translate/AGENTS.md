@@ -18,8 +18,8 @@ files at the top level of either `shared/` tree.
    or target may import the helper. No helper currently occupies this ceiling.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
    `B-via-A` pairs may import the helper. For example,
-   `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
-   OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
+   `openai-chat-completions-and-openai-responses/content.ts` maps message content in both
+   directions of the OpenAI Chat Completions ↔ OpenAI Responses translation.
 
 ## Current Production Subdirectories
 

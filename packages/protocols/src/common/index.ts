@@ -12,7 +12,6 @@ export * from './opaque-value.ts';
 export * from './sse.ts';
 export * from './parse-sse.ts';
 export * from './parse-events.ts';
-export * from './reasoning-data.ts';
 export * from '../openai-chat-completions/reasoning-format.ts';
 
 export { isJsonObject, type JsonObject } from './json.ts';

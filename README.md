@@ -81,7 +81,8 @@ materializes the identity at its own upstream boundary.
 
 Upstream and model compatibility settings live in `compatibility`, independently
 of endpoint availability and feature `flag_overrides`. Compatibility describes
-upstream dialects and the accommodations they require; feature flags select
+upstream dialects and the accommodations they require. They remain internal
+configuration and are omitted from public model metadata. Feature flags select
 additional gateway functionality. Existing compatibility flags remain until
 their behavior is moved to dedicated settings.
 
@@ -127,15 +128,28 @@ original fields without interpreting their format. Already normalized values
 use Floway's identity wire fields, `reasoning` and `reasoning_opaque`, when
 encoding passthrough. Raw passthrough channels are not inferred as reasoning
 when translating to another protocol. These options select conversion behavior.
-Structured arrays retain their members and metadata in reversible Floway
-opaque envelopes. Malformed selected formats fail the request; recognized
-unselected formats produce a warning and remain uninterpreted.
+Structured arrays retain their members and metadata as
+`base64(JSON.stringify({ type: "openrouter-reasoning-details", reasoning_details }))`
+or `base64(JSON.stringify({ type: "litellm-thinking-blocks", thinking_blocks }))`.
+Native opaque strings are preserved verbatim. Malformed selected formats fail
+the request; recognized unselected formats produce a warning and remain
+uninterpreted.
+
+Two additional data standards are private to translated Chat Completions:
+`openai-responses-reasoning-items` preserves native reasoning items for Chat
+Completions via Responses; `anthropic-messages-content-blocks` preserves complete,
+ordered native content for Chat Completions via Messages. Their base64 JSON
+objects carry `reasoning_items` and `content`, respectively. They are not operator
+presets. Complete Messages content retains thinking signatures, text, tool calls
+and their interleaving so history does not reconstruct signed blocks in a
+changed position. Translators generate and consume Floway's reasoning Symbol;
+wire-format conversion happens at the Chat boundaries.
 
 Normalized reasoning reaches clients as `reasoning` and `reasoning_opaque`;
 passthrough fields keep their original names. The public `endpoints` map
-describes this client surface,
-including translated chat routes. Native dispatch continues to use the chosen
-upstream's own endpoint map. Normalization also applies to native Chat
+describes endpoint availability, including translated chat routes; reasoning
+format preferences are internal compatibility settings. Native dispatch continues
+to use the chosen upstream's own endpoint map. Normalization also applies to native Chat
 Completions passthrough and client history replay.
 
 Floway wraps natural reasoning signatures, encrypted content, fingerprints,

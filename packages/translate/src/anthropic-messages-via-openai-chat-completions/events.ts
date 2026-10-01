@@ -1,6 +1,7 @@
-import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { decodeReasoningData, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText, decodeChatCompletionsReasoningData } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const toAnthropicMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -304,7 +305,7 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
     return;
   }
 
-  const envelope = decodeReasoningData(reasoningOpaque);
+  const envelope = decodeChatCompletionsReasoningData(reasoningOpaque);
   const structured = envelope?.type === 'litellm-thinking-blocks' || envelope?.type === 'openrouter-reasoning-details';
   if (state.openBlock === 'thinking') {
     state.pendingThinkingSignature = reasoningOpaque;

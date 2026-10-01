@@ -1,5 +1,5 @@
+import { decodeChatCompletionsReasoningData, encodeChatCompletionsReasoningData } from './reasoning-data.ts';
 import { type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, type FlowayOpenAIChatCompletionsReasoningCarrier } from './reasoning-format.ts';
-import { decodeReasoningData, encodeReasoningData } from '../common/reasoning-data.ts';
 
 export const OPENROUTER_REASONING_OPAQUE_ID_PREFIX = 'floway-reasoning-opaque:';
 export const REASONING_WIRE_FIELDS = ['reasoning_content', 'reasoning_text', 'reasoning', 'reasoning_opaque', 'reasoning_details', 'thinking_blocks', 'reasoning_items'] as const;
@@ -145,17 +145,16 @@ const readOpaque = (value: unknown, standard: ChatCompletionsReasoningDataStanda
   if (value === undefined || value === null || standard === 'passthrough') return '';
   if (standard === 'reasoning-opaque') {
     if (typeof value !== 'string') return malformed('reasoning_opaque', 'a string or null');
-    decodeReasoningData(value);
     return value;
   }
   let items = validateStructuredReasoning(value, standard);
   const owned = previousOpaque === undefined || standard === 'openrouter-reasoning-details' ? isOwnedOpaqueItem(items, standard) : undefined;
-  if (owned !== undefined) { decodeReasoningData(owned); return owned; }
+  if (owned !== undefined) return owned;
   if (previousOpaque !== undefined && previousOpaque !== '') {
-    const previous = decodeReasoningData(previousOpaque);
+    const previous = decodeChatCompletionsReasoningData(previousOpaque);
     if (previous?.type === standard) items = mergeReasoningStreamItems(validateStructuredReasoning(previous.value, standard), items, standard);
   }
-  return encodeReasoningData(standard, items);
+  return encodeChatCompletionsReasoningData(standard, items);
 };
 
 export const toFlowayOpenAIChatCompletionsReasoning = <T extends object>(message: T, format: ChatCompletionsReasoningFormat, options: ReasoningConversionOptions): FlowayReasoningMessage<T> => {
@@ -198,7 +197,7 @@ export const fromFlowayOpenAIChatCompletionsReasoning = <T extends object>(messa
   if (reasoning.reasoning_opaque !== '') {
     if (format.data === 'passthrough' || format.data === 'reasoning-opaque') output[dataField] = reasoning.reasoning_opaque;
     else {
-      const envelope = decodeReasoningData(reasoning.reasoning_opaque);
+      const envelope = decodeChatCompletionsReasoningData(reasoning.reasoning_opaque);
       if (envelope?.type === format.data) output[dataField] = validateStructuredReasoning(envelope.value, format.data);
       else if (format.data === 'openrouter-reasoning-details') {
         // A fixed ID makes the OpenRouter adapter deduplicate different messages.
@@ -208,4 +207,14 @@ export const fromFlowayOpenAIChatCompletionsReasoning = <T extends object>(messa
     }
   }
   return output as WireReasoningMessage<T>;
+};
+
+export const openAIChatCompletionsScalarReasoningText = (message: FlowayOpenAIChatCompletionsReasoningCarrier): string | undefined => {
+  const value = message[FlowayOpenAIChatCompletionsReasoning]?.reasoning;
+  return value === '' ? undefined : value;
+};
+
+export const openAIChatCompletionsReasoningOpaque = (message: FlowayOpenAIChatCompletionsReasoningCarrier): string | undefined => {
+  const value = message[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque;
+  return value === '' ? undefined : value;
 };

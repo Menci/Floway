@@ -1,9 +1,7 @@
-import { hasReadableSummary } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
-import { encodeReasoningData } from '@floway-dev/protocols/common';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
@@ -78,7 +76,7 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
   const reasoningItems = state.reasoningItems;
   state.reasoningItems = [];
   state.emittedReasoningItems.push(...reasoningItems);
-  return [makeChunk(state, flowayReasoningFields('', encodeReasoningData('openai-responses-reasoning-items', state.emittedReasoningItems)))];
+  return [makeChunk(state, flowayReasoningFields('', encodeChatCompletionsReasoningData('openai-responses-reasoning-items', state.emittedReasoningItems)))];
 };
 
 const isReasoningOutputDone = (event: OpenAIResponsesStreamEvent): boolean => {
@@ -197,7 +195,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
     const reasoningItem = { ...item };
-    if (hasReadableSummary(reasoningItem) || typeof item.encrypted_content === 'string') state.reasoningItems.push(reasoningItem);
+    state.reasoningItems.push(reasoningItem);
 
     for (const [summaryIndex, part] of item.summary.entries()) {
       chunks.push(...emitReasoningSummaryText(output_index, summaryIndex, part.text, state, 'done-fallback'));
