@@ -7,12 +7,13 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubChatProviderPipelines, type ChatFixtureCalls } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { type FlagId, type ModelCandidate, directFetcher, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel, type ProviderOpenAIResponsesResult } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -129,9 +130,10 @@ const makeCandidate = (overrides: {
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const calls = {
     callOpenAIResponses: overrides.callOpenAIResponses,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream,
@@ -140,7 +142,7 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null, pipelines: {},
+      modelsCache: null, pipelines: stubChatProviderPipelines(calls),
       instance: provider,
     },
     model: stubInternalModel({
@@ -544,6 +546,85 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
+test('POST /v1/responses replays a stored turn when the next one names it as previous_response_id', async () => {
+  installRepo();
+  const observedBodies: Array<Omit<CanonicalOpenAIResponsesPayload, 'model'>> = [];
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    return {
+      action: 'generate', ok: true,
+      events: makeProviderEvents(completedEvents(`resp_upstream_${observedBodies.length}`)),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callOpenAIResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+  const app = makeApp();
+
+  const first = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', store: true }),
+  });
+  assertEquals(first.status, 200);
+  const stored = await first.json() as OpenAIResponsesResult;
+
+  const second = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      store: true,
+      previous_response_id: stored.id,
+      input: 'continue',
+    }),
+  });
+  assertEquals(second.status, 200);
+  await second.json();
+
+  // The prior turn is replayed as the rows the store holds — this turn's own input last —
+  // and the snapshot id names something only this gateway has, so it never reaches the wire.
+  const continued = observedBodies[1];
+  if (continued === undefined) throw new Error('expected a second upstream call');
+  assertEquals(continued.previous_response_id, undefined);
+  assertEquals(continued.input, [
+    { type: 'message', role: 'user', content: 'hello' },
+    {
+      type: 'message',
+      id: 'msg_1',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text: 'hi', annotations: [] }],
+    },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
+test('POST /v1/responses rejects an item_reference the store cannot resolve', async () => {
+  installRepo();
+
+  // No candidates need to be queued — hydration answers before routing runs.
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'item_reference', id: 'msg_missing' }],
+    }),
+  });
+
+  assertEquals(response.status, 404);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string | null } };
+  assertEquals(body.error, {
+    message: "Item with id 'msg_missing' not found.",
+    type: 'invalid_request_error',
+    param: 'input',
+    code: null,
+  });
+});
+
 test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
   installRepo();
 
@@ -724,7 +805,7 @@ const translatedCustomCandidate = (
   callExec = false,
 ): ModelCandidate => {
   const candidate = makeCandidate({ upstream: `up_${target}`, endpoints: { [target]: {} } });
-  const instance = stubProvider({
+  const calls: ChatFixtureCalls = {
     callOpenAIChatCompletions: async (_model, body) => {
       observe(body as unknown as Record<string, unknown>);
       const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({ id: 'chat_exec', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices });
@@ -750,8 +831,8 @@ const translatedCustomCandidate = (
         })(),
       };
     },
-  });
-  return { ...candidate, provider: { ...candidate.provider, instance } };
+  };
+  return { ...candidate, provider: { ...candidate.provider, pipelines: stubChatProviderPipelines(calls) } };
 };
 
 for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {

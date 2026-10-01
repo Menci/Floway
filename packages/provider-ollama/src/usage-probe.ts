@@ -31,7 +31,7 @@
 // https://github.com/ollama/ollama/blob/f0078ae4766d0d570e196158f20dde309bd96124/docs/api/errors.mdx
 
 import { type OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchUsage } from './fetch.ts';
+import { ollamaFetchUsage } from './control-http.ts';
 import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 

@@ -251,7 +251,7 @@ describe('Copilot token exchange retries', () => {
   });
 });
 
-test('copilotAuthedFetch overlays interceptor headers on the pinned base set', async () => {
+test('copilotAuthedFetch overlays request headers on the pinned base set', async () => {
   await mockTokenAndCapture([['x-initiator', 'agent'], ['copilot-vision-request', 'true']], headers => {
     assertEquals(headers.get('x-initiator'), 'agent');
     assertEquals(headers.get('copilot-vision-request'), 'true');
@@ -261,7 +261,7 @@ test('copilotAuthedFetch overlays interceptor headers on the pinned base set', a
   });
 });
 
-test('copilotAuthedFetch deletes a base header when the interceptor passes an empty-string value', async () => {
+test('copilotAuthedFetch deletes a base header when the caller passes an empty-string value', async () => {
   // Sentinel contract: empty string means drop this base header from the pinned set.
   await mockTokenAndCapture([['copilot-integration-id', '']], headers => {
     assertEquals(headers.has('copilot-integration-id'), false);

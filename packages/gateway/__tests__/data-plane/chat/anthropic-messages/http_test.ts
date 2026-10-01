@@ -6,10 +6,11 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -108,14 +109,15 @@ const makeCandidate = (overrides: {
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
+  const calls = {
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(calls), instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
@@ -189,13 +191,8 @@ test('POST /v1/messages answers the Claude Code model-validation probe without c
   assertEquals(body.usage.output_tokens, 0);
   assertEquals(callAnthropicMessages.mock.calls.length, 0);
 
-  // The turn is recorded as served, at zero cost, and contributes no latency
-  // sample — there was no upstream call to measure.
   await flushBackground();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.requests, 1);
-  assertEquals(usage[0]?.metrics, []);
+  assertEquals(await repo.usage.listAll(), []);
   assertEquals(await repo.performance.listAll(), []);
 });
 
@@ -220,7 +217,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 });
 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
-  installRepo();
+  const repo = installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
@@ -237,6 +234,31 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+
+  await flushBackground();
+  assertEquals(await repo.usage.listAll(), []);
+  assertEquals(await repo.performance.listAll(), []);
+});
+
+test('POST /v1/messages/count_tokens preserves a body read failure without charging the native count call', async () => {
+  const repo = installRepo();
+  const fault = new Error('native count body read failed');
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+    response: new Response(new ReadableStream<Uint8Array>({ pull(controller) { controller.error(fault); } }), { headers: { 'content-type': 'application/json' } }),
+    modelKey: 'count-model',
+  }));
+  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
+  const response = await makeApp().request('/v1/messages/count_tokens', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(response.status, 500);
+  const body = await response.text();
+  assert(body.includes(fault.message));
+  await flushBackground();
+  assertEquals(await repo.usage.listAll(), []);
+  assertEquals(await repo.performance.listAll(), []);
 });
 
 test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
@@ -296,10 +318,10 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
 });
 
-test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {
+test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the anthropic-messages-generate picker', async () => {
   installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
-  // anthropicMessagesGenerateTarget (messages > responses > openai-chat-completions) rejects
+  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // anthropicMessagesGenerateTarget (messages > responses > chat-completions) rejects
   // it, leaving zero viable candidates, and with sawModel=true the serve
   // renders model-unsupported as a 400.
   queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);

@@ -1,28 +1,17 @@
+import type { RecordedClientStream } from './run-stream';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
-import {
-  collectAnthropicMessagesProtocolEventsToResult,
-  anthropicMessagesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
-  geminiGenerateContentProtocolFrameToSSEFrame,
   type GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
+import { collectOpenAIChatCompletionsProtocolEventsToResult } from '@floway-dev/protocols/openai-chat-completions';
 import {
-  openaiChatCompletionsProtocolFrameToSSEFrame,
-  collectOpenAIChatCompletionsProtocolEventsToResult,
-} from '@floway-dev/protocols/openai-chat-completions';
-import {
-  openaiCompletionsProtocolFrameToSSEFrame,
   reassembleOpenAICompletionsEvents,
   type OpenAICompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-completions';
-import {
-  collectOpenAIResponsesProtocolEventsToResult,
-  openaiResponsesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 
 export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 
@@ -30,13 +19,6 @@ export interface CollectedStream {
   result: unknown | null;
   error: string | null;
   truncated: boolean;
-}
-
-export interface RenderedStreamEvent {
-  event: string | null;
-  text: string;
-  parseError: string | null;
-  timestamp: number;
 }
 
 export const detectCollectKind = (path: string): CollectKind | null => {
@@ -48,85 +30,33 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
-// Mirror of `detectCollectKind` for the target protocol of a translated turn.
-// The downstream view derives its kind from `meta.path` (the client path =
-// source protocol); the upstream view cannot, because the client path names
-// the source, not the target. `meta.targetApi` is stamped at capture time by
-// `traverseTranslation` and names the target protocol the inner attempt spoke.
-export const collectKindFromTargetApi = (api: string | null | undefined): CollectKind | null => {
-  if (api === 'anthropicMessages') return 'anthropic-messages';
-  if (api === 'openaiResponses') return 'openai-responses';
-  if (api === 'openaiChatCompletions') return 'openai-chat-completions';
-  return null;
-};
-
-export const streamEndedCleanly = (events: DumpStreamEvent[]): boolean =>
-  events.at(-1)?.frame.type === 'done';
-
-const complete = (result: unknown, events: DumpStreamEvent[]): CollectedStream =>
-  ({ result, error: null, truncated: !streamEndedCleanly(events) });
-
-export const collectStream = async (kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> => {
+export const collectStream = async (kind: CollectKind, { frames, ended }: RecordedClientStream): Promise<CollectedStream> => {
+  const complete = (result: unknown): CollectedStream => ({ result, error: null, truncated: !ended });
   try {
     switch (kind) {
     case 'openai-chat-completions':
-      return complete(await collectOpenAIChatCompletionsProtocolEventsToResult(frames(events) as never), events);
+      return complete(await collectOpenAIChatCompletionsProtocolEventsToResult(asIterable(frames) as never));
     case 'anthropic-messages':
-      return complete(await collectAnthropicMessagesProtocolEventsToResult(frames(events) as never), events);
+      return complete(await collectAnthropicMessagesProtocolEventsToResult(asIterable(frames) as never));
     case 'openai-responses':
-      return complete(await collectOpenAIResponsesProtocolEventsToResult(frames(events) as never), events);
+      return complete(await collectOpenAIResponsesProtocolEventsToResult(asIterable(frames) as never));
     case 'gemini-generate-content':
-      return complete(await collectGeminiGenerateContentProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>), events);
+      return complete(await collectGeminiGenerateContentProtocolEventsToResult(asIterable(frames) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>));
     case 'openai-completions': {
       const stream = (async function* () {
-        for (const { frame } of events) {
+        for (const frame of frames) {
           const typed = frame as ProtocolFrame<OpenAICompletionsStreamEvent>;
           if (typed.type === 'event') yield typed.event;
         }
       })();
-      return complete(await reassembleOpenAICompletionsEvents(stream), events);
+      return complete(await reassembleOpenAICompletionsEvents(stream));
     }
     }
   } catch (error) {
-    return { result: null, error: errorMessage(error), truncated: true };
+    return { result: null, error: errorMessage(error), truncated: !ended };
   }
 };
 
-export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamEvent[]): RenderedStreamEvent[] => {
-  return events.map(({ frame, ts }) => {
-    const sse = frameToSse(kind, frame);
-    if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
-    if (frame.type === 'done') return { event: sse.event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts };
-    try {
-      return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
-    } catch (error) {
-      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(error), timestamp: ts };
-    }
-  });
-};
-
-export const streamEventsCopyText = (kind: CollectKind | null, events: DumpStreamEvent[]): string => {
-  return events.map(({ frame }) => {
-    const sse = frameToSse(kind, frame);
-    return sse ? `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n` : '';
-  }).filter(Boolean).join('\n');
-};
-
-async function* frames(events: DumpStreamEvent[]) {
-  for (const event of events) yield event.frame;
+async function* asIterable(frames: readonly ProtocolFrame<unknown>[]) {
+  yield* frames;
 }
-
-const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
-  try {
-    switch (kind) {
-    case 'openai-chat-completions': return openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
-    case 'openai-completions': return openaiCompletionsProtocolFrameToSSEFrame(frame as never);
-    case 'anthropic-messages': return anthropicMessagesProtocolFrameToSSEFrame(frame as never);
-    case 'openai-responses': return openaiResponsesProtocolFrameToSSEFrame(frame as never);
-    case 'gemini-generate-content': return geminiGenerateContentProtocolFrameToSSEFrame(frame as never);
-    default: return null;
-    }
-  } catch (error) {
-    return { type: 'sse', event: 'serialize_error', data: errorMessage(error) };
-  }
-};

@@ -16,7 +16,7 @@ export const prepareCodexRequest = <O extends CodexOperation>(operation: O) => d
     request: {
       needs: ['request.provider.model', 'request.provider.payload', 'request.http.headers', 'request.http.callId', 'request.codex.account', 'request.codex.accessToken', 'request.codex.plan'],
       consumes: ['request.provider.model', 'request.provider.payload', 'request.http.headers'],
-      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.codex.modelKey', 'request.codex.model'],
+      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.codex.modelKey', 'request.codex.model', 'request.provider.modelKey'],
     },
     response: { needs: ['response.http.exchange', 'response.provider.called', 'response.provider.previousCalls'], consumes: [], provides: ['response.provider.modelKey'] },
   },
@@ -50,6 +50,7 @@ export const prepareCodexRequest = <O extends CodexOperation>(operation: O) => d
       ...rest,
       'request.codex.model': model,
       'request.codex.modelKey': model.id,
+      'request.provider.modelKey': model.id,
       'request.http.url': `${CODEX_BACKEND_BASE}${path}`,
       'request.http.method': 'POST',
       'request.http.headers': headers,

@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
@@ -7,7 +6,7 @@ import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-too
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
@@ -321,7 +320,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
+        input_schema: tool.parameters ?? { type: 'object', properties: {} },
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
@@ -387,9 +386,9 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   ];
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  applyLastSystemCacheBreakpoint(systemBlocks);
-  applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  const cachedSystem = withLastSystemCacheBreakpoint(systemBlocks);
+  const cachedTools = withLastToolCacheBreakpoint(tools);
+  const cachedMessages = withLastMessageCacheBreakpoint(messages);
 
   // Merge reasoning effort + structured-output format into a single
   // `output_config`. `effort === 'none'` still maps to `thinking: {type:
@@ -406,7 +405,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   const { thinking, effort: outputConfigEffort } = anthropicMessagesReasoningFieldsFromEffort(effort);
   const outputConfig: NonNullable<AnthropicMessagesPayload['output_config']> = {};
   if (outputConfigEffort !== undefined) outputConfig.effort = outputConfigEffort;
-  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: klona(formatSchema) };
+  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
   const serviceTierFields = anthropicMessagesServiceTierFieldsFromOpenAI(payload.service_tier);
@@ -416,13 +415,13 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   // semantics.
   const target: AnthropicMessagesPayload = {
     model: payload.model,
-    messages,
+    messages: cachedMessages,
     max_tokens: maxTokens,
-    ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
+    ...(cachedSystem?.length ? { system: cachedSystem } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
-    tools,
+    tools: cachedTools,
     tool_choice: translateToolChoice(allowed.choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),

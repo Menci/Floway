@@ -7,30 +7,15 @@ export type {
   OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
-export type { ProviderCallResponse, ProviderModelFacts, ProviderOperation, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderPipelines, ProviderRequest, ProviderResponse, ProviderRerankResponse, ProviderServices } from './pipeline.ts';
+export type { AnthropicMessagesCountTokensBody, ChatProviderOperation, NonChatProviderOperation, ProviderCallResponse, ProviderChatResponse, ProviderChatServices, ProviderModelFacts, ProviderOperation, ProviderOperationOutputs, ProviderOperationPayloads, ProviderOperationRequest, ProviderOperationResponse, ProviderPipeline, ProviderPipelines, ProviderProtocolFailure, ProviderRequest, ProviderResponse, ProviderRerankResponse, ProviderServices, ProviderStreamOutput, ProviderValueOutput } from './pipeline.ts';
 export { providerModelFacts } from './pipeline.ts';
+export { decodeProviderResponse } from './stages/decode-response.ts';
+export { selectProviderResponsesAction } from './stages/select-responses-action.ts';
+export { observeProviderCall, observeProviderResponsesCall } from './stages/observe-call.ts';
 export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';
 export { toInternalDebugError } from './error.ts';
-
-export type {
-  ApiErrorResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  apiErrorToResponse,
-  decodeApiErrorBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readUpstreamApiError,
-} from './result.ts';
 
 export type {
   InternalAliasedFrom,
@@ -52,22 +37,15 @@ export type {
   Provider,
   InboundHeaderMatcher,
   ProviderInstance,
-  ProviderCallResult,
-  ProviderRerankCallResult,
   ProviderModule,
   AnthropicMessagesUpstreamCallOptions,
-  ProviderOpenAIResponsesResult,
-  ProviderStreamResult,
   OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { prepareOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export { prepareOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
-export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
-export type { ProviderStreamParser } from './streaming.ts';
-export { streamingProviderCall } from './streaming.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';

@@ -1,4 +1,4 @@
-import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
+import { copilotFetchModels, type CopilotFetchConfig } from './control-http.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { fetchUpstreamModels, type Fetcher, type HttpHeaderLines, identityWrapUpstreamCall } from '@floway-dev/provider';
 

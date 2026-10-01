@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';

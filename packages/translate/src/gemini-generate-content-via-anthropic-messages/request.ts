@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import {
   geminiGenerateContentFunctionCallingIntent,
@@ -14,7 +13,7 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -120,7 +119,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
         type: 'tool_use',
         id,
         name: call.name,
-        input: klona(call.args),
+        input: call.args,
       });
       return;
     }
@@ -190,21 +189,21 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
     request.top_k = generationConfig.topK;
   }
   if (generationConfig.stopSequences !== undefined) {
-    request.stop_sequences = klona(generationConfig.stopSequences);
+    request.stop_sequences = generationConfig.stopSequences;
   }
   // Gemini generateContent's `responseSchema` is the bare JSON Schema; Anthropic carries it
   // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
   // application/json` without a schema has no Anthropic equivalent and is
   // dropped — the routing fallback degrades gracefully rather than fails.
   return generationConfig.responseSchema !== undefined
-    ? { format: { type: 'json_schema', schema: klona(generationConfig.responseSchema as Record<string, unknown>) } }
+    ? { format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> } }
     : {};
 };
 
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
   // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
   // declarations use the smallest object schema rather than dropping the tool.
-  return klona(parameters) ?? { type: 'object', properties: {} };
+  return parameters ?? { type: 'object', properties: {} };
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesTool[] | undefined => {
@@ -239,8 +238,7 @@ export const buildTargetRequest = (
   const system = geminiGenerateContentText(payload.systemInstruction);
   if (system !== null) {
     const systemBlocks: AnthropicMessagesTextBlock[] = [{ type: 'text', text: system }];
-    applyLastSystemCacheBreakpoint(systemBlocks);
-    request.system = systemBlocks;
+    request.system = withLastSystemCacheBreakpoint(systemBlocks);
   }
 
   payload.contents?.forEach((content, turnIndex) => {
@@ -273,10 +271,9 @@ export const buildTargetRequest = (
   if (thinking !== undefined) request.thinking = thinking;
   if (!hasGenerationOutputConfig && Object.keys(outputConfig).length > 0) attachOutputConfig();
 
-  const tools = buildTools(payload);
+  const tools = withLastToolCacheBreakpoint(buildTools(payload));
   if (tools) request.tools = tools;
-  applyLastToolCacheBreakpoint(request.tools);
-  applyLastMessageCacheBreakpoint(request.messages);
+  request.messages = withLastMessageCacheBreakpoint(request.messages);
 
   const intent = geminiGenerateContentFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {

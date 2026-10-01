@@ -19,8 +19,9 @@
 // /api/embed for native callers and /v1/embeddings for the OpenAI shim.
 
 import type { OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { discardUpstreamResponse, fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
+import { ollamaFetchShow, ollamaFetchTags } from './control-http.ts';
+import { discardUpstreamResponse } from '@floway-dev/http';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,

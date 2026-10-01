@@ -4,8 +4,8 @@ import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ct
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
-// Shared minimal GatewayCtx for tests that exercise serve / respond /
-// interceptor code in isolation. Defaults satisfy every required field; pass
+// Shared minimal GatewayCtx for tests that exercise serve / respond / stage
+// code in isolation. Defaults satisfy every required field; pass
 // `overrides` to nudge what each test cares about. Callers that need a
 // downstream abort controller should construct one and spread
 // `{ abortSignal: controller.signal, downstreamAbortController: controller }`

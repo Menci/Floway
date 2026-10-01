@@ -61,11 +61,16 @@ const insertApiKey = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, id: 
 
 const insertDump = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, keyId: string, id: string): void => {
   raw.run(
+    `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+     VALUES (?, 'dump-response', ?, 'staged', 0)`,
+    [`dumps/v1/${keyId}/${id}.run.gz`, JSON.stringify([keyId, id])],
+  );
+  raw.run(
     `INSERT INTO dump_records
      (key_id, id, created_at, upstream_id, meta_json, request_headers_json,
       response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES (?, ?, 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
-    [keyId, id],
+     VALUES (?, ?, 1, NULL, '{}', '[]', NULL, NULL, ?)`,
+    [keyId, id, JSON.stringify({ key: `dumps/v1/${keyId}/${id}.run.gz`, type: 'run' })],
   );
 };
 

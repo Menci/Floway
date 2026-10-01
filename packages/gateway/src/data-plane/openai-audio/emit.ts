@@ -1,8 +1,7 @@
 import type { OpenAIAudioTranscriptionEvents, Fields } from './facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { renderErrorEnvelope } from '@floway-dev/protocols/common';
 import { renderOpenAIAudioTranscription, type CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
 
 const isEvents = (answer: CanonicalOpenAIAudioTranscription | OpenAIAudioTranscriptionEvents): answer is OpenAIAudioTranscriptionEvents =>
@@ -54,7 +53,7 @@ export const emitOpenAIAudioTranscription = defineStage<
         'response.http.headers': forClient,
         'response.http.status': answer.status,
         'response.openaiAudioTranscription.mediaType': 'application/json',
-        'response.openaiAudioTranscription.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.openaiAudioTranscription.rendered': move(renderFailure(answer, mintedErrorEnvelope).body),
       };
     }
     return {

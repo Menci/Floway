@@ -1,30 +1,33 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../../src/shared/via-anthropic-messages/cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from '../../../src/shared/via-anthropic-messages/cache-breakpoints.ts';
 import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlock, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const cacheControlOf = (value: unknown): unknown => (value as { cache_control?: unknown }).cache_control;
 
-test('applyLastToolCacheBreakpoint marks the last custom tool, skipping native web search', () => {
+test('withLastToolCacheBreakpoint marks the last custom tool, skipping native web search', () => {
   const tools: AnthropicMessagesTool[] = [
     { type: 'custom', name: 'a', input_schema: {} },
     { type: 'custom', name: 'b', input_schema: {} },
     { type: 'web_search_20250305', name: 'web_search' },
   ];
-  applyLastToolCacheBreakpoint(tools);
+  const marked = withLastToolCacheBreakpoint(tools)!;
+  expect(marked[0]).toBe(tools[0]);
+  expect(marked[2]).toBe(tools[2]);
+  expect(cacheControlOf(tools[1])).toBeUndefined();
   assertEquals(cacheControlOf(tools[0]), undefined);
-  assertEquals(cacheControlOf(tools[1]), { type: 'ephemeral' });
+  assertEquals(cacheControlOf(marked[1]), { type: 'ephemeral' });
   assertEquals(cacheControlOf(tools[2]), undefined);
 });
 
-test('applyLastMessageCacheBreakpoint promotes a string last message to a text block', () => {
+test('withLastMessageCacheBreakpoint promotes a string last message to a text block', () => {
   const messages: AnthropicMessagesMessage[] = [{ role: 'user', content: 'hello' }];
-  applyLastMessageCacheBreakpoint(messages);
-  assertEquals(messages[0].content, [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }]);
+  const marked = withLastMessageCacheBreakpoint(messages);
+  assertEquals(marked[0].content, [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }]);
 });
 
-test('applyLastMessageCacheBreakpoint marks an image as the trailing block', () => {
+test('withLastMessageCacheBreakpoint marks an image as the trailing block', () => {
   const message: AnthropicMessagesUserMessage = {
     role: 'user',
     content: [
@@ -32,50 +35,54 @@ test('applyLastMessageCacheBreakpoint marks an image as the trailing block', () 
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x' } },
     ],
   };
-  applyLastMessageCacheBreakpoint([message]);
-  assert(Array.isArray(message.content));
-  assertEquals(cacheControlOf(message.content[0]), undefined);
-  assertEquals(cacheControlOf(message.content[1]), { type: 'ephemeral' });
+  const marked = withLastMessageCacheBreakpoint([message])[0];
+  assert(Array.isArray(marked.content));
+  assertEquals(cacheControlOf(marked.content[0]), undefined);
+  assertEquals(cacheControlOf(marked.content[1]), { type: 'ephemeral' });
 });
 
-test('applyLastMessageCacheBreakpoint marks a trailing assistant tool_use block', () => {
+test('withLastMessageCacheBreakpoint marks a trailing assistant tool_use block', () => {
   const message: AnthropicMessagesAssistantMessage = {
     role: 'assistant',
     content: [{ type: 'tool_use', id: 't1', name: 'run', input: {} }],
   };
-  applyLastMessageCacheBreakpoint([message]);
-  assert(Array.isArray(message.content));
-  assertEquals(cacheControlOf(message.content[0]), { type: 'ephemeral' });
+  const marked = withLastMessageCacheBreakpoint([message])[0];
+  assert(Array.isArray(marked.content));
+  assertEquals(cacheControlOf(marked.content[0]), { type: 'ephemeral' });
 });
 
-test('applyLastMessageCacheBreakpoint falls back to an earlier message when the last has no cacheable block', () => {
+test('withLastMessageCacheBreakpoint falls back to an earlier message when the last has no cacheable block', () => {
   const messages: AnthropicMessagesMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'q' }] },
     { role: 'assistant', content: [{ type: 'thinking', thinking: 'reasoning…' }] },
   ];
-  applyLastMessageCacheBreakpoint(messages);
-  const userContent = messages[0].content;
-  const assistantContent = messages[1].content;
+  const marked = withLastMessageCacheBreakpoint(messages);
+  const userContent = marked[0].content;
+  const assistantContent = marked[1].content;
+  expect(marked[1]).toBe(messages[1]);
   assert(Array.isArray(userContent) && Array.isArray(assistantContent));
   assertEquals(cacheControlOf(userContent[0]), { type: 'ephemeral' });
   assertEquals(cacheControlOf(assistantContent[0]), undefined);
 });
 
-test('applyLastSystemCacheBreakpoint is a no-op on undefined or empty input', () => {
-  applyLastSystemCacheBreakpoint(undefined);
+test('withLastSystemCacheBreakpoint is a no-op on undefined or empty input', () => {
+  expect(withLastSystemCacheBreakpoint(undefined)).toBeUndefined();
   const empty: AnthropicMessagesTextBlock[] = [];
-  applyLastSystemCacheBreakpoint(empty);
+  expect(withLastSystemCacheBreakpoint(empty)).toBe(empty);
   assertEquals(empty, []);
 });
 
-test('applyLastSystemCacheBreakpoint marks only the last block when multiple are present', () => {
+test('withLastSystemCacheBreakpoint marks only the last block when multiple are present', () => {
   const system: AnthropicMessagesTextBlock[] = [
     { type: 'text', text: 'instructions' },
     { type: 'text', text: 'leading note' },
     { type: 'text', text: 'final block' },
   ];
-  applyLastSystemCacheBreakpoint(system);
+  const marked = withLastSystemCacheBreakpoint(system)!;
+  expect(marked[0]).toBe(system[0]);
+  expect(marked[1]).toBe(system[1]);
+  expect(cacheControlOf(system[2])).toBeUndefined();
   assertEquals(cacheControlOf(system[0]), undefined);
   assertEquals(cacheControlOf(system[1]), undefined);
-  assertEquals(cacheControlOf(system[2]), { type: 'ephemeral' });
+  assertEquals(cacheControlOf(marked[2]), { type: 'ephemeral' });
 });

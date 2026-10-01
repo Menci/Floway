@@ -20,9 +20,6 @@
     "./control-plane/upstreams/types": {
       "types": "./src/control-plane/upstreams/types.ts"
     },
-    "./dump-types": {
-      "types": "./src/dump/types.ts"
-    },
     "./migrations-dir": {
       "import": "./src/migrations-dir.ts",
       "types": "./src/migrations-dir.ts"
@@ -35,7 +32,6 @@
     "@floway-dev/agent-setup": "workspace:*",
     "@floway-dev/dump": "workspace:*",
     "@floway-dev/http": "workspace:*",
-    "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",

@@ -1,34 +1,7 @@
-import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import { redactRunHeaders } from './run-redact';
-import type { DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/dump/types';
 
-// The dump API serves headers verbatim so the dashboard's reveal affordance
-// keeps working, but an exported file leaves the operator's machine, so every
-// credential header is masked to its redacted form before serialization.
-const redactHeaders = (headers: Array<[string, string]>): Array<[string, string]> =>
-  headers.map(([name, value]) => isSensitiveHeader(name) ? [name, redactHeaderValue(value)] as [string, string] : [name, value]);
-
-const redactRecord = (record: DumpRecord): DumpRecord => {
-  if (record.shape === 'run') return { ...record, events: redactRunHeaders(record.events) };
-  const capture = record.capture === undefined ? undefined : {
-    ...record.capture,
-    exchanges: record.capture.exchanges.map(exchange => ({
-      ...exchange,
-      request: { ...exchange.request, headers: redactHeaders(exchange.request.headers) },
-      response: exchange.response === null ? null : { ...exchange.response, headers: redactHeaders(exchange.response.headers) },
-    })),
-  };
-  return {
-    ...record,
-    request: { ...record.request, headers: redactHeaders(record.request.headers) },
-    response: {
-      ...record.response,
-      headers: redactHeaders(record.response.headers),
-      ...(record.response.upstream !== undefined ? { upstream: { ...record.response.upstream, headers: redactHeaders(record.response.upstream.headers) } } : {}),
-    },
-    ...(capture === undefined ? {} : { capture }),
-  };
-};
+const redactRecord = (record: DumpRecord): DumpRecord => ({ ...record, events: redactRunHeaders(record.events) });
 
 const serializeRecord = (record: DumpRecord): string => JSON.stringify({ format: 'floway-request-dump', version: 1, record: redactRecord(record) }, null, 2);
 

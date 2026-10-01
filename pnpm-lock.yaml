@@ -363,9 +363,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -458,12 +455,6 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0
 
-  packages/interceptor:
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
   packages/pipeline:
     dependencies:
       '@noble/hashes':
@@ -541,9 +532,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -560,9 +548,12 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -585,9 +576,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -610,9 +598,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -706,6 +691,9 @@ importers:
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
@@ -715,9 +703,6 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      klona:
-        specifier: 2.0.6
-        version: 2.0.6
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*

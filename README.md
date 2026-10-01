@@ -206,13 +206,13 @@ stage throws. Client JSON serialization runs inside settlement and publishes UTF
 while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
-Pipeline owns the stage-event format and object-space encoding. `@floway-dev/dump` owns
-run recording, stream references, completed NDJSON artifacts and metadata publication.
-Gateway supplies storage/broker ports and applies request admission, model attribution,
-HTTP byte measurement and retention policy. Closing waits for owned readers and deferred
-outcomes before storing the completed record and publishing its metadata. LogStream
-infrastructure is available on both platforms; live recording and its business readers
-remain outside these three PRs.
+`@floway-dev/dump` owns portable run recording, stream recording, metadata contracts,
+broker framing and wire conversion. Pipeline encodes stage facts, logs and protocol frames
+into one object space. Gateway owns attribution, admission, SQL storage and HTTP measurement.
+Closing waits for owned readers and deferred outcomes before storing the completed NDJSON
+record and publishing its metadata. The Collected view selects the recorded client stream and uses its
+`stream.end` event to establish recording completion. LogStream infrastructure is available
+on both platforms; live recording and its business readers remain outside these three PRs.
 
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same

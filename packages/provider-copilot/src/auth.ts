@@ -246,14 +246,14 @@ export const copilotRequestHeaders = (entry: CopilotTokenEntry, initHeaders: Hea
   headers.set('x-interaction-type', 'conversation-agent');
 
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's boundary interceptors decide
+  // ...) flow through unchanged. The provider's boundary stages decide
   // which headers each upstream call needs; this layer only knows how to ship
-  // them. Setting them last lets workaround interceptors override the static
+  // them. Setting them last lets workaround stages override the static
   // VSCode identification block when a future workaround needs to.
   //
-  // Convention: an empty-string value from an interceptor means "delete this
-  // base header" — the interceptor wants Copilot to NOT see a default we'd
-  // otherwise pin. An interceptor that wants to clear an arbitrary downstream
+  // Convention: an empty-string value from an stage means "delete this
+  // base header" — the stage wants Copilot to NOT see a default we'd
+  // otherwise pin. An stage that wants to clear an arbitrary downstream
   // header value must do so by name through this sentinel; the layer does not
   // otherwise expose a per-header delete API.
   if (attached) {

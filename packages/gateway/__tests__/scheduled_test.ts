@@ -1,14 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { createSqliteTestDb } from './repo/test-sqlite.ts';
+import { setupAppTest } from './test-utils/app.ts';
 import { initDumpStore } from '../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../src/dump/types.ts';
 import { FileDumpStore } from '../src/repo/dump-store.ts';
 import { initRepo } from '../src/repo/index.ts';
 import { SqlRepo } from '../src/repo/sql.ts';
 import type { ApiKey } from '../src/repo/types.ts';
 import { runScheduledMaintenance } from '../src/scheduled.ts';
-import { createSqliteTestDb } from './repo/test-sqlite.ts';
-import { setupAppTest } from './test-utils/app.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => {
@@ -29,8 +29,7 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   openaiResponsesRetentionSeconds: 0,
 });
 
-const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  shape: 'edge',
+const fileBackedDumpRecord = (id: string, completedAt: number): StoredDumpRecord => ({
   meta: {
     id,
     startedAt: completedAt - 1,
@@ -47,13 +46,9 @@ const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord 
     durationMs: 1,
     error: null,
   },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array([1]), decodedByteLength: 1 },
-  },
-  response: { status: 200, headers: [], body: { type: 'bytes', body: new Uint8Array([2]) } },
+  // One line is enough: what these exercise is the row, its file and the sweep that retires
+  // both, not what a run put in the stream.
+  events: new TextEncoder().encode('{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'),
 });
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
@@ -137,14 +132,15 @@ test('one maintenance tick collects every file retired by its four dump units', 
   }
   const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')
     .all<{ file_key: string }>();
-  expect(ownedFiles).toHaveLength(400);
+  // One file per record — the run's own stream.
+  expect(ownedFiles).toHaveLength(200);
 
   await runScheduledMaintenance('TEST', () => {});
 
   expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await Promise.all(ownedFiles.map(row => files.get(row.file_key))))
-    .toEqual(Array.from({ length: 400 }, () => null));
+    .toEqual(Array.from({ length: 200 }, () => null));
 });
 
 test('scheduled maintenance lease keeps overlapping ticks within one budget', async () => {

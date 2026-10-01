@@ -22,7 +22,7 @@
 // and the Copilot card next to this one names its account without one.
 
 import { type OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchMe } from './fetch.ts';
+import { ollamaFetchMe } from './control-http.ts';
 import { type OllamaAccountEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { isOllamaUsageEnabled } from './usage-probe.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';

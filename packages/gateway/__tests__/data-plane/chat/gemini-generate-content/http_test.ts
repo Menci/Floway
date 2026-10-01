@@ -5,11 +5,12 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -102,7 +103,7 @@ const makeCandidate = (overrides: {
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
   // When the test fixes `endpoints` directly, use it verbatim — that lets a
   // test pin a wrong-endpoint shape the picker rejects. Otherwise synthesize
-  // a single-endpoint map from `targetApi` so the gemini serve layer's
+  // a single-endpoint map from `targetApi` so the Gemini generateContent serve layer's
   // picker (openai-chat-completions first, then messages, then responses) lands on
   // the requested wire.
   const endpoints = overrides.endpoints ?? (targetApi === 'openaiChatCompletions'
@@ -110,15 +111,16 @@ const makeCandidate = (overrides: {
     : targetApi === 'anthropicMessages'
       ? { anthropicMessages: {} }
       : { openaiResponses: {} });
-  const provider = stubProvider({
+  const calls = {
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(calls), instance: provider,
     },
     model: stubInternalModel({ endpoints }, upstream),
     fetcher: directFetcher,

@@ -1,4 +1,5 @@
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { withKeysChanged } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
@@ -18,13 +19,14 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
       preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        for (const { index, projection } of projections) {
-          const message = candidatePayload.messages[index];
-          if (projection.kind === 'preserve') message.reasoning_opaque = projection.value;
-          else if (projection.kind === 'remove') delete message.reasoning_opaque;
-        }
-        return candidatePayload;
+        const rewritten = new Map(projections.map(({ index, projection }) => [
+          index,
+          withKeysChanged(payload.messages[index], {
+            reasoning_opaque: projection.kind === 'preserve' ? projection.value : undefined,
+          }),
+        ]));
+        const messages = payload.messages.map((message, index) => rewritten.get(index) ?? message);
+        return withKeysChanged(payload, { messages });
       },
     };
   });

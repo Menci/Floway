@@ -1,27 +1,10 @@
-import type { OpenAIAudioTranscriptionRequest } from './audio.ts';
 import type { FlagDefaults } from './flags.ts';
-import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ProviderPipelines } from './pipeline.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
-import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
-import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
-// Action tag threaded through the OpenAI Responses pipeline. `generate` is a normal
-// streaming /responses turn; `compact` is the summarize-and-replace-history
-// turn that some upstreams expose natively (`/v1/responses/compact`,
-// chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
-// simulate. The same `callOpenAIResponses` method dispatches on this tag, and
-// interceptors are free to flip it (the openai-responses-compact-shim turns 'compact'
-// into 'generate' so the inner upstream call runs an ordinary summarization
-// turn against the SUMMARIZATION_PROMPT).
+// The dispatched action can change independently of the source endpoint's original intent.
 export type OpenAIResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
@@ -46,48 +29,6 @@ export interface Provider {
   instance: ProviderInstance;
 }
 
-export interface ProviderCallResult {
-  response: Response;
-  modelKey: string;
-}
-
-export interface ProviderRerankCallResult extends ProviderCallResult {
-  target: RerankTarget;
-}
-
-// Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
-// protocol frames directly — the provider drives the upstream fetch, parses
-// the SSE wire via @floway-dev/protocols, and emits the typed event stream.
-// `ok: true` optionally carries the raw upstream `Headers` so the source-side
-// `respond` layer can forward them to the downstream client (blocklist in
-// gateway `shared/respond.ts` — hop-by-hop, body framing, cookies). Absent
-// on lifted/synthesized streams that have no upstream Response behind them,
-// matching the same shape on `EventResult`.
-// `ok: false` carries the raw upstream Response verbatim so the gateway
-// boundary can relay status + body + headers unchanged. Non-2xx-but-not-SSE
-// responses throw from the provider as a contract violation (provider always
-// forces stream=true on streaming endpoints).
-export type ProviderStreamResult<TEvent> =
-  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
-  | { ok: false; response: Response; modelKey: string };
-
-// `action: 'generate'` is a normal streaming /responses turn — its frames
-// flow through the per-frame event stream like every other streaming endpoint.
-// `action: 'compact'` is non-streaming — the upstream returns a single
-// `response.compaction` envelope. Some upstreams expose a native compaction
-// endpoint and produce the envelope directly; others synthesize the envelope
-// from a regular /responses turn — both return the typed value rather than a
-// re-parsed synthesized SSE body. The discriminated result tags which branch
-// actually ran so the gateway's shape-lowering can pick between the streaming
-// and value-envelope arms; snapshot mode itself reads `invocation.action` (the
-// post-chain caller intent), not the result tag.
-// The `ok: false` contract is identical to ProviderStreamResult above.
-export type ProviderOpenAIResponsesResult =
-  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; modelKey: string; headers?: Headers }
-  | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
-  | { action: 'compact'; ok: false; response: Response; modelKey: string };
-
 // Per-call options the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.
@@ -105,9 +46,8 @@ export type ProviderOpenAIResponsesResult =
 // The gateway filters the source request through the selected provider
 // instance's `inboundHeaderAllowlist` before constructing this bag. Protocol-owned
 // metadata is carried by its owning invocation boundary and does not widen
-// this provider-level policy. A provider may clone and mutate the bag for
-// request-specific wire shaping, but must not retain the gateway-owned
-// reference past the call.
+// this provider-level policy. Pipeline request shaping uses immutable header-line facts; this bag is the
+// transport fixture and control-call boundary.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
@@ -117,7 +57,7 @@ export interface UpstreamCallOptions {
   // TLS, and CONNECT. Further dispatches after output preserve the measured
   // first-token interval, including internal server-tool continuations.
   // This interval includes data-plane egress and excludes model routing, translation,
-  // and interceptor preparation before dispatch. Candidate iteration clears
+  // and stage preparation before dispatch. Candidate iteration clears
   // both timing anchors on failover, so the recorded interval can be shorter
   // than the latency the client observed.
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
@@ -131,28 +71,7 @@ export interface AnthropicMessagesUpstreamCallOptions extends UpstreamCallOption
 }
 
 export interface ProviderInstance {
-  // Catalog refresh fetches a single resource and never enters the per-request
-  // latency budget, so it takes the per-upstream fetcher directly instead of
-  // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
   getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
-  callAlphaSearch(model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // /v1/completions text completions. Passthrough. Providers whose
-  // upstream doesn't expose /v1/completions set `endpoints.openaiCompletions`
-  // to absent in getProvidedModels, so this method is unreachable for
-  // those upstreams; the rejecting stubs in those providers are pure
-  // defense-in-depth.
-  callOpenAICompletions(model: ProviderModel, body: Omit<OpenAICompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callOpenAIResponses(model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderOpenAIResponsesResult>;
-  callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
-  // count_tokens is non-streaming JSON; the gateway relays the upstream
-  // Response verbatim.
-  callAnthropicMessagesCountTokens(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIEmbeddings(model: ProviderModel, body: Omit<OpenAIEmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIImagesGenerations(model: ProviderModel, body: Omit<OpenAIImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIImagesEdits(model: ProviderModel, request: OpenAIImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIAudioTranscriptions(model: ProviderModel, request: OpenAIAudioTranscriptionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway
@@ -163,8 +82,7 @@ export interface ProviderInstance {
 export interface ProviderModule {
   // Instance factory: capture the record and return closures. Sync — any
   // I/O the provider needs (token refresh, state persistence, catalog
-  // fetch) happens on demand inside the per-request methods on the
-  // returned ProviderInstance.
+  // fetch) happens on demand inside the operation pipelines and the catalog control callback.
   create: (record: UpstreamRecord) => Provider;
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.

@@ -1,11 +1,11 @@
 // Stable identities for every admin-toggleable per-upstream behavior flag.
-// Interceptor code references a flag by id; the dependency goes interceptor
+// Stage code references a flag by id; the dependency goes stage
 // → flag, never the other way. The dashboard owns presentation and translated
 // copy, while this package owns the ids shared by providers and persisted
 // overrides.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
-// mutually exclusive per model: a vendor interceptor translates the
+// mutually exclusive per model: a vendor stage translates the
 // gateway's OpenAI-canonical request and response shape into the vendor's
 // wire dialect; with no vendor flag set, behavior defaults to the OpenAI
 // standard and no vendor rewrite runs.

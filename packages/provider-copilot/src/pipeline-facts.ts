@@ -13,5 +13,6 @@ export interface CopilotRequest extends EmbeddingsRequest {
 }
 export interface CopilotHttpFacts extends HttpRequestFacts {
   'request.copilot.modelKey': string;
+  'request.provider.modelKey': string;
 }
 export type QuotaResponse = HttpResponseFacts & { 'response.copilot.quota': Deferred<unknown> };

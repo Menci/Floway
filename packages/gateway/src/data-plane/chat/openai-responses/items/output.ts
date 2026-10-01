@@ -10,7 +10,7 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
 //
-// One client response can span several upstream calls behind the server-tool
+// One client response can span several upstream calls behind the hosted-tool
 // runtime. The caller mints its envelope id once, and this wrapper applies it
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.

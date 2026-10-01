@@ -62,7 +62,6 @@
 | Package | `packages/dump` | Records pipeline runs and publishes diagnostics. |
 | Package | `packages/gateway` | Composes gateway services. |
 | Package | `packages/http` | Provides HTTP transport primitives. |
-| Package | `packages/interceptor` | Intercepts gateway traffic. |
 | Package | `packages/pipeline` | Runs stages over a fact record. |
 | Package | `packages/platform` | Defines portable runtime contracts. |
 | Package | `packages/protocols` | Defines protocol contracts. |

@@ -1,12 +1,10 @@
 import { trackBackground } from './test-utils/background-tracker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
-import type { DumpStore } from '../src/dump/store-contract.ts';
-import type { StoredDumpRecord } from '../src/dump/types.ts';
 import { handleExecutionRequest } from '../src/execution/handler.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { initExecutionCellNamespace } from '../src/runtime/execution.ts';
 import type { DumpBroker } from '@floway-dev/dump';
-import type { DumpMetadata, DumpRecordId } from '@floway-dev/dump/types';
+import type { StoredDumpRecord, DumpStore, DumpMetadata, DumpRecordId } from '@floway-dev/dump/types';
 import { isReplayableBody } from '@floway-dev/http';
 import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace } from '@floway-dev/platform';
 
@@ -34,8 +32,7 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRe
 // independent of that subsystem. Dump-specific tests install real or recording
 // implementations.
 const noopStore: DumpStore = {
-  async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
-  async put(): Promise<void> { /* noop */ },
+  async put(): Promise<void> {},
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
   async deleteExpiredBatch(): Promise<number> { return 0; },

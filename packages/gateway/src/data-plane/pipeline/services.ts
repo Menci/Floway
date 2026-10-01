@@ -7,14 +7,11 @@
 // behavior and stay outside those values.
 
 import type { AttemptSelector } from './facts.ts';
-import type { RunDump } from '../../dump/run-sink.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { HttpServices } from '@floway-dev/http/pipeline';
 import type { Event, Logger } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
-
-export type RunGatewayCtx = Omit<GatewayCtx, 'dump'> & { readonly dump: RunDump | null };
 
 export interface GatewayServices extends HttpServices {
   readonly recordProtocolFrames: <T extends ProtocolFrame<unknown>>(frames: AsyncIterable<T>) => AsyncIterable<T>;
@@ -26,7 +23,7 @@ export interface GatewayServices extends HttpServices {
 
   /** The request-scoped context the settlement and telemetry stages read. It is a service
    *  and not a fact because it holds live handles — the scheduler, the abort signal. */
-  readonly gateway: RunGatewayCtx;
+  readonly gateway: GatewayCtx;
   /** Turns a selector back into the thing that dials. The resolver is the service and the
    *  selector is the fact: a per-upstream transport is not a fact and is not pinned at the
    *  prologue either, so what is injected is the thing that resolves one and what travels

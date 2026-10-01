@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
 import { resolveAnthropicMessagesReasoningEffort } from '../shared/anthropic-messages-via/reasoning-effort.ts';
@@ -197,9 +196,9 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
 };
 
 // Anthropic Messages system blocks are prompt boundaries; preserve each one
-// as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
-// does not silently merge them. Falls back to the simple string form when
-// the source is already a single-string field.
+// as a separate OpenAI Chat Completions text part so an OpenAI Chat Completions →
+// Anthropic Messages → OpenAI Chat Completions round trip does not merge them.
+// Preserve the simple string form when the source is already a string.
 const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlock[]): string | OpenAIChatCompletionsContentPart[] =>
   typeof system === 'string'
     ? system
@@ -267,7 +266,7 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
 export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
-  // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
+  // backends rejecting `xhigh`/`max`) is the target provider's concern.
   const reasoningEffort = resolveAnthropicMessagesReasoningEffort(payload);
   const jsonSchema = openAiJsonSchemaCoreFromAnthropicMessagesFormat(payload.output_config?.format);
   const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
@@ -279,7 +278,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
     messages: translateAnthropicMessagesInput(payload.messages, payload.system),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
-    stop: klona(payload.stop_sequences),
+    stop: payload.stop_sequences,
     stream: true,
     // Ask the upstream for usage on every streaming chunk, not just the final
     // one. `include_usage` is the OpenAI-standard flag; `continuous_usage_stats`

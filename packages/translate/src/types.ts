@@ -16,7 +16,7 @@ export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>
  *
  * The client's stream preference is intentionally not in this context.
  * Translation always emits `stream: true` on the target payload; the LLM
- * upstream layer enforces SSE streaming and source `respond.ts` boundaries
+ * upstream layer enforces SSE streaming and source protocol edges
  * collect a non-streamed downstream response when the client did not ask
  * for SSE.
  */
@@ -24,35 +24,20 @@ export type TranslationContext<TExtras = unknown> = {
   readonly model: string;
 } & TExtras;
 
-/**
- * A wire-shaped upstream error body handed to `TranslateTrip.apiError`. The
- * pair returns a same-shaped object to rewrite the outbound envelope, or
- * `undefined` to pass it through unchanged. The provider layer's
- * `ApiErrorResult` shape is intentionally not imported here — translate is a
- * leaf below provider, so we express the contract in bare HTTP-response
- * primitives and let the gateway compose it back into an `ApiErrorResult`.
- */
+/** HTTP primitives supplied to a translation pair's optional error rewriter. Provider
+ *  runtime types stay outside this package; the gateway owns the default source envelope. */
 export interface TranslatedApiError {
   readonly status: number;
   readonly headers: Headers;
   readonly body: Uint8Array;
 }
 
-/**
- * What one translation trip hands back: the target payload, an events
- * translator closure mapping target-protocol events into source-protocol
- * events, and an optional upstream-error rewriter.
+/** A translation's immutable target and trip-scoped response translators.
  *
- * The target owns its mutable JSON objects and arrays. Downstream rules and
- * providers can mutate it while the source request and other trips remain
- * live, so pair builders clone values borrowed from their source.
- *
- * `apiError` is optional: when the target upstream returns a non-2xx HTTP
- * body (rather than an SSE stream), the pair may rewrite it into the source
- * protocol's envelope. Returning `undefined` — or omitting the field
- * entirely — passes the upstream body through verbatim, which is what most
- * pairs want.
- */
+ * Source and target values are immutable. Translation rebuilds changed protocol nodes and
+ * shares unchanged subtrees; downstream rules and providers rebuild the paths they change.
+ * An omitted error rewriter, or an undefined result, leaves source-envelope rendering to
+ * the gateway. An explicit result supplies the pair's protocol-specific error mapping. */
 export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
   target: TgtPayload;
   events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;

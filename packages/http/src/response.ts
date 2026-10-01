@@ -19,3 +19,7 @@ export const exchangeResponse = (exchange: HttpResponseExchange): Response =>
     statusText: exchange.statusText,
     headers: exchange.headers.map(([name, value]): [string, string] => [name, value]),
   });
+
+export const discardUpstreamResponse = async (response: Response): Promise<void> => {
+  await response.body?.cancel();
+};

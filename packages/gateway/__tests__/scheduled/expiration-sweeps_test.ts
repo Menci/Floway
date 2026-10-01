@@ -1,7 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
@@ -10,6 +9,7 @@ import type { ApiKey, StoredOpenAIResponsesItem } from '../../src/repo/types.ts'
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
@@ -37,8 +37,7 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
   refreshedAt,
 });
 
-const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  shape: 'edge',
+const dumpRecord = (id: string, completedAt: number): StoredDumpRecord => ({
   meta: {
     id,
     startedAt: completedAt - 1,
@@ -50,18 +49,14 @@ const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
     model: 'gpt-test',
     inputTokens: null,
     outputTokens: null,
-    requestBytes: 0,
-    responseBytes: 0,
+    requestBytes: 1,
+    responseBytes: 1,
     durationMs: 1,
     error: null,
   },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array(), decodedByteLength: 0 },
-  },
-  response: { status: 200, headers: [], body: { type: 'none' } },
+  // One line is enough: what these exercise is the row, its file and the sweep that retires
+  // both, not what a run put in the stream.
+  events: new TextEncoder().encode('{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'),
 });
 
 test('one fair driver drains bounded OpenAI Responses and dump backlogs', async () => {
@@ -287,7 +282,7 @@ test('migration 0066 bounds existing-row discovery and tracks older dump files o
   }
 });
 
-test('expiration backfill rejects malformed legacy dump descriptors with row context', async () => {
+test('expiration backfill rejects malformed run dump descriptors with row context', async () => {
   const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
@@ -304,13 +299,11 @@ test('expiration backfill rejects malformed legacy dump descriptors with row con
     db.run(
       `INSERT INTO dump_records
        (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, NULL, '{}', '[]', NULL, ?, NULL)`,
-      ['key-legacy', recordId, 1_000, JSON.stringify({ key: 'dumps/v1/key-legacy/old.req.gz', type: 'chunks' })],
+       VALUES (?, ?, ?, NULL, '{}', '[]', NULL, NULL, ?)`,
+      ['key-legacy', recordId, 1_000, JSON.stringify({ key: 123, type: 'run' })],
     );
-    // Run 0066 and every migration after it so the schema reaches the present
-    // (incl. columns like `response_upstream_body_descriptor` that the backfill
-    // SQL selects). The malformed descriptor was seeded before the validate
-    // trigger existed, so it survives the migration run.
+    // This malformed run survives edge retirement. Backfill must validate its key before
+    // it can register a file owner.
     let started = false;
     for (const [filename, sql] of migrationSqlByFilename) {
       if (!started) {
@@ -322,7 +315,7 @@ test('expiration backfill rejects malformed legacy dump descriptors with row con
 
     const repo = new SqlRepo(wrapSqlJsDatabase(db));
     await expect(repo.expirationSweeps.backfillCleanupTracking(500)).rejects.toThrow(
-      new RegExp(`Invalid dump record key-legacy/${recordId} request body descriptor during expiration backfill.*type`, 'su'),
+      new RegExp(`Invalid dump record key-legacy/${recordId} response body descriptor during expiration backfill.*key`, 'su'),
     );
   } finally {
     db.close();
@@ -398,18 +391,20 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     const repo = new SqlRepo(db);
     await repo.apiKeys.save(key(now));
     const recordId = '01K00000000000000000ORPH';
-    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
+    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.run.gz`;
+    await db.prepare(
+      `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+       VALUES (?, 'dump-response', ?, 'staged', 0)`,
+    ).bind(fileKey, JSON.stringify(['key-a', recordId])).run();
     await db.prepare(
       `INSERT INTO dump_records
        (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
+       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, NULL, ?)`,
+    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'run' })).run();
     await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
     await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
     await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
-    // Run 0082 and every migration after it so the backfill SQL finds the
-    // columns later migrations added (e.g. the upstream body descriptor from
-    // 0089). The orphan row was seeded before the validate trigger existed.
+    // The run survives later migrations even though its API key was hard-deleted.
     let started = false;
     for (const [filename, sql] of migrationSqlByFilename) {
       if (!started) {
@@ -426,7 +421,7 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     expect(await db.prepare(
       'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
     ).bind(fileKey).first()).toEqual({
-      owner_kind: 'dump-request',
+      owner_kind: 'dump-response',
       owner_key: JSON.stringify(['key-a', recordId]),
       state: 'owned',
     });

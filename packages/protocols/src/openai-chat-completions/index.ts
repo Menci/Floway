@@ -1,5 +1,11 @@
 // OpenAI Chat Completions type definitions (subset needed for translation)
 
+export interface OpenAIChatCompletionsErrorEvent {
+  error: { message: string; type?: string; name?: string; stack?: string; cause?: unknown; target_api?: string };
+}
+
+export type ClientOpenAIChatCompletionsStreamEvent = OpenAIChatCompletionsStreamEvent | OpenAIChatCompletionsErrorEvent;
+
 export interface OpenAIChatCompletionsPayload {
   model: string;
   messages: OpenAIChatCompletionsMessage[];

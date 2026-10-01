@@ -2,46 +2,13 @@ import { expect, test } from 'vitest';
 
 import { fakeMeta } from './test-fixtures.ts';
 import {
-  decodeDumpHeaders,
   decodePersistedDumpMetadata,
-  encodeDumpHeaders,
   encodePersistedDumpMetadata,
 } from '../../src/dump/storage-codec.ts';
-import { dumpCodec } from '@floway-dev/dump/codec';
-
-test('dump storage headers preserve duplicate pairs and their order', () => {
-  const headers: Array<[string, string]> = [
-    ['set-cookie', 'a=1'],
-    ['x-empty', ''],
-    ['set-cookie', 'b=2'],
-  ];
-
-  expect(decodeDumpHeaders(encodeDumpHeaders(headers, 'test headers'), 'test headers')).toEqual(headers);
-});
-
-test('dump broker frames round-trip metadata through the shared schema', () => {
-  const metadata = fakeMeta({
-    upstream: { id: 'upstream-a', name: 'A', kind: 'custom', hue: 42 },
-    error: { kind: 'failed', reason: 'connection closed' },
-  });
-
-  expect(dumpCodec.decode(dumpCodec.encode(metadata))).toEqual(metadata);
-});
-
-test('dump broker frames reject valid JSON with malformed metadata', () => {
-  const frame = {
-    event: 'appended',
-    data: { ...fakeMeta(), status: '200' },
-  };
-
-  expect(() => dumpCodec.decode(JSON.stringify(frame)))
-    .toThrow(/Invalid dump broker frame.*status/su);
-});
 
 // `targetApi` is the target protocol of a translated turn. It round-trips
 // through persisted metadata, and old `meta_json` written before the field
-// existed (or native turns with no target) parses to null — the dashboard
-// renders no upstream tab for those records.
+// existed (or native turns with no target) has no target wire to display.
 test('persisted metadata round-trips targetApi', () => {
   const meta = fakeMeta({ targetApi: 'openaiResponses' });
   const decoded = decodePersistedDumpMetadata(

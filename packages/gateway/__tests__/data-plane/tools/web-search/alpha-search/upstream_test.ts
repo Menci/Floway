@@ -1,5 +1,9 @@
 import { test, vi } from 'vitest';
 
+import { providerEntry } from '../../../../../src/data-plane/pipeline/provider-entry.ts';
+import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { stubProviderPipeline } from '../../../../test-utils/provider-pipeline.ts';
+import { run } from '@floway-dev/pipeline';
 import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
@@ -16,7 +20,7 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
   };
 });
 
-const { resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+const { resolveAlphaSearchCandidate } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
 const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
@@ -26,21 +30,30 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
     upstreamId: 'search-upstream',
     kind,
     inboundHeaderAllowlist,
-    instance: stubProvider({
-      callAlphaSearch: async (_model, _body, _signal, opts) => {
+    pipelines: {
+      alphaSearch: stubProviderPipeline('alphaSearch', async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
         return { response: new Response('{}'), modelKey: 'search-model' };
-      },
-    }),
+      }),
+    },
+    instance: stubProvider(),
   };
   resolvedCandidate = stubModelCandidate({ provider });
-  const dispatcher = await resolveAlphaSearchDispatcher({
+  const dispatcher = await resolveAlphaSearchCandidate({
     config: { upstreamId: provider.upstreamId, model: 'search-model' },
     upstreamIds: null,
     scheduler: promise => { void promise; },
     runtimeLocation: 'TEST',
   });
-  return { dispatcher, observedHeaders: () => observedHeaders };
+  return {
+    dispatcher: async (body: Record<string, unknown>, _signal: AbortSignal | undefined, headers: Headers) => {
+      const pipeline = dispatcher.provider.pipelines.alphaSearch;
+      if (pipeline === undefined) throw new Error('Missing selected Alpha Search pipeline');
+      const entry = providerEntry({ 'route.attempt': { candidateId: 0, upstreamId: 'search-upstream', modelId: 'search-model', flags: [] }, 'ingress.http.headers': [...headers] }, dispatcher, body);
+      const executed = await run(pipeline, entry, { gateway: mockGatewayCtx() });
+      await executed.drain();
+    }, observedHeaders: () => observedHeaders,
+  };
 };
 
 test('Codex Alpha Search receives only its declared turn metadata', async () => {

@@ -199,7 +199,7 @@ describe('OpenAI Responses resource completion', () => {
   });
 
   // The normalizers run on the resolved value, so a tool array the upstream
-  // echoed — or one the server-tool shim reconstructed — is completed like any
+  // echoed — or one the hosted-tool shim reconstructed — is completed like any
   // other. Resolving first and normalizing after is what closes that path.
   it('completes a minimal function tool the upstream echoed back', () => {
     const upstream: OpenAIResponsesResult = {

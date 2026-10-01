@@ -1,9 +1,9 @@
 import type { OpenAIImagesFrames, Fields, OpenAIImagesFacts } from './facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { renderErrorEnvelope, type SseFrame } from '@floway-dev/protocols/common';
+import { type SseFrame } from '@floway-dev/protocols/common';
 import { renderOpenAIImagesResponse, openaiImagesStreamEventToSSEFrame, type CanonicalOpenAIImagesResponse } from '@floway-dev/protocols/openai-images';
 
 const isFrames = (answer: CanonicalOpenAIImagesResponse | OpenAIImagesFrames): answer is OpenAIImagesFrames =>
@@ -51,7 +51,7 @@ export const emitOpenAIImages = defineStage<
 });
 
 const rendered = (answer: OpenAIImagesFacts['response.openaiImages.canonical']): OpenAIImagesFacts['response.openaiImages.rendered'] =>
-  isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
+  isFailure(answer) ? renderFailure(answer, mintedErrorEnvelope).body
     : isFrames(answer) ? renderSSE(answer)
       : renderOpenAIImagesResponse(answer);
 

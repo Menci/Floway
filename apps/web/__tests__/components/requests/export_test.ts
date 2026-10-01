@@ -2,34 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import { exportRecords } from '../../../src/components/requests/export';
 import { redactHeaderValue } from '../../../src/components/requests/header-redact';
-import type { DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/dump/types';
 
 const SECRET = 'Bearer client-secret-token-1234567890abcd';
 const MASK = redactHeaderValue(SECRET);
 
-const record = (id: string): DumpEdgeRecord => ({
-  shape: 'edge',
+const record = (id: string): DumpRecord => ({
   meta: { id, method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1000, status: 200, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1000, error: null },
-  request: { method: 'POST', path: '/v1/chat/completions', headers: [['authorization', SECRET], ['content-type', 'application/json']], body: { encoding: 'utf8', data: '中文 request' } },
-  response: { status: 200, headers: [['set-cookie', SECRET]], body: { type: 'none' }, upstream: { status: 200, headers: [['api-key', SECRET]], body: { type: 'none' } } },
-  capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [['x-api-key', SECRET]], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [['x-goog-api-key', SECRET]], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: true, error: null }, error: null }], response: { body: { encoding: 'base64', data: '/4A=' }, complete: false, error: 'socket reset' } },
+  events: [
+    { type: 'object', fromObjectId: 1, nodes: [[['authorization', SECRET], ['content-type', 'application/json']]] },
+    { type: 'stage.leaved', stageId: 1, facts: { 'response.http.headers': { $: 1 }, 'response.text': '中文 response' } },
+  ].map(event => JSON.stringify(event)).join('\n'),
 });
 
-const redactedRecord = (id: string): DumpEdgeRecord => {
+const redactedRecord = (id: string): DumpRecord => {
   const source = record(id);
-  return {
-    ...source,
-    request: { ...source.request, headers: [['authorization', MASK], ['content-type', 'application/json']] },
-    response: { ...source.response, headers: [['set-cookie', MASK]], upstream: { ...source.response.upstream!, headers: [['api-key', MASK]] } },
-    capture: {
-      ...source.capture!,
-      exchanges: [{
-        ...source.capture!.exchanges[0]!,
-        request: { ...source.capture!.exchanges[0]!.request, headers: [['x-api-key', MASK]] },
-        response: { ...source.capture!.exchanges[0]!.response!, headers: [['x-goog-api-key', MASK]] },
-      }],
-    },
-  };
+  return { ...source, events: `${source.events.replace(SECRET, MASK)}\n` };
 };
 
 describe('request export', () => {
@@ -43,7 +31,7 @@ describe('request export', () => {
     expect(new TextDecoder().decode(new Uint8Array(await exportRecords([record('one')], true).arrayBuffer()))).not.toContain(SECRET);
   });
 
-  it('preserves raw bytes, completeness and errors in combined JSON', async () => {
+  it('preserves facts and protocol records in combined JSON', async () => {
     const records = [record('one'), record('two')];
     expect(JSON.parse(await exportRecords(records, false).text())).toEqual({ format: 'floway-request-dump', version: 1, records: [redactedRecord('one'), redactedRecord('two')] });
   });

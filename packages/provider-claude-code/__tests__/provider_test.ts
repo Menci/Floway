@@ -4,9 +4,10 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
+import { getFailureFacts, type Event } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -175,17 +176,86 @@ describe('createClaudeCodeProvider — factory surface', () => {
   });
 });
 
-describe('createClaudeCodeProvider — callAnthropicMessages routes through chain', () => {
+describe('createClaudeCodeProvider — Messages operation stages', () => {
+  test.each([false, true])('the actual Messages pipeline preserves shaped=%s content and dated model identity', async shaped => {
+    const provider = createClaudeCodeProvider(currentRecord);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    const payload = {
+      max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }],
+      ...(shaped ? { system: [{ type: 'text' as const, text: "You are Claude Code, Anthropic's official CLI for Claude." }], metadata: { user_id: userId } } : {}),
+    };
+    const result = await collectChatProviderPipeline(provider, 'anthropicMessages', sonnetProviderModel, payload, undefined, shaped ? cliClientCallOpts() : noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.facts['response.provider.called']).toBe(true);
+    expect(result.facts['response.provider.modelKey']).toBe('claude-sonnet-4-5-20250929');
+    expect(result.frames.some(frame => frame.type === 'event' && frame.event.type === 'message_start')).toBe(true);
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
+    expect(body.model).toBe('claude-sonnet-4-5-20250929');
+    expect(body.stream).toBe(true);
+    expect(body.system).toHaveLength(shaped ? 1 : 3);
+    if (shaped) expect(body.metadata.user_id).toBe(userId);
+    else expect(body.system[0]!.text).toMatch(/^x-anthropic-billing-header:/);
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer at_cached');
+    expect(new Headers(init.headers).get('anthropic-beta')).toEqual(shaped ? 'oauth-2025-04-20' : expect.stringContaining('claude-code-20250219'));
+  });
+
+  test('production session identity derives from the original user turn before system hoisting', async () => {
+    const provider = createClaudeCodeProvider(currentRecord);
+    const bodies: WireAnthropicMessagesPayload[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      bodies.push(await readJsonRequest(init!) as WireAnthropicMessagesPayload);
+      return sseResponse();
+    });
+    for (const prompt of ['What is the capital of France?', 'Who wrote The Great Gatsby?']) {
+      await collectChatProviderPipeline(provider, 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, system: 'Shared system instructions', messages: [{ role: 'user', content: prompt }] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    }
+    const ids = bodies.map(body => (JSON.parse(body.metadata.user_id) as { session_id: string }).session_id);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(bodies.every(body => JSON.stringify(body.messages[0]).includes('Shared system instructions'))).toBe(true);
+  });
+
+  test.each([200, 403])('finite body readers preserve an original stream failure at status%s', async status => {
+    const original = new Error('Claude body broke');
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(original); } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status, headers: { 'content-type': 'application/json' } }));
+    const events: Event[] = [];
+    const caught = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions(), { dump: event => { events.push(event); } }).catch((error: unknown) => error);
+    expect(caught).toBe(original);
+    expect(getFailureFacts(caught)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'claude-sonnet-4-5-20250929' });
+    expect(events.find(event => event.type === 'stage.failed')).toMatchObject({ error: original });
+  });
+
+  test('observing a JSON error preserves its original UTF8 BOM bytes', async () => {
+    const body = { error: { type: 'permission_error', message: 'A beta feature is unavailable' } };
+    const bytes = new TextEncoder().encode(`\uFEFF${JSON.stringify(body)}`);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 403, headers: { 'content-type': 'application/json', 'x-upstream': 'retained' } }));
+    const result = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.facts['response.claudeCode.failureBody']).toEqual(body);
+    expect(new Uint8Array(await result.response!.arrayBuffer())).toEqual(bytes);
+  });
+
+  test('the Messages pipeline preserves a complete terminal refusal while recording state persistence', async () => {
+    const body = { error: { type: 'permission_error', message: 'OAuth authentication is currently not allowed for this organization' }, diagnostic: 'x'.repeat(800) };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status: 403, headers: { 'x-upstream': 'retained' } }));
+    const result = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.output).toBeNull();
+    expect(result.response?.status).toBe(403);
+    expect(result.response?.headers.get('x-upstream')).toBe('retained');
+    expect(await result.response!.json()).toEqual(body);
+    expect(result.facts['response.claudeCode.failureBody']).toEqual(body);
+    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.state).toBe('refresh_failed');
+  });
+
   test('unshaped request runs the re-mimicry chain (3-block system, pinned UA, metadata.user_id)', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.instance.callAnthropicMessages(
+    await collectChatProviderPipeline(instance, 'anthropicMessages',
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      noopAnthropicMessagesUpstreamCallOptions(),
-    );
+      noopAnthropicMessagesUpstreamCallOptions());
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
@@ -207,7 +277,7 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
-    await instance.instance.callAnthropicMessages(
+    await collectChatProviderPipeline(instance, 'anthropicMessages',
       sonnetProviderModel,
       {
         max_tokens: 16,
@@ -216,8 +286,7 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
         metadata: { user_id: userId },
       },
       undefined,
-      cliClientCallOpts(),
-    );
+      cliClientCallOpts());
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
@@ -242,12 +311,11 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.instance.callAnthropicMessages(
+    await collectChatProviderPipeline(instance, 'anthropicMessages',
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
-    );
+      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) });
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;

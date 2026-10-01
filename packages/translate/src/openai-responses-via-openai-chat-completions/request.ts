@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
@@ -89,8 +88,8 @@ const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | und
   // After allowed_tools selection, Chat Completions can represent only flat
   // function and custom declarations. Custom tools are wrapped as functions
   // and recorded so response events can restore their freeform shape. The
-  // server-tool shim rewrites hosted web_search declarations to ordinary
-  // function tools before this translation, so retained shim tools need no
+  // hosted-tools stages rewrite web_search declarations to ordinary
+  // function tools before this translation, so retained hosted tools need no
   // special handling here.
   const out: OpenAIChatCompletionsTool[] = [];
 
@@ -102,7 +101,7 @@ const translateOpenAIResponsesTools = (tools: OpenAIResponsesTool[] | null | und
           name: tool.name,
           // OpenAI Responses spells "unspecified" as an omitted key or an explicit
           // `null`; OpenAI Chat Completions has only the omitted-key spelling.
-          ...(tool.parameters == null ? {} : { parameters: klona(tool.parameters) }),
+          ...(tool.parameters == null ? {} : { parameters: tool.parameters }),
           ...(tool.strict == null ? {} : { strict: tool.strict }),
           ...(tool.description ? { description: tool.description } : {}),
         },
@@ -140,7 +139,7 @@ const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['
   if (text === null) return null;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
   // absence into an explicit OpenAI Chat Completions `response_format: null`.
-  const format = klona(text.format);
+  const format = text.format;
   if (!Object.hasOwn(text, 'format') || format === undefined) return undefined;
   if (format === null) return null;
   // OpenAI Responses API uses a flat json_schema shape
@@ -290,7 +289,7 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     stream: true,
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
-    ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
+    ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
     ...(responseFormat !== undefined ? { response_format: responseFormat } : {}),

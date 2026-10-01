@@ -1,5 +1,6 @@
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
-import type { GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { withIndexesChanged, withKeysChanged } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiGenerateContentBlobLocation {
   readonly contentIndex: number;
@@ -32,12 +33,13 @@ export const analyzeGeminiGenerateContentAffinity = async (
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
       preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        if (candidatePayload.contents === undefined) return candidatePayload;
+        const contents = payload.contents;
+        if (contents === undefined) return payload;
         const byContent = Map.groupBy(projections, item => item.location.contentIndex);
         const emptiedByAffinity = new Set<number>();
+        const rewritten = new Map<number, GeminiGenerateContentContent>();
         for (const [contentIndex, contentProjections] of byContent) {
-          const content = candidatePayload.contents[contentIndex];
+          const content = contents[contentIndex];
           const replacements = new Map<number, GeminiGenerateContentPart | null>();
           for (const { location, projection } of contentProjections) {
             const part = content.parts[location.partIndex];
@@ -45,19 +47,19 @@ export const analyzeGeminiGenerateContentAffinity = async (
             if (projection.kind === 'preserve') {
               replacements.set(location.partIndex, { ...part, thoughtSignature: projection.value });
             } else {
-              const replacement = { ...part };
-              delete replacement.thoughtSignature;
+              const replacement = withKeysChanged(part, { thoughtSignature: undefined });
               replacements.set(location.partIndex, hasPartContent(replacement) ? replacement : null);
             }
           }
-          content.parts = content.parts.flatMap((part, partIndex) => {
-            const replacement = replacements.get(partIndex);
-            return replacement === undefined ? [part] : replacement === null ? [] : [replacement];
-          });
-          if (content.parts.length === 0) emptiedByAffinity.add(contentIndex);
+          const parts = withIndexesChanged(content.parts, replacements);
+          if (parts.length === 0) emptiedByAffinity.add(contentIndex);
+          rewritten.set(contentIndex, withKeysChanged(content, { parts }));
         }
-        candidatePayload.contents = candidatePayload.contents.filter((_content, contentIndex) => !emptiedByAffinity.has(contentIndex));
-        return candidatePayload;
+        return withKeysChanged(payload, {
+          contents: contents
+            .map((content, contentIndex) => rewritten.get(contentIndex) ?? content)
+            .filter((_content, contentIndex) => !emptiedByAffinity.has(contentIndex)),
+        });
       },
     };
   });

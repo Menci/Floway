@@ -63,14 +63,15 @@ describe('OpenAI Images usage', () => {
 });
 
 describe('OpenAI Images failures', () => {
-  test('an upstream error object is what the client is sent, and anything else becomes the gateway envelope', () => {
+  test('an upstream error object yields its message, and the gateway envelope carries the gateway-s', () => {
+    // Which of the two a client is actually sent is `renderFailure`'s decision, over all three
+    // tiers at once; what this protocol owns is reading an upstream's words and writing its own.
     const upstream = { error: { message: 'Your request was rejected', type: 'image_generation_user_error', code: 'moderation_blocked' } };
 
     expect(upstreamErrorMessage(upstream)).toBe('Your request was rejected');
-    expect(renderErrorEnvelope('Your request was rejected', upstream)).toBe(upstream);
 
     expect(upstreamErrorMessage('upstream is down')).toBeUndefined();
-    expect(renderErrorEnvelope('Model gpt-image-1 is not available on any configured upstream.', undefined))
+    expect(renderErrorEnvelope('Model gpt-image-1 is not available on any configured upstream.'))
       .toEqual({ error: { message: 'Model gpt-image-1 is not available on any configured upstream.', type: 'api_error' } });
   });
 });

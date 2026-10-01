@@ -273,7 +273,7 @@ test('simple user message → string content', async () => {
   assertEquals(result.messages.length, 1);
   assertEquals(result.messages[0].role, 'user');
   // Last message of the request gets promoted to a single text block with a
-  // cache breakpoint by applyLastMessageCacheBreakpoint.
+  // cache breakpoint by withLastMessageCacheBreakpoint.
   assertEquals(result.messages[0].content, [{ type: 'text', text: 'Hello', cache_control: { type: 'ephemeral' } }]);
 });
 

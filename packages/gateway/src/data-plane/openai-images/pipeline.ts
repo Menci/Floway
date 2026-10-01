@@ -7,7 +7,7 @@ import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
-import { compose, type Pipeline } from '@floway-dev/pipeline';
+import { compose, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIImagesRequest } from '@floway-dev/protocols/openai-images';
 
 export const openaiImagesServePipeline = (request: CanonicalOpenAIImagesRequest): Pipeline<OpenAIImagesServeEntry, OpenAIImagesServeExit> =>
@@ -15,11 +15,15 @@ export const openaiImagesServePipeline = (request: CanonicalOpenAIImagesRequest)
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, 'response.openaiImages.streamedUsage'),
     serializeClientJson('response.openaiImages.rendered'),
     emitOpenAIImages,
-    resolveCandidates(narrowing(request)),
-    failover({
-      failed: handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
-      owns: ['response.http.body'],
-      pendingUsage: 'response.openaiImages.streamedUsage',
-    }),
-    callOpenAIImagesUpstream,
+    ...openaiImagesModelStages(request),
   ]);
+
+export const openaiImagesModelStages = (request: Pick<CanonicalOpenAIImagesRequest, 'operation'>, dispatchStages: readonly Stage[] = [callOpenAIImagesUpstream]): readonly Stage[] => [
+  resolveCandidates(narrowing(request)),
+  failover({
+    failed: handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
+    owns: ['response.http.body'],
+    pendingUsage: 'response.openaiImages.streamedUsage',
+  }),
+  ...dispatchStages,
+];

@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
@@ -42,7 +41,7 @@ export const toOpenAIChatCompletionsReasoningItem = (item: OpenAIChatCompletions
 });
 
 export const addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection = (projection: OpenAIChatCompletionsReasoningProjection, item: OpenAIChatCompletionsReasoningSourceItem): void => {
-  projection.items.push({ ...toOpenAIChatCompletionsReasoningItem(item), summary: klona(item.summary) });
+  projection.items.push({ ...toOpenAIChatCompletionsReasoningItem(item), summary: item.summary });
 
   const text = item.summary.map(part => part.text).join('');
   if (projection.text === undefined && text) projection.text = text;
@@ -82,7 +81,7 @@ export const translateOpenAIChatCompletionsReasoningItems = <T extends OpenAIRes
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L59-L104
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1322-L1355
   const translated = reasoningItems.flatMap(item => (hasReadableSummary(item)
-    ? [{ ...toOpenAIResponsesReasoningItem<T>(item), summary: klona(item.summary ?? []) } as T]
+    ? [{ ...toOpenAIResponsesReasoningItem<T>(item), summary: item.summary ?? [] } as T]
     : []));
   return translated.length > 0 ? translated : null;
 };

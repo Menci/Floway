@@ -1,4 +1,4 @@
-import { classifyCodexHttpResponse, classifyCodexUnauthorizedResponse, decodeCodexUpstreamError } from '../fetch.ts';
+import { classifyCodexUnauthorizedResponse, decodeCodexUpstreamError, writeCodexQuotaObservation } from '../backend.ts';
 import { codexCall, type CodexHttpFacts, type CodexOperation, type CodexPipelineConfig } from '../pipeline-facts.ts';
 import { exchangeResponse, takeHttpResponse, type HttpResponseFacts } from '@floway-dev/http/pipeline';
 import { defer, defineStage, move, setRelease, type Deferred } from '@floway-dev/pipeline';
@@ -22,12 +22,18 @@ export const observeCodexResponse = (config: CodexPipelineConfig, operation: Cod
     let classified: Response;
     let failureBody: unknown = null;
     if (exchange.status === 401) {
-      const parsed = decodeCodexUpstreamError(await response.text());
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const parsed = decodeCodexUpstreamError(await response.text());
       failureBody = parsed.body;
+      if (call.account.refresh_token === null) pending.push(call.effects.persistTerminalState('session_terminated', parsed.message));
       classified = await classifyCodexUnauthorizedResponse(call, response, parsed);
     } else {
-      classified = await classifyCodexHttpResponse({ ...call, call: { ...call.call, waitUntil: work => { pending.push(work); } } }, response, operation === 'alphaSearch' ? 'always' : 'when-present');
+      classified = response;
+      if (response.ok || response.status === 429) {
+        const policy = operation === 'alphaSearch' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? 'always' : 'when-present';
+        const work = writeCodexQuotaObservation(call, response, response.status === 429, policy);
+        if (work !== null) pending.push(work);
+      }
     }
     const retained = classified === response ? exchange : takeHttpResponse(classified);
     return move({ ...back, 'response.http.exchange': retained, 'response.http.body': retained.body, 'response.codex.background': defer(Promise.all(pending)), 'response.codex.failureBody': failureBody });

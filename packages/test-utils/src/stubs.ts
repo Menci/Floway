@@ -1,11 +1,7 @@
 import { testFetcher } from './mock-fetch.ts';
 import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type AnthropicMessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
-// No-op UpstreamCallOptions factory for tests calling provider methods
-// directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
-// intercept; waitUntil drops the promise (the runtime would have absorbed it
-// in production). The Headers bag is per-call so tests that mutate it do not
-// bleed state across cases.
+// The runtime fetch spy remains visible behind replayable bodies, and each fixture owns its headers.
 export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
   fetcher: testFetcher,
   waitUntil: () => {},
@@ -20,10 +16,7 @@ export const noopAnthropicMessagesUpstreamCallOptions = (overrides: Partial<Anth
   ...overrides,
 });
 
-// Provider-side shape: what `getProvidedModels` returns and what every
-// `provider.callXxx` takes at dispatch time. Interceptor boundary ctx types
-// (Copilot / Codex / Claude Code) also use this shape, so interceptor tests
-// that build a ctx by hand use `stubProviderModel` directly.
+// Catalog metadata is normalized into portable immutable facts at pipeline entry.
 export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): ProviderModel => ({
   id: 'test-model',
   upstreamModelId: 'test-model',
@@ -78,24 +71,13 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
-  callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),
-  callOpenAICompletions: overrides.callOpenAICompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAICompletions was called'))),
-  callOpenAIChatCompletions: overrides.callOpenAIChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIChatCompletions was called'))),
-  callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubProvider.callOpenAIResponses was called'))),
-  callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessages was called'))),
-  callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessagesCountTokens was called'))),
-  callOpenAIEmbeddings: overrides.callOpenAIEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callOpenAIEmbeddings was called'))),
-  callOpenAIImagesGenerations: overrides.callOpenAIImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesGenerations was called'))),
-  callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesEdits was called'))),
-  callOpenAIAudioTranscriptions: overrides.callOpenAIAudioTranscriptions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIAudioTranscriptions was called'))),
-  callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubProvider.callRerank was called'))),
 });
 
 // Stitches together a candidate whose `model.providerModels` map carries an
 // entry under the wired provider's upstream id — that's what
 // `providerModelOf(candidate)` resolves to at dispatch time. The
 // `enabledFlags` / `providerData` shortcuts populate that ProviderModel
-// directly — the common case for interceptor tests that just need a flag set
+// directly — the common case for stage tests that just need a flag set
 // for the resolver's own upstream key. Any `model.providerModels` supplied
 // through `overrides.model` replaces both the default entry and those
 // shortcuts wholesale.

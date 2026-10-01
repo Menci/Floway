@@ -6,7 +6,7 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 //
 // 1. `output_config.effort` — gateway-canonical OpenAI-style override; passes
 //    through verbatim. Per-upstream enum acceptance is the target
-//    interceptor's concern.
+//    provider's concern.
 // 2. `thinking.type === 'disabled'` — emit the `'none'` sentinel.
 // 3. `thinking.type === 'enabled'` / `'adaptive'` — caller asked for thinking
 //    but did not pin an effort. Emit `'medium'` (the OpenAI/Azure default

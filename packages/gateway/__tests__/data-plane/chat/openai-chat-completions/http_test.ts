@@ -1,5 +1,5 @@
 import { type Context, Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
@@ -8,10 +8,11 @@ import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -108,11 +109,12 @@ const makeCandidate = (overrides: {
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
+  const calls = { callOpenAIChatCompletions: overrides.callOpenAIChatCompletions };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: stubChatProviderPipelines(calls), instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
@@ -358,7 +360,7 @@ test('POST /v1/chat/completions renders the OpenAI-shaped model-unsupported 400 
   installRepo();
   // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
   // the openaiChatCompletionsTarget picker rejects it (its preference list is
-  // `openai-chat-completions` > `messages` > `responses`), leaving zero viable
+  // `openaiChatCompletions` > `anthropicMessages` > `openaiResponses`), leaving zero viable
   // candidates, and with sawModel=true the serve renders model-unsupported
   // as a 400.
   queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
@@ -464,4 +466,71 @@ test('POST /v1/chat/completions leaves TTFT absent on a failure before output', 
   assertEquals(dumpStubs.stored.length, 1);
   const meta = dumpStubs.stored[0]!.record.meta;
   assertEquals(meta.ttftMs, null);
+});
+
+test('actual HTTP error-body read failure preserves its original error and called observation', async () => {
+  const repo = installRepo();
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const fault = new Error('upstream error body read failed', { cause: new TypeError('socket reading failed') });
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const call = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: false, modelKey: 'called-model',
+    response: new Response(new ReadableStream<Uint8Array>({ pull: controller => controller.error(fault) }), { status: 503, headers: { 'content-type': 'application/json' } }),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions: call })]);
+  const response = await makeApp(undefined, { dumpRetentionSeconds: 3600 }).request('/v1/chat/completions', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  expect(response.status).toBe(500);
+  expect(await response.json()).toMatchObject({ error: { name: fault.name, message: fault.message, stack: fault.stack, cause: { name: 'TypeError', message: 'socket reading failed' } } });
+  await flushBackground();
+  expect(call).toHaveBeenCalledOnce();
+  expect(logged).toHaveBeenCalledOnce();
+  expect(logged).toHaveBeenCalledWith(fault);
+  logged.mockRestore();
+  expect(dumps.stored).toHaveLength(1);
+  expect(dumps.stored[0]!.record.meta).toMatchObject({ status: 500, error: { kind: 'failed', reason: fault.message } });
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(1);
+  expect(usage[0]).toMatchObject({ modelKey: 'called-model', requests: 1, metrics: [] });
+  expect(await repo.performance.listAll()).toMatchObject([{ requests: 1, errorsNoOutput: 1, errorsWithOutput: 0 }]);
+});
+
+test('actual HTTP cancellation before the first client frame releases the called provider and settles failure once', async () => {
+  const repo = installRepo();
+  let unblock!: () => void;
+  const gate = new Promise<void>(resolve => { unblock = resolve; });
+  let closed!: () => void;
+  const stopped = new Promise<void>(resolve => { closed = resolve; });
+  let started = false;
+  let signal: AbortSignal | undefined;
+  const call = vi.fn(async (_model: unknown, _body: unknown, calledSignal?: AbortSignal): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    signal = calledSignal;
+    return ({
+      ok: true, modelKey: 'called-model', events: (async function* () {
+        started = true;
+        try {
+          await gate;
+          yield eventFrame(makeOpenAIChatCompletionsEvents()[1]!);
+        } finally { closed(); }
+      })(),
+    });
+  });
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions: call })]);
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  expect(response.status).toBe(200);
+  expect(started).toBe(true);
+  if (response.body === null) throw new Error('Streaming response has no client body');
+  await response.body.cancel();
+  expect(signal?.aborted).toBe(true);
+  unblock();
+  await stopped;
+  await flushBackground();
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(await repo.usage.listAll()).toMatchObject([{ modelKey: 'called-model', requests: 1 }]);
+  expect(await repo.performance.listAll()).toMatchObject([{ requests: 1, errorsNoOutput: 1, errorsWithOutput: 0 }]);
 });

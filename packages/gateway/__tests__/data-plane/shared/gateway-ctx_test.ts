@@ -56,7 +56,7 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'] }));
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -69,7 +69,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -82,7 +82,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -94,7 +94,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -106,7 +106,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -119,7 +119,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -134,7 +134,7 @@ describe('createGatewayCtxFromHono', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -150,7 +150,7 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     const scheduler: BackgroundScheduler = () => {};
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: scheduler });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: scheduler, dump: null });
       return c.text('ok');
     });
     await app.request('/test');
@@ -166,21 +166,21 @@ describe('createGatewayCtxFromHono', () => {
     app.get('/cap-only', c => {
       // Unrestricted key (apiKey.upstreamIds null) under a capped user.
       c.set('user', buildUser({ upstreamIds: ['up-a'] }));
-      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null }).upstreamIds;
       return c.text('ok');
     });
     app.get('/both', c => {
       // Per-key whitelist further narrows the user cap and preserves per-key order.
       c.set('user', buildUser({ upstreamIds: ['up-a', 'up-b'] }));
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
-      collected.both = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.both = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null }).upstreamIds;
       return c.text('ok');
     });
     app.get('/key-only', c => {
       // Uncapped user with a per-key whitelist falls through to the per-key
       // list verbatim.
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-x'] }));
-      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER, dump: null }).upstreamIds;
       return c.text('ok');
     });
     await app.request('/cap-only');

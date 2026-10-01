@@ -10,7 +10,7 @@
 // effort metadata. The container is admitted if `data` is an array.
 
 import type { CustomUpstreamConfig } from './config.ts';
-import { customFetchModels } from './fetch.ts';
+import { customFetchModels } from './control-http.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 

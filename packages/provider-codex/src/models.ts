@@ -163,7 +163,7 @@ export const codexModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 'p
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
-// downstream interceptors can read the effective set without re-resolving.
+// downstream stages can read the effective set without re-resolving.
 export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
   const contextWindow = assertContextWindow(raw.context_window, raw.id, 'context_window');
   const maxContextWindow = raw.max_context_window === undefined

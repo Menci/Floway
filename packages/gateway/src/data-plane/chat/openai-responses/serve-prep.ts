@@ -1,23 +1,11 @@
-import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
-import { openaiResponsesTarget } from './attempt.ts';
-import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
-import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import type { OpenAIResponsesStatefulStore } from './items/store.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
-import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
-import { selectAffinityCandidates } from '../shared/affinity/index.ts';
-import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
-// resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
-// 400 body verbatim — clients (codex) compare it byte-for-byte against
-// upstream OpenAI's `previous_response_not_found` envelope, so the rendering
-// stays at the entry boundary instead of being folded into the generic
-// ChatServeFailure renderer.
+// resolve. The stage that hydrates catches this and answers with the
+// OpenAI-shaped 400 body verbatim — clients (codex) compare it byte-for-byte
+// against upstream OpenAI's `previous_response_not_found` envelope, so what
+// they read is the upstream's own wording rather than this gateway's.
 //
 // Verbatim payload cross-verified from real upstream captures:
 // - https://github.com/cline/cline/issues/9399
@@ -38,7 +26,7 @@ export class PreviousResponseNotFoundError extends Error {
 // then drops `previous_response_id` from the payload (the snapshot id is a
 // gateway concept and never reaches the upstream wire). Native-entry only:
 // translated payloads coming in from another protocol's attempt never carry
-// `previous_response_id`, so this prep runs in serve and not in attempt.
+// `previous_response_id`, so this runs above the fork and never on a wire.
 export const expandPreviousResponseId = async (
   payload: CanonicalOpenAIResponsesPayload,
   store: OpenAIResponsesStatefulStore,
@@ -57,64 +45,4 @@ export const expandPreviousResponseId = async (
       ...payload.input,
     ],
   };
-};
-
-export type OpenAIResponsesServePlan =
-  | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> }
-  | {
-    readonly kind: 'ready';
-    readonly affinitySelection: AffinityCandidateSelection<CanonicalOpenAIResponsesPayload>;
-    readonly privatePayloads: ReadonlyMap<string, unknown>;
-    readonly candidates: readonly ModelCandidate[];
-  };
-
-// Runs the native source preparation both `openaiResponsesServe.generate` and
-// `openaiResponsesServe.compact` need before dispatching to `openaiResponsesAttempt`:
-// expand any `previous_response_id`, load and hydrate stored items, prepare
-// affinity, stage the user input, and return the selected candidate list.
-// Returns a rendered failure result when no candidate is viable so the
-// caller can surface it directly without re-deriving the model-error
-// branch. The caller iterates the candidates — a successful attempt is the
-// final answer, a per-candidate failure falls through to the next entry.
-export const prepareOpenAIResponsesServePlan = async (args: {
-  readonly payload: CanonicalOpenAIResponsesPayload;
-  readonly ctx: ChatGatewayCtx;
-}): Promise<OpenAIResponsesServePlan> => {
-  const { payload, ctx } = args;
-  const store = ctx.store;
-  const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
-    upstreamIds: ctx.upstreamIds,
-    model: prepared.model,
-    kind: 'chat',
-    scheduler: ctx.backgroundScheduler,
-    runtimeLocation: ctx.runtimeLocation,
-  });
-  const viable = candidates.filter(c => openaiResponsesTarget.canServe(c.model.endpoints));
-  await store.loadInputItems(prepared.input, payload.input);
-  let hydrated: ReturnType<typeof hydrateOpenAIResponsesPayload>;
-  try {
-    hydrated = hydrateOpenAIResponsesPayload(prepared, store);
-  } catch (error) {
-    const failure = tryCatchChatServeFailure<OpenAIResponsesServeFailure>(error);
-    if (failure === null) throw error;
-    return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
-  }
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const selection = selectAffinityCandidates(viable, affinity);
-  if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
-  // Stage the user-supplied input from the original payload — not the
-  // expansion's `item_reference` prefix — so the next-turn snapshot picks
-  // up the new user items in addition to the prior snapshot history.
-  // Runs after the affinity walk so any `item_reference` in user-supplied
-  // input has its target row loaded.
-  await store.stageInputItems(payload.input);
-
-  if (selection.candidates.length === 0) {
-    return {
-      kind: 'failure',
-      result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
-    };
-  }
-  return { kind: 'ready', affinitySelection: selection, privatePayloads: hydrated.privatePayloads, candidates: selection.candidates };
 };

@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import {
   translateAnthropicMessagesViaOpenAIChatCompletions,
@@ -15,7 +15,6 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { assertEquals } from '@floway-dev/test-utils';
 
 const schema = { type: 'object', properties: { x: { type: 'string' } } };
 const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
@@ -82,18 +81,34 @@ const translations: Array<{ name: string; source: unknown; translate: () => Prom
   { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16 })).target },
 ];
 
-test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
-  const original = structuredClone(source);
-  const first = await translate();
-  const second = await translate();
-  const sourceObjects = objectsIn(source);
-  const firstObjects = objectsIn(first);
-  const secondObjects = objectsIn(second);
+const freezeJson = <T>(value: T): T => {
+  for (const object of objectsIn(value)) Object.freeze(object);
+  return value;
+};
 
-  assertEquals(source, original);
-  for (const object of firstObjects) assertEquals(sourceObjects.has(object), false);
-  for (const object of secondObjects) {
-    assertEquals(sourceObjects.has(object), false);
-    assertEquals(firstObjects.has(object), false);
-  }
+test.each(translations)('$name preserves frozen sources and shares unchanged schemas across trips', async ({ source, translate }) => {
+  freezeJson(source);
+  const original = JSON.stringify(source);
+  const first = freezeJson(await translate());
+  const second = freezeJson(await translate());
+  const sourceObjects = objectsIn(source);
+  const shared = [...objectsIn(first)].filter(object => sourceObjects.has(object));
+  expect(shared).toContain(schema);
+  expect(objectsIn(second).has(schema)).toBe(true);
+  expect(JSON.stringify(source)).toBe(original);
+
+  const firstBody = first as { tools: Array<Record<string, unknown>> };
+  const tool = firstBody.tools[0];
+  const nested = tool.function as Record<string, unknown> | undefined;
+  const field = nested ? 'parameters' : 'input_schema' in tool ? 'input_schema' : 'parameters';
+  const originalSchema = (nested ?? tool)[field] as typeof schema;
+  expect(() => { originalSchema.properties.x.type = 'number'; }).toThrow(TypeError);
+  const rewrittenSchema = { ...originalSchema, properties: { ...originalSchema.properties, providerOnly: { type: 'boolean' } } };
+  const rewrittenTool = nested ? { ...tool, function: { ...nested, [field]: rewrittenSchema } } : { ...tool, [field]: rewrittenSchema };
+  const rewritten = { ...firstBody, tools: [rewrittenTool, ...firstBody.tools.slice(1)] };
+  expect(rewritten.tools[0]).not.toBe(tool);
+  expect(originalSchema).toBe(schema);
+  expect(originalSchema.properties).not.toHaveProperty('providerOnly');
+  expect(JSON.stringify(source)).toBe(original);
+  expect(objectsIn(second).has(schema)).toBe(true);
 });

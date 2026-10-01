@@ -7,8 +7,8 @@ it('redacts shared header string definitions while preserving unrelated payloads
   const secret = 'Bearer shared-token'.repeat(100);
   const events = [
     { type: 'object', fromObjectId: 1, nodes: [[{ $: 2 }, { $: 4 }], ['authorization', { $: 3 }], secret, ['content-type', 'application/json']] },
-    { type: 'stage.entered', stageId: 1, name: 'entry', parentStageId: null, facts: { 'ingress.http.headers': { $: 1 }, 'request.payload': { $: 5 } } },
     { type: 'object', fromObjectId: 5, nodes: [{ text: 'payload remains exact' }] },
+    { type: 'stage.entered', stageId: 1, name: 'entry', parentStageId: null, facts: { 'ingress.http.headers': { $: 1 }, 'request.payload': { $: 5 } } },
     { type: 'stage.leaved', stageId: 1, facts: { 'response.http.headers': { $: 1 } } },
   ];
   const source = events.map(event => `${JSON.stringify(event)}\n`).join('');
