@@ -14,7 +14,7 @@ import type { Event, Logger } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-export type RunGatewayCtx = GatewayCtx & { readonly dump: RunDump | null };
+export type RunGatewayCtx = Omit<GatewayCtx, 'dump'> & { readonly dump: RunDump | null };
 
 export interface GatewayServices extends HttpServices {
   readonly recordProtocolFrames: <T extends ProtocolFrame<unknown>>(frames: AsyncIterable<T>) => AsyncIterable<T>;
