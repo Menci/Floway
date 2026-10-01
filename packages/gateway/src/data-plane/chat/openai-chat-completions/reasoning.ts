@@ -4,7 +4,18 @@ import { openaiChatCompletionsErrorPayloadMessage, toFlowayOpenAIChatCompletions
 export const DOWNSTREAM_CHAT_COMPLETIONS_REASONING: ChatCompletionsReasoningFormat = { text: 'reasoning', data: 'reasoning-opaque' };
 export const downstreamEndpointsFor = (endpoints: ModelEndpoints): ModelEndpoints => {
   if (endpoints.openaiChatCompletions === undefined && endpoints.openaiResponses === undefined && endpoints.anthropicMessages === undefined) return { ...endpoints };
-  return { ...endpoints, openaiChatCompletions: { reasoning: DOWNSTREAM_CHAT_COMPLETIONS_REASONING }, openaiResponses: {}, anthropicMessages: {} };
+  const upstreamReasoning = endpoints.openaiChatCompletions?.reasoning;
+  return {
+    ...endpoints,
+    openaiChatCompletions: {
+      reasoning: {
+        text: upstreamReasoning?.text === 'passthrough' ? 'passthrough' : DOWNSTREAM_CHAT_COMPLETIONS_REASONING.text,
+        data: upstreamReasoning?.data === 'passthrough' ? 'passthrough' : DOWNSTREAM_CHAT_COMPLETIONS_REASONING.data,
+      },
+    },
+    openaiResponses: {},
+    anthropicMessages: {},
+  };
 };
 
 export const warnReasoningConversion = (warning: ReasoningConversionWarning): void => {

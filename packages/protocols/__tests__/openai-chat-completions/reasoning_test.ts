@@ -1,7 +1,7 @@
 import { describe, expect, it, test, vi } from 'vitest';
 
 import { decodeReasoningData, encodeReasoningData } from '../../src/common/index.ts';
-import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning, reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/index.ts';
+import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning, reassembleOpenAIChatCompletionsEvents, mergeReasoningStreamItems } from '../../src/openai-chat-completions/index.ts';
 
 const formats: ChatCompletionsReasoningDataStandard[] = ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm-thinking-blocks'];
 const format = (data: ChatCompletionsReasoningDataStandard): ChatCompletionsReasoningFormat => ({ text: 'reasoning', data });
@@ -116,6 +116,16 @@ describe('Floway Chat Completions reasoning conversion', () => {
     const internal = toFlowayOpenAIChatCompletionsReasoning({ reasoning_text: 'Thought', reasoning_opaque: 'Secret', thinking_blocks: blocks }, { text: 'reasoning-text', data: 'reasoning-opaque' }, { warn });
     expect(fromFlowayOpenAIChatCompletionsReasoning(internal, { text: 'passthrough', data: 'passthrough' }, { warn })).toEqual({ reasoning: 'Thought', reasoning_opaque: 'Secret', thinking_blocks: blocks });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('matches signed snapshots to metadata when plaintext is identical', () => {
+    const previous = [
+      { type: 'thinking', thinking: 'Same thought', metadata: { group: 'first' } },
+      { type: 'thinking', thinking: 'Same thought', metadata: { group: 'second' } },
+    ];
+    const signed = { ...previous[1], signature: 'second-signature' };
+    expect(mergeReasoningStreamItems(previous, [signed], 'litellm-thinking-blocks')).toEqual([previous[0], signed]);
+    expect(previous[0]).not.toHaveProperty('signature');
   });
 
   it.each([

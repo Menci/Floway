@@ -60,6 +60,18 @@ describe('OpenAI Chat Completions affinity egress', () => {
     expect(finish.value?.type === 'event' ? finish.value.event.choices[0].delta.reasoning_opaque : undefined).toBe('wrapped:synthetic');
   });
 
+  test('leaves unrecognized structured members and their signatures unchanged', async () => {
+    const members = [null, { type: 'future-type', signature: 'unmanaged', custom: true }];
+    const source = frames([eventFrame(chunk([{ index: 0, delta: { content: 'Answer', thinking_blocks: members } as unknown as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'], finish_reason: 'stop' }])), doneFrame()]);
+    const events = async function* () {
+      for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(source, { codec: immediateCodec, affinity })) {
+        if (frame.type === 'event') yield frame.event;
+      }
+    };
+    const result = await reassembleOpenAIChatCompletionsEvents(events());
+    expect(result.choices[0].message.thinking_blocks).toEqual(members);
+  });
+
   test('forwards visible final data before wrapping the last opaque snapshot', async () => {
     const codec = new DelayedCodec();
     const output = wrapOpenAIChatCompletionsAffinityEgress(frames([

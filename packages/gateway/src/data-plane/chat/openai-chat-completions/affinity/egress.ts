@@ -1,4 +1,5 @@
-import { wrapChatCompletionsReasoningAffinity } from './reasoning.ts';
+import { reasoningAffinitySlots, wrapChatCompletionsReasoningAffinity } from './reasoning.ts';
+import { asJsonObject } from '../../../../shared/json-helpers.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { mergeReasoningStreamItems, type ReasoningRecord, type ChatCompletionsReasoningDataStandard, openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -32,14 +33,21 @@ const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolea
 
 const carrierDelta = (data: Record<string, unknown>): Record<string, unknown> => {
   const delta: Record<string, unknown> = {};
+  const slots = reasoningAffinitySlots(data);
   if (typeof data.reasoning_opaque === 'string') delta.reasoning_opaque = data.reasoning_opaque;
-  if (Array.isArray(data.reasoning_details)) delta.reasoning_details = (data.reasoning_details as ReasoningRecord[]).flatMap(item => {
-    if (item.type === 'reasoning.encrypted') return [{ ...item }];
-    if (item.type !== 'reasoning.text' || typeof item.signature !== 'string') return [];
-    const { text: _text, ...signed } = item;
-    return [signed];
-  });
-  if (Array.isArray(data.thinking_blocks)) delta.thinking_blocks = (data.thinking_blocks as ReasoningRecord[]).filter(item => item.type === 'redacted_thinking' || typeof item.signature === 'string');
+  for (const field of ['reasoning_details', 'thinking_blocks'] as const) {
+    const members = data[field];
+    if (!Array.isArray(members)) continue;
+    const indices = new Set(slots.filter(slot => slot.field === field).map(slot => slot.index));
+    delta[field] = members.flatMap((item: ReasoningRecord, index) => {
+      if (!indices.has(index)) return [];
+      if (field === 'reasoning_details' && item.type === 'reasoning.text') {
+        const { text: _text, ...signed } = item;
+        return [signed];
+      }
+      return [item];
+    });
+  }
   return delta;
 };
 
@@ -107,9 +115,14 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       ] as const) {
         if (!Array.isArray(incoming) || incoming.length === 0) continue;
         delete delta[field];
-        state.data[field] = mergeReasoningStreamItems(state.data[field] as ReasoningRecord[] | undefined ?? [], incoming, standard);
+        const records = incoming.flatMap(item => {
+          const value = asJsonObject(item);
+          return value === null ? [] : [value];
+        });
+        state.data[field] = mergeReasoningStreamItems(state.data[field] as ReasoningRecord[] | undefined ?? [], records, standard);
         const readable = incoming.flatMap(item => {
-          if ((item.type === 'reasoning.encrypted' || item.type === 'redacted_thinking') && typeof item.data === 'string') return [];
+          if (reasoningAffinitySlots({ [field]: [item] }).length === 0) return [item];
+          if (item.type === 'reasoning.encrypted' || item.type === 'redacted_thinking') return [];
           const { signature: _signature, ...visible } = item;
           if ((item.type === 'reasoning.text' && !item.text) || (item.type === 'thinking' && !item.thinking)) return [];
           return [visible];

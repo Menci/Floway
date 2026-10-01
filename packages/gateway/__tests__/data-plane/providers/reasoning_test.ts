@@ -23,6 +23,16 @@ test('provider auto model choices occupy the per-model layer above operator upst
   expect(resolveProviderModelEndpoints(record, raw).endpoints.openaiChatCompletions?.reasoning).toEqual({ text: 'reasoning-text', data: 'openrouter-reasoning-details' });
 });
 
+test.each([
+  { upstream: { text: 'passthrough', data: 'passthrough' }, client: { text: 'passthrough', data: 'passthrough' } },
+  { upstream: { text: 'reasoning-content', data: 'passthrough' }, client: { text: 'reasoning', data: 'passthrough' } },
+  { upstream: { text: 'passthrough', data: 'litellm-thinking-blocks' }, client: { text: 'passthrough', data: 'reasoning-opaque' } },
+  { upstream: { text: 'reasoning-text', data: 'openrouter-reasoning-details' }, client: { text: 'reasoning', data: 'reasoning-opaque' } },
+] as const)('public model metadata describes the computed response channels ($upstream)', ({ upstream, client }) => {
+  const model = internalModelFromProviderModel(stubProviderModel({ endpoints: { openaiChatCompletions: { reasoning: upstream } } }), 'upstream');
+  expect(toPublicModel(model).endpoints.openaiChatCompletions?.reasoning).toEqual(client);
+});
+
 test('sparse endpoint reasoning validation retains overrides and rejects unknown configuration', () => {
   expect(endpointsField({ openaiChatCompletions: { reasoning: { data: 'passthrough' } } }, 'model')).toEqual({ openaiChatCompletions: { reasoning: { data: 'passthrough' } } });
   expect(() => endpointsField({ openaiChatCompletions: { reasoningFormat: { text: 'reasoning' } } }, 'model')).toThrow('unknown option');

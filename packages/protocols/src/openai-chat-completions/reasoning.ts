@@ -96,6 +96,12 @@ const sameGroup = (left: ReasoningRecord, right: ReasoningRecord): boolean =>
   left.type === right.type && (left.id === right.id || left.id === undefined || right.id === undefined)
   && (left.index === right.index || left.index === undefined || right.index === undefined);
 
+const sameSnapshotMetadata = (prior: ReasoningRecord, incoming: ReasoningRecord): boolean =>
+  (typeof prior.id === 'string' && prior.id !== '' && prior.id === incoming.id)
+  || (Number.isInteger(prior.index) && prior.index === incoming.index)
+  || Object.entries(prior).every(([key, value]) => key === 'thinking' || key === 'signature'
+    || incoming[key] === undefined || JSON.stringify(value) === JSON.stringify(incoming[key]));
+
 export const mergeReasoningStreamItems = (previous: readonly ReasoningRecord[], incoming: readonly ReasoningRecord[], standard: ChatCompletionsReasoningDataStandard): ReasoningRecord[] => {
   const merged = previous.map(item => ({ ...item }));
   const matchedSnapshots = new Set<number>();
@@ -105,7 +111,7 @@ export const mergeReasoningStreamItems = (previous: readonly ReasoningRecord[], 
     // https://github.com/BerriAI/litellm/blob/b370996b9d2fc9aaec356013a698711ee3e127cc/tests/unit/llms/anthropic/pass_through/adapters/test_streaming_iterator_first_delta.py#L559-L584
     const snapshotIndex = standard === 'litellm-thinking-blocks' && typeof item.signature === 'string' && typeof item.thinking === 'string' && item.thinking !== ''
       ? previous.findIndex((prior, index) => !matchedSnapshots.has(index) && prior.type === 'thinking' && sameGroup(prior, item)
-        && prior.thinking === item.thinking && (prior.signature == null || prior.signature === item.signature))
+        && prior.thinking === item.thinking && sameSnapshotMetadata(prior, item) && (prior.signature == null || prior.signature === item.signature))
       : -1;
     if (snapshotIndex !== -1) {
       merged[snapshotIndex] = { ...merged[snapshotIndex], ...item };
