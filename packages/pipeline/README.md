@@ -51,8 +51,9 @@ completion and propagates failures. Resource and request contracts own their
 cancellation semantics; the runner imposes no wall-clock deadline on declared
 work. Concurrent callers share the same drain promise.
 
-A programming exception keeps its original error object. `getFailureFacts(error)`
-returns the deepest accepted facts associated with that failure in its run.
+A programming exception keeps its original error object or cause. Primitive
+rejection values receive an Error wrapper retaining the exact cause.
+`getFailureFacts(error)` returns the deepest accepted facts associated with that failure in its run.
 When several runs receive one shared rejection object, later runs use their
 own cause wrapper; the source error's name and message stay intact, and each
 run's diagnostic context remains stable. If cleanup
