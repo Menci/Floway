@@ -16,9 +16,12 @@ export const clientStreamOf = (ndjson: string): RecordedClientStream | null => {
     if (line.length === 0) continue;
     const event = JSON.parse(line) as DumpEvent;
     const decoded = read(event);
-    if (decoded?.facts && 'response.chat.clientFrames' in decoded.facts) {
-      const selected = decoded.facts['response.chat.clientFrames'] as { stream: number } | null;
-      client = selected?.stream ?? null;
+    if ((event.type === 'stage.entered' || event.type === 'stage.leaved') && event.facts !== undefined) {
+      for (const key of ['response.chat.clientFrames', 'response.openaiCompletions.rendered']) {
+        if (!(key in event.facts)) continue;
+        const selected = event.facts[key];
+        client = selected !== null && typeof selected === 'object' && '$stream' in selected ? selected.$stream as number : null;
+      }
     }
     if (event.type === 'stream.frame' || event.type === 'stream.end') {
       const stream = streams.get(event.streamId) ?? { events: [], ended: false };

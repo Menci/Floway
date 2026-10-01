@@ -58,3 +58,13 @@ test('renders and copies final Anthropic citation wire fields once while collect
   expect(copied).not.toContain('"url"');
   expect(await collectStream('anthropic-messages', stream)).toMatchObject({ result: { content: [{ type: 'text', text: 'answer', citations: [citation, citation] }] }, error: null, truncated: false });
 });
+
+test('collects the classic Completions stream published by its rendered fact', async () => {
+  const stream = clientStreamOf(toNdjson(encodeRun([
+    { type: 'stage.entered', stageId: 1, name: 'emitOpenAICompletions', parentStageId: null, facts: {} },
+    { type: 'stream.frame', streamId: 4, frames: [eventFrame({ id: 'completion-1', object: 'text_completion', created: 1, model: 'm', choices: [{ index: 0, text: 'classic answer', finish_reason: 'stop', logprobs: null }] }), { type: 'done' }] },
+    { type: 'stream.end', streamId: 4 },
+    { type: 'stage.leaved', stageId: 1, facts: { 'response.openaiCompletions.rendered': streamFact(4) } },
+  ])))!;
+  expect(await collectStream('openai-completions', stream)).toMatchObject({ result: { choices: [{ text: 'classic answer' }] }, error: null, truncated: false });
+});
