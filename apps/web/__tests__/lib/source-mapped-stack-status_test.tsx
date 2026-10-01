@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSourceMappedStack } from '../../src/lib/source-mapped-stack';
@@ -60,8 +60,7 @@ describe('what the error page is told about its trace', () => {
   it('replaces the trace once the maps land', async () => {
     vi.stubEnv('DEV', false);
     renderInApp(<Probe stack={RAW} />);
-    await settle();
-    expect(read()).toEqual({ status: 'settled', stack: 'Error: boom\n    at handler (/src/first.ts:1:1)' });
+    await waitFor(() => expect(read()).toEqual({ status: 'settled', stack: 'Error: boom\n    at handler (/src/first.ts:1:1)' }));
   });
 
   it('keeps the minified trace and says so when the maps cannot be read', async () => {
