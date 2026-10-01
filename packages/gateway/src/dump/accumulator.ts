@@ -1,4 +1,3 @@
-import { projectReasoningForDump } from './reasoning.ts';
 // Per-request dump pipeline. Opens the dump session (request snapshot +
 // opt-in decision) and exposes the mid-flight hooks the respond layer
 // calls to record outcomes and frames. When the api key has no retention
@@ -8,6 +7,7 @@ import { projectReasoningForDump } from './reasoning.ts';
 import type { Context } from 'hono';
 
 import { HttpCapture } from './http-capture.ts';
+import { projectReasoningForDump } from './reasoning.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
   DumpErrorMeta,
