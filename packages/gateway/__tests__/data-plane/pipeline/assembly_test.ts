@@ -13,7 +13,7 @@ import { geminiGenerateContentCountTokensPipeline } from '../../../src/data-plan
 import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
 import { openaiResponsesCompactPipeline } from '../../../src/data-plane/chat/openai-responses/compact.ts';
-import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
+import { openaiResponsesServePipeline, openaiResponsesWebSocketPipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { openaiAudioTranscriptionServePipeline } from '../../../src/data-plane/openai-audio/pipeline.ts';
 import { openaiCompletionsServePipeline } from '../../../src/data-plane/openai-completions/pipeline.ts';
 import { openaiEmbeddingsServePipeline } from '../../../src/data-plane/openai-embeddings/pipeline.ts';
@@ -32,6 +32,7 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['Anthropic Messages', () => anthropicMessagesServePipeline()],
   ['Gemini generateContent', () => geminiGenerateContentServePipeline()],
   ['OpenAI Responses', () => openaiResponsesServePipeline()],
+  ['OpenAI Responses WebSocket', () => openaiResponsesWebSocketPipeline()],
   ['Anthropic Messages count_tokens', () => anthropicMessagesCountTokensPipeline()],
   ['Gemini generateContent countTokens', () => geminiGenerateContentCountTokensPipeline()],
   ['OpenAI Responses compact', () => openaiResponsesCompactPipeline()],
@@ -43,4 +44,11 @@ describe('every family assembles', () => {
       expect(build().name).toBeTypeOf('string');
     });
   }
+});
+
+it('Responses transport entries require the facts of their actual edge', () => {
+  const http = openaiResponsesServePipeline();
+  const websocket = openaiResponsesWebSocketPipeline();
+  expect(http.entryNeeds).not.toContain('ingress.chat.openaiResponses.eventId');
+  expect(websocket.entryNeeds).toContain('ingress.chat.openaiResponses.eventId');
 });

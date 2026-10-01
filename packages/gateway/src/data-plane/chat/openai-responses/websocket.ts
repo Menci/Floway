@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 
 import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
-import { openaiResponsesServePipeline } from './pipeline.ts';
+import { openaiResponsesWebSocketPipeline } from './pipeline.ts';
 import type { OpenAIResponsesWebSocketExit } from './project-websocket.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
@@ -335,9 +335,7 @@ const handleClientMessage = async (
     ctx = prologue.gateway;
 
     const { facts, drain } = await run(
-      // The transport frames its own answer, so the edge hands up the events rather than the
-      // SSE a body would have been written from.
-      openaiResponsesServePipeline('events'),
+      openaiResponsesWebSocketPipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'openaiResponses',
