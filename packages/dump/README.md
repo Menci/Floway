@@ -30,5 +30,4 @@ in `@floway-dev/pipeline`. FileStore and LogStream contracts remain in
 model attribution, HTTP measurement, SQL adapters and authenticated routes.
 
 Use `/types` for browser metadata/record contracts and `/codec` for platform broker
-composition. Run records contain facts and protocol frames; legacy edge records
-are outside this package.
+composition. Run records contain facts and protocol frames.

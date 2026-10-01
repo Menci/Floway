@@ -209,8 +209,8 @@ transport errors take precedence over the settlement's generic failure marker.
 `@floway-dev/dump` owns portable run recording, stream recording, metadata contracts,
 broker framing and wire conversion. Pipeline encodes stage facts, logs and protocol frames
 into one object space. Gateway owns attribution, admission, SQL storage and HTTP measurement.
-Closing waits for owned readers and deferred outcomes before storing the completed NDJSON record and
-publishing its metadata. The Collected view selects the recorded client stream and uses its
+Closing waits for owned readers and deferred outcomes before storing the completed NDJSON
+record and publishing its metadata. The Collected view selects the recorded client stream and uses its
 `stream.end` event to establish recording completion. LogStream infrastructure is available
 on both platforms; live recording and its business readers remain outside these three PRs.
 
