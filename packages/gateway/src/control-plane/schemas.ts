@@ -44,15 +44,12 @@ const flagOverridesSchema = z.unknown().transform((value, ctx): FlagOverrides =>
 // so this only trims and de-dupes rather than rejecting unknown ids.
 const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisabledPublicModelIds);
 
-// The structured endpoint capability map, shared by per-model config and the
-// custom upstream-level fallback. A present key declares the endpoint is served.
-// One concept, all endpoints — the runtime validators enforce presence/emptiness
-// rules.
-export const chatCompletionsReasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+const reasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+export const compatibilitySchema = z.object({ openaiChatCompletions: z.object({ reasoning: reasoningOverridesSchema.optional() }).strict().optional() }).strict();
 
 const modelEndpointsSchema = z.object({
   openaiCompletions: z.object({}).optional(),
-  openaiChatCompletions: z.object({ reasoning: chatCompletionsReasoningOverridesSchema.optional() }).strict().optional(),
+  openaiChatCompletions: z.object({}).strict().optional(),
   openaiResponses: z.object({}).optional(),
   anthropicMessages: z.object({}).optional(),
   openaiEmbeddings: z.object({}).optional(),
@@ -169,6 +166,7 @@ const upstreamModelSchema = z.object({
     }).strict()).min(1),
   }).strict().optional(),
   flagOverrides: flagOverridesSchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
@@ -353,7 +351,7 @@ const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
-  chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -393,7 +391,7 @@ export const updateUpstreamBody = z.object({
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
-  chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
@@ -533,7 +531,7 @@ export const previewModelsBody = z.object({
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
     hue: upstreamHueSchema.optional(),
-    chat_completions_reasoning_overrides: chatCompletionsReasoningOverridesSchema.optional(),
+    compatibility: compatibilitySchema.optional(),
     flag_overrides: flagOverridesSchema.optional(),
     disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
     model_prefix: modelPrefixSchema.optional(),

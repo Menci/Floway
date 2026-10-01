@@ -373,7 +373,7 @@ export interface ModelsRefreshIdentity {
     provider: UpstreamRecord['kind'];
     configJson: string;
     flagOverridesJson: string;
-    reasoningOverridesJson: string;
+    compatibilityJson: string;
     proxyFallbackListJson: string;
   };
 }

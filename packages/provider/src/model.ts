@@ -1,8 +1,8 @@
+import type { Compatibility } from './compatibility.ts';
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, OpaqueBlobCompatibilityScope, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
-import type { ChatCompletionsReasoningOverrides } from '@floway-dev/protocols/openai-chat-completions';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -81,7 +81,7 @@ export interface UpstreamRecord {
   // refresh stores an empty entry with its error.
   modelsCache: UpstreamModelsCache | null;
   flagOverrides: FlagOverrides;
-  chatCompletionsReasoningOverrides?: ChatCompletionsReasoningOverrides;
+  compatibility: Compatibility;
   // Model ids the operator switched off for this upstream, matched against the
   // provider-emitted id before any model prefix is applied — so one entry hides
   // both the bare and the prefixed surface. Orthogonal to every per-model
@@ -182,7 +182,7 @@ export interface InternalAliasedFrom {
 // ever see their own emission — the surrounding `InternalModel` map is
 // assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
-  endpointOverrides?: ModelEndpoints;
+  compatibility?: Compatibility;
   // The provider-neutral upstream catalog id shown on auto rows and used when
   // an opaque-blob scope omits its key. A provider that selects a request-time
   // wire variant still keeps that invocation detail in providerData.

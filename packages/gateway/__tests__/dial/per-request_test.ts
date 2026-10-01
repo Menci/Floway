@@ -27,6 +27,7 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00Z',
   updatedAt: '2026-06-01T00:00:00Z',
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList,

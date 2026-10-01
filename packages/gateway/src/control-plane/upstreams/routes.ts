@@ -247,7 +247,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     createdAt: now,
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
-    chatCompletionsReasoningOverrides: body.chat_completions_reasoning_overrides ?? {},
+    compatibility: body.compatibility ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
     modelPrefix,
@@ -323,7 +323,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.name !== undefined) next = { ...next, name: body.name };
   if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
   if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
-  if (body.chat_completions_reasoning_overrides !== undefined) next = { ...next, chatCompletionsReasoningOverrides: body.chat_completions_reasoning_overrides };
+  if (body.compatibility !== undefined) next = { ...next, compatibility: body.compatibility };
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
   if (body.proxy_fallback_list !== undefined) {

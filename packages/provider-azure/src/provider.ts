@@ -61,6 +61,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
           kind,
           endpoints,
+          ...(model.compatibility ? { compatibility: model.compatibility } : {}),
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
           opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },

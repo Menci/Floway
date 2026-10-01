@@ -1,6 +1,6 @@
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { ChatCompletionsReasoningFormat, ChatCompletionsReasoningOverrides } from '@floway-dev/protocols/openai-chat-completions';
 import type {
+  Compatibility, CompatibilityDefaults,
   FlagDefaults,
   FlagOverrides,
   ModelPrefixConfig,
@@ -138,8 +138,8 @@ interface SerializedUpstreamRecordBase {
   created_at: string;
   updated_at: string;
   flag_overrides: FlagOverrides;
-  chat_completions_reasoning_overrides: ChatCompletionsReasoningOverrides;
-  chat_completions_reasoning_defaults: ChatCompletionsReasoningFormat;
+  compatibility: Compatibility;
+  compatibility_defaults: CompatibilityDefaults;
   flag_defaults: FlagDefaults;
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];

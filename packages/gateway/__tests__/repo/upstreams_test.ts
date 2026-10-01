@@ -17,7 +17,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   config: { nested: { value: overrides.id }, endpoints: { openaiChatCompletions: {} } },
   state: null,
   flagOverrides: {},
-  chatCompletionsReasoningOverrides: {},
+  compatibility: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
@@ -99,7 +99,7 @@ test('memory upstream repo inserts, replaces, lists, deletes, and clears rows', 
   assertEquals(await repo.list(), []);
 });
 
-test('memory upstream repo deeply clones configs and flag overrides at the repo boundary', async () => {
+test('memory upstream repo deeply clones configs, flags and compatibility at the repo boundary', async () => {
   const repo = new InMemoryRepo().upstreams;
   const original = upstream({
     id: 'up_custom_clone',
@@ -113,14 +113,17 @@ test('memory upstream repo deeply clones configs and flag overrides at the repo 
       },
     },
     flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': true },
+    compatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-content' } } },
     disabledPublicModelIds: [],
   });
 
   await saveUpstreamForTest(repo, original);
   original.flagOverrides['strip-billing-attribution'] = true;
+  original.compatibility.openaiChatCompletions!.reasoning!.text = 'passthrough';
   (original.config as { nested: { headers: string[] } }).nested.headers.push('mutated-after-save');
 
   const saved = await repo.getById('up_custom_clone');
+  assertEquals(saved?.compatibility, { openaiChatCompletions: { reasoning: { text: 'reasoning-content' } } });
   assertEquals(saved?.flagOverrides, { 'rewrite-developer-to-system': true, 'vendor-deepseek': true });
   assertEquals(saved?.config, {
     nested: {
@@ -131,9 +134,11 @@ test('memory upstream repo deeply clones configs and flag overrides at the repo 
 
   const listed = await repo.list();
   listed[0].flagOverrides['openai-responses-web-search-shim'] = true;
+  listed[0].compatibility.openaiChatCompletions!.reasoning!.data = 'reasoning-opaque';
   (listed[0].config as { nested: { headers: string[] } }).nested.headers.push('mutated-after-list');
 
   assertEquals((await repo.getById('up_custom_clone'))?.flagOverrides, { 'rewrite-developer-to-system': true, 'vendor-deepseek': true });
+  assertEquals((await repo.getById('up_custom_clone'))?.compatibility, { openaiChatCompletions: { reasoning: { text: 'reasoning-content' } } });
   assertEquals((await repo.getById('up_custom_clone'))?.config, {
     nested: {
       baseUrl: 'https://example.test/v1',
@@ -251,7 +256,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -276,7 +281,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{bad json',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -301,7 +306,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     state_json: null,
     models_cache_json: null,
     flag_overrides: '[]',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -330,7 +335,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{"x": 1}',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -359,7 +364,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: '{not json',
@@ -384,7 +389,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     // Prefix missing trailing slash — passes JSON.parse but fails the regex.
@@ -408,6 +413,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     updatedAt: now,
     config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
     state: null,
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -456,7 +462,7 @@ test('SQL upstream repo rejects a stored hue outside the circle', async () => {
     state_json: null,
     models_cache_json: null,
     flag_overrides: '{}',
-    chat_completions_reasoning_overrides: '{}',
+    compatibility_json: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
@@ -973,7 +979,7 @@ type FakeUpstreamRow = {
   state_json: string | null;
   models_cache_json: string | null;
   flag_overrides: string;
-  chat_completions_reasoning_overrides: string;
+  compatibility_json: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;

@@ -22,6 +22,7 @@ const registerAudioModel = async (
     createdAt: '2026-07-21T00:00:00.000Z',
     updatedAt: '2026-07-21T00:00:00.000Z',
     state: null,
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,

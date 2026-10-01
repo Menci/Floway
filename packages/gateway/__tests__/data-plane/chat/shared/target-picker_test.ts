@@ -27,6 +27,7 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
     models: modelIds.map(upstreamModelId => ({ upstreamModelId, endpoints })),
   },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

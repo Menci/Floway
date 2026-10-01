@@ -229,7 +229,7 @@ export function UpstreamWorkspace({
               <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
-              {hasChatCompletions && <Controller name="chatCompletionsReasoningOverrides" render={({ field }) => <ReasoningFormatEditor defaults={record.chat_completions_reasoning_defaults} value={field.value} onChange={field.onChange} />} />}
+              {hasChatCompletions && <Controller name="compatibility.openaiChatCompletions.reasoning" render={({ field }) => <ReasoningFormatEditor defaults={record.compatibility_defaults.openaiChatCompletions.reasoning} value={field.value ?? {}} onChange={field.onChange} />} />}
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}
@@ -263,7 +263,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const upstreamReasoning = useWatch({ control, name: 'chatCompletionsReasoningOverrides' });
+  const upstreamCompatibility = useWatch({ control, name: 'compatibility' });
   const deleteDialog = useDialogInvocation<ModelRow>();
   const [pendingManualUpstreamModelId, setPendingManualUpstreamModelId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
@@ -400,7 +400,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
       shouldDirty: true,
       shouldTouch: true,
     });
-  }} record={record} upstreamFlags={upstreamFlags} upstreamReasoning={upstreamReasoning} />{deleteConfirmation}</>;
+  }} record={record} upstreamFlags={upstreamFlags} upstreamCompatibility={upstreamCompatibility} />{deleteConfirmation}</>;
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <SectionHeader

@@ -4,7 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const azureProviderModule: ProviderModule = {
   create: createAzureProvider,
-  defaultChatCompletionsReasoning: { text: 'reasoning-content', data: 'passthrough' },
+  defaultCompatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } },
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
 export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';

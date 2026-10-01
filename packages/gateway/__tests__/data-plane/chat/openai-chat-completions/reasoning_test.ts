@@ -19,8 +19,8 @@ for (const data of ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm
       const format: ChatCompletionsReasoningFormat = { text: 'reasoning-content', data };
       const fixture = await setupAppTest({
         copilotUpstream: buildCustomUpstreamRecord({
-          chatCompletionsReasoningOverrides: { text: 'reasoning-text', data: 'passthrough' },
-          config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: { reasoning: format } } }] },
+          compatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'passthrough' } } },
+          config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} }, compatibility: { openaiChatCompletions: { reasoning: format } } }] },
         }),
       });
       const requests: OpenAIChatCompletionsPayload[] = [];
@@ -71,7 +71,7 @@ for (const flag of ['vendor-deepseek', 'vendor-qwen', 'vendor-kimi'] as const) {
     const fixture = await setupAppTest({
       copilotUpstream: buildCustomUpstreamRecord({
         flagOverrides: { [flag]: on },
-        chatCompletionsReasoningOverrides: { text: 'reasoning-text', data: 'reasoning-opaque' },
+        compatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'reasoning-opaque' } } },
         config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] },
       }),
     });
@@ -108,7 +108,7 @@ for (const format of [
   test.each([false, true])(`native ${format.text}/${format.data} preserves unconverted response and replay fields (stream=%s)`, async stream => {
     const fixture = await setupAppTest({
       copilotUpstream: buildCustomUpstreamRecord({
-        chatCompletionsReasoningOverrides: format,
+        compatibility: { openaiChatCompletions: { reasoning: format } },
         config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] },
       }),
     });

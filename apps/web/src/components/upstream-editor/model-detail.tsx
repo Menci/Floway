@@ -43,7 +43,7 @@ export function ModelDetail({
   row,
   section,
   upstreamFlags,
-  upstreamReasoning,
+  upstreamCompatibility,
 }: {
   onChange: (value: UpstreamModelConfig) => void;
   onDelete: () => void;
@@ -55,7 +55,7 @@ export function ModelDetail({
   row: ModelRow;
   section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
-  upstreamReasoning: UpstreamRecord['chat_completions_reasoning_overrides'];
+  upstreamCompatibility: UpstreamRecord['compatibility'];
 }) {
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
@@ -210,12 +210,12 @@ export function ModelDetail({
         </EditorSection>}
 
         {row.config.endpoints.openaiChatCompletions !== undefined && <ReasoningFormatEditor
-          defaults={record.chat_completions_reasoning_defaults}
-          inherited={upstreamReasoning}
-          value={row.config.endpoints.openaiChatCompletions.reasoning ?? {}}
+          defaults={record.compatibility_defaults.openaiChatCompletions.reasoning}
+          inherited={upstreamCompatibility.openaiChatCompletions?.reasoning}
+          value={row.config.compatibility?.openaiChatCompletions?.reasoning ?? {}}
           readOnly={fieldsReadOnly}
           providerOwned={row.source === 'auto'}
-          onChange={reasoning => patch({ endpoints: { ...row.config.endpoints, openaiChatCompletions: Object.keys(reasoning).length > 0 ? { reasoning } : {} } })}
+          onChange={reasoning => patch({ compatibility: { ...row.config.compatibility, openaiChatCompletions: { ...row.config.compatibility?.openaiChatCompletions, reasoning } } })}
         />}
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>

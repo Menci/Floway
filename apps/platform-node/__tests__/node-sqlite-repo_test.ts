@@ -88,6 +88,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     config: { opaque: { value: true } },
     state: { cursor: ['a', 1] },
     modelsCache: null,
+    compatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'openrouter-reasoning-details' } } },
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -106,7 +107,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
       provider: storedUpstream.kind,
       configJson: JSON.stringify(storedUpstream.config),
       flagOverridesJson: '{}',
-      reasoningOverridesJson: '{}',
+      compatibilityJson: JSON.stringify(storedUpstream.compatibility),
       proxyFallbackListJson: '[]',
     },
     cache: {

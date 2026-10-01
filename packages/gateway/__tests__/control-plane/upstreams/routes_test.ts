@@ -72,6 +72,33 @@ const authed = (adminSession: string, body?: unknown): RequestInit => ({
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
+test('upstream and model compatibility round-trip independently of endpoint availability', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  const compatibility = { openaiChatCompletions: { reasoning: { text: 'reasoning-text' } } };
+  const modelCompatibility = { openaiChatCompletions: { reasoning: { data: 'litellm-thinking-blocks' } } };
+  const model = { upstreamModelId: 'm', kind: 'chat', endpoints: { anthropicMessages: {} }, compatibility: modelCompatibility };
+  const response = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    compatibility,
+    config: { ...customConfig, endpoints: { openaiResponses: {} }, models: [model] },
+  })));
+  assertEquals(response.status, 201);
+  const created = await response.json() as JsonObject;
+  assertEquals(created.compatibility, compatibility);
+  assertEquals(created.config.models[0], model);
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.compatibility, compatibility);
+
+  const patchResponse = await requestApp(`/api/upstreams/${created.id}`, {
+    ...authed(adminSession, { config: { ...customConfig, models: [{ ...model, endpoints: { openaiChatCompletions: {} } }] } }),
+    method: 'PATCH',
+  });
+  assertEquals(patchResponse.status, 200);
+  const updated = await patchResponse.json() as JsonObject;
+  assertEquals(updated.compatibility, compatibility);
+  assertEquals(updated.config.models[0].compatibility, modelCompatibility);
+  assertEquals((await repo.upstreams.getById(created.id))?.configVersion, stored!.configVersion + 1);
+});
+
 test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -346,6 +373,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -393,6 +421,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     sortOrder: 0,
     createdAt: '2026-07-08T00:00:00.000Z',
     updatedAt: '2026-07-08T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -438,6 +467,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     sortOrder: 0,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -530,6 +560,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     sortOrder: 5,
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
@@ -742,6 +773,7 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
@@ -2682,6 +2714,7 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,

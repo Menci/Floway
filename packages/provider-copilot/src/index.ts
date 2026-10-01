@@ -5,7 +5,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,
   // https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/thinking/common/thinking.ts#L6-L23
-  defaultChatCompletionsReasoning: { text: 'reasoning-text', data: 'reasoning-opaque' },
+  defaultCompatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'reasoning-opaque' } } },
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 

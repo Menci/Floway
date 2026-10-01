@@ -49,7 +49,7 @@ const mergedChatMetadata = (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, endpointOverrides, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, compatibility, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
   const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {

@@ -20,6 +20,7 @@ const baseRecord: UpstreamRecord = {
     ingressHeadersRules: [],
   },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

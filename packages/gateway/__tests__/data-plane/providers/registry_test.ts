@@ -29,6 +29,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
         },
       ],
     },
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],

@@ -22,7 +22,7 @@ const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstre
   config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'aid', chatgptUserId: 'uid', planType: 'plus' }] },
   state: { accounts: [goodAccount] },
   flagOverrides: {},
-  chatCompletionsReasoningOverrides: {},
+  compatibility: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,

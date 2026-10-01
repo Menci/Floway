@@ -1,8 +1,7 @@
 import { getRepo } from '../../repo/index.ts';
 import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { ChatCompletionsReasoningFormat } from '@floway-dev/protocols/openai-chat-completions';
-import type { FlagDefaults, ProviderModel, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { CompatibilityDefaults, FlagDefaults, ProviderModel, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
 import { codexProviderModule } from '@floway-dev/provider-codex';
@@ -48,26 +47,24 @@ export const createPreviewProvider = (record: UpstreamRecord): Provider => {
 };
 
 export const resolveProviderModelEndpoints = (record: UpstreamRecord, model: ProviderModel): ProviderModel => {
-  const endpointOverrides = model.endpoints;
-  if (endpointOverrides.openaiChatCompletions === undefined) return model;
+  if (model.endpoints.openaiChatCompletions === undefined) return model;
   return {
     ...model,
-    endpointOverrides,
     endpoints: {
-      ...endpointOverrides,
+      ...model.endpoints,
       openaiChatCompletions: {
         reasoning: {
-          ...reasoningDefaultsForKind(record.kind),
-          ...record.chatCompletionsReasoningOverrides,
-          ...endpointOverrides.openaiChatCompletions.reasoning,
+          ...compatibilityDefaultsForKind(record.kind).openaiChatCompletions.reasoning,
+          ...record.compatibility.openaiChatCompletions?.reasoning,
+          ...model.compatibility?.openaiChatCompletions?.reasoning,
         },
       },
     },
   };
 };
 
-export const reasoningDefaultsForKind = (kind: UpstreamProviderKind): ChatCompletionsReasoningFormat =>
-  providersByKind[kind].defaultChatCompletionsReasoning;
+export const compatibilityDefaultsForKind = (kind: UpstreamProviderKind): CompatibilityDefaults =>
+  providersByKind[kind].defaultCompatibility;
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;

@@ -16,12 +16,13 @@ import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 // the repository boundary explicit without reconstructing objects and losing
 // unusual-but-valid own keys such as `__proto__`.
 const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
-export const chatCompletionsReasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+const reasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+export const compatibilitySchema = z.object({ openaiChatCompletions: z.object({ reasoning: reasoningOverridesSchema.optional() }).strict().optional() }).strict();
 
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
   openaiCompletions: endpointSchema.optional(),
-  openaiChatCompletions: z.object({ reasoning: chatCompletionsReasoningOverridesSchema.optional() }).strict().optional(),
+  openaiChatCompletions: z.object({ reasoning: reasoningOverridesSchema.optional() }).strict().optional(),
   openaiResponses: endpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
   openaiEmbeddings: endpointSchema.optional(),
@@ -89,7 +90,7 @@ const providerModelSchema = z.object({
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
   endpoints: resolvedEndpointsSchema,
-  endpointOverrides: endpointsSchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema,
   providerData: opaqueJsonSchema.optional(),
   rerankTarget: z.object({
@@ -109,7 +110,7 @@ const discoveredModelSchema = z.object({
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
   endpoints: endpointsSchema,
-  endpointOverrides: endpointsSchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),
@@ -180,4 +181,4 @@ export const decodeModelPrefix = (raw: string, id: string): ModelPrefixConfig =>
 export const encodeUpstreamModelsCache = (cache: UpstreamModelsCache): string =>
   JSON.stringify(cache, (_key, value) => value instanceof Set ? [...value] : value);
 
-export const decodeChatCompletionsReasoningOverrides = (raw: string, id: string) => decodeUpstreamJson(raw, chatCompletionsReasoningOverridesSchema, 'chat_completions_reasoning_overrides JSON', id);
+export const decodeCompatibility = (raw: string, id: string) => decodeUpstreamJson(raw, compatibilitySchema, 'compatibility_json', id);

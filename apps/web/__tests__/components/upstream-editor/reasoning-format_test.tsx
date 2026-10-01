@@ -63,7 +63,7 @@ test('hiding the upstream reasoning fields retains their values in the submitted
   const record = upstreamRecord('up_test', {
     kind: 'custom',
     state: null,
-    chat_completions_reasoning_overrides: options,
+    compatibility: { openaiChatCompletions: { reasoning: options } },
     config: { baseUrl: 'https://example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiResponses: {} }, modelsFetch: { enabled: false }, models: [{ upstreamModelId: 'manual-chat', kind: 'chat', endpoints: { openaiChatCompletions: {} } }] },
   });
   const submitted = vi.fn();
@@ -87,5 +87,5 @@ test('hiding the upstream reasoning fields retains their values in the submitted
   fireEvent.click(screen.getByRole('button', { name: 'Disable upstream Chat' }));
   await waitFor(() => expect(screen.queryByRole('group', { name: label('title') })).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
-  await waitFor(() => expect(submitted).toHaveBeenCalledWith(expect.objectContaining({ chat_completions_reasoning_overrides: options })));
+  await waitFor(() => expect(submitted).toHaveBeenCalledWith(expect.objectContaining({ compatibility: { openaiChatCompletions: { reasoning: options } } })));
 });

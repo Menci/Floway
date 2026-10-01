@@ -34,6 +34,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
   if (model.pricing) partial.pricing = model.pricing;
+  if (model.endpoints?.openaiChatCompletions?.reasoning) partial.compatibility = { openaiChatCompletions: { reasoning: model.endpoints.openaiChatCompletions.reasoning } };
   return partial;
 };
 
@@ -63,12 +64,13 @@ export const projectCustomDiscoveredModels = (
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind,
-      endpoints,
+      endpoints: Object.fromEntries(Object.keys(endpoints).map(key => [key, {}])),
     };
     const displayName = model.display_name ?? model.name;
     if (displayName !== undefined) projected.display_name = displayName;
     if (model.limits !== undefined) projected.limits = { ...model.limits };
     if (model.pricing !== undefined) projected.pricing = model.pricing;
+    if (model.endpoints?.openaiChatCompletions?.reasoning) projected.compatibility = { openaiChatCompletions: { reasoning: model.endpoints.openaiChatCompletions.reasoning } };
     if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
     projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
     return projected;
@@ -123,6 +125,7 @@ export const projectCustomModels = (
       limits: { ...(model.limits ?? {}) },
       kind,
       endpoints,
+      ...(model.compatibility ? { compatibility: model.compatibility } : {}),
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },

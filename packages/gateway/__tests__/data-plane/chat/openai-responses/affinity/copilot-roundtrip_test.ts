@@ -26,6 +26,7 @@ const upstream: UpstreamRecord = {
       baseUrl: 'https://api.individual.githubcopilot.com',
     },
   },
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

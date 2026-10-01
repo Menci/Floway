@@ -19,6 +19,7 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   updatedAt: '2026-08-01T00:00:00.000Z',
   config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test', cloudUsage: true, models: [] },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

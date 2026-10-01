@@ -1,14 +1,13 @@
 import { expect, test } from 'vitest';
 
-import { reasoningDefaultsForKind, resolveProviderModelEndpoints } from '../../src/data-plane/providers/registry.ts';
+import { compatibilityDefaultsForKind, resolveProviderModelEndpoints } from '../../src/data-plane/providers/registry.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatCompletionsReasoningFormat, ChatCompletionsReasoningOverrides } from '@floway-dev/protocols/openai-chat-completions';
 import { modelsField, type FlagOverrides, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
-const MIGRATION = '0086_chat_completions_reasoning.sql';
+const MIGRATION = '0086_compatibility.sql';
 const CANONICAL: ChatCompletionsReasoningFormat = { text: 'reasoning-text', data: 'reasoning-opaque' };
 const DEEPSEEK: ChatCompletionsReasoningFormat = { text: 'reasoning-content', data: 'passthrough' };
 
@@ -16,7 +15,8 @@ const model = (flagOverrides?: FlagOverrides, reasoning?: ChatCompletionsReasoni
   upstreamModelId: 'chat-model',
   display_name: 'Configured model',
   kind: 'chat',
-  endpoints: { openaiChatCompletions: reasoning === undefined ? {} : { reasoning } },
+  endpoints: { openaiChatCompletions: {} },
+  ...(reasoning === undefined ? {} : { compatibility: { openaiChatCompletions: { reasoning } } }),
   ...(flagOverrides === undefined ? {} : { flagOverrides }),
 });
 
@@ -52,15 +52,15 @@ const migrate = async (
 const migratedModels = (record: UpstreamRecord): UpstreamModelConfig[] =>
   modelsField((record.config as { models: unknown }).models, record.kind);
 
-const resolvedFormat = (record: UpstreamRecord, endpoints: ModelEndpoints = { openaiChatCompletions: {} }): ChatCompletionsReasoningOverrides | undefined =>
-  resolveProviderModelEndpoints(record, { ...stubProviderModel(), endpoints }).endpoints.openaiChatCompletions?.reasoning;
+const resolvedFormat = (record: UpstreamRecord, config: Pick<UpstreamModelConfig, 'endpoints' | 'compatibility'> = { endpoints: { openaiChatCompletions: {} } }): ChatCompletionsReasoningOverrides | undefined =>
+  resolveProviderModelEndpoints(record, { ...stubProviderModel(), ...config }).endpoints.openaiChatCompletions?.reasoning;
 
 for (const kind of ['custom', 'azure', 'ollama'] as const) {
   test.each([true, false])(`${kind}: explicit upstream DeepSeek decision migrates independently from provider defaults (on=%s)`, async on => {
     const models = [model()];
     const record = await migrate(kind, { 'vendor-deepseek': on, 'vendor-kimi': true }, models);
     const expected = on ? DEEPSEEK : CANONICAL;
-    expect(record.chatCompletionsReasoningOverrides).toEqual(expected);
+    expect(record.compatibility).toEqual({ openaiChatCompletions: { reasoning: expected } });
     expect(migratedModels(record)).toEqual(models);
     expect(resolvedFormat(record)).toEqual(expected);
   });
@@ -70,16 +70,16 @@ for (const kind of ['custom', 'azure', 'ollama'] as const) {
     const record = await migrate(kind, { 'vendor-deepseek': !on }, [legacy]);
     const [migrated] = migratedModels(record);
     const expected = on ? DEEPSEEK : CANONICAL;
-    expect(migrated).toEqual({ ...legacy, endpoints: { openaiChatCompletions: { reasoning: expected } } });
-    expect(resolvedFormat(record, migrated.endpoints)).toEqual(expected);
+    expect(migrated).toEqual({ ...legacy, compatibility: { openaiChatCompletions: { reasoning: expected } } });
+    expect(resolvedFormat(record, migrated)).toEqual(expected);
   });
 
   test(`${kind}: absent DeepSeek decisions inherit provider defaults without Qwen or Kimi selecting a format`, async () => {
     const models = [model({ 'vendor-qwen': true, 'vendor-kimi': false })];
     const record = await migrate(kind, { 'vendor-qwen': false, 'vendor-kimi': true }, models);
-    expect(record.chatCompletionsReasoningOverrides).toEqual({});
+    expect(record.compatibility).toEqual({});
     expect(migratedModels(record)).toEqual(models);
-    expect(resolvedFormat(record, models[0].endpoints)).toEqual(reasoningDefaultsForKind(kind));
+    expect(resolvedFormat(record, models[0])).toEqual(compatibilityDefaultsForKind(kind).openaiChatCompletions.reasoning);
   });
 }
 
@@ -89,7 +89,7 @@ test.each([
   { format: { text: 'reasoning', data: 'openrouter-reasoning-details' } as const, expected: { text: 'reasoning', data: 'openrouter-reasoning-details' } },
 ])('migration retains explicit reasoning channels ($format)', async ({ format, expected }) => {
   const record = await migrate('custom', {}, [model({ 'vendor-deepseek': true }, format)]);
-  expect(migratedModels(record)[0].endpoints.openaiChatCompletions?.reasoning).toEqual(expected);
+  expect(migratedModels(record)[0].compatibility?.openaiChatCompletions?.reasoning).toEqual(expected);
 });
 
 test('migration keeps non-Chat-Completions models and empty model lists intact', async () => {

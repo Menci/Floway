@@ -4,7 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const customProviderModule: ProviderModule = {
   create: createCustomProvider,
-  defaultChatCompletionsReasoning: { text: 'reasoning-content', data: 'passthrough' },
+  defaultCompatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } },
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 

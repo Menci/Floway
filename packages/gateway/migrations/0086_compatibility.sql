@@ -1,12 +1,13 @@
-ALTER TABLE upstreams ADD COLUMN chat_completions_reasoning_overrides TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE upstreams ADD COLUMN compatibility_json TEXT NOT NULL DEFAULT '{}';
 
 -- Preserve explicit DeepSeek flag decisions: on selected its dialect; off
 -- forwarded the canonical reasoning_text and reasoning_opaque wire fields.
-UPDATE upstreams SET chat_completions_reasoning_overrides = json_object(
-  'text', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
-               THEN 'reasoning-content' ELSE 'reasoning-text' END,
-  'data', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
-               THEN 'passthrough' ELSE 'reasoning-opaque' END)
+UPDATE upstreams SET compatibility_json = json_object(
+  'openaiChatCompletions', json_object('reasoning', json_object(
+    'text', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
+                 THEN 'reasoning-content' ELSE 'reasoning-text' END,
+    'data', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
+                 THEN 'passthrough' ELSE 'reasoning-opaque' END)))
 WHERE json_type(flag_overrides, '$.vendor-deepseek') IN ('true', 'false');
 
 -- Explicit manual-model flag decisions must keep overriding the migrated
@@ -16,10 +17,10 @@ UPDATE upstreams SET config_json = json_set(config_json, '$.models', json((
     WHEN json_type(value, '$.endpoints.openaiChatCompletions') = 'object'
       AND json_type(value, '$.flagOverrides.vendor-deepseek') IN ('true', 'false')
     THEN json_insert(value,
-      '$.endpoints.openaiChatCompletions.reasoning.text',
+      '$.compatibility.openaiChatCompletions.reasoning.text',
                    CASE WHEN json_extract(value, '$.flagOverrides.vendor-deepseek') = 1 THEN 'reasoning-content'
                    ELSE 'reasoning-text' END,
-      '$.endpoints.openaiChatCompletions.reasoning.data',
+      '$.compatibility.openaiChatCompletions.reasoning.data',
                    CASE WHEN json_extract(value, '$.flagOverrides.vendor-deepseek') = 1 THEN 'passthrough'
                    ELSE 'reasoning-opaque' END)
     ELSE value END)) FROM json_each(config_json, '$.models')

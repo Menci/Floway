@@ -31,7 +31,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     createdAt: record.created_at ?? '',
     updatedAt: record.updated_at ?? '',
     flagOverrides: record.flag_overrides ?? {},
-    chatCompletionsReasoningOverrides: record.chat_completions_reasoning_overrides ?? {},
+    compatibility: record.compatibility ?? {},
     disabledPublicModelIds: record.disabled_public_model_ids ?? [],
     proxyFallbackList: record.proxy_fallback_list,
     modelPrefix: record.model_prefix ?? null,

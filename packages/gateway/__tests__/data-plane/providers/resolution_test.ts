@@ -266,6 +266,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
         { upstreamModelId: 'disabled-model', endpoints: { openaiChatCompletions: {} } },
       ],
     },
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: ['disabled-model'],
     proxyFallbackList: [],

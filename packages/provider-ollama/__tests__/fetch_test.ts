@@ -28,6 +28,7 @@ const baseRecord: UpstreamRecord = {
     apiKey: 'ollama_test',
   },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

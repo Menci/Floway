@@ -1,7 +1,7 @@
+import { compatibilityField, type Compatibility } from './compatibility.ts';
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
-import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, CHAT_COMPLETIONS_REASONING_DATA_STANDARDS, type ChatCompletionsReasoningOverrides } from '@floway-dev/protocols/openai-chat-completions';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
@@ -36,6 +36,7 @@ export interface UpstreamModelConfig {
   // `ProviderModel.flagOverrides`, sourced from the provider's per-model
   // rule rather than an operator-authored config row.
   flagOverrides?: FlagOverrides;
+  compatibility?: Compatibility;
 }
 
 // The public catalog id a model is exposed under: an explicit override when set,
@@ -59,39 +60,23 @@ export const optionalStringField = (value: unknown, label: string): string | und
   return value;
 };
 
-export const reasoningOverridesField = (value: unknown, label: string): ChatCompletionsReasoningOverrides => {
-  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  for (const key of Object.keys(value)) if (key !== 'text' && key !== 'data') throw new Error(`Malformed ${label}: unknown field ${key}`);
-  const result: ChatCompletionsReasoningOverrides = {};
-  if (value.text !== undefined) {
-    if (!(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS as readonly unknown[]).includes(value.text)) throw new Error(`Malformed ${label}.text`);
-    result.text = value.text as NonNullable<ChatCompletionsReasoningOverrides['text']>;
-  }
-  if (value.data !== undefined) {
-    if (!(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS as readonly unknown[]).includes(value.data)) throw new Error(`Malformed ${label}.data`);
-    result.data = value.data as NonNullable<ChatCompletionsReasoningOverrides['data']>;
-  }
-  return result;
-};
-
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
   'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions',
 ]);
 
 // The structured per-model capability map. A present key declares the model is
-// served by that endpoint. Reasoning options are sparse overrides. `allowEmpty` is set for the
+// served by that endpoint. `allowEmpty` is set for the
 // upstream-level fallback map (an upstream may serve only kind-derived
 // embedding/image/transcription models or manual rerank models and declare no
 // chat endpoint).
-export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean; availabilityOnly?: boolean } = {}): ModelEndpoints => {
+export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
   for (const [key, sub] of Object.entries(value)) {
     if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
-    if (options.availabilityOnly && isRecord(sub) && Object.keys(sub).length > 0) throw new Error(`Malformed ${label}.${key}: configure reasoning through chat_completions_reasoning_overrides`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
-    if (key === 'openaiChatCompletions' && Object.keys(sub).some(option => option !== 'reasoning')) throw new Error(`Malformed ${label}.${key}: unknown option`);
-    endpoints[key as ModelEndpointKey] = key === 'openaiChatCompletions' && sub.reasoning !== undefined ? { reasoning: reasoningOverridesField(sub.reasoning, `${label}.${key}.reasoning`) } : {};
+    if (Object.keys(sub).length > 0) throw new Error(`Malformed ${label}.${key}: configure protocol options through compatibility`);
+    endpoints[key as ModelEndpointKey] = {};
   }
   if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
   return endpoints;
@@ -342,6 +327,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
       : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
+    ...(value.compatibility !== undefined ? { compatibility: compatibilityField(value.compatibility, `${label}.compatibility`) } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),
   };
 };

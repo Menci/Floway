@@ -79,26 +79,38 @@ optional key defaults to the immediate upstream model ID, and
 in the compatibility identity. A downstream Floway reads the same metadata and
 materializes the identity at its own upstream boundary.
 
-Chat Completions reasoning formats are configured independently for text and
-opaque data. Upstream-wide `chat_completions_reasoning_overrides` and manual
-model `endpoints.openaiChatCompletions.reasoning` are sparse overrides; absent
-members inherit the provider default or the current upstream setting. Auto
-models use provider-owned per-model choices. The dashboard shows inherited
-values and their source. Vendor Compatibility flags configure request controls,
-cached-token usage, and structured-output workarounds; endpoint reasoning
-configuration owns all text and data conversion.
+Upstream and model compatibility settings live in `compatibility`, independently
+of endpoint availability and feature `flag_overrides`. Compatibility describes
+upstream dialects and the accommodations they require; feature flags select
+additional gateway functionality. Existing compatibility flags remain until
+their behavior is moved to dedicated settings.
+
+Chat Completions reasoning text and data formats use
+`compatibility.openaiChatCompletions.reasoning` at both the upstream and manual
+model levels. Settings are sparse: absent members inherit the provider default
+or the current upstream setting. Auto models use provider-owned per-model
+choices. The dashboard shows inherited values and their source. Disabling a
+Chat Completions endpoint hides these controls and retains their settings.
+Vendor Compatibility flags still configure request controls, cached-token usage,
+and structured-output workarounds; reasoning format settings own text and data
+conversion.
 
 ```json
 {
-  "chat_completions_reasoning_overrides": {
-    "text": "reasoning-content",
-    "data": "openrouter-reasoning-details"
+  "compatibility": {
+    "openaiChatCompletions": {
+      "reasoning": {
+        "text": "reasoning-content",
+        "data": "openrouter-reasoning-details"
+      }
+    }
   },
   "config": {
     "models": [{
       "upstreamModelId": "example-model",
       "kind": "chat",
-      "endpoints": {
+      "endpoints": { "openaiChatCompletions": {} },
+      "compatibility": {
         "openaiChatCompletions": {
           "reasoning": { "text": "reasoning-text" }
         }
