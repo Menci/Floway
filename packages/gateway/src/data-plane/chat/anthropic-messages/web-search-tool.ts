@@ -119,6 +119,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
             answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
             prepared.state,
             backend,
+            async error => { await use.log.error('web search failed', { error }); },
           ),
         },
       }),

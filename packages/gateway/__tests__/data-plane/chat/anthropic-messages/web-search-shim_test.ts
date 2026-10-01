@@ -1,6 +1,7 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { driveWebSearchStage } from './web-search-drive.ts';
+import * as webSearchShim from '../../../../src/data-plane/chat/anthropic-messages/web-search-shim.ts';
 import {
   decodeWebSearchCitationPayload,
   decodeWebSearchResultPayload,
@@ -10,11 +11,13 @@ import {
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
 } from '../../../../src/data-plane/chat/anthropic-messages/web-search-shim.ts';
+import { runAnthropicMessagesWebSearchTool } from '../../../../src/data-plane/chat/anthropic-messages/web-search-tool.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../src/data-plane/tools/web-search/config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import { compose, defineStage, move, run, type Event as RunEvent } from '@floway-dev/pipeline';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -826,12 +829,14 @@ const runStreamingShim = (
   events: AnthropicMessagesStreamEvent[],
   state: AnthropicMessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
+  reportFailure: (error: unknown) => Promise<void> = async () => {},
 ) =>
   collectStreamEvents(
     rewriteAnthropicMessagesWebSearchEventsToNative(
       toAsyncIterable(events.map(event => ({ type: 'event' as const, event }))),
       state,
       provider,
+      reportFailure,
     ),
   );
 
@@ -1327,4 +1332,44 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative requires a provider when m
     Error,
     'Active messages web-search rewrite requires a provider.',
   );
+});
+
+test('the native web-search tool records its original backend error before serving unavailable', async () => {
+  initRepo(new InMemoryRepo());
+  const fault = new Error('search backend unavailable', { cause: new TypeError('backend connection state') });
+  const provider = activeProvider(searchOnlyProvider(async () => { throw fault; }));
+  const selected = stubModelCandidate({ enabledFlags: new Set(['anthropic-messages-web-search-shim']) });
+  const backend = vi.spyOn(webSearchShim, 'resolveActiveAnthropicMessagesWebSearchProvider').mockResolvedValue(provider);
+  try {
+    const terminal = defineStage<Record<string, unknown>, Record<string, unknown>>({
+      name: 'nativeSearchSource',
+      return: { provides: ['response.chat.anthropicMessages', 'response.chat.anthropicMessages.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
+      execute: async facts => move({
+        ...facts, 'response.chat.anthropicMessages': {
+          kind: 'stream', frames: toAsyncIterable([
+            upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'tool_1', 'question'), ...upstreamMessageEnd('tool_use'),
+          ].map(event => eventFrame(event))),
+        },
+        'response.chat.anthropicMessages.streamedUsage': null, 'response.usage.billable': [],
+        'response.http.headers': [], 'response.http.status': 200, 'response.http.body': null,
+      }),
+    });
+    const logs: RunEvent[] = [];
+    const outcome = await run(compose<Record<string, unknown>, Record<string, unknown>>('nativeSearch', [
+      runAnthropicMessagesWebSearchTool({ targetOf: () => 'anthropicMessages' }), terminal,
+    ]), move({
+      'request.chat.anthropicMessages': { model: 'model', max_tokens: 32, messages: [{ role: 'user', content: 'question' }], tools: [{ type: 'web_search_20260209' }] },
+      'route.attempt': { candidateId: 0, upstreamId: selected.provider.upstreamId, modelId: selected.model.id, flags: ['anthropic-messages-web-search-shim'] },
+    }), { gateway: mockChatGatewayCtx(), resolveAttempt: () => selected, dump: async (event: RunEvent) => { logs.push(event); } });
+    const answer = outcome.facts['response.chat.anthropicMessages'] as { frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>> };
+    const events = await collectStreamEvents(answer.frames);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'content_block_start', content_block: expect.objectContaining({ type: 'web_search_tool_result', content: { type: 'web_search_tool_result_error', error_code: 'unavailable' } }) }));
+    const entry = logs.find(event => event.type === 'stage.log' && event.level === 'error');
+    expect(entry).toMatchObject({ context: 'runAnthropicMessagesWebSearchTool', message: 'web search failed' });
+    expect(entry?.type === 'stage.log' ? entry.fields?.error : undefined).toBe(fault);
+    expect(fault.cause).toBeInstanceOf(TypeError);
+    await outcome.drain();
+  } finally {
+    backend.mockRestore();
+  }
 });

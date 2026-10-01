@@ -637,6 +637,7 @@ const runWebSearchStopHandler = async function* (
   shimState: ShimStreamingState,
   state: Extract<AnthropicMessagesWebSearchShimState, { mode: 'active' }>,
   provider: ActiveAnthropicMessagesWebSearchProvider,
+  reportFailure: (error: unknown) => Promise<void>,
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
@@ -684,8 +685,8 @@ const runWebSearchStopHandler = async function* (
       };
       const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
       return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
-    } catch {
-      // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed provider/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
+    } catch (error) {
+      await reportFailure(error);
       return buildNativeWebSearchErrorResultBlock(block.upstreamToolUseId, 'unavailable');
     }
   })();
@@ -707,7 +708,8 @@ const runWebSearchStopHandler = async function* (
 export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
   state: AnthropicMessagesWebSearchShimState,
-  provider?: ActiveAnthropicMessagesWebSearchProvider,
+  provider: ActiveAnthropicMessagesWebSearchProvider | undefined,
+  reportFailure: (error: unknown) => Promise<void>,
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
   if (state.mode === 'inactive') {
     yield* frames;
@@ -800,7 +802,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
           throw new Error('web-search shim entered intercept path without active state.');
         }
 
-        yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!);
+        yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!, reportFailure);
         activeBlock = undefined;
         continue;
       }
