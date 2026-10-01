@@ -46,16 +46,6 @@ export const dumpBodyDescriptorSchema = z.object({
   type: z.literal('run'),
 }).strict();
 
-const dumpProtocolFrameSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('event'), event: z.unknown() }).strict(),
-  z.object({ type: z.literal('done') }).strict(),
-]);
-
-export const dumpStreamEventSchema = z.object({
-  frame: dumpProtocolFrameSchema,
-  ts: z.number(),
-}).strict();
-
 export const dumpBrokerFrameSchema = z.object({
   event: z.literal('appended'),
   data: dumpMetadataSchema,

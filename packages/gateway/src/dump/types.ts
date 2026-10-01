@@ -6,7 +6,6 @@ import type { z } from 'zod';
 import type {
   dumpErrorSchema,
   dumpMetadataSchema,
-  dumpStreamEventSchema,
   dumpUpstreamRefSchema,
 } from './schemas.ts';
 import type { DumpEvent } from '@floway-dev/pipeline';
@@ -29,10 +28,6 @@ export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 export type DumpErrorMeta = z.infer<typeof dumpErrorSchema>;
 
 export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
-
-// A protocol frame decoded from a recorded stream. Its producing stage owns
-// the event shape; client streams already contain their final wire projection.
-export type DumpStreamEvent = z.infer<typeof dumpStreamEventSchema>;
 
 // The completed NDJSON artifact is stored after owned readers and deferred work
 // settle. Cold detail reads rehydrate the same event bytes.

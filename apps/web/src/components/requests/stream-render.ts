@@ -1,6 +1,5 @@
 import type { RecordedClientStream } from './run-stream';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -31,21 +30,21 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
-export const collectStream = async (kind: CollectKind, { events, ended }: RecordedClientStream): Promise<CollectedStream> => {
+export const collectStream = async (kind: CollectKind, { frames, ended }: RecordedClientStream): Promise<CollectedStream> => {
   const complete = (result: unknown): CollectedStream => ({ result, error: null, truncated: !ended });
   try {
     switch (kind) {
     case 'openai-chat-completions':
-      return complete(await collectOpenAIChatCompletionsProtocolEventsToResult(frames(events) as never));
+      return complete(await collectOpenAIChatCompletionsProtocolEventsToResult(asIterable(frames) as never));
     case 'anthropic-messages':
-      return complete(await collectAnthropicMessagesProtocolEventsToResult(frames(events) as never));
+      return complete(await collectAnthropicMessagesProtocolEventsToResult(asIterable(frames) as never));
     case 'openai-responses':
-      return complete(await collectOpenAIResponsesProtocolEventsToResult(frames(events) as never));
+      return complete(await collectOpenAIResponsesProtocolEventsToResult(asIterable(frames) as never));
     case 'gemini-generate-content':
-      return complete(await collectGeminiGenerateContentProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>));
+      return complete(await collectGeminiGenerateContentProtocolEventsToResult(asIterable(frames) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>));
     case 'openai-completions': {
       const stream = (async function* () {
-        for (const { frame } of events) {
+        for (const frame of frames) {
           const typed = frame as ProtocolFrame<OpenAICompletionsStreamEvent>;
           if (typed.type === 'event') yield typed.event;
         }
@@ -58,6 +57,6 @@ export const collectStream = async (kind: CollectKind, { events, ended }: Record
   }
 };
 
-async function* frames(events: readonly DumpStreamEvent[]) {
-  for (const event of events) yield event.frame;
+async function* asIterable(frames: readonly ProtocolFrame<unknown>[]) {
+  yield* frames;
 }
