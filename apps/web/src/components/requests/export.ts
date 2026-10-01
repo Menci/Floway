@@ -1,4 +1,5 @@
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
+import { redactRunHeaders } from './run-redact';
 import type { DumpRecord } from '@floway-dev/gateway/dump-types';
 
 // The dump API serves headers verbatim so the dashboard's reveal affordance
@@ -8,6 +9,7 @@ const redactHeaders = (headers: Array<[string, string]>): Array<[string, string]
   headers.map(([name, value]) => isSensitiveHeader(name) ? [name, redactHeaderValue(value)] as [string, string] : [name, value]);
 
 const redactRecord = (record: DumpRecord): DumpRecord => {
+  if (record.shape === 'run') return { ...record, events: redactRunHeaders(record.events) };
   const capture = record.capture === undefined ? undefined : {
     ...record.capture,
     exchanges: record.capture.exchanges.map(exchange => ({

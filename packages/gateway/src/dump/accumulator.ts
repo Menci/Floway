@@ -8,21 +8,15 @@ import type { Context } from 'hono';
 
 import { HttpCapture } from './http-capture.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
-import type {
-  DumpErrorMeta,
-  DumpMetadata,
-  DumpStreamEvent,
-  DumpUpstreamRef,
-  DumpWriteRecord,
-  PreparedDumpRequestBody,
-  StoredDumpResponseBody,
-} from './types.ts';
+import type { StreamRecording } from './turn-dump.ts';
+import type { DumpStreamEvent, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpResponseBody } from './types.ts';
 import { encodeBodyForWire } from './wire.ts';
 import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
+import type { DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from '@floway-dev/dump/types';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
@@ -153,6 +147,10 @@ export class DumpAccumulator {
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
+  }
+
+  openStream(): StreamRecording {
+    return { frame: frame => { this.frame(frame); }, end: () => {}, fact: null };
   }
 
   // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
@@ -328,6 +326,7 @@ export class DumpAccumulator {
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
       const record: DumpWriteRecord = {
+        shape: 'edge',
         capture: {
           exchanges: this.http.exchanges,
           ...(response.rawCaptured ? {

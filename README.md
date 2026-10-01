@@ -90,9 +90,22 @@ Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
 override that protocol's canonical path; there is no upstream-wide rerank path.
 
-Audio transcription is a buffered multipart passthrough for Custom, Azure, and
-Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
-responses retain their upstream wire shape.
+Audio transcription parses multipart uploads into ordered content entries,
+retaining each file's name, media type, timestamp and bytes. Each upstream
+attempt builds its own multipart body. JSON, text and subtitle responses retain
+their upstream document; transcription SSE responses preserve event labels and
+data while usage is observed separately. Successful pipeline responses retain
+the upstream HTTP status.
+
+Billing records each actual upstream usage observation independently, including
+multiple model calls within one hosted-tool turn. Pricing uses each observation's
+model identity and pricing facts. The request inspector shows the stage tree, both fact
+directions, changes at each descent and return, stage logs and decoded protocol frames. Repeated objects retain
+shared identities, while deferred outcomes and native content descriptions remain visible.
+Each referenced stream shows its recorded frames and completion marker.
+Request diagnostics sum the observed token
+quantities; performance uses the observed output count for TPOT and partial
+output failures.
 
 ### Upstreams
 
@@ -183,6 +196,29 @@ pnpm run verify
 also available as a root script. Route type generation runs first because the
 web app's generated types are not checked in and its lint configuration is
 type-aware. The web build includes assertions on the emitted bundle.
+
+Provider operations use typed pipeline handoffs. Portable model facts snapshot flags as arrays;
+upload facts contain bytes and file metadata. The shared HTTP stage adopts each native body
+once, and decoders replace its release action as ownership moves through the run. Provider
+retry observations and failed-over attempts join the same billable collection. Settlement
+wraps rendering and writes each observed call once, including calls completed before a later
+stage throws. Client JSON serialization runs inside settlement and publishes UTF-8 body bytes
+while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
+transport errors take precedence over the settlement's generic failure marker.
+
+Pipeline owns the stage-event format and object-space encoding. `@floway-dev/dump` owns
+run recording, stream references, completed NDJSON artifacts and metadata publication.
+Gateway supplies storage/broker ports and applies request admission, model attribution,
+HTTP byte measurement and retention policy. Closing waits for owned readers and deferred
+outcomes before storing the completed record and publishing its metadata. LogStream
+infrastructure is available on both platforms; live recording and its business readers
+remain outside these three PRs.
+
+Pipeline endpoints are assembled from individual stage modules. Each stage owns
+its request and response contract; a large stage keeps local helpers in the same
+file and can place independent parts in a sibling directory of the same name.
+Protocol-family folders own their stages, while pipeline and wire modules
+compose the stages in traversal order.
 
 The protocol tests cover v1 and v2 opaque-blob carrier compatibility, lossless
 UTF-16 code-unit recovery, and retained-memory growth during history replay.

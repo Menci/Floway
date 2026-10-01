@@ -7,7 +7,7 @@ import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 
 interface Commit { ids: string[]; keyId: string | null }
 interface Selection { keyId: string | null; seed: DumpMetadata[] }
@@ -100,6 +100,15 @@ describe('dump subscription key switch', () => {
 
     expect(screen.getAllByText('/v1/key-a-2')).toHaveLength(1);
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/key-a-2', '/v1/key-a-1']);
+  });
+
+  it('preserves older completed records when run IDs were assigned in a different start order', () => {
+    const older = { ...record('z-started-later'), completedAt: 100 };
+    const removed = { ...record('a-started-earlier'), completedAt: 300 };
+    renderSubscription('key-a', [removed, older]);
+    const recent = { ...record('m-long-running'), completedAt: 200 };
+    stream.liveSource().emit('snapshot', JSON.stringify({ records: [recent] }));
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/m-long-running', '/v1/z-started-later']);
   });
 
   it('throws when the session token is gone', () => {

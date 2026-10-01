@@ -6,7 +6,8 @@ import {
   persistedDumpMetadataSchema,
   dumpStreamEventsSchema,
 } from './schemas.ts';
-import type { DumpMetadata, DumpStreamEvent } from './types.ts';
+import type { DumpStreamEvent } from './types.ts';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 
 export type DumpBodyDescriptor = z.infer<typeof dumpBodyDescriptorSchema>;
 type PersistedDumpMetadata = z.infer<typeof persistedDumpMetadataSchema>;

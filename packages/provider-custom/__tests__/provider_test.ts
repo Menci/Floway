@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -340,12 +340,11 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
       return jsonResponse({ results: [] });
     },
     async () => {
-      const result = await instance.instance.callRerank(
+      const result = await callProviderPipeline(instance, 'rerank',
         model,
         parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'cohere-v2' });
       assertEquals(result.modelKey, 'raw-reranker');
     },
@@ -373,19 +372,19 @@ test('callRerank honors the per-model path without adding an upstream path overr
       return jsonResponse({ output: { results: [] } });
     },
     async () => {
-      await instance.instance.callRerank(
+      await callProviderPipeline(instance, 'rerank',
         model,
         parseRerankRequest('jina-v1', { model: 'raw-reranker', query: 'query', documents: ['one'] }).request,
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
     },
   );
   assertEquals(requestUrl, 'https://custom.example.com/workspace/rerank');
 });
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const provider = createCustomProvider(buildCustomUpstream()).instance;
+  const instance = createCustomProvider(buildCustomUpstream());
+  const provider = instance.instance;
   const bodies: Record<string, Record<string, unknown>> = {};
   const betas: Record<string, string | null> = {};
 
@@ -414,7 +413,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
+      await callProviderPipeline(instance, 'openaiEmbeddings', model, { input: 'hi' }, undefined, opts);
     },
   );
 
@@ -434,7 +433,8 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', supported_endpoints: ['/some/random/path'] }] }),
     async () => {
-      const provider = createCustomProvider(buildCustomUpstream()).instance;
+      const instance = createCustomProvider(buildCustomUpstream());
+      const provider = instance.instance;
       const [model] = await provider.getProvidedModels(directFetcher);
       assertEquals(model.endpoints, { openaiChatCompletions: {} });
       assertEquals(model.kind, 'chat');
@@ -493,7 +493,7 @@ test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injec
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
+      const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -518,12 +518,11 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callAlphaSearch(
+      const result = await callProviderPipeline(provider, 'alphaSearch',
         model,
         { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
       assertEquals(result.response.status, 200);
       assertEquals(result.modelKey, 'gpt-search');
     },

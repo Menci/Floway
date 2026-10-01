@@ -145,6 +145,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -245,6 +248,9 @@ importers:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     devDependencies:
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
       '@floway-dev/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway
@@ -360,6 +366,9 @@ importers:
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -433,6 +442,12 @@ importers:
 
   packages/http:
     dependencies:
+      '@discoveryjs/json-ext':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
@@ -504,6 +519,9 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -520,9 +538,15 @@ importers:
 
   packages/provider-azure:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -558,9 +582,15 @@ importers:
 
   packages/provider-codex:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -577,9 +607,15 @@ importers:
 
   packages/provider-copilot:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -605,6 +641,12 @@ importers:
 
   packages/provider-custom:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -618,6 +660,12 @@ importers:
 
   packages/provider-ollama:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -652,6 +700,12 @@ importers:
 
   packages/test-utils:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider

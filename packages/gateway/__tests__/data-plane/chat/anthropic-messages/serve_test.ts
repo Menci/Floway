@@ -143,7 +143,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: provider,
     },
     model: stubInternalModel({
       id: modelId,
@@ -705,7 +705,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 // callback so the http.ts catch can build an internal-error result carrying
 // the correct upstream, and `recordFailedRequest` lands a row rather than
 // short-circuiting on missing telemetry. Passthrough's equivalent regression
-// lives in passthrough-serve_test.ts (R3 fix 303c4e89).
+// lived in passthrough-serve_test.ts, which went with that surface (R3 fix 303c4e89).
 test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {

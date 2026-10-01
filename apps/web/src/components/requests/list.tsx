@@ -31,7 +31,7 @@ import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderBadge } from '../upstreams/provider-badge';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 
 const { Option, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;

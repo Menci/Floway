@@ -127,7 +127,7 @@ function isTokenValid(token: string | null, expiresAt: number): boolean {
   return expiresAt > now + 60;
 }
 
-async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
+export async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
   const now = Date.now();
   const cached = inProcessTokenCache.get(upstreamId);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
@@ -225,21 +225,12 @@ export interface CopilotAuth {
   githubToken: string;
 }
 
-export async function copilotAuthedFetch(path: string, init: FetchInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
-  const signal = init.signal ?? undefined;
-  let ownedInit: FetchInit | undefined = init;
-  // The token exchange is the only await before the data-plane dispatch. Keep
-  // the body in an explicit owner and replace the generator parameter so the
-  // final network wait cannot retain both copies after ownership transfers.
-  init = { signal };
-  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
-
+export const copilotRequestHeaders = (entry: CopilotTokenEntry, initHeaders: HeadersInit | undefined, attached: HttpHeaderLines | undefined): Headers => {
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
   const requestId = crypto.randomUUID();
 
-  if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
-  const headers = new Headers(ownedInit.headers);
+  const headers = new Headers(initHeaders);
   headers.set('Authorization', `Bearer ${entry.token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('editor-version', EDITOR_VERSION);
@@ -265,12 +256,27 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
   // otherwise pin. An interceptor that wants to clear an arbitrary downstream
   // header value must do so by name through this sentinel; the layer does not
   // otherwise expose a per-header delete API.
-  if (options.headers) {
-    for (const [name, value] of options.headers) {
+  if (attached) {
+    for (const [name, value] of attached) {
       if (value === '') headers.delete(name);
       else headers.set(name, value);
     }
   }
+
+  return headers;
+};
+
+export async function copilotAuthedFetch(path: string, init: FetchInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
+  const signal = init.signal ?? undefined;
+  let ownedInit: FetchInit | undefined = init;
+  // The token exchange is the only await before the data-plane dispatch. Keep
+  // the body in an explicit owner and replace the generator parameter so the
+  // final network wait cannot retain both copies after ownership transfers.
+  init = { signal };
+  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
+
+  if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
+  const headers = copilotRequestHeaders(entry, ownedInit.headers, options.headers);
 
   const request = { ...ownedInit, headers };
   ownedInit = undefined;

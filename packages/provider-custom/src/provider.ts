@@ -3,6 +3,7 @@ import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
 import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
+import { createCustomPipelines } from './pipelines.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
@@ -288,6 +289,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createCustomPipelines(config),
     instance,
   };
 };

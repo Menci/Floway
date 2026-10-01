@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
@@ -161,9 +161,9 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
       assertEquals(models[0]?.chat, undefined);
-      await instance.instance.callOpenAIAudioTranscriptions(models[0], {
+      await callProviderPipeline(instance, 'openaiAudioTranscriptions', models[0], {
         entries: [
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
+          { name: 'file', value: { bytes: new TextEncoder().encode('audio'), name: 'clip.wav', type: 'audio/wav' } },
           { name: 'model', value: 'public-model' },
         ],
       }, undefined, noopUpstreamCallOptions());

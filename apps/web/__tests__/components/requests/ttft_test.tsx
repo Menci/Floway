@@ -7,7 +7,8 @@ import type { ApiKey } from '../../../src/api/types';
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { RequestListPanel } from '../../../src/components/requests/list';
 import { renderInApp } from '../../render';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+import type { DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => (
@@ -45,7 +46,8 @@ const makeRecordMeta = (id: string, ttftMs: number | null): DumpMetadata => ({
   upstream: null,
 });
 
-const makeFullRecord = (id: string, ttftMs: number | null): DumpRecord => ({
+const makeFullRecord = (id: string, ttftMs: number | null): DumpEdgeRecord => ({
+  shape: 'edge',
   meta: makeRecordMeta(id, ttftMs),
   request: { method: 'POST', path: '/v1/chat/completions', headers: [], body: { encoding: 'utf8', data: '{}' } },
   response: { status: 200, headers: [], body: { type: 'stream', events: [] } },

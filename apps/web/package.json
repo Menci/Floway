@@ -11,6 +11,7 @@
     "typecheck": "react-router typegen && tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {
+    "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "@floway-dev/provider-custom": "workspace:*",
@@ -46,6 +47,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@floway-dev/dump": "workspace:*",
     "@floway-dev/gateway": "workspace:*",
     "@react-router/dev": "8.3.0",
     "@testing-library/react": "^16.3.0",

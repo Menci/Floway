@@ -46,21 +46,31 @@ export const upstreamResponseToWire = (
 };
 
 // Converts stored bytes to the JSON representation served by the control plane.
-export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
-  ...(record.capture === undefined ? {} : { capture: record.capture }),
-  meta: record.meta,
-  request: {
-    method: record.request.method,
-    path: record.request.path,
-    headers: record.request.headers,
-    body: encodeBodyForWire(record.request.body, contentTypeOf(record.request.headers)),
-  },
-  response: {
-    status: record.response.status,
-    headers: record.response.headers,
-    body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
-    ...(record.response.upstream !== undefined ? {
-      upstream: upstreamResponseToWire(record.response.upstream),
-    } : {}),
-  },
-});
+export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => {
+  if (record.shape === 'run') {
+    return {
+      shape: 'run',
+      meta: record.meta,
+      events: new TextDecoder('utf-8', { fatal: true }).decode(record.events),
+    };
+  }
+  return {
+    shape: 'edge',
+    ...(record.capture === undefined ? {} : { capture: record.capture }),
+    meta: record.meta,
+    request: {
+      method: record.request.method,
+      path: record.request.path,
+      headers: record.request.headers,
+      body: encodeBodyForWire(record.request.body, contentTypeOf(record.request.headers)),
+    },
+    response: {
+      status: record.response.status,
+      headers: record.response.headers,
+      body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
+      ...(record.response.upstream !== undefined ? {
+        upstream: upstreamResponseToWire(record.response.upstream),
+      } : {}),
+    },
+  };
+};

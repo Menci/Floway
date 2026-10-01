@@ -141,7 +141,7 @@ export const codexModelContextWindow = (model: ProviderModel): CodexContextWindo
   };
 };
 
-export const codexModelUsesResponsesLite = (model: ProviderModel): boolean => {
+export const codexModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 'providerData'>): boolean => {
   const providerData = model.providerData;
   if (providerData === undefined) return false;
   if (!isPlainRecord(providerData)) {

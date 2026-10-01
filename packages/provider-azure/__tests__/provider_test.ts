@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createAzureProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -133,7 +133,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
           }],
         }],
       }, 'generate', undefined, noopUpstreamCallOptions());
-      const embeddings = await instance.instance.callOpenAIEmbeddings(providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
+      const embeddings = await callProviderPipeline(instance, 'openaiEmbeddings', providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
       assertEquals(chat.modelKey, 'gpt-prod');
       assertEquals(responses.modelKey, 'gpt-prod');
@@ -474,7 +474,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       const models = await provider.instance.getProvidedModels(directFetcher);
       assertEquals(models[0].kind, 'image');
       assertEquals(models[0].endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
-      const result = await provider.instance.callOpenAIImagesGenerations(models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
+      const result = await callProviderPipeline(provider, 'openaiImagesGenerations', models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -521,11 +521,11 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
     async () => {
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIImagesEdits(models[0], {
+      const result = await callProviderPipeline(provider, 'openaiImagesEdits', models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{
           type: 'upload',
-          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+          file: { bytes: new Uint8Array([1, 2, 3]), name: 'photo.png', type: 'image/png' },
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
@@ -556,9 +556,9 @@ test('createAzureProvider callOpenAIAudioTranscriptions selects the deployment i
     async () => {
       const provider = createAzureProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
+      const result = await callProviderPipeline(provider, 'openaiAudioTranscriptions', model, {
         entries: [
-          { name: 'file', value: new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' }) },
+          { name: 'file', value: { bytes: new TextEncoder().encode('audio'), name: 'clip.mp3', type: 'audio/mpeg' } },
           { name: 'model', value: 'public-model' },
           { name: 'response_format', value: 'vtt' },
         ],
@@ -590,10 +590,10 @@ test('createAzureProvider callOpenAIAudioTranscriptions reduces a Foundry endpoi
     async () => {
       const provider = createAzureProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callOpenAIAudioTranscriptions(model, {
+      await callProviderPipeline(provider, 'openaiAudioTranscriptions', model, {
         entries: [
           { name: 'model', value: 'public-model' },
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
+          { name: 'file', value: { bytes: new TextEncoder().encode('audio'), name: 'clip.wav', type: 'audio/wav' } },
         ],
       }, undefined, noopUpstreamCallOptions());
     },

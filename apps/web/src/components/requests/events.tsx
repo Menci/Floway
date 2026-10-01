@@ -16,7 +16,8 @@ import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, Text, mergeClasses } = fluentComponents;
 
-type IndexedEvent = RenderedStreamEvent & { index: number };
+export type RenderedEvent = Omit<RenderedStreamEvent, 'timestamp'> & { timestamp?: number };
+type IndexedEvent = RenderedEvent & { index: number };
 interface EventRowProps {
   events: IndexedEvent[];
   collapsed: Set<number>;
@@ -40,7 +41,7 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       language={event.parseError || event.text === '[DONE]' ? 'plain' : 'json'}
       header={<div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         <Button appearance="subtle" size="small" icon={closed ? <ChevronRightRegular /> : <ChevronDownRegular />} aria-expanded={!closed} onClick={() => toggle(event.index)}>{label}</Button>
-        <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>
+        {event.timestamp !== undefined && <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>}
         {event.parseError && <Text size={100}>{t('dashboard.requests.eventParseError')}</Text>}
       </div>}
     />
@@ -48,6 +49,12 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
 }
 
 export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEvent[]; kind: CollectKind | null; toolbarStart: ReactNode }) {
+  const rendered = useMemo(() => renderStreamEvents(kind, events), [events, kind]);
+  const copyText = useMemo(() => streamEventsCopyText(kind, events), [events, kind]);
+  return <RenderedEventList events={rendered} copyText={copyText} toolbarStart={toolbarStart} />;
+}
+
+export function RenderedEventList({ events, copyText, toolbarStart, emptyText }: { events: RenderedEvent[]; copyText: string; toolbarStart: ReactNode; emptyText?: string }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -58,7 +65,7 @@ export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEv
   const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: list?.element ?? null });
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
-  const rendered = useMemo(() => renderStreamEvents(kind, events).map((event, index) => ({ ...event, index })), [events, kind]);
+  const rendered = useMemo(() => events.map((event, index) => ({ ...event, index })), [events]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return needle ? rendered.filter(event => `${event.index + 1} ${event.event ?? ''} ${event.text}`.toLocaleLowerCase().includes(needle)) : rendered;
@@ -80,7 +87,7 @@ export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEv
       <div className="min-w-0">{toolbarStart}</div>
       <div className="ml-auto flex items-center gap-2 shrink-0">
         <TooltipIconButton icon={<SearchRegular />} label={t('dashboard.requests.findEvents')} onClick={() => { setSearchOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }} />
-        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(streamEventsCopyText(kind, events))} />
+        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(copyText)} />
         <Menu checkedValues={{ wrap: wrap ? ['on'] : [] }} onCheckedValueChange={(_, data) => setWrap(data.checkedItems.includes('on'))}>
           <MenuTrigger disableButtonEnhancement><Button appearance="subtle" size="small" icon={<MoreHorizontalRegular />} aria-label={t('dashboard.requests.eventOptions')} /></MenuTrigger>
           <MenuPopover><MenuList>
@@ -96,7 +103,7 @@ export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEv
       <Text size={200} className="text-fui-fg3">{filtered.length} / {events.length}</Text>
       <TooltipIconButton icon={<DismissRegular />} label={t('common.dismiss')} onClick={() => { setSearchOpen(false); changeQuery(''); }} />
     </div>}
-    {filtered.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noEventMatches')}</EmptyStateLine> : <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
+    {filtered.length === 0 ? <EmptyStateLine className="p-4">{query.trim() ? t('dashboard.requests.noEventMatches') : emptyText ?? t('dashboard.requests.noEventMatches')}</EmptyStateLine> : <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
       <List
         aria-label={t('dashboard.requests.events', { count: events.length })}
         listRef={setList}

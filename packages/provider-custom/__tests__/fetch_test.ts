@@ -15,7 +15,7 @@ import {
 import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -286,11 +286,11 @@ test('Custom provider callOpenAIImagesEdits forwards multipart body with model f
     async () => {
       const provider = createCustomProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIImagesEdits(model, {
+      const result = await callProviderPipeline(provider, 'openaiImagesEdits', model, {
         parameters: { prompt: 'add a kite' },
         images: [{
           type: 'upload',
-          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+          file: { bytes: new Uint8Array([1, 2, 3]), name: 'photo.png', type: 'image/png' },
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
@@ -326,9 +326,9 @@ test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries 
     async () => {
       const provider = createCustomProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
+      const result = await callProviderPipeline(provider, 'openaiAudioTranscriptions', model, {
         entries: [
-          { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
+          { name: 'file', value: { bytes: new Uint8Array([7, 8]), name: 'voice.ogg', type: 'audio/ogg' } },
           { name: 'model', value: 'public-model' },
           { name: 'language', value: 'en' },
         ],

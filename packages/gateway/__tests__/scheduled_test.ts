@@ -30,6 +30,7 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
 });
 
 const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
+  shape: 'edge',
   meta: {
     id,
     startedAt: completedAt - 1,

@@ -7,6 +7,9 @@ export type {
   OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
+export type { ProviderCallResponse, ProviderModelFacts, ProviderOperation, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderPipelines, ProviderRequest, ProviderResponse, ProviderRerankResponse, ProviderServices } from './pipeline.ts';
+export { providerModelFacts } from './pipeline.ts';
+export { mergeHttpHeaders, replaceHttpHeader, withHttpContentType } from './http-headers.ts';
 
 export type { InternalDebugError } from './error.ts';
 export { toInternalDebugError } from './error.ts';
@@ -60,7 +63,7 @@ export type {
 } from './provider.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export { prepareOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';

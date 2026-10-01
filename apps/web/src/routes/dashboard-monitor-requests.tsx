@@ -25,7 +25,8 @@ import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useMediaQuery } from '../lib/use-media-query';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+import type { DumpRecord } from '@floway-dev/gateway/dump-types';
 
 export const handle = dashboardWorkspaceHandle;
 
@@ -67,13 +68,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   ]);
   const record = recordResult?.data ?? null;
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
+  // Only an edge-shaped record carries a captured frame log to collect; a run
+  // records its stream inside its own events and the detail panel reads it there.
+  const streamEvents = record?.shape === 'edge' && record.response.body.type === 'stream' ? record.response.body.events : [];
   const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
   // The pre-translation upstream view: dispatched by `meta.targetApi` (the
   // target protocol) rather than `meta.path` (the source protocol). Only
   // translated turns carry an upstream body.
   const upstreamCollectKind = record?.meta.targetApi ? collectKindFromTargetApi(record.meta.targetApi) : null;
-  const upstreamStreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
+  const upstreamStreamEvents = record?.shape === 'edge' && record.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
   const upstreamCollected = upstreamCollectKind && upstreamStreamEvents.length ? await collectStream(upstreamCollectKind, upstreamStreamEvents) : null;
   return {
     collected,

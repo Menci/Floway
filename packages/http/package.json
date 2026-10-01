@@ -4,6 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./pipeline": {
+      "import": "./src/pipeline.ts",
+      "types": "./src/pipeline.ts"
+    },
+    "./request-content": {
+      "import": "./src/request-content.ts",
+      "types": "./src/request-content.ts"
+    },
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
@@ -13,6 +21,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@discoveryjs/json-ext": "1.1.0",
+    "@floway-dev/pipeline": "workspace:*",
     "@noble/hashes": "^2.2.0",
     "@reclaimprotocol/tls": "0.1.2",
     "@scure/base": "^2.2.0"

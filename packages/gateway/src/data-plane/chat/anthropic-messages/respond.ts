@@ -107,7 +107,7 @@ const observeAnthropicMessagesFrames = async function* (
   ctx: GatewayCtx,
 ) {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
     if (isAnthropicMessagesTerminalFrame(frame) && !failed) state.completed = true;
@@ -126,7 +126,7 @@ const anthropicMessagesSseFrames = async function* (frames: AsyncIterable<Protoc
   } catch (error) {
     state.failed = true;
     const event = internalAnthropicMessagesErrorPayload(toInternalDebugError(error)) as unknown as AnthropicMessagesStreamEvent;
-    ctx.dump?.frame(eventFrame(event));
+    await ctx.dump?.frame(eventFrame(event));
     yield sseFrame(JSON.stringify(event), 'error');
   }
 };

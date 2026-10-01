@@ -1,4 +1,5 @@
-import type { DumpAccumulator } from '../../../dump/accumulator.ts';
+import { DumpAccumulator } from '../../../dump/accumulator.ts';
+import type { TurnDump } from '../../../dump/turn-dump.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ExecuteResult } from '@floway-dev/provider';
 import type { TranslateTripResult } from '@floway-dev/translate';
@@ -20,10 +21,11 @@ export interface TranslationUpstreamCapture {
 // copy) — zero per-request cost on that path. `targetApi` is stamped eagerly so
 // `meta.targetApi` is set even when the upstream stream produces zero frames.
 export const captureFromDump = (
-  dump: DumpAccumulator | null,
+  dump: TurnDump | null,
   targetApi: ChatTargetApi,
 ): TranslationUpstreamCapture | undefined => {
   if (dump === null) return undefined;
+  if (!(dump instanceof DumpAccumulator)) throw new Error('Legacy chat translation requires an edge dump recording');
   dump.setUpstreamTargetApi(targetApi);
   const upstreamFrame = (frame: ProtocolFrame<unknown>) => dump.upstreamFrame(frame);
   const upstreamApiError = (error: { status: number; headers: Headers; body: Uint8Array }) => dump.upstreamApiError(error);

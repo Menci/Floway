@@ -16,7 +16,6 @@ import type {
   dumpStreamEventSchema,
 } from './schemas.ts';
 import type { DumpMetadata } from '@floway-dev/dump/types';
-export type { DumpRecordId, DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from '@floway-dev/dump/types';
 
 export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 
@@ -82,14 +81,16 @@ export interface StoredDumpResponse {
   readonly upstream?: StoredDumpUpstreamResponse;
 }
 
-export type StoredDumpRecord = {
+export type StoredDumpEdgeRecord = {
+  shape: 'edge';
   capture?: DumpCapture;
   meta: DumpMetadata;
   request: StoredDumpRequest;
   response: StoredDumpResponse;
 };
 
-export type DumpWriteRecord = {
+export type DumpWriteEdgeRecord = {
+  shape: 'edge';
   capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpWriteRequest;
@@ -131,9 +132,27 @@ interface DumpResponse {
   readonly upstream?: DumpUpstreamResponse;
 }
 
-export type DumpRecord = {
+export type DumpEdgeRecord = {
+  shape: 'edge';
   capture?: DumpCapture;
   meta: DumpMetadata;
   request: DumpRequest;
   response: DumpResponse;
 };
+
+// A run's event stream records every stage and both directions.
+export type StoredDumpRunRecord = {
+  shape: 'run';
+  meta: DumpMetadata;
+  events: Uint8Array;
+};
+
+export type DumpRunRecord = {
+  shape: 'run';
+  meta: DumpMetadata;
+  events: string;
+};
+
+export type StoredDumpRecord = StoredDumpEdgeRecord | StoredDumpRunRecord;
+export type DumpWriteRecord = DumpWriteEdgeRecord | StoredDumpRunRecord;
+export type DumpRecord = DumpEdgeRecord | DumpRunRecord;

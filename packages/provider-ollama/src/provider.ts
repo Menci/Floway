@@ -30,6 +30,7 @@ import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe } from './usage-probe.ts';
@@ -228,6 +229,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createOllamaPipelines(record.id, config, state),
     instance,
   };
 };

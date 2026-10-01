@@ -135,7 +135,7 @@ const isOpenAIResponsesTerminalFrame = (frame: ProtocolFrame<OpenAIResponsesStre
 
 const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
     if (isOpenAIResponsesTerminalFrame(frame) && !failed) state.completed = true;
@@ -169,11 +169,11 @@ const openaiResponsesSseFrames = async function* (frames: AsyncIterable<Protocol
   } catch (error) {
     state.failed = true;
     const errorEvent = internalOpenAIResponsesStreamErrorEvent(error);
-    ctx.dump?.frame(eventFrame(errorEvent));
+    await ctx.dump?.frame(eventFrame(errorEvent));
     yield sseFrame(JSON.stringify(errorEvent), 'error');
     if (announced !== undefined) {
       const failedFrame = eventFrame(openaiResponsesFailedEvent(announced, error));
-      ctx.dump?.frame(failedFrame);
+      await ctx.dump?.frame(failedFrame);
       yield openaiResponsesProtocolFrameToSSEFrame(failedFrame);
     }
   }
