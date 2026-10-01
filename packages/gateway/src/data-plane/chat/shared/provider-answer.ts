@@ -18,9 +18,11 @@ export const providerChatAnswer = async <O extends ChatProviderOperation>(candid
     billable,
     body: 'kind' in output && output.kind === 'stream' ? exchange.body : spentBody(exchange.body),
   };
-  const body = await readUpstreamBody(exchangeResponse(exchange));
+  const response = exchangeResponse(exchange);
+  spentBody(exchange.body);
+  const body = await readUpstreamBody(response);
   return {
     answer: { status: exchange.status, message: body.text, ...('json' in body ? { body: body.json } : {}) },
-    status: exchange.status, headers: exchange.headers, billable, body: spentBody(exchange.body),
+    status: exchange.status, headers: exchange.headers, billable, body: exchange.body,
   };
 };
