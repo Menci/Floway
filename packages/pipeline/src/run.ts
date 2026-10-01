@@ -156,26 +156,31 @@ export const getFailureFacts = (error: unknown): Facts | undefined =>
   typeof error === 'object' && error !== null ? failureFacts.get(error)?.facts : undefined;
 
 const captureFailure = (error: unknown, facts: Facts, scope: RunScope): unknown => {
-  if (typeof error !== 'object' || error === null) return error;
-  const known = scope.failures.get(error);
-  if (known !== undefined) return known;
+  const isReference = typeof error === 'object' && error !== null;
+  if (isReference) {
+    const known = scope.failures.get(error);
+    if (known !== undefined) return known;
+  }
   const owner = scopeOwners.get(scope)!;
-  const previous = failureFacts.get(error);
-  // A shared refresh promise may reject several runs with the same Error.
-  // Each foreign association needs its own cause wrapper; neither the source
-  // exception nor a completed run's diagnostic context is overwritten.
-  const caught = previous !== undefined && previous.owner !== owner
-    ? new Error(error instanceof Error ? error.message : 'Pipeline execution failed', { cause: error })
-    : error;
+  const previous = isReference ? failureFacts.get(error) : undefined;
+  // Shared Error objects and primitive stream rejection values need a per-run
+  // cause wrapper, so the diagnostic context never overwrites another run's.
+  const caught = !isReference
+    ? new Error(String(error), { cause: error })
+    : previous !== undefined && previous.owner !== owner
+      ? new Error(error instanceof Error ? error.message : 'Pipeline execution failed', { cause: error })
+      : error;
   if (caught !== error && caught instanceof Error && error instanceof Error) caught.name = error.name;
-  scope.failures.set(error, caught);
+  if (isReference) scope.failures.set(error, caught);
   scope.failures.set(caught, caught);
   failureFacts.set(caught, { owner, facts, source: previous === undefined ? error : previous.source });
   return caught;
 };
 
-const failureSource = (error: unknown): unknown =>
-  typeof error === 'object' && error !== null ? failureFacts.get(error)?.source ?? error : error;
+const failureSource = (error: unknown): unknown => {
+  const context = typeof error === 'object' && error !== null ? failureFacts.get(error) : undefined;
+  return context === undefined ? error : context.source;
+};
 
 export const walk = async (
   pipeline: string,

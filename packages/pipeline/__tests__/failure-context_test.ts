@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { compose, createRunReader, defineStage, encodeRun, getFailureFacts, move, own, run } from '../src/index.ts';
+import { compose, createRunReader, defer, defineStage, encodeRun, getFailureFacts, move, own, run } from '../src/index.ts';
 import type { Event } from '../src/index.ts';
 
 const gate = () => {
@@ -89,4 +89,38 @@ test('late resource failures stay associated with the run whose drain observed t
   expect((errorB as Error).cause).toBe(shared);
   expect(getFailureFacts(errorA)).toBe(first.facts);
   expect(getFailureFacts(errorB)).toBe(second.facts);
+});
+
+test.each([{ reason: 'wire broke' }, { reason: 0 }, { reason: false }, { reason: null }, { reason: undefined }])('primitive rejection $reason retains the accepted response facts and original source marker', async ({ reason }) => {
+  const events: Event[] = [];
+  const child = defineStage<{ model: string }, { model: string; called: boolean }>({
+    name: 'called', return: { provides: ['model', 'called'] }, execute: async facts => move({ ...facts, called: true }),
+  });
+  const parent = defineStage<{ model: string }, { model: string }, { model: string; called: boolean }, { model: string; called: boolean }>({
+    name: 'readFiniteBody',
+    through: { request: { needs: ['model'], consumes: [], provides: [] }, response: { needs: ['called'], consumes: [], provides: [] } },
+    execute: async (facts, next) => { await next(facts); throw reason; },
+  });
+  const caught: unknown = await run(compose('finiteBody', [parent, child]), move({ model: 'wire-model' }), { dump: event => { events.push(event); } }).catch((error: unknown) => error);
+  expect(caught).toBeInstanceOf(Error);
+  expect((caught as Error).cause).toBe(reason);
+  expect(Object.hasOwn(caught as Error, 'cause')).toBe(true);
+  expect(getFailureFacts(caught)).toMatchObject({ model: 'wire-model', called: true });
+  expect(events.find(event => event.type === 'stage.failed')).toMatchObject({ error: reason });
+  const encoded = encodeRun(events);
+  const read = createRunReader();
+  const source = encoded.map(read).find(value => value !== null && Object.hasOwn(value, 'error'))!;
+  expect(source.error).toBe(reason);
+});
+
+test('primitive deferred rejection retains its exact outcome while drain exposes its fact context', async () => {
+  const reason = 'background wire broke';
+  const events: Event[] = [];
+  const facts = move({ model: 'actual', background: defer(Promise.reject(reason)) });
+  const terminal = defineStage<typeof facts, typeof facts>({ name: 'answer', return: { provides: ['model', 'background'] }, execute: async values => values });
+  const executed = await run(compose('deferredContext', [terminal]), facts, { dump: event => { events.push(event); } });
+  const caught: unknown = await executed.drain().catch((error: unknown) => error);
+  expect((caught as Error).cause).toBe(reason);
+  expect(getFailureFacts(caught)).toBe(facts);
+  expect(events.find(event => event.type === 'deferred.settled')).toMatchObject({ outcome: { status: 'rejected', reason } });
 });
