@@ -25,5 +25,5 @@ export type AnthropicMessagesServeEntry = Fields<
 
 export type AnthropicMessagesServeExit = Fields<
   'response.chat.anthropicMessages.rendered' | 'response.chat.anthropicMessages.streamedUsage'
-  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+  | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers' | 'response.usage.billable'
 >;

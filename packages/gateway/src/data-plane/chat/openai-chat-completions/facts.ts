@@ -26,5 +26,5 @@ export type OpenAIChatCompletionsServeEntry = Fields<
 
 export type OpenAIChatCompletionsServeExit = Fields<
   'response.chat.openaiChatCompletions.rendered' | 'response.chat.openaiChatCompletions.streamedUsage'
-  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+  | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers' | 'response.usage.billable'
 >;

@@ -23,7 +23,7 @@ const key: ApiKey = {
 };
 
 type Entry = Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>;
-type Answer = Entry & Fields<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'>;
+type Answer = Entry & Fields<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>;
 type Exit = Fields<'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage'>;
 
 beforeEach(() => {
@@ -74,10 +74,10 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
     })();
     const dial = defineStage<Entry, Answer>({
       name: 'scriptedDial',
-      return: { provides: ['response.chat.openaiResponses', 'response.usage.billable', 'response.http.headers'] },
+      return: { provides: ['response.chat.openaiResponses', 'response.usage.billable', 'response.http.headers', 'response.http.status'] },
       execute: async facts => move({
         ...facts, 'response.chat.openaiResponses': { kind: 'stream', frames: upstream },
-        'response.usage.billable': [{ identity: testTelemetryModelIdentity, quantities: {} }], 'response.http.headers': [],
+        'response.usage.billable': [{ identity: testTelemetryModelIdentity, quantities: {} }], 'response.http.headers': [], 'response.http.status': 200,
       }),
     });
     const outcome = await run(compose<Entry, Exit>('clientFailure', [

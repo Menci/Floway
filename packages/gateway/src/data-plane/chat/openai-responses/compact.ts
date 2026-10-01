@@ -16,12 +16,14 @@ import { hostedTools } from './hosted-tools.ts';
 import { hydrateStoredItems } from './hydrate-stored-items.ts';
 import { openaiResponsesNarrowing, openaiResponsesTarget } from './target.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 
 export const openaiResponsesCompactPipeline = (): Pipeline<OpenAIResponsesCompactEntry, OpenAIResponsesCompactExit> => {
   return compose('openaiResponsesCompact', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
+    serializeClientJson('response.chat.openaiResponses.rendered'),
     emitOpenAIResponsesCompaction,
     hydrateStoredItems,
     resolveChatCandidates(openaiResponsesNarrowing),

@@ -108,7 +108,7 @@ const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string,
     facts => {
       const rendered = facts['response.chat.geminiGenerateContent.rendered'];
       if (isFrames(rendered)) return { frames: rendered };
-      return { body: JSON.stringify(rendered), contentType: 'application/json' };
+      return { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
     },
   );
 };
@@ -136,6 +136,6 @@ const runGeminiGenerateContentCountTokens = async (c: AuthedContext, model: stri
       'serve.model': model,
     }) as never,
     // A measurement is one body however the turn went, so there is never a stream to write.
-    facts => ({ body: JSON.stringify(facts['response.chat.geminiGenerateContent.rendered']), contentType: 'application/json' }),
+    facts => ({ body: facts['response.http.jsonBody']!, contentType: 'application/json' }),
   );
 };

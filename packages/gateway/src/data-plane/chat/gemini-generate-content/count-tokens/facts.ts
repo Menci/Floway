@@ -10,5 +10,5 @@ export type GeminiGenerateContentCountTokensEntry = Fields<
 >;
 
 export type GeminiGenerateContentCountTokensExit = Fields<
-  'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers'
+  'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers'
 >;

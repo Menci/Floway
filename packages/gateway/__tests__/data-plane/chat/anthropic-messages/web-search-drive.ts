@@ -46,7 +46,7 @@ export const driveWebSearchStage = async (
 ): Promise<Result> => {
   const ending = defineStage<Record<string, unknown>, Record<string, unknown>>({
     name: 'scriptedDial',
-    return: { provides: [ANSWER, 'response.usage.billable', 'response.http.headers'] },
+    return: { provides: [ANSWER, 'response.usage.billable', 'response.http.headers', 'response.http.status'] },
     execute: async facts => {
       invocation.payload = facts['request.chat.anthropicMessages'] as AnthropicMessagesPayload;
       const result = await dial();
@@ -56,7 +56,7 @@ export const driveWebSearchStage = async (
           ? { kind: 'stream' as const, frames: result.events }
           : failureOf(result),
         'response.usage.billable': [],
-        'response.http.headers': [],
+        'response.http.headers': [], 'response.http.status': result.type === 'events' ? 200 : result.status,
       });
     },
   });

@@ -3,20 +3,22 @@ import { composeChat as compose } from '../compose.ts';
 import { answerClaudeCodeProbe } from './answer-claude-code-probe.ts';
 import { emitAnthropicMessages } from './emit.ts';
 import { normalizeEmptyToolsForAnthropicMessages } from './normalize-empty-tools-tool-choice.ts';
-import { isFailure } from '../../pipeline/facts.ts';
-import { writeSettlement } from '../../pipeline/settlement.ts';
-import { resolveChatCandidates } from '../resolve-candidates.ts';
 import { narrowing, anthropicMessagesTarget } from './target.ts';
-import { failover } from '../../pipeline/failover.ts';
-import { materializeAttempt } from '../materialize-attempt.ts';
 import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
-import { dialChatWire } from '../dial-wire.ts';
 import { anthropicMessagesWireFor } from './wires.ts';
+import { isFailure } from '../../pipeline/facts.ts';
+import { failover } from '../../pipeline/failover.ts';
+import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
+import { writeSettlement } from '../../pipeline/settlement.ts';
+import { dialChatWire } from '../dial-wire.ts';
+import { materializeAttempt } from '../materialize-attempt.ts';
+import { resolveChatCandidates } from '../resolve-candidates.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 
 export const anthropicMessagesServePipeline = (): Pipeline<AnthropicMessagesServeEntry, AnthropicMessagesServeExit> =>
   compose('anthropicMessagesServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
+    serializeClientJson('response.chat.anthropicMessages.rendered'),
     emitAnthropicMessages,
     resolveChatCandidates(narrowing),
     failover({

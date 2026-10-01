@@ -13,7 +13,7 @@ import { defineStage, move } from '@floway-dev/pipeline';
 export const emitGeminiGenerateContentTokenCount = defineStage<
   Record<string, never>,
   Record<string, never>,
-  Counted<'response.chat.geminiGenerateContent'> & Fields<'response.http.headers'>,
+  Counted<'response.chat.geminiGenerateContent'> & Fields<'response.http.headers' | 'response.http.status'>,
   Fields<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
@@ -21,7 +21,7 @@ export const emitGeminiGenerateContentTokenCount = defineStage<
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.geminiGenerateContent', 'response.http.headers'],
+      needs: ['response.chat.geminiGenerateContent', 'response.http.headers', 'response.http.status'],
       consumes: ['response.chat.geminiGenerateContent', 'response.http.headers'],
       provides: ['response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers'],
     },
@@ -48,7 +48,7 @@ export const emitGeminiGenerateContentTokenCount = defineStage<
       ...rest,
       'response.http.headers': forClient,
       'response.chat.geminiGenerateContent.rendered': move(answer.body as Record<string, unknown>),
-      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+      'response.http.status': back['response.http.status'],
     };
   },
 });

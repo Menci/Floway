@@ -66,7 +66,7 @@ export const openaiChatCompletionsHttp = {
       facts => {
         const rendered = facts['response.chat.openaiChatCompletions.rendered'];
         if (isFrames(rendered)) return { frames: rendered };
-        return { body: JSON.stringify(rendered), contentType: 'application/json' };
+        return { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
       },
     );
   },

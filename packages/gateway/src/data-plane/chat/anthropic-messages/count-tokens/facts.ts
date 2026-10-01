@@ -15,5 +15,5 @@ export type AnthropicMessagesCountTokensEntry = Fields<
 >;
 
 export type AnthropicMessagesCountTokensExit = Fields<
-  'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers'
+  'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers'
 >;

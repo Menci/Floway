@@ -32,7 +32,7 @@ import { toInternalDebugError } from '@floway-dev/provider';
 export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => defineStage<
   Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>,
   Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>,
-  Fields<'ingress.chat.openaiResponses.wantsStream' | 'response.chat.openaiResponses' | 'response.http.headers' | 'response.chat.openaiResponses.streamedUsage'>,
+  Fields<'ingress.chat.openaiResponses.wantsStream' | 'response.chat.openaiResponses' | 'response.http.headers' | 'response.http.status' | 'response.chat.openaiResponses.streamedUsage'>,
   Fields<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.openaiResponses.streamedUsage'>,
   ChatServices
 >({
@@ -40,7 +40,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
   through: {
     request: { needs: ['ingress.chat.openaiResponses.wantsStream', 'request.chat.openaiResponses'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.openaiResponses', 'response.http.headers', OPENAI_RESPONSES_STREAMED_USAGE],
+      needs: ['response.chat.openaiResponses', 'response.http.headers', 'response.http.status', OPENAI_RESPONSES_STREAMED_USAGE],
       consumes: ['response.chat.openaiResponses', 'response.http.headers'],
       provides: ['response.chat.clientFrames', 'response.chat.openaiResponses.rendered', 'response.http.status', 'response.http.headers', OPENAI_RESPONSES_STREAMED_USAGE],
     },
@@ -73,7 +73,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
 
@@ -101,7 +101,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
           'response.chat.openaiResponses.rendered': move(
             await collectClientFrames(frames, collectOpenAIResponsesProtocolEventsToResult) as unknown as Record<string, unknown>,
           ),
-          'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+          'response.http.status': back['response.http.status'],
         };
       } catch (error) {
         // Nothing has gone out yet, so the fault is still a status. A turn the gateway could
@@ -127,7 +127,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
         'response.chat.clientFrames': move(frames),
         'response.http.headers': forClient,
         'response.chat.openaiResponses.rendered': move(frames),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
         [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], clientStream.failed)),
       };
     }
@@ -148,7 +148,7 @@ export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => de
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.openaiResponses.rendered': move(completed.rendered),
-      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+      'response.http.status': back['response.http.status'],
       [OPENAI_RESPONSES_STREAMED_USAGE]: move(withClientVerdict(back[OPENAI_RESPONSES_STREAMED_USAGE], completed.failed)),
     };
   },

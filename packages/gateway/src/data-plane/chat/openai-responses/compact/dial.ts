@@ -41,7 +41,7 @@ export const dialOpenAIResponsesCompaction = (wires: { native: ChatWire; simulat
         'response.chat.openaiResponses',
         OPENAI_RESPONSES_STREAMED_USAGE,
         'response.usage.billable',
-        'response.http.headers',
+        'response.http.headers', 'response.http.status', 'response.http.body',
       ],
     },
   },

@@ -9,18 +9,19 @@ import { asksForCompaction } from './compaction-policy.ts';
 import { emitOpenAIResponses } from './emit.ts';
 import { expandShimCompactions } from './expand-compactions.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesStreamFraming, type OpenAIResponsesServeEntry, type OpenAIResponsesServeExit } from './facts.ts';
+import { projectOpenAIResponsesWebSocket, type OpenAIResponsesWebSocketEntry, type OpenAIResponsesWebSocketExit } from './project-websocket.ts';
+import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
+import { composeChat as compose } from '../compose.ts';
+import { dialChatWire } from '../dial-wire.ts';
+import { imageGenerationHostedTool } from './hosted-tools/image-generation.ts';
+import { webSearchHostedTool } from './hosted-tools/web-search.ts';
+import { hostedTools } from './hosted-tools.ts';
 import { normalizeEmptyToolsForOpenAIResponses } from './normalize-empty-tools-tool-choice.ts';
 import { summarizeForCompaction } from './summarize-for-compaction.ts';
 import { openaiResponsesNarrowing, openaiResponsesTarget } from './target.ts';
 import { openaiResponsesWireFor } from './wires.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
-import { composeChat as compose } from '../compose.ts';
-import { dialChatWire } from '../dial-wire.ts';
-import { imageGenerationHostedTool } from './hosted-tools/image-generation.ts';
-import { webSearchHostedTool } from './hosted-tools/web-search.ts';
-import { hostedTools } from './hosted-tools.ts';
-import { projectOpenAIResponsesWebSocket, type OpenAIResponsesWebSocketEntry, type OpenAIResponsesWebSocketExit } from './project-websocket.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 
 export const openaiResponsesServePipeline = <Framing extends OpenAIResponsesStreamFraming = 'sse'>(
@@ -30,6 +31,7 @@ export const openaiResponsesServePipeline = <Framing extends OpenAIResponsesStre
 ): Pipeline<Framing extends 'events' ? OpenAIResponsesWebSocketEntry : OpenAIResponsesServeEntry, Framing extends 'events' ? OpenAIResponsesWebSocketExit : OpenAIResponsesServeExit> => {
   return compose('openaiResponsesServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
+    ...framing === 'sse' ? [serializeClientJson('response.chat.openaiResponses.rendered')] : [],
     ...framing === 'events' ? [projectOpenAIResponsesWebSocket] : [],
     emitOpenAIResponses(framing),
     hydrateStoredItems,

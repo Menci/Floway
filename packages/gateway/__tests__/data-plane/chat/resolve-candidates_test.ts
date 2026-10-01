@@ -43,8 +43,8 @@ test('resolution publishes pure candidate request projections without provider h
   const dispatch = vi.fn();
   const terminal = defineStage<Record<string, unknown>, Record<string, unknown>>({
     name: 'observeResolution',
-    return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.body'] },
-    execute: async facts => move({ ...facts, 'response.usage.billable': [], 'response.http.headers': [], 'response.http.body': null }),
+    return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
+    execute: async facts => move({ ...facts, 'response.usage.billable': [], 'response.http.headers': [], 'response.http.status': 200, 'response.http.body': null }),
   });
   const registry = createCandidateRegistry();
   const outcome = await run(compose<{ 'serve.model': string } & Pick<ChatFacts, 'request.chat.openaiChatCompletions'>, Record<string, unknown>>('resolve', [resolver, terminal]), move({

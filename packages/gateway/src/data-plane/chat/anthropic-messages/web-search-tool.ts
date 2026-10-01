@@ -28,7 +28,7 @@ import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 
 type M<K extends keyof ChatFacts> = { [P in K]: ChatFacts[P] };
 
-type Answered = Fields<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers' | 'response.chat.anthropicMessages.streamedUsage'> & Record<string, unknown>;
+type Answered = Fields<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status' | 'response.chat.anthropicMessages.streamedUsage'> & Record<string, unknown>;
 
 /** The gateway's own refusal, in Anthropic's words. It is written here rather than dialled,
  *  because a tool declaration this gateway cannot execute would reach the upstream as a body this
@@ -70,7 +70,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
   // A declaration this gateway cannot execute, and a search backend the operator has not
   // configured, are both answered here: neither is a body an upstream should be asked about.
   return: {
-    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.chat.anthropicMessages.streamedUsage'],
+    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.http.status', 'response.chat.anthropicMessages.streamedUsage'],
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -93,7 +93,7 @@ export const runAnthropicMessagesWebSearchTool = (wiring: WebSearchWiring) => de
         'response.chat.anthropicMessages.streamedUsage': null,
         'response.usage.billable': [],
         'response.http.headers': [],
-        'response.http.body': null,
+        'response.http.body': null, 'response.http.status': 400,
       }) as never;
     }
 

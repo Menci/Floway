@@ -25,5 +25,5 @@ export type GeminiGenerateContentServeEntry = Fields<
 
 export type GeminiGenerateContentServeExit = Fields<
   'response.chat.geminiGenerateContent.rendered' | 'response.chat.geminiGenerateContent.streamedUsage'
-  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+  | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers' | 'response.usage.billable'
 >;

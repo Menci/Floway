@@ -24,7 +24,7 @@ export const prepareAnthropicMessagesWebSearchRequest = defineStage<
   Fields<'request.chat.anthropicMessages'>,
   Counted<'response.chat.anthropicMessages'>,
   Counted<'response.chat.anthropicMessages'>,
-  Counted<'response.chat.anthropicMessages'> & Fields<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
+  Counted<'response.chat.anthropicMessages'> & Fields<'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>,
   ChatServices
 >({
   name: 'prepareAnthropicMessagesWebSearchRequest',
@@ -36,7 +36,7 @@ export const prepareAnthropicMessagesWebSearchRequest = defineStage<
     },
     response: { needs: ['response.chat.anthropicMessages'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.body'] },
+  return: { provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.http.status'] },
   execute: async (facts, next) => {
     if (!facts['route.attempt'].flags.includes('anthropic-messages-web-search-shim')) return await next(facts);
     const prepared = prepareAnthropicMessagesWebSearchShimRequest(facts['request.chat.anthropicMessages']);
@@ -48,7 +48,7 @@ export const prepareAnthropicMessagesWebSearchRequest = defineStage<
         'response.chat.anthropicMessages': { status: 400, message: prepared.message },
         'response.usage.billable': [],
         'response.http.headers': [],
-        'response.http.body': null,
+        'response.http.body': null, 'response.http.status': 400,
       });
     }
     // A request that engaged nothing comes back by identity, so the record shows no change

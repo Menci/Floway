@@ -25,7 +25,7 @@ import { toInternalDebugError } from '@floway-dev/provider';
 export const emitAnthropicMessages = defineStage<
   Fields<'ingress.chat.anthropicMessages.wantsStream'>,
   Fields<'ingress.chat.anthropicMessages.wantsStream'>,
-  Fields<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers' | 'response.chat.anthropicMessages.streamedUsage'>,
+  Fields<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers' | 'response.http.status' | 'response.chat.anthropicMessages.streamedUsage'>,
   Fields<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.anthropicMessages.streamedUsage'>,
   ChatServices
 >({
@@ -33,7 +33,7 @@ export const emitAnthropicMessages = defineStage<
   through: {
     request: { needs: ['ingress.chat.anthropicMessages.wantsStream'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.anthropicMessages', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
+      needs: ['response.chat.anthropicMessages', 'response.http.headers', 'response.http.status', 'response.chat.anthropicMessages.streamedUsage'],
       consumes: ['response.chat.anthropicMessages', 'response.http.headers'],
       provides: ['response.chat.clientFrames', 'response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers', 'response.chat.anthropicMessages.streamedUsage'],
     },
@@ -63,7 +63,7 @@ export const emitAnthropicMessages = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
 
@@ -84,7 +84,7 @@ export const emitAnthropicMessages = defineStage<
         'response.chat.anthropicMessages.rendered': move(
           await collectClientFrames(frames, collectAnthropicMessagesProtocolEventsToResult) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
     const completed = framedClientStream(
@@ -100,7 +100,7 @@ export const emitAnthropicMessages = defineStage<
       'response.http.headers': forClient,
       'response.chat.anthropicMessages.rendered': move(completed.rendered),
       'response.chat.anthropicMessages.streamedUsage': move(withClientVerdict(back['response.chat.anthropicMessages.streamedUsage'], completed.failed)),
-      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+      'response.http.status': back['response.http.status'],
     };
   },
 });

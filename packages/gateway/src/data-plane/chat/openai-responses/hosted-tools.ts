@@ -45,7 +45,7 @@ type R<K extends keyof ChatFacts> = { [P in K]: ChatFacts[P] };
 /** What comes back through here. The streamed-usage key is the *source* family's rather than
  *  this protocol's — the same reason a wire is told it — so the slice is open at that one key
  *  and closed everywhere else. */
-type Answered = R<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'>
+type Answered = R<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers' | 'response.http.status'>
   & { 'response.chat.openaiResponses.streamedUsage': Deferred<StreamOutcome> | null }
   & Record<string, unknown>;
 
@@ -178,7 +178,7 @@ export const hostedTools = (
   // A tool declaration this gateway cannot accept is answered here rather than dialled: the
   // upstream would have been asked for a tool it does not implement, on a body the dispatcher wrote.
   return: {
-    provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers', 'response.http.body'],
+    provides: ['response.chat.openaiResponses', wiring.streamedUsage, 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.http.status'],
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -201,7 +201,7 @@ export const hostedTools = (
         [wiring.streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
-        'response.http.body': null,
+        'response.http.body': null, 'response.http.status': prepared.refused.status,
       }) as never;
     }
     const { active } = prepared;

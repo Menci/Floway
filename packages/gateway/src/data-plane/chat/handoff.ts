@@ -42,7 +42,7 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
 const refuseTranslation = (response: ResponseKey, message: string): Record<string, unknown> => ({
   'response.usage.billable': [],
   'response.http.headers': [],
-  'response.http.body': null,
+  'response.http.body': null, 'response.http.status': 400,
   [`${response}.streamedUsage`]: null,
   [response]: { status: 400, message },
 });
@@ -73,7 +73,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
       handoff.from.response,
       `${handoff.from.response}.streamedUsage`,
       'response.usage.billable',
-      'response.http.headers', 'response.http.body',
+      'response.http.headers', 'response.http.body', 'response.http.status',
     ],
   },
   through: {

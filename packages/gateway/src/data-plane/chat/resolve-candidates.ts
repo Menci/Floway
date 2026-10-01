@@ -39,9 +39,9 @@ export interface ChatNarrowing<Refusal extends object, RequestKey extends ChatRe
 export const resolveChatCandidates = <Refusal extends object, RequestKey extends ChatRequestKey>(narrowing: ChatNarrowing<Refusal, RequestKey>) => defineStage<
   Slice<'serve.model'> & Pick<ChatFacts, RequestKey>,
   Slice<'serve.model' | 'serve.candidates'> & Pick<ChatFacts, RequestKey> & Pick<ChatFacts, 'request.chat.candidatePayloads'>,
-  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
-  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
-  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'> & Refusal,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>,
+  Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'> & Refusal,
   ChatServices
 >({
   name: 'resolveChatCandidates',
@@ -49,7 +49,7 @@ export const resolveChatCandidates = <Refusal extends object, RequestKey extends
     request: { needs: ['serve.model', narrowing.requestKey], consumes: [], provides: ['serve.candidates', 'request.chat.candidatePayloads'] },
     response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.body', ...narrowing.refuses] },
+  return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.body', 'response.http.status', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -67,7 +67,7 @@ export const resolveChatCandidates = <Refusal extends object, RequestKey extends
         ...facts,
         'response.usage.billable': [],
         'response.http.headers': [],
-        'response.http.body': null,
+        'response.http.body': null, 'response.http.status': status,
         ...narrowing.refuse(status, message, reason),
       });
 

@@ -23,7 +23,7 @@ export const emitOpenAIChatCompletions = defineStage<
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
-    | 'response.chat.openaiChatCompletions' | 'response.http.headers' | 'response.chat.openaiChatCompletions.streamedUsage'>,
+    | 'response.chat.openaiChatCompletions' | 'response.http.headers' | 'response.http.status' | 'response.chat.openaiChatCompletions.streamedUsage'>,
   Fields<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.openaiChatCompletions.streamedUsage'>,
   ChatServices
 >({
@@ -35,7 +35,7 @@ export const emitOpenAIChatCompletions = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.chat.openaiChatCompletions', 'response.http.headers', 'response.chat.openaiChatCompletions.streamedUsage'],
+      needs: ['response.chat.openaiChatCompletions', 'response.http.headers', 'response.http.status', 'response.chat.openaiChatCompletions.streamedUsage'],
       consumes: ['response.chat.openaiChatCompletions', 'response.http.headers'],
       provides: ['response.chat.clientFrames', 'response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers', 'response.chat.openaiChatCompletions.streamedUsage'],
     },
@@ -65,7 +65,7 @@ export const emitOpenAIChatCompletions = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
 
@@ -86,7 +86,7 @@ export const emitOpenAIChatCompletions = defineStage<
         'response.chat.openaiChatCompletions.rendered': move(
           await collectClientFrames(frames, collectOpenAIChatCompletionsProtocolEventsToResult) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
     const completed = framedClientStream<ProtocolFrame<ClientOpenAIChatCompletionsStreamEvent>>(
@@ -102,7 +102,7 @@ export const emitOpenAIChatCompletions = defineStage<
       'response.http.headers': forClient,
       'response.chat.openaiChatCompletions.rendered': move(completed.rendered),
       'response.chat.openaiChatCompletions.streamedUsage': move(withClientVerdict(back['response.chat.openaiChatCompletions.streamedUsage'], completed.failed)),
-      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+      'response.http.status': back['response.http.status'],
     };
   },
 });

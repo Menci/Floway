@@ -91,7 +91,7 @@ export interface OpenAIResponsesWebSocketPacket {
 export type OpenAIResponsesWebSocketEntry = OpenAIResponsesServeEntry & {
   readonly 'ingress.chat.openaiResponses.eventId': string | undefined;
 };
-export type OpenAIResponsesWebSocketExit = Omit<OpenAIResponsesServeExit, 'response.chat.openaiResponses.rendered'> & {
+export type OpenAIResponsesWebSocketExit = Omit<OpenAIResponsesServeExit, 'response.chat.openaiResponses.rendered' | 'response.http.jsonBody'> & {
   readonly 'response.chat.openaiResponses.websocket': AsyncIterable<OpenAIResponsesWebSocketPacket>;
 };
 

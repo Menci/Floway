@@ -26,7 +26,7 @@ import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesStrea
 export const emitOpenAIResponsesCompaction = defineStage<
   Record<string, never>,
   Record<string, never>,
-  Compacted<'response.chat.openaiResponses'> & Fields<'response.http.headers' | 'response.chat.openaiResponses.streamedUsage'>,
+  Compacted<'response.chat.openaiResponses'> & Fields<'response.http.headers' | 'response.http.status' | 'response.chat.openaiResponses.streamedUsage'>,
   Fields<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.openaiResponses.streamedUsage' | 'response.chat.clientFrames'>,
   ChatServices
 >({
@@ -34,7 +34,7 @@ export const emitOpenAIResponsesCompaction = defineStage<
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.openaiResponses', 'response.http.headers', 'response.chat.openaiResponses.streamedUsage'],
+      needs: ['response.chat.openaiResponses', 'response.http.headers', 'response.http.status', 'response.chat.openaiResponses.streamedUsage'],
       consumes: ['response.chat.openaiResponses', 'response.http.headers'],
       provides: [
         'response.chat.clientFrames',
@@ -82,7 +82,7 @@ export const emitOpenAIResponsesCompaction = defineStage<
         'response.chat.openaiResponses.rendered': move(
           completeOpenAIResponsesCompaction(persisted, openaiResponsesCreatedAt(use.gateway)) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
         'response.chat.openaiResponses.streamedUsage': move(
           withVerdict(rest['response.chat.openaiResponses.streamedUsage'], compactionFailed(persisted)),
         ),

@@ -14,10 +14,10 @@ const refuseStoredItems = (
   status: number,
   message: string,
   extra: { readonly param: string; readonly code: string | null },
-): Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'> => ({
+): Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'> => ({
   'response.usage.billable': [],
   'response.http.headers': [],
-  'response.http.body': null,
+  'response.http.body': null, 'response.http.status': status,
   'response.chat.openaiResponses.streamedUsage': null,
   'response.chat.openaiResponses': {
     status,
@@ -47,7 +47,7 @@ export const hydrateStoredItems = defineStage<
   Fields<'request.chat.openaiResponses' | 'request.chat.openaiResponses.privatePayloads'>,
   Record<string, never>,
   Record<string, never>,
-  Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
+  Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>,
   ChatServices
 >({
   name: 'hydrateStoredItems',
@@ -64,7 +64,7 @@ export const hydrateStoredItems = defineStage<
       'response.chat.openaiResponses',
       'response.chat.openaiResponses.streamedUsage',
       'response.usage.billable',
-      'response.http.headers', 'response.http.body',
+      'response.http.headers', 'response.http.body', 'response.http.status',
     ],
   },
   execute: async (facts, next, use) => {

@@ -24,7 +24,7 @@ import { toInternalDebugError } from '@floway-dev/provider';
 export const emitGeminiGenerateContent = defineStage<
   Fields<'ingress.chat.geminiGenerateContent.wantsStream'>,
   Fields<'ingress.chat.geminiGenerateContent.wantsStream'>,
-  Fields<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers' | 'response.chat.geminiGenerateContent.streamedUsage'>,
+  Fields<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers' | 'response.http.status' | 'response.chat.geminiGenerateContent.streamedUsage'>,
   Fields<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.geminiGenerateContent.streamedUsage'>,
   ChatServices
 >({
@@ -36,7 +36,7 @@ export const emitGeminiGenerateContent = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.chat.geminiGenerateContent', 'response.http.headers', 'response.chat.geminiGenerateContent.streamedUsage'],
+      needs: ['response.chat.geminiGenerateContent', 'response.http.headers', 'response.http.status', 'response.chat.geminiGenerateContent.streamedUsage'],
       consumes: ['response.chat.geminiGenerateContent', 'response.http.headers'],
       provides: ['response.chat.clientFrames', 'response.chat.geminiGenerateContent.rendered', 'response.http.status', 'response.http.headers', 'response.chat.geminiGenerateContent.streamedUsage'],
     },
@@ -66,7 +66,7 @@ export const emitGeminiGenerateContent = defineStage<
         'response.chat.clientFrames': null,
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(answer.body as Record<string, unknown>),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
 
@@ -87,7 +87,7 @@ export const emitGeminiGenerateContent = defineStage<
         'response.chat.geminiGenerateContent.rendered': move(
           await collectClientFrames(frames, collectGeminiGenerateContentProtocolEventsToResult) as unknown as Record<string, unknown>,
         ),
-        'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+        'response.http.status': back['response.http.status'],
       };
     }
     const completed = framedClientStream(
@@ -103,7 +103,7 @@ export const emitGeminiGenerateContent = defineStage<
       'response.http.headers': forClient,
       'response.chat.geminiGenerateContent.rendered': move(completed.rendered),
       'response.chat.geminiGenerateContent.streamedUsage': move(withClientVerdict(back['response.chat.geminiGenerateContent.streamedUsage'], completed.failed)),
-      'response.http.status': 'response.http.status' in back ? back['response.http.status'] as number : 200,
+      'response.http.status': back['response.http.status'],
     };
   },
 });

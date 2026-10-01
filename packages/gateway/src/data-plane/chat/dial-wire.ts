@@ -46,7 +46,7 @@ export const dialChatWire = (wiring: ChatWiring) => defineStage<
     // Nothing is read on the way back — a wire hands up this family's own keys and they ride
     // through — but this is where they enter the chain, so this is the stage that provides
     // them and the runner checks that the wire delivered.
-    response: { needs: [], consumes: [], provides: wiring.provides },
+    response: { needs: [], consumes: [], provides: ['response.http.status', 'response.http.body', ...wiring.provides] },
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);

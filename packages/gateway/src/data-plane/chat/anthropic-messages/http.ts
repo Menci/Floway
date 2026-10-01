@@ -93,7 +93,7 @@ export const anthropicMessagesHttp = {
         // Anthropic defines a `ping` event and its clients read one, so an idle connection is
         // held open with that rather than with a comment no client sees.
         if (isFrames(rendered)) return { frames: rendered, keepAlive: anthropicMessagesKeepAlive };
-        return { body: JSON.stringify(rendered), contentType: 'application/json' };
+        return { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
       },
     );
   },
@@ -126,7 +126,7 @@ export const anthropicMessagesHttp = {
         'serve.model': payload.model,
       }) as never,
       // A measurement is one body however the turn went, so there is never a stream to write.
-      facts => ({ body: JSON.stringify(facts['response.chat.anthropicMessages.rendered']), contentType: 'application/json' }),
+      facts => ({ body: facts['response.http.jsonBody']!, contentType: 'application/json' }),
     );
   },
 };

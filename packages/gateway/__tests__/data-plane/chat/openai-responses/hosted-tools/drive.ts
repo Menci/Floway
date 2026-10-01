@@ -74,7 +74,7 @@ export const driveHostedToolStage = (registrations: readonly HostedToolRegistrat
   ): Promise<Result & { reading: Deferred<StreamOutcome> | null }> => {
     const ending = defineStage<Record<string, unknown>, Record<string, unknown>>({
       name: 'scriptedDial',
-      return: { provides: [ANSWER, STREAMED_USAGE, 'response.usage.billable', 'response.http.headers', 'response.http.body'] },
+      return: { provides: [ANSWER, STREAMED_USAGE, 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
       execute: async facts => {
         invocation.payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
         const result = await dial();
@@ -87,7 +87,7 @@ export const driveHostedToolStage = (registrations: readonly HostedToolRegistrat
           'response.usage.billable': result.type === 'events'
             ? [{ identity: result.modelIdentity, quantities: {} }]
             : [],
-          'response.http.headers': [],
+          'response.http.headers': [], 'response.http.status': result.type === 'events' ? 200 : result.status,
           'response.http.body': null,
         });
       },

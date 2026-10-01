@@ -41,5 +41,5 @@ export type OpenAIResponsesServeEntry = Fields<
 
 export type OpenAIResponsesServeExit = Fields<
   'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage'
-  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+  | 'response.http.status' | 'response.http.jsonBody' | 'response.http.headers' | 'response.usage.billable'
 >;
