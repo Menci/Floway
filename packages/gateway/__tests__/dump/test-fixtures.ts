@@ -85,10 +85,6 @@ export const installDumpStubs = (
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
-    async putRun(keyId, run) {
-      const bytes = new Uint8Array(await new Response(run.events).arrayBuffer());
-      await store.put(keyId, { shape: 'run', meta: await run.metadata, events: bytes });
-    },
     async prepareRequestBody(body) {
       return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength };
     },

@@ -11,16 +11,7 @@ export interface DumpListOptions {
   limit: number;
 }
 
-export interface DumpRunWrite {
-  readonly id: string;
-  readonly startedAt: number;
-  readonly events: ReadableStream<Uint8Array>;
-  readonly metadata: Promise<DumpMetadata>;
-}
-
 export interface DumpStore {
-  putRun(keyId: string, run: DumpRunWrite): Promise<void>;
-
   // Starts body preparation while the request is in flight. Implementations
   // may return identity bytes, but persistent stores compress here so the
   // accumulator can release the original request buffer before terminal IO.
