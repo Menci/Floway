@@ -34,15 +34,14 @@ export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 // the event shape; client streams already contain their final wire projection.
 export type DumpStreamEvent = z.infer<typeof dumpStreamEventSchema>;
 
-// Cold detail reads rehydrate the complete NDJSON artifact. Writes stream the
-// same encoded bytes through DumpStore.putRun while metadata settles separately.
+// The completed NDJSON artifact is stored after owned readers and deferred work
+// settle. Cold detail reads rehydrate the same event bytes.
 export type StoredDumpRecord = {
   meta: DumpMetadata;
   events: Uint8Array;
 };
 
-// The control plane exposes the stored UTF-8 NDJSON verbatim. Live readers
-// receive the same bytes through the temporary run stream.
+// The control plane exposes the completed UTF-8 NDJSON verbatim.
 export type DumpRecord = {
   meta: DumpMetadata;
   events: string;

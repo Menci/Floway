@@ -34,6 +34,3 @@ export const gzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> =>
 
 export const gunzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> =>
   await collect(bytesStream(bytes).pipeThrough(new DecompressionStream('gzip')));
-
-export const gzipStream = (stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> =>
-  (stream as ReadableStream<BufferSource>).pipeThrough(new CompressionStream('gzip'));
