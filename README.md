@@ -210,7 +210,8 @@ Run dumps encode stage facts, logs and protocol frames into one object space. Th
 recording layer streams those encoded NDJSON bytes into durable storage with backpressure
 and appends the same bytes to a temporary LogStream. Live appends retry at the same byte
 offset; a persistently unavailable live stream leaves durable recording active. Quiet runs
-renew their temporary-stream and staged-file leases. Closing waits for owned readers and
+renew their temporary-stream and staged-file leases even while durable writes apply
+backpressure. Closing waits for owned readers and
 deferred outcomes before publishing completed metadata. The live stream ends only after
 the durable artifact is published; an encoding or durable-write failure aborts its reader
 and stops its leases while retaining the original error. Run IDs are assigned at entry;

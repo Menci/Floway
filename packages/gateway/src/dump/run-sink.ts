@@ -113,8 +113,9 @@ export class RunDump {
   private scheduleHeartbeat(): void {
     if (this.closing || this.live === null) return;
     this.heartbeat = setTimeout(() => {
-      const heartbeat = this.tail.then(() => this.appendLive(new Uint8Array()));
-      this.tail = heartbeat;
+      // The acknowledged offset is safe during an in-flight data append: an empty write
+      // adds no bytes, and durable backpressure must not block the temporary stream lease.
+      const heartbeat = this.appendLive(new Uint8Array());
       this.heartbeatWrite = heartbeat.then(() => { this.scheduleHeartbeat(); });
     }, LOG_STREAM_IDLE_MS / 2);
   }
