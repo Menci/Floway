@@ -1,12 +1,12 @@
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
 import type { Fields } from './facts.ts';
-import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedAs } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';

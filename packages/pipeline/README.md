@@ -62,6 +62,10 @@ and retains every cleanup error. Cleanup still attempts the other resources.
 
 ## Run recording
 
+Pipeline owns the event/object-space format and reader. `@floway-dev/dump` owns
+record persistence, stream recording and metadata publication; gateway supplies
+request attribution and storage adapters.
+
 Recording is enabled by a `dump` sink in the run's services. Events carry stage
 boundaries, stage failures, stage logs, protocol frames and deferred settlement. Encoding
 assigns object IDs, retains shared references and interns large equal strings.

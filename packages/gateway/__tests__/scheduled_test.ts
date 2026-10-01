@@ -1,14 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { createSqliteTestDb } from './repo/test-sqlite.ts';
+import { setupAppTest } from './test-utils/app.ts';
 import { initDumpStore } from '../src/dump/registry.ts';
-import type { StoredDumpRecord } from '../src/dump/types.ts';
 import { FileDumpStore } from '../src/repo/dump-store.ts';
 import { initRepo } from '../src/repo/index.ts';
 import { SqlRepo } from '../src/repo/sql.ts';
 import type { ApiKey } from '../src/repo/types.ts';
 import { runScheduledMaintenance } from '../src/scheduled.ts';
-import { createSqliteTestDb } from './repo/test-sqlite.ts';
-import { setupAppTest } from './test-utils/app.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => {

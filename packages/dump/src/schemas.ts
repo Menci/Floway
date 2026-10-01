@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
 
 export const dumpErrorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.enum(['upstream', 'gateway']) }).strict(),
@@ -37,13 +37,6 @@ export const dumpMetadataSchema = z.object({
   // native turns (no translation) and on records written before this field.
   // `.nullish()` so old `meta_json` rows missing the key still parse.
   targetApi: z.enum(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']).nullish(),
-}).strict();
-
-export const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: true });
-
-export const dumpBodyDescriptorSchema = z.object({
-  key: z.string(),
-  type: z.literal('run'),
 }).strict();
 
 export const dumpBrokerFrameSchema = z.object({

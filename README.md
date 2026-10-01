@@ -206,8 +206,10 @@ stage throws. Client JSON serialization runs inside settlement and publishes UTF
 while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
-Run dumps encode stage facts, logs and protocol frames into one object space. Closing waits
-for owned readers and deferred outcomes before storing the completed NDJSON record and
+`@floway-dev/dump` owns portable run recording, stream recording, metadata contracts,
+broker framing and wire conversion. Pipeline encodes stage facts, logs and protocol frames
+into one object space. Gateway owns attribution, admission, SQL storage and HTTP measurement.
+Closing waits for owned readers and deferred outcomes before storing the completed NDJSON record and
 publishing its metadata. The Collected view selects the recorded client stream and uses its
 `stream.end` event to establish recording completion. LogStream infrastructure is available
 on both platforms; live recording and its business readers remain outside these three PRs.

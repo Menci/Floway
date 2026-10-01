@@ -1,10 +1,10 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 
-import {
-  dumpBodyDescriptorSchema,
-  persistedDumpMetadataSchema,
-} from './schemas.ts';
-import type { DumpMetadata } from './types.ts';
+import { dumpMetadataSchema } from '@floway-dev/dump/schemas';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+
+const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: true });
+const dumpBodyDescriptorSchema = z.object({ key: z.string(), type: z.literal('run') }).strict();
 
 export type DumpBodyDescriptor = z.infer<typeof dumpBodyDescriptorSchema>;
 type PersistedDumpMetadata = z.infer<typeof persistedDumpMetadataSchema>;

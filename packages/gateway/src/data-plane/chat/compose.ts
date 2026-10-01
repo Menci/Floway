@@ -1,7 +1,7 @@
 import type { ChatAnswer } from './facts.ts';
 import type { ChatServices } from './services.ts';
-import { recordStream } from '../../dump/run-sink.ts';
 import { isFailure } from '../pipeline/facts.ts';
+import { recordStream } from '@floway-dev/dump';
 import { compose, isStreamFact, move, type Stage, type Use } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 

@@ -1,6 +1,5 @@
 import type { Fields } from '../facts.ts';
 import type { Compacted } from './facts.ts';
-import { recordStream } from '../../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../../pipeline/serve.ts';
 import { isForwardableUpstreamHeader } from '../../../shared/upstream-response.ts';
@@ -9,6 +8,7 @@ import { collectClientFrames } from '../../shared/client-stream.ts';
 import { wrapOpenAIResponsesStatefulOutput, openaiResponsesCreatedAt } from '../client-output.ts';
 import { completeOpenAIResponsesCompaction } from '../compaction-resource.ts';
 import { internalErrorEnvelope } from '../errors.ts';
+import { recordStream } from '@floway-dev/dump';
 import { defineStage, move, defer, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';

@@ -1,9 +1,10 @@
 import type { Fields, ImageLifecycleOutcome } from './facts.ts';
 import { errorFromBody, extractEcho, imageTerminal, isRetryableImageError, projectImageStreamEvent, serverError, type ImageOutcome } from './result.ts';
-import { streamReferenceOf, type RunDump } from '../../../../../dump/run-sink.ts';
+import type { RunDump } from '../../../../../dump/run-sink.ts';
 import { isFailure } from '../../../../pipeline/facts.ts';
 import type { GatewayServices } from '../../../../pipeline/services.ts';
 import type { HostedToolLifecycleEvent, HostedToolTerminal } from '../types.ts';
+import { streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move, own, defer } from '@floway-dev/pipeline';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIImagesResponse } from '@floway-dev/protocols/openai-images';

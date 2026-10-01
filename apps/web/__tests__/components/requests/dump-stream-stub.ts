@@ -1,7 +1,7 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, expect } from 'vitest';
 
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 
 export const record = (id: string): DumpMetadata => ({
   id,

@@ -3,9 +3,9 @@ import { expect, test } from 'vitest';
 import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openRunDump } from '../../src/dump/run-sink.ts';
-import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { compose, defineStage, defer, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import { assertEquals } from '@floway-dev/test-utils';
 

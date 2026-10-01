@@ -17,7 +17,7 @@ import { HttpStatusBadge } from '../ui/http-badge';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata, DumpRecord } from '@floway-dev/dump/types';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
 const { Option, Spinner, Text, Tooltip } = fluentComponents;

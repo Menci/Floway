@@ -1,6 +1,6 @@
 import type { Fields, OpenAICompletionsFacts, OpenAICompletionsFrames } from './facts.ts';
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
-import { recordStream, type RunDump } from '../../dump/run-sink.ts';
+import type { RunDump } from '../../dump/run-sink.ts';
 import { isFailure, type BillableEntity, type Failure } from '../pipeline/facts.ts';
 import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
@@ -9,6 +9,7 @@ import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { recordStream } from '@floway-dev/dump';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease, defer, type Owned, type Deferred } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';

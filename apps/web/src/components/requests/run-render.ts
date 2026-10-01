@@ -1,5 +1,5 @@
 import { errorMessage } from '../../lib/error-message';
-import type { DumpEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpEvent } from '@floway-dev/pipeline';
 
 // A pipelined turn is recorded as its whole run: one NDJSON line per event, in
 // the order the run emitted them. A line is also one SSE `data:` payload, so

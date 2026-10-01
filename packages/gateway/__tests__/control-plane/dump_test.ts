@@ -1,10 +1,9 @@
 import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, DumpRecord, StoredDumpRecord } from '../../src/dump/types.ts';
 import { fakeMeta as baseFakeMeta, fakeRunRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
+import type { DumpStore, DumpMetadata, DumpRecord, StoredDumpRecord } from '@floway-dev/dump/types';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
