@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { clientStreamOf } from '../../../src/components/requests/run-stream';
-import { collectStream, renderStreamEvents, streamEventsCopyText } from '../../../src/components/requests/stream-render';
+import { collectStream } from '../../../src/components/requests/stream-render';
 import { encodeRun, streamFact, toNdjson, type Event } from '@floway-dev/pipeline';
 import { anthropicMessagesEventToSsePayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -23,7 +23,7 @@ test('collects normal Chat Completions EOF without inventing a done frame', asyn
   const collected = await collectStream('openai-chat-completions', stream);
   expect(collected).toMatchObject({ result: { choices: [{ message: { content: 'hello' } }] }, error: null, truncated: false });
   expect(stream.events).toHaveLength(1);
-  expect(streamEventsCopyText('openai-chat-completions', stream.events)).not.toContain('[DONE]');
+  expect(stream.events.map(({ frame }) => frame.type)).toEqual(['event']);
 });
 
 for (const terminal of [false, true]) {
@@ -38,7 +38,7 @@ test('separates an ended protocol error from a truncated recording', async () =>
   expect(await collectStream('anthropic-messages', stream)).toMatchObject({ result: null, error: expect.stringContaining('upstream failed'), truncated: false });
 });
 
-test('renders and copies final Anthropic citation wire fields once while collecting the canonical result', async () => {
+test('collects final Anthropic citation wire fields into the canonical result', async () => {
   const citation = { type: 'search_result_location' as const, url: 'https://example.com/source', title: 'Reference', search_result_index: 0, start_block_index: 0, end_block_index: 1, cited_text: 'evidence' };
   const events: AnthropicMessagesStreamEvent[] = [
     { type: 'message_start', message: { id: 'msg-1', type: 'message', role: 'assistant', content: [], model: 'm', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
@@ -50,12 +50,6 @@ test('renders and copies final Anthropic citation wire fields once while collect
   ];
   const wire = events.map(event => eventFrame(anthropicMessagesEventToSsePayload(event)));
   const stream = recorded(wire, true);
-  const rendered = renderStreamEvents('anthropic-messages', stream.events);
-  expect(JSON.parse(rendered[1]!.text)).toEqual(wire[1]!.event);
-  expect(JSON.parse(rendered[2]!.text)).toEqual(wire[2]!.event);
-  const copied = streamEventsCopyText('anthropic-messages', stream.events);
-  expect(copied).toContain('"source":"https://example.com/source"');
-  expect(copied).not.toContain('"url"');
   expect(await collectStream('anthropic-messages', stream)).toMatchObject({ result: { content: [{ type: 'text', text: 'answer', citations: [citation, citation] }] }, error: null, truncated: false });
 });
 

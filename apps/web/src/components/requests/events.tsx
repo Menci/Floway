@@ -2,7 +2,6 @@ import { ChevronDownRegular, ChevronRightRegular, DismissRegular, MoreHorizontal
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI, type RowComponentProps } from 'react-window';
 
-import { renderStreamEvents, streamEventsCopyText, type CollectKind, type RenderedStreamEvent } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { CodeBlock } from '../ui/code-block';
@@ -12,11 +11,15 @@ import { PANEL_BAND_CLASS } from '../ui/panel';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, Text, mergeClasses } = fluentComponents;
 
-export type RenderedEvent = Omit<RenderedStreamEvent, 'timestamp'> & { timestamp?: number };
+export interface RenderedEvent {
+  event: string | null;
+  text: string;
+  parseError: string | null;
+  timestamp?: number;
+}
 type IndexedEvent = RenderedEvent & { index: number };
 interface EventRowProps {
   events: IndexedEvent[];
@@ -38,7 +41,7 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       wrap={wrap}
       copyOutcome={outcomeFor()}
       onCopy={() => copy(event.text)}
-      language={event.parseError || event.text === '[DONE]' ? 'plain' : 'json'}
+      language={event.parseError ? 'plain' : 'json'}
       header={<div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         <Button appearance="subtle" size="small" icon={closed ? <ChevronRightRegular /> : <ChevronDownRegular />} aria-expanded={!closed} onClick={() => toggle(event.index)}>{label}</Button>
         {event.timestamp !== undefined && <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>}
@@ -46,12 +49,6 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       </div>}
     />
   </div>;
-}
-
-export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEvent[]; kind: CollectKind | null; toolbarStart: ReactNode }) {
-  const rendered = useMemo(() => renderStreamEvents(kind, events), [events, kind]);
-  const copyText = useMemo(() => streamEventsCopyText(kind, events), [events, kind]);
-  return <RenderedEventList events={rendered} copyText={copyText} toolbarStart={toolbarStart} />;
 }
 
 export function RenderedEventList({ events, copyText, toolbarStart, emptyText }: { events: RenderedEvent[]; copyText: string; toolbarStart: ReactNode; emptyText?: string }) {

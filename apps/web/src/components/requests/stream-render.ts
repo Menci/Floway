@@ -2,25 +2,17 @@ import type { RecordedClientStream } from './run-stream';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
-import { sseFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
-  geminiGenerateContentProtocolFrameToSSEFrame,
   type GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
+import { collectOpenAIChatCompletionsProtocolEventsToResult } from '@floway-dev/protocols/openai-chat-completions';
 import {
-  openaiChatCompletionsProtocolFrameToSSEFrame,
-  collectOpenAIChatCompletionsProtocolEventsToResult,
-} from '@floway-dev/protocols/openai-chat-completions';
-import {
-  openaiCompletionsProtocolFrameToSSEFrame,
   reassembleOpenAICompletionsEvents,
   type OpenAICompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-completions';
-import {
-  collectOpenAIResponsesProtocolEventsToResult,
-  openaiResponsesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 
 export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 
@@ -28,13 +20,6 @@ export interface CollectedStream {
   result: unknown | null;
   error: string | null;
   truncated: boolean;
-}
-
-export interface RenderedStreamEvent {
-  event: string | null;
-  text: string;
-  parseError: string | null;
-  timestamp: number;
 }
 
 export const detectCollectKind = (path: string): CollectKind | null => {
@@ -73,42 +58,6 @@ export const collectStream = async (kind: CollectKind, { events, ended }: Record
   }
 };
 
-export const renderStreamEvents = (kind: CollectKind | null, events: readonly DumpStreamEvent[]): RenderedStreamEvent[] => {
-  return events.map(({ frame, ts }) => {
-    const sse = frameToSse(kind, frame);
-    if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
-    if (frame.type === 'done') return { event: sse.event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts };
-    try {
-      return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
-    } catch (error) {
-      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(error), timestamp: ts };
-    }
-  });
-};
-
-export const streamEventsCopyText = (kind: CollectKind | null, events: readonly DumpStreamEvent[]): string => {
-  return events.map(({ frame }) => {
-    const sse = frameToSse(kind, frame);
-    return sse ? `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n` : '';
-  }).filter(Boolean).join('\n');
-};
-
 async function* frames(events: readonly DumpStreamEvent[]) {
   for (const event of events) yield event.frame;
 }
-
-const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
-  try {
-    switch (kind) {
-    case 'openai-chat-completions': return openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
-    case 'openai-completions': return openaiCompletionsProtocolFrameToSSEFrame(frame as never);
-    // The client stream already carries Anthropic's citation wire spelling.
-    case 'anthropic-messages': return frame.type === 'done' ? null : sseFrame(JSON.stringify(frame.event), (frame.event as { type: string }).type);
-    case 'openai-responses': return openaiResponsesProtocolFrameToSSEFrame(frame as never);
-    case 'gemini-generate-content': return geminiGenerateContentProtocolFrameToSSEFrame(frame as never);
-    default: return null;
-    }
-  } catch (error) {
-    return { type: 'sse', event: 'serialize_error', data: errorMessage(error) };
-  }
-};

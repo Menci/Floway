@@ -17,7 +17,7 @@ import type {
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
-// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{run}.gz`.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.run.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
 // collection are driven by the shared spilled_files registry.
 
@@ -30,9 +30,6 @@ interface DumpRow {
   upstream_kind: string | null;
   upstream_hue: number | null;
   meta_json: string;
-  request_headers_json: string;
-  response_headers_json: string | null;
-  request_body_descriptor: string | null;
   response_body_descriptor: string | null;
 }
 
@@ -136,7 +133,7 @@ export class FileDumpStore implements DumpStore {
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
       'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
-      + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
+      + 'd.meta_json, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
       + 'WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000',
