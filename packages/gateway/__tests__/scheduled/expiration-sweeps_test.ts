@@ -8,6 +8,7 @@ import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARIT
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredOpenAIResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
+import { writeRun } from '../dump/write-run.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
@@ -80,9 +81,9 @@ test('one fair driver drains bounded OpenAI Responses and dump backlogs', async 
   );
   await repo.openaiResponsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
-    await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
+    await writeRun(dumps, 'key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
   }
-  await dumps.put('key-a', dumpRecord('01K00000000000000000LIVE', now));
+  await writeRun(dumps, 'key-a', dumpRecord('01K00000000000000000LIVE', now));
   await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: OPENAI_RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
@@ -114,14 +115,14 @@ test('minute ticks catch up with a growing hot dump key without widening a batch
   await repo.apiKeys.save(key(start));
 
   for (let index = 0; index < 150; index += 1) {
-    await dumps.put('key-a', dumpRecord(`01K00000000000000001${String(index).padStart(4, '0')}`, start - 3600_001));
+    await writeRun(dumps, 'key-a', dumpRecord(`01K00000000000000001${String(index).padStart(4, '0')}`, start - 3600_001));
   }
 
   for (let tick = 0; tick < 4; tick += 1) {
     const now = start + tick * 60_000;
     vi.setSystemTime(now);
     for (let index = 0; index < 11; index += 1) {
-      await dumps.put('key-a', dumpRecord(`01K00000000000000002${tick}${String(index).padStart(3, '0')}`, now - 3600_001));
+      await writeRun(dumps, 'key-a', dumpRecord(`01K00000000000000002${tick}${String(index).padStart(3, '0')}`, now - 3600_001));
     }
     await sweepExpirations(now);
     const expected = Math.max(0, 150 + 11 * (tick + 1) - 50 * (tick + 1));

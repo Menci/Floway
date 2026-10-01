@@ -206,11 +206,22 @@ stage throws. Client JSON serialization runs inside settlement and publishes UTF
 while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
-Run dumps encode stage facts, logs and protocol frames into one object space. Closing waits
-for owned readers and deferred outcomes before storing the completed NDJSON record and
-publishing its metadata. The Collected view selects the recorded client stream and uses its
-`stream.end` event to establish recording completion. LogStream infrastructure is available
-on both platforms; live recording and its business readers remain outside these three PRs.
+Run dumps encode stage facts, logs and protocol frames into one object space. The live
+recording layer streams those encoded NDJSON bytes into durable storage with backpressure
+and appends the same bytes to a temporary LogStream. Live appends retry at the same byte
+offset; a persistently unavailable live stream leaves durable recording active. Quiet runs
+renew their temporary-stream and staged-file leases. Closing waits for owned readers and
+deferred outcomes before publishing completed metadata. The live stream ends only after
+the durable artifact is published; an encoding or durable-write failure aborts its reader
+and stops its leases while retaining the original error. Run IDs are assigned at entry;
+listing remains ordered by completion time and ID.
+
+The authenticated `GET /api/dump/keys/:keyId/records/:recordId/live?offset=0` endpoint attaches
+to an existing per-key stream and uses the platform's framed byte protocol. The Collected
+view selects the recorded client stream and uses its `stream.end` event to establish
+recording completion. Active-run discovery, reconnect/list semantics and live dashboard
+interactions remain separate design work; completed records and their stage viewer retain
+the same run-only format.
 
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same
