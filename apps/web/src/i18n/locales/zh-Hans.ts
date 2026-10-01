@@ -1004,7 +1004,6 @@ const zhHansCN = {
         noKeys: '没有 API 密钥启用请求保留',
         noKeysDescription: '在 API 密钥上启用请求转储保留后，即可开始捕获请求。',
         apiKeysLink: 'API 密钥',
-        run: '运行过程',
         stages: 'Stages',
         requestFacts: '请求 facts',
         responseFacts: '响应 facts',

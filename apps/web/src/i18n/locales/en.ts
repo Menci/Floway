@@ -1052,7 +1052,6 @@ const en = {
         noKeys: 'No API key has request retention enabled',
         noKeysDescription: 'Enable request dump retention on an API key to start capturing requests.',
         apiKeysLink: 'API Keys',
-        run: 'Run',
         stages: 'Stages',
         requestFacts: 'Request facts',
         responseFacts: 'Response facts',
