@@ -18,7 +18,8 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../../../
 import { compose, defer, defineStage, move, run, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { EventResultMetadata, ExecuteResult, ModelCandidate, OpenAIResponsesInvocation } from '@floway-dev/provider';
+import type { ModelCandidate, OpenAIResponsesInvocation } from '@floway-dev/provider';
+import { type EventResultMetadata, type ExecuteResult } from '@floway-dev/test-utils';
 
 const ANSWER = 'response.chat.openaiResponses';
 const STREAMED_USAGE = 'response.chat.openaiResponses.streamedUsage';

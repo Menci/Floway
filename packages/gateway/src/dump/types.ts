@@ -21,7 +21,7 @@ export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 
 // What went wrong on a failed turn. Either a categorized api-error envelope
 // (real upstream non-2xx or a gateway-synthesized envelope — `kind` matches
-// `ApiErrorResult.source`) or an uncategorized failure (anything the
+// the upstream or gateway origin) or an uncategorized failure (anything the
 // transport edge caught or observed mid-flight: thrown
 // exceptions, source-emitted error events, downstream cancels, write
 // errors) carrying its one-line reason text. The categorized form stores

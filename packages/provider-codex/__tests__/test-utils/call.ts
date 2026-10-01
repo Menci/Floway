@@ -3,8 +3,8 @@ import { createCodexPipelines } from '../../src/pipelines.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { Provider, ProviderModel, ProviderStreamResult, ProviderOperationPayloads, UpstreamCallOptions } from '@floway-dev/provider';
-import { callProviderPipeline, collectChatProviderPipeline } from '@floway-dev/test-utils';
+import type { Provider, ProviderModel, ProviderOperationPayloads, UpstreamCallOptions } from '@floway-dev/provider';
+import { callProviderPipeline, collectChatProviderPipeline, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 interface CallOptions extends CodexBackendCallBase { model: ProviderModel }
 interface ResponsesOptions extends CallOptions { body: Omit<CanonicalOpenAIResponsesPayload, 'model'> }

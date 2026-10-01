@@ -6,8 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputFunctionCall, OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import type { OpenAIResponsesInvocation } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity, eventResult } from '@floway-dev/test-utils';
 
 const MESSAGE_SCHEMA = {
   type: 'object',

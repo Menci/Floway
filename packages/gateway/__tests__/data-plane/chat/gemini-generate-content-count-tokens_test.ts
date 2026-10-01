@@ -15,8 +15,8 @@ import { move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { AnthropicMessagesUpstreamCallOptions, ModelCandidate, ProviderCallResult } from '@floway-dev/provider';
-import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import type { AnthropicMessagesUpstreamCallOptions, ModelCandidate } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel, type ProviderCallResult } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../src/data-plane/providers/resolution.ts')>()),

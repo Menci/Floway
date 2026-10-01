@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { backfillRequiredFields } from '../../src/stages/backfill-required-fields.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
-import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import type { ProviderModel } from '@floway-dev/provider';
+import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };

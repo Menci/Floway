@@ -4,8 +4,7 @@ import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/opaque-item
 import { copilotOpenAIResponsesItemIdMembrane } from '../../../src/stages/openai-responses/item-id-membrane.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIResponsesProbe, type ProviderOpenAIResponsesResult } from '@floway-dev/test-utils';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
 const invocation = (input: OpenAIResponsesInputItem[] = []): OpenAIResponsesProbe => ({

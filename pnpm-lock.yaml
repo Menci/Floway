@@ -661,6 +661,9 @@ importers:
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider

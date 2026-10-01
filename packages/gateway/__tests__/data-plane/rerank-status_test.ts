@@ -14,8 +14,8 @@ import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
 import { stubProviderPipeline } from '../test-utils/provider-pipeline.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
-import { directFetcher, type ModelCandidate, type ProviderRerankCallResult } from '@floway-dev/provider';
-import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { directFetcher, type ModelCandidate } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel, type ProviderRerankCallResult } from '@floway-dev/test-utils';
 
 vi.mock('../../src/data-plane/providers/resolution.ts', () => ({
   enumerateModelCandidates: vi.fn(),

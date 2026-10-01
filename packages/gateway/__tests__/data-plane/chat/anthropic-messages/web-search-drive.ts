@@ -12,7 +12,8 @@ import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gate
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { AnthropicMessagesInvocation, ExecuteResult, ModelCandidate } from '@floway-dev/provider';
+import type { AnthropicMessagesInvocation, ModelCandidate } from '@floway-dev/provider';
+import { type ExecuteResult } from '@floway-dev/test-utils';
 
 const ANSWER = 'response.chat.anthropicMessages';
 

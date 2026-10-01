@@ -21,8 +21,8 @@ import { move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { directFetcher, type FlagId, type ModelCandidate, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
-import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { directFetcher, type FlagId, type ModelCandidate } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../src/data-plane/providers/resolution.ts')>()),

@@ -5,8 +5,7 @@ import { parseMetadataUserID } from '../../src/detection.ts';
 import { hoistUserSystemToMessages } from '../../src/stages/hoist-user-system-to-messages.ts';
 import { synthesizeMetadataUserId } from '../../src/stages/synthesize-metadata-user-id.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };

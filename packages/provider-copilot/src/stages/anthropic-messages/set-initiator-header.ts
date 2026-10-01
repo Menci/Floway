@@ -15,11 +15,6 @@ import { replaceHttpHeader } from '@floway-dev/provider';
  * The header name is lowercase `x-initiator`; HTTP header names are
  * case-insensitive on the wire, so the casing is cosmetic.
  *
- * Generic in the run-result type so the count_tokens boundary chain
- * (`Response`) and the streaming Anthropic Messages boundary chain (`ExecuteResult<...>`)
- * can share one definition, matching the established behavior where
- * x-initiator is set on every Copilot Anthropic Messages HTTP call.
- *
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/master/src/services/copilot/create-chat-completions.ts
  */

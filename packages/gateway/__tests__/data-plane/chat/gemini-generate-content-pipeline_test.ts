@@ -16,8 +16,8 @@ import { move, run } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { directFetcher, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
-import type { StubChatProviderCall } from '@floway-dev/test-utils';
+import { directFetcher, type ModelCandidate } from '@floway-dev/provider';
+import { type StubChatProviderCall, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({

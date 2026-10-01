@@ -4,9 +4,7 @@ import { copilotOpenAIChatCompletionsCompressImages } from '../../../src/stages/
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIChatCompletionsProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>

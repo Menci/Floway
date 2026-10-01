@@ -3,8 +3,6 @@ import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ProviderPipelines } from './pipeline.ts';
-import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesCompactionResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 // The dispatched action can change independently of the source endpoint's original intent.
 export type OpenAIResponsesAction = 'generate' | 'compact';
@@ -30,27 +28,6 @@ export interface Provider {
   pipelines: ProviderPipelines;
   instance: ProviderInstance;
 }
-
-export interface ProviderCallResult {
-  response: Response;
-  modelKey: string;
-}
-
-export interface ProviderRerankCallResult extends ProviderCallResult {
-  target: RerankTarget;
-}
-
-// Protocol fixtures distinguish decoded frames from an HTTP failure reply.
-export type ProviderStreamResult<TEvent> =
-  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
-  | { ok: false; response: Response; modelKey: string };
-
-// The observed output shape follows the dispatched action, independently of caller intent.
-export type ProviderOpenAIResponsesResult =
-  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; modelKey: string; headers?: Headers }
-  | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
-  | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
 // Per-call options the gateway threads through to the provider.
 //

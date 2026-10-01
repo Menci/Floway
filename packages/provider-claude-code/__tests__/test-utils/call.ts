@@ -6,8 +6,8 @@ import { retryClaudeCodeAccess } from '../../src/stages/retry-access.ts';
 import { http } from '@floway-dev/http/pipeline';
 import { compose, defineStage, move, type RunServices } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { observeProviderCall, type Provider, type ProviderModel, type ProviderStreamResult, type AnthropicMessagesUpstreamCallOptions } from '@floway-dev/provider';
-import { collectChatProviderPipeline } from '@floway-dev/test-utils';
+import { observeProviderCall, type Provider, type ProviderModel, type AnthropicMessagesUpstreamCallOptions } from '@floway-dev/provider';
+import { collectChatProviderPipeline, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 interface Options { upstreamId: string; model: ProviderModel; body: Omit<AnthropicMessagesPayload, 'model'>; shaped: boolean; signal?: AbortSignal; call: AnthropicMessagesUpstreamCallOptions; observers?: Pick<RunServices, 'log' | 'dump'> }
 export const callClaudeCodeAnthropicMessages = async (opts: Options): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {

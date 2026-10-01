@@ -3,7 +3,8 @@ import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gate
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type ExecuteResult, type OpenAIResponsesInvocation } from '@floway-dev/provider';
+import { providerModelOf, type OpenAIResponsesInvocation } from '@floway-dev/provider';
+import { type ExecuteResult } from '@floway-dev/test-utils';
 
 type Result = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
 

@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import { hoistUserSystemToMessages } from '../../src/stages/hoist-user-system-to-messages.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };

@@ -3,8 +3,7 @@ import { test } from 'vitest';
 import { injectDefaultTemplate } from '../../src/stages/inject-default-template.ts';
 import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../src/system-blocks.ts';
 import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };

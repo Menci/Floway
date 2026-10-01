@@ -4,8 +4,7 @@ import { copilotOpenAIResponsesAbortToolWhitespace } from '../../../src/stages/o
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/tool-argument-whitespace.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIResponsesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIResponsesProbe, type ProviderOpenAIResponsesResult } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const invocation = (): OpenAIResponsesProbe => ({

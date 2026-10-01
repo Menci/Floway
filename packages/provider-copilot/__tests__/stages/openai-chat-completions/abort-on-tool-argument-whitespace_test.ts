@@ -4,9 +4,7 @@ import { copilotOpenAIChatCompletionsAbortToolWhitespace } from '../../../src/st
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/tool-argument-whitespace.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIChatCompletionsProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assert, assertEquals, assertStringIncludes, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const invocation = (): OpenAIChatCompletionsProbe => ({

@@ -18,24 +18,6 @@ export type { InternalDebugError } from './error.ts';
 export { toInternalDebugError } from './error.ts';
 
 export type {
-  ApiErrorResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  apiErrorToResponse,
-  decodeApiErrorBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readUpstreamApiError,
-} from './result.ts';
-
-export type {
   InternalAliasedFrom,
   InternalModel,
   ProviderModel,
@@ -55,12 +37,8 @@ export type {
   Provider,
   InboundHeaderMatcher,
   ProviderInstance,
-  ProviderCallResult,
-  ProviderRerankCallResult,
   ProviderModule,
   AnthropicMessagesUpstreamCallOptions,
-  ProviderOpenAIResponsesResult,
-  ProviderStreamResult,
   OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';

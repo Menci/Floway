@@ -4,9 +4,7 @@ import { copilotAnthropicMessagesCompressImages } from '../../../src/stages/anth
 import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type AnthropicMessagesProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>

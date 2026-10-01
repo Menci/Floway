@@ -14,8 +14,8 @@ import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
 import { stubProviderPipeline } from '../test-utils/provider-pipeline.ts';
 import { compose, defineStage, isDeferred, move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ModelCandidate, type ProviderCallResult, type UpstreamCallOptions, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
-import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { directFetcher, type ModelCandidate, type UpstreamCallOptions, type ProviderRequest, type ProviderResponse, type ProviderOperationPayloads } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel, type ProviderCallResult } from '@floway-dev/test-utils';
 
 vi.mock('../../src/data-plane/providers/resolution.ts', async importOriginal => ({
   ...(await importOriginal<typeof import('../../src/data-plane/providers/resolution.ts')>()),

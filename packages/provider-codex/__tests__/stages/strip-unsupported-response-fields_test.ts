@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import { stripCodexUnsupportedFields } from '../../src/stages/strip-unsupported-response-fields.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIResponsesProbe, assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIResponsesProbe, assertEquals, assertFalse, stubProviderModel, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', headers: new Headers() });

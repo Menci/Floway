@@ -10,8 +10,8 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest, type OpenAIResponsesInvocation } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
+import { type FlagId, type OpenAIImagesEditsRequest, type OpenAIResponsesInvocation } from '@floway-dev/provider';
+import { assert, assertEquals, assertStringIncludes, stubModelCandidate, type EventResult, type ExecuteResult } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole dispatcher (function-tool rewrite,

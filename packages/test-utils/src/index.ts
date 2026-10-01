@@ -1,3 +1,4 @@
+export { eventResult, type EventResult, type EventResultMetadata, type ExecuteResult, type ProviderCallResult, type ProviderRerankCallResult, type ProviderStreamResult, type ProviderOpenAIResponsesResult } from './provider-results.ts';
 export { collectPreparedProviderRequest } from './prepared-provider-request.ts';
 export { collectHttpPipeline } from './http-pipeline.ts';
 export { applyProviderStage, type ProviderStageProbe, type OpenAIChatCompletionsProbe, type OpenAIResponsesProbe, type AnthropicMessagesProbe } from './provider-stage.ts';

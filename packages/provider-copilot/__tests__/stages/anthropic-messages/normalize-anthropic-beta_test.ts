@@ -3,8 +3,7 @@ import { test } from 'vitest';
 import { copilotAnthropicMessagesNormalizeAnthropicBeta } from '../../../src/stages/anthropic-messages/normalize-anthropic-beta.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { applyProviderStage, type AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type AnthropicMessagesProbe, eventResult, type ExecuteResult } from '@floway-dev/test-utils';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>

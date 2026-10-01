@@ -6,15 +6,9 @@ import { replaceHttpHeader } from '@floway-dev/provider';
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
  * `copilot-vision-request: true` header is set. Detection must scan the final
- * post-mutation payload (after other Anthropic Messages boundary stages have run)
+ * shaped request payload (after other Anthropic Messages boundary stages have run)
  * and cover both the top-level `message.content` and the nested
  * `tool_result.content[]` shape; Anthropic allows images in both positions.
- *
- * Generic in the run-result type because the Copilot provider historically
- * applied equivalent vision detection to every Anthropic Messages HTTP exchange (chat
- * AND count_tokens). Keeping a single generic stage lets both the streaming
- * Anthropic Messages boundary chain (`ExecuteResult<...>`) and the count_tokens chain
- * (`Response`) share one definition.
  *
  * References:
  * - https://github.com/caozhiyuan/copilot-api/commit/1f6b98924ae092db9b2010846c32e5cbf10817df

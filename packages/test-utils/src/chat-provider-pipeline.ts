@@ -36,8 +36,9 @@ export const collectChatProviderPipeline = async <O extends ChatProviderOperatio
       for await (const frame of output.frames) frames.push(frame as Frame<O>);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
     } else if (output === null) {
-      const bytes = await exchangeResponse(exchange).arrayBuffer();
+      const raw = exchangeResponse(exchange);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const bytes = await raw.arrayBuffer();
       response = new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: exchange.headers.map(([name, value]): [string, string] => [name, value]) });
     }
   } catch (error) {

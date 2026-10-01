@@ -3,8 +3,7 @@ import { test } from 'vitest';
 import { CLAUDE_CLI_VERSION } from '../../src/headers.ts';
 import { injectBillingBlock } from '../../src/stages/inject-billing-block.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import type { AnthropicMessagesProbe } from '@floway-dev/test-utils';
+import { type AnthropicMessagesProbe, type ProviderStreamResult } from '@floway-dev/test-utils';
 import { applyProviderStage, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 type ClaudeCodeStageProbe = AnthropicMessagesProbe & { upstreamId: string };

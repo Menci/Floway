@@ -3,9 +3,7 @@ import { test } from 'vitest';
 import { type CopilotCacheableMessage, copilotOpenAIChatCompletionsAttachCacheControlMarkers } from '../../../src/stages/openai-chat-completions/attach-cache-control-markers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { applyProviderStage, type OpenAIChatCompletionsProbe } from '@floway-dev/test-utils';
+import { applyProviderStage, type OpenAIChatCompletionsProbe, type ExecuteResult, eventResult } from '@floway-dev/test-utils';
 import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>

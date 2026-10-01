@@ -31,8 +31,8 @@ import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocol
 import type { GeminiGenerateContentPayload, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { directFetcher, type FlagId, type ModelCandidate, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
-import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { directFetcher, type FlagId, type ModelCandidate } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../src/data-plane/providers/resolution.ts')>()),

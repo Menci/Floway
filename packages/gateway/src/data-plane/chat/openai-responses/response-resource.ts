@@ -33,12 +33,10 @@ import type {
 //   rows carried by `response.output_item.done` and a snapshot record of their
 //   ordered ids, and awaits that before the terminal frame leaves it, so no
 //   response resource is ever stored. Affinity egress runs underneath too, and
-//   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. One reader sits above this stage, the non-streaming `settle`
-//   call, and it reads only `status`, which rides through from the upstream and
-//   is never stated here. The WebSocket transport buffers the terminal event
-//   and flushes it last, branching only on the event type; it reads nothing off
-//   the resource at all.
+//   billing uses its own measured usage facts. Client collection runs above
+//   this projection, so a mandatory wire default cannot become an upstream
+//   usage observation. The WebSocket transport buffers the terminal event
+//   and flushes it last, branching on its type.
 //
 // #125's "no tools synthesized when upstream omits it" therefore still holds:
 // the interior resource carries no `tools`, and egress states `[]` on the way

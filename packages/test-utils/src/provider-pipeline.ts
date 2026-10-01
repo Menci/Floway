@@ -1,7 +1,8 @@
+import type { ProviderCallResult, ProviderRerankCallResult } from './provider-results.ts';
 import { noopUpstreamCallOptions } from './stubs.ts';
 import { exchangeResponse, type HttpServices } from '@floway-dev/http/pipeline';
 import { move, run, setRelease } from '@floway-dev/pipeline';
-import type { NonChatProviderOperation, Provider, ProviderCallResult, ProviderModel, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderRerankCallResult, ProviderOperationRequest, UpstreamCallOptions } from '@floway-dev/provider';
+import type { NonChatProviderOperation, Provider, ProviderModel, ProviderOperationPayloads, ProviderOperationResponse, ProviderPipeline, ProviderOperationRequest, UpstreamCallOptions } from '@floway-dev/provider';
 import { providerModelFacts } from '@floway-dev/provider';
 
 type CallResult<O extends NonChatProviderOperation> =
@@ -32,13 +33,17 @@ export const callProviderPipeline = async <O extends NonChatProviderOperation>(
     throw exchange.error;
   }
   const response = exchangeResponse(exchange);
+  if (exchange.body !== null) setRelease(exchange.body, async () => {});
   let bytes: ArrayBuffer;
   try {
     bytes = await response.arrayBuffer();
-    if (exchange.body !== null) setRelease(exchange.body, async () => {});
-  } finally {
-    await executed.drain();
+  } catch (error) {
+    try { await executed.drain(); } catch (cleanupError) {
+      if (cleanupError !== error) throw new AggregateError([error, cleanupError], 'Provider test call and cleanup failed', { cause: error });
+    }
+    throw error;
   }
+  await executed.drain();
   const result = {
     response: new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }),
     modelKey: facts['response.provider.modelKey'],
