@@ -14,10 +14,10 @@ const exercise = async (generate: boolean | null | undefined) => {
   const dial = vi.fn();
   const ending = defineStage<Record<string, unknown>, Record<string, unknown>>({
     name: 'scriptedWarmupDial',
-    return: { provides: ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.body'] },
+    return: { provides: ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.status', 'response.http.body'] },
     execute: async facts => {
       dial();
-      return move({ ...facts, 'response.chat.openaiResponses': { kind: 'stream', frames: (async function* () { yield doneFrame(); })() }, 'response.chat.openaiResponses.streamedUsage': null, 'response.usage.billable': [], 'response.http.headers': [], 'response.http.body': null });
+      return move({ ...facts, 'response.chat.openaiResponses': { kind: 'stream', frames: (async function* () { yield doneFrame(); })() }, 'response.chat.openaiResponses.streamedUsage': null, 'response.usage.billable': [], 'response.http.headers': [], 'response.http.status': 200, 'response.http.body': null });
     },
   });
   const payload: CanonicalOpenAIResponsesPayload = { model: 'client-model', input: [{ type: 'message', role: 'developer', content: 'Base instructions' }], ...(generate === undefined ? {} : { generate }) };
@@ -41,7 +41,7 @@ test('a prewarm completes locally without dispatch timing and preserves its requ
   expect(terminal).toMatchObject({ type: 'event', event: { response: { model: candidate.model.id, output: [], status: 'completed', usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } } } });
   expect(gateway.attempt.telemetry).toBeUndefined();
   expect(gateway.attempt.timing.upstreamCallStartedAt).toBeNull();
-  expect(facts['response.usage.billable']).toEqual([expect.objectContaining({ quantities: {} })]);
+  expect(facts['response.usage.billable']).toEqual([]);
 });
 
 for (const generate of [undefined, null, true]) {

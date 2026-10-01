@@ -935,7 +935,9 @@ test('OpenAI Responses WebSocket store:false keeps session snapshots without dur
 });
 
 test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally and continues from it', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const upstreamBodies: Record<string, unknown>[] = [];
 
   await withMockedFetch(
@@ -988,6 +990,13 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
       // routed turn states.
       assertEquals(prewarmCompleted.response?.output?.map(item => item.type), ['reasoning']);
       assertEquals(upstreamBodies.length, 0);
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+      assertEquals(await repo.usage.listAll(), []);
+      assertEquals(await repo.performance.listAll(), []);
+      assertEquals(dumps.stored[0]?.record.meta.model, 'gpt-direct-responses');
+      assertExists(dumps.stored[0]?.record.meta.upstream);
+      assertEquals(dumps.stored[0]?.record.meta.inputTokens, null);
+      assertEquals(dumps.stored[0]?.record.meta.outputTokens, null);
 
       const turnTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
@@ -1002,6 +1011,7 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
       await turnTerminal;
 
       assertEquals(upstreamBodies.length, 1);
+      await vi.waitFor(async () => assertEquals((await repo.usage.listAll()).reduce((sum, row) => sum + row.requests, 0), 1));
       const body = upstreamBodies[0] as { generate?: unknown; previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(Object.hasOwn(body, 'generate'), false);
       assertEquals(body.previous_response_id, undefined);

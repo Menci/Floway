@@ -191,13 +191,8 @@ test('POST /v1/messages answers the Claude Code model-validation probe without c
   assertEquals(body.usage.output_tokens, 0);
   assertEquals(callAnthropicMessages.mock.calls.length, 0);
 
-  // The turn is recorded as served, at zero cost, and contributes no latency
-  // sample — there was no upstream call to measure.
   await flushBackground();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.requests, 1);
-  assertEquals(usage[0]?.metrics, []);
+  assertEquals(await repo.usage.listAll(), []);
   assertEquals(await repo.performance.listAll(), []);
 });
 

@@ -7,8 +7,8 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult } from '@fl
 import { providerModelOf } from '@floway-dev/provider';
 
 type Request = Pick<OpenAIResponsesFacts, 'request.chat.openaiResponses' | 'route.attempt'>;
-type Response = Pick<OpenAIResponsesFacts, 'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body'>;
-const provides = ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.body'] as const;
+type Response = Pick<OpenAIResponsesFacts, 'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage' | 'response.usage.billable' | 'response.http.headers' | 'response.http.body' | 'response.http.status'>;
+const provides = ['response.chat.openaiResponses', 'response.chat.openaiResponses.streamedUsage', 'response.usage.billable', 'response.http.headers', 'response.http.body', 'response.http.status'] as const;
 
 // Codex continues from the response id of its WebSocket prewarm. The source chain has
 // already staged its input; normal client egress commits that snapshot without inference.
@@ -25,6 +25,7 @@ export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request
     if (payload.generate !== false) return await next(facts);
     const candidate = use.resolveAttempt(facts['route.attempt']);
     use.selectAffinity(candidate);
+    use.gateway.dump?.success(telemetryModelIdentity(candidate, providerModelOf(candidate).id), null);
     const response: OpenAIResponsesResult = {
       id: '', object: 'response', model: candidate.model.id, status: 'completed',
       output: [], error: null, incomplete_details: null,
@@ -34,9 +35,9 @@ export const answerOpenAIResponsesWebSocketWarmup = defineStage<Request, Request
       ...facts,
       'response.chat.openaiResponses': { kind: 'stream', frames: syntheticEventsFromResult(response) },
       'response.chat.openaiResponses.streamedUsage': null,
-      'response.usage.billable': [{ identity: telemetryModelIdentity(candidate, providerModelOf(candidate).id), quantities: {} }],
+      'response.usage.billable': [],
       'response.http.headers': [],
-      'response.http.body': null,
+      'response.http.body': null, 'response.http.status': 200,
     });
   },
 });
