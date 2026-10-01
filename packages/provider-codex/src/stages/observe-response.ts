@@ -22,8 +22,8 @@ export const observeCodexResponse = (config: CodexPipelineConfig, operation: Cod
     let classified: Response;
     let failureBody: unknown = null;
     if (exchange.status === 401) {
-      const parsed = decodeCodexUpstreamError(await response.text());
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const parsed = decodeCodexUpstreamError(await response.text());
       failureBody = parsed.body;
       if (call.account.refresh_token === null) pending.push(call.effects.persistTerminalState('session_terminated', parsed.message));
       classified = await classifyCodexUnauthorizedResponse(call, response, parsed);

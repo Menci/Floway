@@ -4,6 +4,7 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
+import { getFailureFacts, type Event } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { collectChatProviderPipeline, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
@@ -212,6 +213,17 @@ describe('createClaudeCodeProvider — Messages operation stages', () => {
     const ids = bodies.map(body => (JSON.parse(body.metadata.user_id) as { session_id: string }).session_id);
     expect(ids[0]).not.toBe(ids[1]);
     expect(bodies.every(body => JSON.stringify(body.messages[0]).includes('Shared system instructions'))).toBe(true);
+  });
+
+  test.each([200, 403])('finite body readers preserve an original stream failure at status%s', async status => {
+    const original = new Error('Claude body broke');
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(original); } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status, headers: { 'content-type': 'application/json' } }));
+    const events: Event[] = [];
+    const caught = await collectChatProviderPipeline(createClaudeCodeProvider(currentRecord), 'anthropicMessages', sonnetProviderModel, { max_tokens: 16, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions(), { dump: event => { events.push(event); } }).catch((error: unknown) => error);
+    expect(caught).toBe(original);
+    expect(getFailureFacts(caught)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'claude-sonnet-4-5-20250929' });
+    expect(events.find(event => event.type === 'stage.failed')).toMatchObject({ error: original });
   });
 
   test('observing a JSON error preserves its original UTF8 BOM bytes', async () => {

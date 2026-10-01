@@ -5,7 +5,7 @@ import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER }
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
-import { move, run, setRelease, type Event } from '@floway-dev/pipeline';
+import { getFailureFacts, move, run, setRelease, type Event } from '@floway-dev/pipeline';
 import { directFetcher, initProviderRepo, providerModelFacts, type ProviderOperationPayloads, type UpstreamRecord } from '@floway-dev/provider';
 import { callProviderPipeline, collectChatProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -93,6 +93,17 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createCodexProvider', () => {
+  test('the401 finite observer preserves an original stream failure without canceling its locked body', async () => {
+    const original = new Error('Codex refusal body broke');
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(original); } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 401 }));
+    const events: Event[] = [];
+    const caught = await collectChatProviderPipeline(createCodexProvider(current!), 'openaiResponses', stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } }), { input: [] }, undefined, noopUpstreamCallOptions(), { dump: event => { events.push(event); } }).catch((error: unknown) => error);
+    expect(caught).toBe(original);
+    expect(getFailureFacts(caught)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'gpt-5.4' });
+    expect(events.find(event => event.type === 'stage.failed')).toMatchObject({ error: original });
+  });
+
   test('access-only401 remains readable while terminal persistence failure reaches the run outcome', async () => {
     current = accessOnlyRecord(freshAccessToken);
     const writeError = new Error('terminal state write failed');

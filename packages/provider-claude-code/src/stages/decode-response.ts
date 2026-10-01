@@ -18,8 +18,8 @@ export const decodeClaudeCodeResponse = (upstreamId: string) => defineStage<Clau
     if (exchange.type === 'transportFailure' || exchange.status < 200 || exchange.status >= 300) return move({ ...back, 'response.provider.output': null });
     const response = exchangeResponse(exchange);
     if (exchange.body === null || !isEventStreamMediaType(response.headers.get('content-type'))) {
-      const text = await response.text();
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const text = await response.text();
       let body: unknown;
       try { body = JSON.parse(text); } catch (error) { if (!(error instanceof SyntaxError)) throw error; body = text; }
       const snippet = text.length === 0 ? '<empty>' : text.length > 1024 ? `${text.slice(0, 1024)}...[truncated]` : text;
