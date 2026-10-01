@@ -163,10 +163,10 @@ const meterFrames = (
   identity: TelemetryModelIdentity,
   signal: AbortSignal | undefined,
 ): MeteredFrames => {
-  let settle!: (outcome: StreamOutcome) => void;
+  const settlement = Promise.withResolvers<StreamOutcome>();
   // Declared as this run's own unfinished work, so the runner waits for it at teardown where
   // it can see it rather than the reading being started and forgotten.
-  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
+  const outcome = defer(settlement.promise);
   // Running out without the completed event is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
@@ -189,7 +189,12 @@ const meterFrames = (
       // Reached however the events ended — the completed one, a client that stopped reading,
       // or a broken upstream — because what the upstream already metered is billable whatever
       // happened to the downstream half.
-      settle({ billable: [{ identity, quantities: billed(usage) }], failed: !sawTerminal });
+      try {
+        settlement.resolve({ billable: [{ identity, quantities: billed(usage) }], failed: !sawTerminal });
+      } catch (error) {
+        settlement.reject(error);
+        throw error;
+      }
     }
     // Only an upstream that ended its body without ever completing the image reaches here: the
     // arm above returns on the terminal event. A client has been sent partial images and no
