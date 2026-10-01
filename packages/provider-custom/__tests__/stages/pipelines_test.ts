@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createCustomPipelines } from '../../src/pipelines.ts';
-import { move, run, type Event } from '@floway-dev/pipeline';
+import { getFailureFacts, move, run, type Event } from '@floway-dev/pipeline';
 import { providerModelFacts, type ProviderChatServices, type ProviderOperationRequest } from '@floway-dev/provider';
 import { jsonResponse, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -56,3 +56,26 @@ test('count_tokens forwards typed beta intent and retains raw HTTP response fact
     await executed.drain();
   });
 });
+
+for (const operation of ['openaiChatCompletions', 'anthropicMessagesCountTokens'] as const) {
+  test(`finite response body failure preserves its original error and call facts (${operation})`, async () => {
+    const error = new Error('response body socket failed');
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(error); } });
+    const pipeline = pipelines[operation];
+    if (pipeline === undefined) throw new Error(`Missing ${operation} chain`);
+    const input = move({
+      'request.provider.model': providerModelFacts(stubProviderModel({ providerData: 'wire-model' })),
+      'request.provider.payload': { max_tokens: 12, messages: [] },
+      'request.http.callId': 1,
+      'request.http.headers': [],
+      'request.provider.anthropicBeta': [],
+    });
+    await withMockedFetch(() => new Response(body, { headers: { 'content-type': 'application/json' } }), async () => {
+      const executed = operation === 'openaiChatCompletions'
+        ? run(pipelines.openaiChatCompletions!, input, services)
+        : run(pipelines.anthropicMessagesCountTokens!, input, services);
+      await expect(executed).rejects.toBe(error);
+      expect(getFailureFacts(error)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'wire-model' });
+    });
+  });
+}

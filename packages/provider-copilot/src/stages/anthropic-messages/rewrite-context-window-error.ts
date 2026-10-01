@@ -13,9 +13,10 @@ export const rewriteCopilotContextWindowError = defineStage<object, object, Prov
     const back = await next(move({ ...facts }));
     const exchange = back['response.http.exchange'];
     if (exchange.type !== 'response' || exchange.status >= 200 && exchange.status < 300) return move({ ...back, 'response.copilot.errorBody': null });
-    const bytes = new Uint8Array(await exchangeResponse(exchange).arrayBuffer());
-    const text = new TextDecoder().decode(bytes);
+    const response = exchangeResponse(exchange);
     if (exchange.body !== null) setRelease(exchange.body, async () => {});
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
     let body: unknown;
     try { body = JSON.parse(text); } catch (error) { if (!(error instanceof SyntaxError)) throw error; body = text; }
     const tooLong = text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');

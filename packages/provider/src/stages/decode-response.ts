@@ -36,8 +36,9 @@ export const decodeProviderResponse = <O extends ChatProviderOperation>(operatio
     const output = (answer: ProviderOperationOutputs[O] | ProviderProtocolFailure | null) => move({ ...back, 'response.provider.output': answer });
     if (exchange.type === 'transportFailure' || exchange.status < 200 || exchange.status >= 300) return output(null);
     if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && back['response.provider.responsesAction'] === 'compact' || operation === 'anthropicMessagesCountTokens') {
-      const text = await exchangeResponse(exchange).text();
+      const response = exchangeResponse(exchange);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const text = await response.text();
       let body: unknown;
       try { body = JSON.parse(text); } catch (error) {
         if (!(error instanceof SyntaxError)) throw error;
@@ -47,8 +48,9 @@ export const decodeProviderResponse = <O extends ChatProviderOperation>(operatio
     }
     const contentType = exchange.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
     if (exchange.body === null || !isEventStreamMediaType(contentType)) {
-      const text = await exchangeResponse(exchange).text();
+      const response = exchangeResponse(exchange);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
+      const text = await response.text();
       return output(protocolFailure(exchange, text));
     }
     const signal = use.httpCall(facts['request.http.callId']).signal;
