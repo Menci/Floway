@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
 import { MODEL_CATALOG_REVISION, SqlRepo } from '@floway-dev/gateway';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 // The repo layer's own suite runs against sql.js, which — like D1 — coerces a
@@ -95,7 +94,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     proxyFallbackList: [],
     modelPrefix: null,
     hue: 210,
-  } satisfies UpstreamRecord;
+  } satisfies Parameters<typeof repo.upstreams.insertForModels>[0];
   const inserted = await repo.upstreams.insertForModels(upstreamRecord);
   if (inserted === null) throw new Error('expected upstream fixture insert');
   const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
