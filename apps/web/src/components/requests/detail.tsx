@@ -21,7 +21,8 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpMetadata, DumpRecord, DumpResponseBody, DumpRunRecord, DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+import type { DumpRecord, DumpResponseBody, DumpRunRecord, DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
 const { Button, DialogActions, DialogTitle, Option, Spinner, Text, Tooltip } = fluentComponents;

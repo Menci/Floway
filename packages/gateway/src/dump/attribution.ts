@@ -30,9 +30,9 @@
 // `requestedModel`-set model survives across both error variants so even an
 // outright-failed turn carries model attribution.
 
-import type { DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from './types.ts';
 import { getRepo } from '../repo/index.ts';
 import type { TokenUsage } from '../repo/types.ts';
+import type { DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from '@floway-dev/dump/types';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const oneLineError = (err: unknown): string => {

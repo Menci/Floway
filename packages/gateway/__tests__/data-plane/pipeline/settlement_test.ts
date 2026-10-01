@@ -29,10 +29,13 @@ describe('pipeline settlement', () => {
     const dump = openRunDump(key, {
       method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null },
     }, background, true, timing);
-    const gateway = mockGatewayCtx({
-      dump, backgroundScheduler: background,
-      attempt: { timing, telemetry: mockPerfTelemetryContext({ keyId: key.id }) },
-    });
+    const gateway = {
+      ...mockGatewayCtx({
+        backgroundScheduler: background,
+        attempt: { timing, telemetry: mockPerfTelemetryContext({ keyId: key.id }) },
+      }),
+      dump,
+    };
     const identity = { model: 'm', upstream: 'u', modelKey: 'm', pricing: null };
     if (failed) dump!.failed(new Error('Original source failure', { cause: new Error('socket reset') }));
     const active = pending.length;

@@ -1,5 +1,5 @@
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
-import type { DumpEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpEvent } from '@floway-dev/pipeline';
 
 // Header values can be shared string nodes. Redacting only the tuple would
 // leave the original credential in the object event that defined that node.

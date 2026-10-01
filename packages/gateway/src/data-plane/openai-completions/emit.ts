@@ -1,8 +1,9 @@
 import type { OpenAICompletionsFacts, OpenAICompletionsFrames, Fields } from './facts.ts';
-import { recordStream, streamReferenceOf, type TurnDump } from '../../dump/turn-dump.ts';
+import type { RunDump } from '../../dump/run-sink.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
+import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { renderErrorEnvelope, isOpenAIUsageOnlyEventShape, type SseFrame } from '@floway-dev/protocols/common';
 import { openaiCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/openai-completions';
@@ -65,7 +66,7 @@ export const emitOpenAICompletions = defineStage<
 const rendered = (
   answer: OpenAICompletionsFacts['response.openaiCompletions.payload'],
   wantsUsageChunk: boolean,
-  dump: TurnDump | null,
+  dump: RunDump | null,
 ): OpenAICompletionsFacts['response.openaiCompletions.rendered'] =>
   isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
     : isFrames(answer) ? renderSSE(wantsUsageChunk ? answer : recordStream(withoutUsage(answer), dump))

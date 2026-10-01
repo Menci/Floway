@@ -12,17 +12,17 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { createCandidateRegistry } from './candidates.ts';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
-import type { GatewayServices } from './services.ts';
+import type { GatewayServices, RunGatewayCtx } from './services.ts';
 import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
-import { recordStream } from '../../dump/turn-dump.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { stampUpstreamCallStart } from '../shared/attempt-timing.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type AttemptState } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
+import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
 
@@ -51,7 +51,7 @@ export const readIngress = async (c: Context): Promise<Ingress> => ({
 export interface Prologue {
   readonly runDump: RunDump | null;
   readonly services: GatewayServices;
-  readonly gateway: GatewayCtx;
+  readonly gateway: RunGatewayCtx;
   readonly headers: readonly (readonly [string, string])[];
 }
 
@@ -83,14 +83,17 @@ export const openPrologue = (
     options.wantsStream,
     attempt.timing,
   );
-  const gateway = createGatewayCtxFromHono(c, {
-    wantsStream: options.wantsStream,
-    attempt,
-    ...(options.model === undefined ? {} : { model: options.model }),
-    requestBody: takeRequestBody(ingress.body),
-    backgroundScheduler,
+  const gateway: RunGatewayCtx = {
+    ...createGatewayCtxFromHono(c, {
+      wantsStream: options.wantsStream,
+      attempt,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      requestBody: takeRequestBody(ingress.body),
+      backgroundScheduler,
+      dump: runDump,
+    }),
     dump: runDump,
-  });
+  };
   const candidates = createCandidateRegistry();
 
   return {

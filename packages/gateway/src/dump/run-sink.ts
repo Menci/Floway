@@ -1,12 +1,10 @@
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
-import type { StreamRecording } from './turn-dump.ts';
-import type { DumpMetadata } from './types.ts';
 import { attemptTtftMs, type AttemptTiming } from '../data-plane/shared/attempt-timing.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createRunEncoder, streamFact, toNdjson, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { createRunRecorder, type DumpMetadata, type RunRecorder, type StreamRecording } from '@floway-dev/dump';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -21,26 +19,27 @@ interface RequestSnapshot {
 
 export class RunDump {
   private readonly attribution = new DumpAttribution();
-  private readonly encode = createRunEncoder();
-  private readonly events: DumpEvent[] = [];
+  private readonly recorder: RunRecorder;
+  readonly sink: RunRecorder['sink'];
   private runDrain: (() => Promise<void>) | null = null;
   private sentPayloadBytes = 0;
-  private streams = 0;
-  private answerStream: StreamRecording | undefined;
 
   constructor(
-    private readonly apiKey: ApiKey,
+    apiKey: ApiKey,
     private readonly requestSnapshot: RequestSnapshot,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
     private readonly wantsStream: boolean,
     private readonly timing: AttemptTiming,
-  ) {}
+  ) {
+    this.recorder = createRunRecorder({
+      write: record => getDumpStore().put(apiKey.id, { shape: 'run', ...record }),
+      publish: meta => getDumpBroker().publish(apiKey.id, meta),
+    });
+    this.sink = this.recorder.sink;
+  }
 
   afterRun(drain: () => Promise<void>): void { this.runDrain = drain; }
-  readonly sink = (event: Event): void => {
-    for (const encoded of this.encode(event)) this.events.push(encoded);
-  };
 
   requestedModel(model: string): void {
     this.attribution.requestedModel(model);
@@ -55,19 +54,10 @@ export class RunDump {
   }
 
   frame(frame: ProtocolFrame<unknown>): void | Promise<void> {
-    this.answerStream ??= this.openStream();
-    return this.answerStream.frame(frame);
+    return this.recorder.frame(frame);
   }
 
-  // Stream references and frame events share one run-wide identity; end marks complete recording.
-  openStream(): StreamRecording {
-    const streamId = ++this.streams;
-    return {
-      frame: frame => { this.sink({ type: 'stream.frame', streamId, frames: [frame] }); },
-      end: () => { this.sink({ type: 'stream.end', streamId }); },
-      fact: streamFact(streamId),
-    };
-  }
+  openStream(): StreamRecording { return this.recorder.openStream(); }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.attribution.success(identity, usage);
@@ -137,11 +127,7 @@ export class RunDump {
       fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
     });
 
-    // Publishing follows durable storage so metadata subscribers can immediately fetch detail.
-    await getDumpStore().put(this.apiKey.id, {
-      shape: 'run', meta, events: new TextEncoder().encode(toNdjson(this.events)),
-    });
-    await getDumpBroker().publish(this.apiKey.id, meta);
+    await this.recorder.finish(meta);
   }
 }
 

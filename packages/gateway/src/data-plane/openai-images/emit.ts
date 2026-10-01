@@ -1,7 +1,7 @@
 import type { OpenAIImagesFrames, Fields, OpenAIImagesFacts } from './facts.ts';
-import { streamReferenceOf } from '../../dump/turn-dump.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
+import { streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { renderErrorEnvelope, type SseFrame } from '@floway-dev/protocols/common';
 import { renderOpenAIImagesResponse, openaiImagesStreamEventToSSEFrame, type CanonicalOpenAIImagesResponse } from '@floway-dev/protocols/openai-images';

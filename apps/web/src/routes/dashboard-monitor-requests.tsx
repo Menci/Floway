@@ -25,7 +25,8 @@ import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useMediaQuery } from '../lib/use-media-query';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+import type { DumpRecord } from '@floway-dev/gateway/dump-types';
 
 export const handle = dashboardWorkspaceHandle;
 

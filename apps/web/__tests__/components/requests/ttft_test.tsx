@@ -7,7 +7,8 @@ import type { ApiKey } from '../../../src/api/types';
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { RequestListPanel } from '../../../src/components/requests/list';
 import { renderInApp } from '../../render';
-import type { DumpMetadata, DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
+import type { DumpEdgeRecord } from '@floway-dev/gateway/dump-types';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => (

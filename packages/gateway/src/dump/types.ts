@@ -16,10 +16,6 @@ import type {
   dumpStreamEventSchema,
 } from './schemas.ts';
 import type { DumpMetadata } from '@floway-dev/dump/types';
-import type { DumpEvent } from '@floway-dev/pipeline';
-
-export type { DumpEvent };
-export type { DumpRecordId, DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from '@floway-dev/dump/types';
 
 export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 

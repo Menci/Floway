@@ -248,6 +248,9 @@ importers:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     devDependencies:
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
       '@floway-dev/gateway':
         specifier: workspace:*
         version: link:../../packages/gateway

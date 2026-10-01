@@ -13,21 +13,10 @@ import {
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
-import type {
-  DumpMetadata,
-  DumpRecordId,
-  DumpUpstreamRef,
-  DumpWriteRecord,
-  PreparedDumpRequestBody,
-  StoredDumpRecord,
-  StoredDumpEdgeRecord,
-  StoredDumpRequest,
-  StoredDumpResponse,
-  StoredDumpResponseBody,
-  StoredDumpUpstreamResponse,
-} from '../dump/types.ts';
+import type { DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord, StoredDumpEdgeRecord, StoredDumpRequest, StoredDumpResponse, StoredDumpResponseBody, StoredDumpUpstreamResponse } from '../dump/types.ts';
 import { upstreamResponseToWire } from '../dump/wire.ts';
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
+import type { DumpMetadata, DumpRecordId, DumpUpstreamRef } from '@floway-dev/dump/types';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 import { decodeForgivingBase64 } from '@floway-dev/protocols/common';
 

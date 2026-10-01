@@ -1,5 +1,4 @@
 import type { Fields, OpenAIAudioTranscriptionEvents, OpenAIAudioTranscriptionStreamOutcome } from './facts.ts';
-import { recordStream } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure } from '../pipeline/facts.ts';
 import { providerEntry } from '../pipeline/provider-entry.ts';
@@ -7,6 +6,7 @@ import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
+import { recordStream } from '@floway-dev/dump';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease, defer, type Owned, type Logger, type Deferred } from '@floway-dev/pipeline';
 import { isEventStreamMediaType, eventFrame, parseSSEStream, parseDecimalString } from '@floway-dev/protocols/common';
