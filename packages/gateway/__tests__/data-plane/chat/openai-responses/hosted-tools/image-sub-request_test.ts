@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
+import * as imageRequest from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-sub-request/request.ts';
 import type { ImageGenerationRequest } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-sub-request/request.ts';
 import { runImageGenerationSubRequest } from '../../../../../src/data-plane/chat/openai-responses/hosted-tools/image-sub-request.ts';
 import * as resolution from '../../../../../src/data-plane/providers/resolution.ts';
@@ -12,7 +13,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { flushBackground, trackBackground } from '../../../../test-utils/background-tracker.ts';
 import { mockGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { stubProviderPipeline } from '../../../../test-utils/provider-pipeline.ts';
-import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import { createRunReader, getFailureFacts, type DumpEvent } from '@floway-dev/pipeline';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const apiKey: ApiKey = { id: 'image-key', userId: 1, name: 'Image key', key: 'floway-image-key', serverSecret: '00'.repeat(32), createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0 };
@@ -54,12 +55,14 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
       await run.lifecycle.return(undefined as never);
     }
     await run.drain();
+    dump?.finalize(200, 0);
     await flushBackground();
     expect(generate).toHaveBeenCalledTimes(action === 'generate' ? 1 : 0);
     expect(edit).toHaveBeenCalledTimes(action === 'edit' ? 1 : 0);
     expect(parent.attempt.telemetry).toBeUndefined();
-    expect(dumps.stored).toHaveLength(1);
-    const record = dumps.stored[0]!.record;
+    expect(dumps.stored).toHaveLength(2);
+    expect(dumps.stored.filter(item => item.record.meta.path === '/v1/responses')).toHaveLength(1);
+    const record = dumps.stored.find(item => item.record.meta.path !== '/v1/responses')!.record;
     expect(record.meta.path).toBe(action === 'edit' ? '/images/edits' : '/images/generations');
     const read = createRunReader();
     const decoded = eventsOf(record).map(event => read(event as unknown as DumpEvent));
@@ -76,3 +79,25 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
     expect(observations).toMatchObject([{ model: 'image-model', modelKey: 'backend-image', requests: 1 }]);
   });
 }
+
+test('hosted image preparation preserves an internal TypeError and records the failed child boundary', async () => {
+  initRepo(new InMemoryRepo());
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const dump = openRunDump(apiKey, { method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null } }, trackBackground, true, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
+  const parent = mockGatewayCtx({ dump, backgroundScheduler: trackBackground });
+  const fault = new TypeError('image preparation state is invalid');
+  vi.spyOn(imageRequest, 'prepareImageRequest').mockRejectedValue(fault);
+  const request: ImageGenerationRequest = { prompt: 'tree', action: 'generate', config: { model: 'image-model', action: 'generate' }, sources: [] };
+  await expect(runImageGenerationSubRequest(parent, request)).rejects.toBe(fault);
+  expect(getFailureFacts(fault)?.['request.imageGeneration.canonical']).toBe(request);
+  dump?.finalize(200, 0);
+  await flushBackground();
+  expect(dumps.stored).toHaveLength(2);
+  const record = dumps.stored.find(item => item.record.meta.path === '/images/generations')!.record;
+  expect(record.meta.status).toBe(500);
+  expect(record.meta.error).toEqual({ kind: 'failed', reason: fault.message });
+  const events = eventsOf(record);
+  const entered = events.find(event => event.type === 'stage.entered' && event.name === 'prepareHostedImageGeneration');
+  expect(entered).toBeDefined();
+  expect(events).toContainEqual(expect.objectContaining({ type: 'stage.failed', stageId: entered!.stageId }));
+});

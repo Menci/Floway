@@ -43,11 +43,13 @@ for (const failed of [false, true]) {
     if (failed) await expect(invocation).rejects.toBe(fault);
     else expect(await invocation).toMatchObject({ outputText: 'documentation' });
     expect(dispatched).toBe(true);
+    dump?.finalize(200, 0);
     await flushBackground();
-    expect(dumps.stored).toHaveLength(1);
-    const record = dumps.stored[0]!.record;
+    expect(dumps.stored).toHaveLength(2);
+    expect(dumps.stored.filter(item => item.record.meta.path === '/v1/responses')).toHaveLength(1);
+    const record = dumps.stored.find(item => item.record.meta.path !== '/v1/responses')!.record;
     expect(record.meta.path).toBe('/alpha/search');
-    expect(record.meta.status).toBe(failed ? 502 : 200);
+    expect(record.meta.status).toBe(failed ? 500 : 200);
     const read = createRunReader();
     const decoded = eventsOf(record).map(event => read(event as unknown as DumpEvent));
     const entered = decoded.find(event => event?.facts && 'request.webSearch.canonical' in event.facts);

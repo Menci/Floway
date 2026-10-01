@@ -56,7 +56,7 @@ export const runImageGenerationSubRequest = async (
     };
   } catch (error) {
     dump?.failed(error);
-    dump?.finalize(502, 0);
+    dump?.finalize(500, 0);
     throw error;
   }
 };

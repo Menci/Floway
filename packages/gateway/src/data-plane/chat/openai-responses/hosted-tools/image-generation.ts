@@ -1,5 +1,5 @@
 import { portableImageRequest, type ImageBackendConfig } from './image-sub-request/request.ts';
-import { imageTerminal, isRetryableImageError } from './image-sub-request/result.ts';
+import { imageTerminal, isRetryableImageError, serverError } from './image-sub-request/result.ts';
 import { runImageGenerationSubRequest } from './image-sub-request.ts';
 import type { HostedToolLifecycleEvent, HostedToolRegistration, HostedToolTerminal } from './types.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
@@ -957,10 +957,15 @@ export const imageGenerationHostedTool: HostedToolRegistration = async (invocati
           // Its own run: its own prologue, its own settlement, its own record. What this
           // yields is that run's lifecycle, spliced into the turn that asked for it.
           run: () => (async function* (): AsyncGenerator<HostedToolLifecycleEvent, HostedToolTerminal> {
-            const call = await runImageGenerationSubRequest(
-              state.gateway,
-              portableImageRequest(promptArg, operation.action, state.config, sources),
-            );
+            let call;
+            try {
+              call = await runImageGenerationSubRequest(
+                state.gateway,
+                portableImageRequest(promptArg, operation.action, state.config, sources),
+              );
+            } catch (error) {
+              return imageTerminal(promptArg, operation.action, { ok: false, error: serverError(error) });
+            }
             try {
               return yield* call.lifecycle;
             } finally {
