@@ -10,6 +10,8 @@ import { internalErrorResponse } from '../../../src/middleware/internal-error-re
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import { decodeForgivingBase64 } from '@floway-dev/protocols/common';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -337,9 +339,6 @@ describe('/alpha/search data plane', () => {
     });
   });
 
-  // The endpoint is served by the pipeline that was written for it, which is what a run record
-  // says and nothing else does: the handler it replaced opened no run at all, so a turn on this
-  // path produced no record however much retention the key had.
   describe('the run it is served by', () => {
     it('records the whole run, stage by stage', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
@@ -350,19 +349,22 @@ describe('/alpha/search data plane', () => {
 
       const response = await postSearch(buildAlphaSearchApp(), apiKey.key, { commands: { search_query: [{ q: 'Floway' }] } });
       expect(response.status).toBe(200);
-      await response.json();
+      const wire = await response.text();
       await flushAsyncWork();
 
       expect(dumpStubs.stored).toHaveLength(1);
       const record = runRecordOf(dumpStubs.stored[0]?.record);
       expect(record.meta.path).toBe(SEARCH_PATH);
       expect(record.meta.status).toBe(200);
-      // The chain the operator's configuration assembled: the edge, settlement, and the local
-      // ending's two stages.
       const entered = eventsOf(record)
         .filter(event => event.type === 'stage.entered')
         .map(event => event.name);
-      expect(entered).toEqual(['writeSettlement', 'emitAlphaSearch', 'parseSearchOperations', 'executeSearchOperations']);
+      expect(entered).toEqual(['writeSettlement', 'serializeClientJson', 'emitAlphaSearch', 'parseSearchOperations', 'executeSearchOperations']);
+      const read = createRunReader();
+      const decoded = eventsOf(record).map(event => read(event as unknown as DumpEvent));
+      const bytes = decoded.find(event => event?.facts && 'response.http.jsonBody' in event.facts)?.facts?.['response.http.jsonBody'] as { bytes: string } | undefined;
+      expect(bytes).toBeDefined();
+      expect(new TextDecoder().decode(decodeForgivingBase64(bytes!.bytes))).toBe(wire);
     });
   });
 

@@ -92,6 +92,6 @@ export const alphaSearch = async (c: Context): Promise<Response> => {
       'ingress.http.headers': prologue.headers,
       'request.search.alphaSearch': read.request,
     }) as never,
-    facts => ({ body: JSON.stringify(facts['response.search.rendered']), contentType: 'application/json' }),
+    facts => ({ body: facts['response.http.jsonBody']!, contentType: 'application/json' }),
   );
 };
