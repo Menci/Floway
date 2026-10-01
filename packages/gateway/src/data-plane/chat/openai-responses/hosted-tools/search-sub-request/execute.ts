@@ -44,9 +44,9 @@ export const runWebSearchCall = defineStage<
       const exchange = back['response.http.exchange'];
       if (exchange.type === 'transportFailure') throw exchange.error;
       const response = exchangeResponse(exchange);
-      // Formatting reads the finite body before the child returns; release then has no bytes left.
-      const bytes = await response.arrayBuffer();
+      // The finite reader owns completion, including rejection; canceling its locked body would mask the read error.
       spentBody(exchange.body);
+      const bytes = await response.arrayBuffer();
       return new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: exchange.headers.map(([name, value]): [string, string] => [name, value]) });
     };
     const ir = await execute(facts['request.webSearch.canonical'], use.webSearch, dispatch);

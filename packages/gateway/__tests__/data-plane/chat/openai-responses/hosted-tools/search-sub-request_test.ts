@@ -20,14 +20,17 @@ const request: WebSearchRequest = {
   settings: { search_context_size: 'medium' }, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Find the documentation' }] }],
 };
 
-for (const failed of [false, true]) {
-  test(`web search records backend content before dispatch and closes its ${failed ? 'failed' : 'successful'} child run`, async () => {
-    initRepo(new InMemoryRepo());
+for (const outcome of ['success', 'transportFailure', 'bodyReadFailure'] as const) {
+  test(`web search records backend content before dispatch and closes its ${outcome} child run`, async () => {
+    const failed = outcome !== 'success';
+    const repo = new InMemoryRepo();
+    initRepo(repo);
     const dumps = installDumpStubs(initDumpStore, initDumpBroker);
     const dump = openRunDump(apiKey, { method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null } }, trackBackground, true, { upstreamCallStartedAt: null, firstOutputTokenAt: null });
     const parent = mockGatewayCtx({ dump, backgroundScheduler: trackBackground });
-    const fault = new Error('search transport failed', { cause: new Error('socket reset') });
+    const fault = new Error(outcome === 'bodyReadFailure' ? 'search body read failed' : 'search transport failed', { cause: new Error('socket reset') });
     let dispatched = false;
+    let replyProduced = false;
     const invocation = runWebSearchSubRequest(parent, request, {
       session: { pageCache: new Map(), getProvider: () => { throw new Error('local provider must not dispatch in alpha mode'); }, apiKeyId: apiKey.id },
       alpha: {
@@ -35,7 +38,11 @@ for (const failed of [false, true]) {
           dispatched = true;
           expect(body).toEqual({ id: 'search-session', commands: request.commands, settings: request.settings, input: request.input });
           expect(Object.isFrozen(body.commands)).toBe(true);
-          if (failed) throw fault;
+          if (outcome === 'transportFailure') throw fault;
+          replyProduced = true;
+          if (outcome === 'bodyReadFailure') {
+            return new Response(new ReadableStream<Uint8Array>({ pull: controller => controller.error(fault) }), { headers: { 'content-type': 'application/json' } });
+          }
           return new Response(JSON.stringify({ output: 'documentation' }), { headers: { 'content-type': 'application/json' } });
         }),
       },
@@ -43,6 +50,7 @@ for (const failed of [false, true]) {
     if (failed) await expect(invocation).rejects.toBe(fault);
     else expect(await invocation).toMatchObject({ outputText: 'documentation' });
     expect(dispatched).toBe(true);
+    expect(replyProduced).toBe(outcome !== 'transportFailure');
     dump?.finalize(200, 0);
     await flushBackground();
     expect(dumps.stored).toHaveLength(2);
@@ -50,11 +58,24 @@ for (const failed of [false, true]) {
     const record = dumps.stored.find(item => item.record.meta.path !== '/v1/responses')!.record;
     expect(record.meta.path).toBe('/alpha/search');
     expect(record.meta.status).toBe(failed ? 500 : 200);
+    expect(record.meta.error).toEqual(failed ? { kind: 'failed', reason: fault.message } : null);
+    const usage = await repo.usage.listAll();
+    if (outcome === 'transportFailure') expect(usage).toEqual([]);
+    else {
+      expect(usage).toHaveLength(1);
+      expect(usage[0]).toMatchObject({ requests: 1, modelKey: 'search-model', metrics: [] });
+    }
     const read = createRunReader();
     const decoded = eventsOf(record).map(event => read(event as unknown as DumpEvent));
     const entered = decoded.find(event => event?.facts && 'request.webSearch.canonical' in event.facts);
     expect(entered?.facts?.['request.webSearch.canonical']).toEqual(request);
     expect(decoded).toContainEqual(expect.objectContaining({ facts: expect.objectContaining({ 'request.provider.payload': { id: 'search-session', commands: request.commands, settings: request.settings, input: request.input } }) }));
     expect(new TextDecoder().decode(record.events)).not.toContain('searchCall');
+    if (failed) {
+      const events = eventsOf(record);
+      const stage = events.find(event => event.type === 'stage.entered' && event.name === 'runWebSearchCall');
+      expect(stage).toBeDefined();
+      expect(events).toContainEqual(expect.objectContaining({ type: 'stage.failed', stageId: stage!.stageId }));
+    }
   });
 }

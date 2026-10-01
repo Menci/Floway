@@ -468,6 +468,35 @@ test('POST /v1/chat/completions leaves TTFT absent on a failure before output', 
   assertEquals(meta.ttftMs, null);
 });
 
+test('actual HTTP error-body read failure preserves its original error and called observation', async () => {
+  const repo = installRepo();
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const fault = new Error('upstream error body read failed', { cause: new TypeError('socket reading failed') });
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const call = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: false, modelKey: 'called-model',
+    response: new Response(new ReadableStream<Uint8Array>({ pull: controller => controller.error(fault) }), { status: 503, headers: { 'content-type': 'application/json' } }),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions: call })]);
+  const response = await makeApp(undefined, { dumpRetentionSeconds: 3600 }).request('/v1/chat/completions', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  expect(response.status).toBe(500);
+  expect(await response.json()).toMatchObject({ error: { name: fault.name, message: fault.message, stack: fault.stack, cause: { name: 'TypeError', message: 'socket reading failed' } } });
+  await flushBackground();
+  expect(call).toHaveBeenCalledOnce();
+  expect(logged).toHaveBeenCalledOnce();
+  expect(logged).toHaveBeenCalledWith(fault);
+  logged.mockRestore();
+  expect(dumps.stored).toHaveLength(1);
+  expect(dumps.stored[0]!.record.meta).toMatchObject({ status: 500, error: { kind: 'failed', reason: fault.message } });
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(1);
+  expect(usage[0]).toMatchObject({ modelKey: 'called-model', requests: 1, metrics: [] });
+  expect(await repo.performance.listAll()).toMatchObject([{ requests: 1, errorsNoOutput: 1, errorsWithOutput: 0 }]);
+});
+
 test('actual HTTP cancellation before the first client frame releases the called provider and settles failure once', async () => {
   const repo = installRepo();
   let unblock!: () => void;
