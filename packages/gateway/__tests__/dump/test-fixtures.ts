@@ -1,6 +1,6 @@
-import type { DumpBroker } from '../../src/dump/broker.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import type { StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import type { DumpBroker, DumpMetadata } from '@floway-dev/dump';
 import { encodeRun, toNdjson, type Event } from '@floway-dev/pipeline';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({

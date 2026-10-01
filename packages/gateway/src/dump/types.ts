@@ -13,30 +13,15 @@ import type { z } from 'zod';
 
 import type {
   dumpCaptureSchema,
-  dumpErrorSchema,
-  dumpMetadataSchema,
   dumpStreamEventSchema,
-  dumpUpstreamRefSchema,
 } from './schemas.ts';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 import type { DumpEvent } from '@floway-dev/pipeline';
 
 export type { DumpEvent };
+export type { DumpRecordId, DumpErrorMeta, DumpMetadata, DumpUpstreamRef } from '@floway-dev/dump/types';
 
-export type DumpRecordId = string;
 export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
-
-export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
-
-// What went wrong on a failed turn. Either a categorized api-error envelope
-// (real upstream non-2xx or a gateway-synthesized envelope — `kind` matches
-// `ApiErrorResult.source`) or an uncategorized failure (anything the
-// respond layer / passthrough-serve caught or observed mid-flight: thrown
-// exceptions, source-emitted error events, downstream cancels, write
-// errors) carrying its one-line reason text. The categorized form stores
-// no status — `DumpMetadata.status` already does.
-export type DumpErrorMeta = z.infer<typeof dumpErrorSchema>;
-
-export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 
 // Canonical protocol frame the gateway's respond layer fans out to every
 // dump-enabled key. Stored as ProtocolFrame (not the SSE-serialized form)

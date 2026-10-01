@@ -9,9 +9,9 @@ import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
 import { cloudflareRuntimeRootCAs } from './runtime-root-cas.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
+import { dumpCodec } from '@floway-dev/dump/codec';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 import { FileDumpStore, initDumpBroker, initDumpStore, initExecutionCellNamespace } from '@floway-dev/gateway';
-import { dumpCodec } from '@floway-dev/gateway/dump-codec';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,

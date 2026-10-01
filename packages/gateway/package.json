@@ -20,10 +20,6 @@
     "./control-plane/upstreams/types": {
       "types": "./src/control-plane/upstreams/types.ts"
     },
-    "./dump-codec": {
-      "import": "./src/dump/codec.ts",
-      "types": "./src/dump/codec.ts"
-    },
     "./dump-types": {
       "types": "./src/dump/types.ts"
     },
@@ -37,6 +33,7 @@
   },
   "dependencies": {
     "@floway-dev/agent-setup": "workspace:*",
+    "@floway-dev/dump": "workspace:*",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/pipeline": "workspace:*",
