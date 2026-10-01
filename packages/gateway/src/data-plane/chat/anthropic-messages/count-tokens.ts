@@ -8,9 +8,8 @@ import { narrowing } from './count-tokens/target.ts';
 import { anthropicMessagesCountTokensWire } from './count-tokens/wire.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
-export const anthropicMessagesCountTokensPipeline = (payload: AnthropicMessagesPayload): Pipeline<AnthropicMessagesCountTokensEntry, AnthropicMessagesCountTokensExit> =>
+export const anthropicMessagesCountTokensPipeline = (): Pipeline<AnthropicMessagesCountTokensEntry, AnthropicMessagesCountTokensExit> =>
   compose('anthropicMessagesCountTokens', [
     // A measurement goes through settlement like every other run. It provides an empty
     // billed set because nothing here is billable today, not because the operation is
@@ -18,7 +17,7 @@ export const anthropicMessagesCountTokensPipeline = (payload: AnthropicMessagesP
     // nothing else would change.
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, undefined, false),
     emitAnthropicMessagesTokenCount,
-    resolveChatCandidates(narrowing(payload)),
+    resolveChatCandidates(narrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
       owns: ['response.http.body'],

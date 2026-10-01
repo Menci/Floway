@@ -29,16 +29,16 @@ import { toInternalDebugError } from '@floway-dev/provider';
  * Only the last step differs: `renderSSE` is a wire format written over an HTTP body, and a
  * transport that frames each event itself takes the events it would have been written from.
  */
-export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, framing: OpenAIResponsesStreamFraming) => defineStage<
-  Fields<'ingress.chat.openaiResponses.wantsStream'>,
-  Fields<'ingress.chat.openaiResponses.wantsStream'>,
+export const emitOpenAIResponses = (framing: OpenAIResponsesStreamFraming) => defineStage<
+  Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>,
+  Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>,
   Fields<'ingress.chat.openaiResponses.wantsStream' | 'response.chat.openaiResponses' | 'response.http.headers' | 'response.chat.openaiResponses.streamedUsage'>,
   Fields<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.openaiResponses.streamedUsage'>,
   ChatServices
 >({
   name: 'emitOpenAIResponses',
   through: {
-    request: { needs: ['ingress.chat.openaiResponses.wantsStream'], consumes: [], provides: [] },
+    request: { needs: ['ingress.chat.openaiResponses.wantsStream', 'request.chat.openaiResponses'], consumes: [], provides: [] },
     response: {
       needs: ['response.chat.openaiResponses', 'response.http.headers', OPENAI_RESPONSES_STREAMED_USAGE],
       consumes: ['response.chat.openaiResponses', 'response.http.headers'],
@@ -46,6 +46,7 @@ export const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, fra
     },
   },
   execute: async (facts, next, use) => {
+    const client = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
     const back = await next(facts);
     const { 'response.chat.openaiResponses': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what

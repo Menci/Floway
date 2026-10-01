@@ -12,9 +12,8 @@ import { stripUnsupportedToolsFromGeminiGenerateContent } from './strip-unsuppor
 import { failover } from '../../pipeline/failover.ts';
 import { anthropicMessagesCountTokensWire } from '../anthropic-messages/count-tokens/wire.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
-export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
+export const geminiGenerateContentCountTokensPipeline = (): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
   compose('geminiGenerateContentCountTokens', [
     // A measurement goes through settlement like every other run. It provides an empty
     // billed set because nothing here is billable today, not because the operation is
@@ -22,7 +21,7 @@ export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerate
     // nothing else would change.
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, undefined, false),
     emitGeminiGenerateContentTokenCount,
-    resolveChatCandidates(narrowing(payload)),
+    resolveChatCandidates(narrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
       owns: ['response.http.body'],

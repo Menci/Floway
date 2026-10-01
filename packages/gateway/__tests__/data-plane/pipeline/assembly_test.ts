@@ -28,13 +28,13 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['OpenAI Completions', () => openaiCompletionsServePipeline],
   ['OpenAI Audio Transcriptions', () => openaiAudioTranscriptionServePipeline],
   ['alpha search', () => searchServePipeline({ kind: 'search' } as never)],
-  ['OpenAI Chat Completions', () => openaiChatCompletionsServePipeline({ model: 'm', messages: [] } as never)],
-  ['Anthropic Messages', () => anthropicMessagesServePipeline({ model: 'm', messages: [] } as never)],
-  ['Gemini generateContent', () => geminiGenerateContentServePipeline({ model: 'm', contents: [] } as never)],
-  ['OpenAI Responses', () => openaiResponsesServePipeline({ model: 'm', input: [] } as never)],
-  ['Anthropic Messages count_tokens', () => anthropicMessagesCountTokensPipeline({ model: 'm', messages: [] } as never)],
-  ['Gemini generateContent countTokens', () => geminiGenerateContentCountTokensPipeline({ model: 'm', contents: [] } as never)],
-  ['OpenAI Responses compact', () => openaiResponsesCompactPipeline({ model: 'm', input: [] } as never)],
+  ['OpenAI Chat Completions', () => openaiChatCompletionsServePipeline()],
+  ['Anthropic Messages', () => anthropicMessagesServePipeline()],
+  ['Gemini generateContent', () => geminiGenerateContentServePipeline()],
+  ['OpenAI Responses', () => openaiResponsesServePipeline()],
+  ['Anthropic Messages count_tokens', () => anthropicMessagesCountTokensPipeline()],
+  ['Gemini generateContent countTokens', () => geminiGenerateContentCountTokensPipeline()],
+  ['OpenAI Responses compact', () => openaiResponsesCompactPipeline()],
 ];
 
 describe('every family assembles', () => {

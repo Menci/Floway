@@ -80,7 +80,7 @@ export const anthropicMessagesHttp = {
     return await serveThrough(
       c,
       prologue,
-      anthropicMessagesServePipeline(payload),
+      anthropicMessagesServePipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'anthropicMessages',
@@ -118,7 +118,7 @@ export const anthropicMessagesHttp = {
     return await serveThrough(
       c,
       prologue,
-      anthropicMessagesCountTokensPipeline(payload),
+      anthropicMessagesCountTokensPipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'anthropicMessages',

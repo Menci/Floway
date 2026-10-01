@@ -155,7 +155,7 @@ let gateway = mockChatGatewayCtx({ wantsStream: false });
 const compact = async (request: CanonicalOpenAIResponsesPayload = payload, signal?: AbortSignal) => {
   gateway = mockChatGatewayCtx({ wantsStream: false, abortSignal: signal });
   const outcome = await run(
-    openaiResponsesCompactPipeline(request),
+    openaiResponsesCompactPipeline(),
     move({
       'ingress.http.headers': [] as readonly (readonly [string, string])[],
       'ingress.chat.sourceProtocol': 'openaiResponses',
@@ -167,8 +167,6 @@ const compact = async (request: CanonicalOpenAIResponsesPayload = payload, signa
       background: () => {},
       ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
-      rememberChatSelection: () => {},
-      chatPayloadFor: () => request,
       selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
       resolveAttempt: (selector: { readonly upstreamId: string }) => {
         const found = live.find(c => c.provider.upstreamId === selector.upstreamId);

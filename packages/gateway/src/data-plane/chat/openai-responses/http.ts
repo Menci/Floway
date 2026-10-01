@@ -84,7 +84,7 @@ export const openaiResponsesHttp = {
     return await serveThrough(
       c,
       prologue,
-      openaiResponsesServePipeline(payload),
+      openaiResponsesServePipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'openaiResponses',
@@ -115,7 +115,7 @@ export const openaiResponsesHttp = {
     return await serveThrough(
       c,
       prologue,
-      openaiResponsesCompactPipeline(payload),
+      openaiResponsesCompactPipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'openaiResponses',

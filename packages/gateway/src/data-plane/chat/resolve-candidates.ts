@@ -1,3 +1,4 @@
+import type { ChatFacts, ChatRequestKey } from './facts.ts';
 import type { ChatServices } from './services.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
@@ -13,14 +14,15 @@ import type { ModelCandidate } from '@floway-dev/provider';
 export type ChatRefusal = 'routing-unavailable' | 'model-unsupported' | 'model-missing';
 
 /** How a source protocol narrows and orders the candidates that could serve it. */
-export interface ChatNarrowing<Refusal extends object> {
+export interface ChatNarrowing<Refusal extends object, RequestKey extends ChatRequestKey> {
+  readonly requestKey: RequestKey;
   /** Which upstream wires this source prefers, in order. A candidate none of whose endpoints
    *  appear here cannot serve the request whatever else it offers. */
   readonly canServe: (candidate: ModelCandidate) => boolean;
   /** What the client's own turn says about where it must go. Client-carried state — a
    *  an OpenAI Responses `previous_response_id`, an encrypted reasoning blob — pins the turn to the
    *  upstream that issued it, so this runs before any candidate is tried. */
-  readonly affinity: (gateway: ChatGatewayCtx) => Promise<AffinityRequestAnalysis<unknown>>;
+  readonly affinity: (payload: Pick<ChatFacts, RequestKey>[RequestKey], gateway: ChatGatewayCtx) => Promise<AffinityRequestAnalysis<unknown>>;
   readonly unsupported: (model: string) => string;
   readonly refuse: (status: number, message: string, reason: ChatRefusal) => Refusal;
   readonly refuses: readonly (keyof Refusal)[];
@@ -34,9 +36,9 @@ export interface ChatNarrowing<Refusal extends object> {
  * nowhere to go — and that is an answer this stage already holds, which is why it carries
  * the `return` trait alongside `through`.
  */
-export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNarrowing<Refusal>) => defineStage<
-  Slice<'serve.model'>,
-  Slice<'serve.model' | 'serve.candidates'>,
+export const resolveChatCandidates = <Refusal extends object, RequestKey extends ChatRequestKey>(narrowing: ChatNarrowing<Refusal, RequestKey>) => defineStage<
+  Slice<'serve.model'> & Pick<ChatFacts, RequestKey>,
+  Slice<'serve.model' | 'serve.candidates'> & Pick<ChatFacts, RequestKey> & Pick<ChatFacts, 'request.chat.candidatePayloads'>,
   Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'>,
   Slice<'response.usage.billable' | 'response.http.headers' | 'response.http.body'> & Refusal,
@@ -44,7 +46,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
 >({
   name: 'resolveChatCandidates',
   through: {
-    request: { needs: ['serve.model'], consumes: [], provides: ['serve.candidates'] },
+    request: { needs: ['serve.model', narrowing.requestKey], consumes: [], provides: ['serve.candidates', 'request.chat.candidatePayloads'] },
     response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
   return: { provides: ['response.usage.billable', 'response.http.headers', 'response.http.body', ...narrowing.refuses] },
@@ -69,7 +71,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
         ...narrowing.refuse(status, message, reason),
       });
 
-    const affinity = await narrowing.affinity(use.gateway);
+    const affinity = await narrowing.affinity(facts[narrowing.requestKey] as ChatFacts[RequestKey], use.gateway);
     const viable = candidates.filter(candidate => narrowing.canServe(candidate));
     const selection = selectAffinityCandidates(viable, affinity);
     // A turn whose carried state needs two upstreams at once is a request the client can fix
@@ -83,11 +85,13 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
       return refuse(sawModel ? 400 : 404, appendFailedUpstreams(missing, failedUpstreams), sawModel ? 'model-unsupported' : 'model-missing');
     }
 
-    // The live half stays with the resolver; only selectors travel. The payload a candidate
-    // is owed is part of that live half — affinity materializes it per candidate, and it
-    // carries the client's own state rewritten for the upstream that will see it.
-    use.rememberChatSelection(selection.payloadFor);
+    const selectors = use.rememberCandidates(selection.candidates);
+    // Selection and payload projection are pure after carrier decoding. Snapshot only the
+    // accepted candidates' request values; live provider instances remain in the registry.
+    const payloads = Object.fromEntries(selectors.map((selector, index) => [
+      selector.candidateId, selection.payloadFor(selection.candidates[index]),
+    ]));
     await use.log.debug('resolved chat candidates', { model, viable: selection.candidates.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(use.rememberCandidates(selection.candidates)) });
+    return await next({ ...facts, 'serve.candidates': move(selectors), 'request.chat.candidatePayloads': move(payloads) });
   },
 });

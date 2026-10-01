@@ -95,7 +95,7 @@ const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string,
   return await serveThrough(
     c,
     prologue,
-    geminiGenerateContentServePipeline(payload),
+    geminiGenerateContentServePipeline(),
     move({
       'ingress.http.headers': prologue.headers,
       'ingress.chat.sourceProtocol': 'geminiGenerateContent',
@@ -128,7 +128,7 @@ const runGeminiGenerateContentCountTokens = async (c: AuthedContext, model: stri
   return await serveThrough(
     c,
     prologue,
-    geminiGenerateContentCountTokensPipeline(payload),
+    geminiGenerateContentCountTokensPipeline(),
     move({
       'ingress.http.headers': prologue.headers,
       'ingress.chat.sourceProtocol': 'geminiGenerateContent',

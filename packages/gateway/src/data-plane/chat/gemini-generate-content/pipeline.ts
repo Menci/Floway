@@ -15,13 +15,12 @@ import { stripUnsupportedToolsFromGeminiGenerateContent } from './strip-unsuppor
 import { dialChatWire } from '../dial-wire.ts';
 import { geminiGenerateContentWireFor } from './wires.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
-export const geminiGenerateContentServePipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentServeEntry, GeminiGenerateContentServeExit> =>
+export const geminiGenerateContentServePipeline = (): Pipeline<GeminiGenerateContentServeEntry, GeminiGenerateContentServeExit> =>
   compose('geminiGenerateContentServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitGeminiGenerateContent,
-    resolveChatCandidates(narrowing(payload)),
+    resolveChatCandidates(narrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
       owns: ['response.http.body'],

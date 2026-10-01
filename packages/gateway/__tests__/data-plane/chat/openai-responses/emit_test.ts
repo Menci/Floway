@@ -22,7 +22,7 @@ const key: ApiKey = {
   dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0,
 };
 
-type Entry = Fields<'ingress.chat.openaiResponses.wantsStream'>;
+type Entry = Fields<'ingress.chat.openaiResponses.wantsStream' | 'request.chat.openaiResponses'>;
 type Answer = Entry & Fields<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'>;
 type Exit = Fields<'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage'>;
 
@@ -81,9 +81,9 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
       }),
     });
     const outcome = await run(compose<Entry, Exit>('clientFailure', [
-      emitOpenAIResponses({ model: 'model', input: [], store: false }, 'sse'),
+      emitOpenAIResponses('sse'),
       meterUsage('response.chat.openaiResponses.streamedUsage'), dial,
-    ]), move({ 'ingress.chat.openaiResponses.wantsStream': true }), { gateway, dump: dump.sink });
+    ]), move({ 'ingress.chat.openaiResponses.wantsStream': true, 'request.chat.openaiResponses': { model: 'model', input: [], store: false } }), { gateway, dump: dump.sink });
     const wire: SseFrame[] = [];
     for await (const frame of outcome.facts['response.chat.openaiResponses.rendered'] as AsyncIterable<SseFrame>) wire.push(frame);
     expect((await outcome.facts['response.chat.openaiResponses.streamedUsage'])?.failed).toBe(true);

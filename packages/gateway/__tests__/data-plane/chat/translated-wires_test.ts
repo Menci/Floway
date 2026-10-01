@@ -169,7 +169,6 @@ const contextExceeded = async (): Promise<ProviderStreamResult<OpenAIChatComplet
 const serve = async <Entry extends object, Exit extends object>(
   pipeline: Pipeline<Entry, Exit>,
   facts: Record<string, unknown>,
-  attemptPayload: unknown,
 ) => {
   const gateway = mockChatGatewayCtx({ wantsStream: false });
   return await run(pipeline, move(facts) as never, {
@@ -177,8 +176,6 @@ const serve = async <Entry extends object, Exit extends object>(
     background: () => {},
     ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
-    rememberChatSelection: () => {},
-    chatPayloadFor: () => attemptPayload,
     selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
@@ -194,41 +191,41 @@ const openaiResponsesPayload = { model: MODEL, input: [{ type: 'message', role: 
 const geminiGenerateContentPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiGenerateContentPayload;
 
 const serveOpenAIChatCompletions = async (payload: OpenAIChatCompletionsPayload = openaiChatCompletionsPayload) =>
-  await serve(openaiChatCompletionsServePipeline(payload), {
+  await serve(openaiChatCompletionsServePipeline(), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'openaiChatCompletions',
     'ingress.chat.openaiChatCompletions.wantsStream': false,
     'ingress.chat.openaiChatCompletions.wantsUsageChunk': false,
     'request.chat.openaiChatCompletions': payload,
     'serve.model': MODEL,
-  }, payload);
+  });
 
 const serveAnthropicMessages = async (payload: AnthropicMessagesPayload = anthropicMessagesPayload) =>
-  await serve(anthropicMessagesServePipeline(payload), {
+  await serve(anthropicMessagesServePipeline(), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'anthropicMessages',
     'ingress.chat.anthropicMessages.wantsStream': false,
     'request.chat.anthropicMessages': payload,
     'serve.model': MODEL,
-  }, payload);
+  });
 
 const serveOpenAIResponses = async (payload: CanonicalOpenAIResponsesPayload = openaiResponsesPayload) =>
-  await serve(openaiResponsesServePipeline(payload), {
+  await serve(openaiResponsesServePipeline(), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'openaiResponses',
     'ingress.chat.openaiResponses.wantsStream': false,
     'request.chat.openaiResponses': payload,
     'serve.model': MODEL,
-  }, payload);
+  });
 
 const serveGeminiGenerateContent = async (payload: GeminiGenerateContentPayload = geminiGenerateContentPayload) =>
-  await serve(geminiGenerateContentServePipeline(payload), {
+  await serve(geminiGenerateContentServePipeline(), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'geminiGenerateContent',
     'ingress.chat.geminiGenerateContent.wantsStream': false,
     'request.chat.geminiGenerateContent': payload,
     'serve.model': MODEL,
-  }, payload);
+  });
 
 // ── What the client was answered with, per protocol ───────────────────────────────────────
 

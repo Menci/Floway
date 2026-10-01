@@ -13,13 +13,12 @@ import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
 import { dialChatWire } from '../dial-wire.ts';
 import { anthropicMessagesWireFor } from './wires.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
-export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload): Pipeline<AnthropicMessagesServeEntry, AnthropicMessagesServeExit> =>
+export const anthropicMessagesServePipeline = (): Pipeline<AnthropicMessagesServeEntry, AnthropicMessagesServeExit> =>
   compose('anthropicMessagesServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitAnthropicMessages,
-    resolveChatCandidates(narrowing(payload)),
+    resolveChatCandidates(narrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
       owns: ['response.http.body'],

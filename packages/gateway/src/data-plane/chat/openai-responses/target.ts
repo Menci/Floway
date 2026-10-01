@@ -8,18 +8,10 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
  *  the translated OpenAI Chat Completions path. */
 export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
 
-/** A candidate that cannot serve *this* request is not a candidate — and what the client's
- *  own turn carries decides the order the rest are tried in, which is why the narrowing is
- *  built from the request rather than being a constant.
- *
- *  It reads the request through a function because the one it has to read is the *prepared*
- *  one: a `previous_response_id` continuation carries the prior turn's state on items the
- *  client never sent, and a turn is pinned by what its items carry. The narrowing is built
- *  at assembly, before any fact exists, so the membrane hands the prepared payload across
- *  through the run's own cell rather than through the record. */
-export const openaiResponsesNarrowing = (prepared: () => CanonicalOpenAIResponsesPayload): ChatNarrowing<Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage'>> => ({
+export const openaiResponsesNarrowing: ChatNarrowing<Fields<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage'>, 'request.chat.openaiResponses'> = ({
+  requestKey: 'request.chat.openaiResponses',
   canServe: candidate => openaiResponsesTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeOpenAIResponsesAffinity(prepared(), gateway.affinity.codec),
+  affinity: async (payload, gateway) => await analyzeOpenAIResponsesAffinity(payload as CanonicalOpenAIResponsesPayload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
   refuse: (status, message, reason) => ({
     'response.chat.openaiResponses.streamedUsage': null,

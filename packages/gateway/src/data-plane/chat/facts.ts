@@ -21,6 +21,8 @@ import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-respon
  *  and no target role. */
 export type ChatSourceProtocol = 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses' | 'geminiGenerateContent';
 
+export type ChatRequestKey = 'request.chat.openaiChatCompletions' | 'request.chat.anthropicMessages' | 'request.chat.openaiResponses' | 'request.chat.geminiGenerateContent';
+
 export interface ChatFacts extends GatewayFacts {
   /** Which protocol the client spoke. Read by the stages that must know — a vendor
    *  normalizer genuinely does — rather than reached for through an ambient field.
@@ -38,6 +40,8 @@ export interface ChatFacts extends GatewayFacts {
   /** Whether the client wants the usage chunk it would otherwise never see. The gateway
    *  always asks the upstream for one; this decides who is shown it. */
   'ingress.chat.openaiChatCompletions.wantsUsageChunk': boolean;
+
+  'request.chat.candidatePayloads': Readonly<Record<number, unknown>>;
 
   /** One key per protocol. A translation consumes one and provides another, which is the
    *  whole of what a protocol handoff is. */

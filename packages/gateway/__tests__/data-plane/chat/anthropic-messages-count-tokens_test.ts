@@ -24,6 +24,14 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
   enumerateModelCandidates: vi.fn(),
 }));
 
+vi.mock('../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts')>()),
+  analyzeAnthropicMessagesAffinity: async () => ({
+    requiredTargets: [],
+    evaluateCandidate: () => ({ kind: 'accepted', degrades: false, preferred: true, materialize: () => affinityPayload }),
+  }),
+}));
+
 let live: readonly ModelCandidate[] = [];
 
 type CountTokens = StubChatProviderCall<'anthropicMessagesCountTokens'>;
@@ -84,7 +92,7 @@ const count = async (
 ) => {
   const gateway = mockChatGatewayCtx({ wantsStream: false });
   return await run(
-    anthropicMessagesCountTokensPipeline(request),
+    anthropicMessagesCountTokensPipeline(),
     move({
       'ingress.http.headers': headers,
       'ingress.chat.sourceProtocol': 'anthropicMessages',
@@ -96,8 +104,6 @@ const count = async (
       background: () => {},
       ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
-      rememberChatSelection: () => {},
-      chatPayloadFor: () => affinityPayload,
       selectAffinity: () => { throw new Error('a measurement pins nothing; it must not select affinity'); },
       resolveAttempt: (selector: { readonly upstreamId: string }) => {
         const found = live.find(c => c.provider.upstreamId === selector.upstreamId);

@@ -1,21 +1,11 @@
-// Opening a chat run. The seam every non-chat family uses builds the services a run is
-// given; a chat run needs three more, and this is where they come from.
-//
-// All three are the live half of resolution. A `ModelCandidate` never enters the record —
-// `move()` would freeze the provider's own models cache — and neither does the payload
-// affinity materializes for one, because materializing rewrites client-carried state for the
-// upstream that will see it and the result is per candidate. So the resolver keeps them and
-// the stage that dials asks for them back by selector, which is the same shape the shared
-// services already use for the candidate itself.
+// Chat admission adds the request-owned store and affinity ports to shared run services.
 
 import type { ChatServices } from './services.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from './shared/gateway-ctx.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import type { AttemptSelector } from '../pipeline/facts.ts';
 import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
 import type { OpenAIResponsesStatefulStore } from './openai-responses/items/store.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface ChatPrologue extends Prologue {
   readonly services: ChatServices;
@@ -41,20 +31,12 @@ export const openChatPrologue = (
   const gateway = createChatGatewayCtxFromHono(c, ctxOptions, options.storeFactory);
   const base = prologueFor(gateway, ingress, runDumpOf(ctxOptions));
 
-  let materialize: ((candidate: ModelCandidate) => unknown) | undefined;
   return {
     ...base,
     gateway,
     services: {
       ...base.services,
       gateway,
-      rememberChatSelection: payloadFor => { materialize = payloadFor; },
-      chatPayloadFor: (selector: AttemptSelector) => {
-        if (materialize === undefined) {
-          throw new Error('chatPayloadFor: nothing was resolved in this run; the selector did not come from it');
-        }
-        return materialize(base.services.resolveAttempt(selector));
-      },
       selectAffinity: candidate => { gateway.affinity.select(candidate); },
     },
   };

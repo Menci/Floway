@@ -33,6 +33,14 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
   enumerateModelCandidates: vi.fn(),
 }));
 
+vi.mock('../../../src/data-plane/chat/openai-responses/affinity/ingress.ts', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../src/data-plane/chat/openai-responses/affinity/ingress.ts')>()),
+  analyzeOpenAIResponsesAffinity: async () => ({
+    requiredTargets: [],
+    evaluateCandidate: () => ({ kind: 'accepted', degrades: false, preferred: true, materialize: () => { asked += 1; return affinityPayload; } }),
+  }),
+}));
+
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
@@ -161,7 +169,7 @@ const serveWith = async (
   wantsStream: boolean,
   request: CanonicalOpenAIResponsesPayload = payload,
 ) => await run(
-  openaiResponsesServePipeline(request),
+  openaiResponsesServePipeline(),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
     'ingress.chat.sourceProtocol': 'openaiResponses',
@@ -174,8 +182,6 @@ const serveWith = async (
     background: () => {},
     ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
-    rememberChatSelection: () => {},
-    chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
     // chain named here.
     selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },

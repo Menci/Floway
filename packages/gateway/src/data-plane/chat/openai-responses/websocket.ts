@@ -28,7 +28,6 @@ import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
@@ -236,20 +235,12 @@ const openOpenAIResponsesWebSocketTurn = (
   }, turn.store);
   const base = prologueFor(gateway, { body: turn.body, headers: turn.headers }, dump);
 
-  let materialize: ((candidate: ModelCandidate) => unknown) | undefined;
   return {
     ...base,
     gateway,
     services: {
       ...base.services,
       gateway,
-      rememberChatSelection: payloadFor => { materialize = payloadFor; },
-      chatPayloadFor: selector => {
-        if (materialize === undefined) {
-          throw new Error('chatPayloadFor: nothing was resolved in this run; the selector did not come from it');
-        }
-        return materialize(base.services.resolveAttempt(selector));
-      },
       selectAffinity: candidate => { gateway.affinity.select(candidate); },
     },
   };
@@ -346,7 +337,7 @@ const handleClientMessage = async (
     const { facts, drain } = await run(
       // The transport frames its own answer, so the edge hands up the events rather than the
       // SSE a body would have been written from.
-      openaiResponsesServePipeline(payload, 'events'),
+      openaiResponsesServePipeline('events'),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'openaiResponses',

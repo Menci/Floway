@@ -18,18 +18,13 @@ import { openaiResponsesNarrowing, openaiResponsesTarget } from './target.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponsesPayload): Pipeline<OpenAIResponsesCompactEntry, OpenAIResponsesCompactExit> => {
-  // One cell per run, written by the stage directly above the one that reads it — the same
-  // hand-across the generate chain makes, for the same reason: the resolver takes its
-  // narrowing at assembly, before any fact exists.
-  let prepared = payload;
+export const openaiResponsesCompactPipeline = (): Pipeline<OpenAIResponsesCompactEntry, OpenAIResponsesCompactExit> => {
   return compose('openaiResponsesCompact', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
     emitOpenAIResponsesCompaction,
-    hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
-    resolveChatCandidates(openaiResponsesNarrowing(() => prepared)),
+    hydrateStoredItems,
+    resolveChatCandidates(openaiResponsesNarrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       owns: ['response.http.body'],

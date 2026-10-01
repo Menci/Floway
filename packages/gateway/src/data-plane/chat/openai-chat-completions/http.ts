@@ -54,7 +54,7 @@ export const openaiChatCompletionsHttp = {
     return await serveThrough(
       c,
       prologue,
-      openaiChatCompletionsServePipeline(payload),
+      openaiChatCompletionsServePipeline(),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'openaiChatCompletions',

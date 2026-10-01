@@ -28,6 +28,14 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 /** The live candidates the resolver hands back. They never enter the record: a candidate
  *  carries the provider's instance, its fetcher and its models cache, and freezing those is
  *  what putting one in the record would do. What travels is the selector. */
+vi.mock('../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts')>()),
+  analyzeGeminiGenerateContentAffinity: async () => ({
+    requiredTargets: [],
+    evaluateCandidate: () => ({ kind: 'accepted', degrades: false, preferred: true, materialize: () => { asked += 1; return affinityPayload; } }),
+  }),
+}));
+
 let live: readonly ModelCandidate[] = [];
 
 const resolves = (candidates: readonly ModelCandidate[]): void => {
@@ -134,15 +142,13 @@ const serve = async (facts: Record<string, unknown>) =>
   await serveWith(mockChatGatewayCtx({ wantsStream: facts['ingress.chat.geminiGenerateContent.wantsStream'] === true }), facts);
 
 const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: Record<string, unknown>) => await run(
-  geminiGenerateContentServePipeline(payload),
+  geminiGenerateContentServePipeline(),
   move(facts) as never,
   {
     gateway,
     background: () => {},
     ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
-    rememberChatSelection: () => {},
-    chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
     // chain named here.
     selectAffinity: (answered: ModelCandidate) => { selected.push(answered); gateway.affinity.select(answered); },
@@ -187,16 +193,12 @@ const affinityCarriers = (events: readonly GeminiGenerateContentResult[]): reado
     candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
 
 describe('the Gemini generateContent pipeline', () => {
-  // The whole entry contract, and it does not mention `request.chat.geminiGenerateContent`: the turn the
-  // wire translates is not the one the caller handed in but the one materializeAttempt put
-  // into the record below the fork, which is where a per-candidate payload can exist at all.
-  // The two `ingress.*` keys are there because the fork declares what the wire under it
-  // reads — a wire is built against a candidate, so assembly cannot ask one itself.
   it('assembles, and asks its caller only for what the descending stages need', () => {
-    expect([...geminiGenerateContentServePipeline(payload).entryNeeds].sort()).toEqual([
+    expect([...geminiGenerateContentServePipeline().entryNeeds].sort()).toEqual([
       'ingress.chat.geminiGenerateContent.wantsStream',
       'ingress.chat.sourceProtocol',
       'ingress.http.headers',
+      'request.chat.geminiGenerateContent',
       'serve.model',
     ]);
   });

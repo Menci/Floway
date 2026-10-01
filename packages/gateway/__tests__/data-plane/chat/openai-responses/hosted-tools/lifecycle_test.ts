@@ -58,7 +58,7 @@ for (const client of ['unread', 'partial-before-tool', 'partial-second', 'comple
   };
   const [selector] = base.services.rememberCandidates([candidate]);
   const executed = await run(compose<Record<string, unknown>, Record<string, unknown>>('hostedLifecycle', [
-    emitOpenAIResponses(payload, 'sse'), hostedTools([registration], { streamedUsage: key, targetOf: () => 'openaiResponses' }), ...openaiResponsesWire(key),
+    emitOpenAIResponses('sse'), hostedTools([registration], { streamedUsage: key, targetOf: () => 'openaiResponses' }), ...openaiResponsesWire(key),
   ]), move({ 'request.chat.openaiResponses': payload, 'route.attempt': selector, 'ingress.http.headers': [], 'ingress.chat.sourceProtocol': 'openaiResponses', 'ingress.chat.openaiResponses.wantsStream': true, 'serve.usage.prior': [] }), {
     ...base.services, gateway, recordProtocolFrames: <T>(frames: AsyncIterable<T>) => frames, selectAffinity: () => {},
   });

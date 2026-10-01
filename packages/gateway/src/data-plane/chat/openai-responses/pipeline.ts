@@ -22,25 +22,18 @@ import { webSearchHostedTool } from './hosted-tools/web-search.ts';
 import { hostedTools } from './hosted-tools.ts';
 import { projectOpenAIResponsesWebSocket, type OpenAIResponsesWebSocketEntry, type OpenAIResponsesWebSocketExit } from './project-websocket.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 export const openaiResponsesServePipeline = <Framing extends OpenAIResponsesStreamFraming = 'sse'>(
-  payload: CanonicalOpenAIResponsesPayload,
   // SSE is what a run is written in when nothing else claims its frames, which is every
   // entry over an HTTP body; the WebSocket transport says so because it writes its own.
   framing: Framing = 'sse' as Framing,
 ): Pipeline<Framing extends 'events' ? OpenAIResponsesWebSocketEntry : OpenAIResponsesServeEntry, Framing extends 'events' ? OpenAIResponsesWebSocketExit : OpenAIResponsesServeExit> => {
-  // One cell per run, written by the stage directly above the one that reads it. The
-  // resolver takes its narrowing at assembly, so this is where the prepared payload crosses
-  // from the membrane to the affinity walk; until the membrane has run, what the client sent
-  // is the whole of what is known about the turn.
-  let prepared = payload;
   return compose('openaiResponsesServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, OPENAI_RESPONSES_STREAMED_USAGE),
     ...framing === 'events' ? [projectOpenAIResponsesWebSocket] : [],
-    emitOpenAIResponses(payload, framing),
-    hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
-    resolveChatCandidates(openaiResponsesNarrowing(() => prepared)),
+    emitOpenAIResponses(framing),
+    hydrateStoredItems,
+    resolveChatCandidates(openaiResponsesNarrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       owns: ['response.http.body'],

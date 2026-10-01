@@ -78,7 +78,7 @@ const count = async (
 ) => {
   const gateway = mockChatGatewayCtx({ wantsStream: false });
   return await run(
-    geminiGenerateContentCountTokensPipeline(request),
+    geminiGenerateContentCountTokensPipeline(),
     move({
       'ingress.http.headers': headers,
       'ingress.chat.sourceProtocol': 'geminiGenerateContent',
@@ -90,8 +90,6 @@ const count = async (
       background: () => {},
       ...chatFixtureHttpServices(gateway),
       ...createCandidateRegistry(),
-      rememberChatSelection: () => {},
-      chatPayloadFor: () => request,
       selectAffinity: () => { throw new Error('a measurement pins nothing; it must not select affinity'); },
       resolveAttempt: (selector: { readonly upstreamId: string }) => {
         const found = live.find(c => c.provider.upstreamId === selector.upstreamId);

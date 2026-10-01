@@ -26,6 +26,14 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
   enumerateModelCandidates: vi.fn(),
 }));
 
+vi.mock('../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts')>()),
+  analyzeAnthropicMessagesAffinity: async () => ({
+    requiredTargets: [],
+    evaluateCandidate: () => ({ kind: 'accepted', degrades: false, preferred: true, materialize: () => { asked += 1; return affinityPayload; } }),
+  }),
+}));
+
 let live: readonly ModelCandidate[] = [];
 
 type CallAnthropicMessages = StubChatProviderCall<'anthropicMessages'>;
@@ -107,7 +115,7 @@ const serveWith = async (
   wantsStream: boolean,
   headers: readonly (readonly [string, string])[] = [],
 ) => await run(
-  anthropicMessagesServePipeline(payload),
+  anthropicMessagesServePipeline(),
   move({
     'ingress.http.headers': headers,
     'ingress.chat.sourceProtocol': 'anthropicMessages',
@@ -120,8 +128,6 @@ const serveWith = async (
     background: () => {},
     ...chatFixtureHttpServices(gateway),
     ...createCandidateRegistry(),
-    rememberChatSelection: () => {},
-    chatPayloadFor: () => { asked += 1; return affinityPayload; },
     // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
     // chain named here.
     selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },

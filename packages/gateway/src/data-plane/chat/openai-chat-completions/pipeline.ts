@@ -11,13 +11,12 @@ import { normalizeEmptyToolsForOpenAIChatCompletions } from './normalize-empty-t
 import { dialChatWire } from '../dial-wire.ts';
 import { openaiChatCompletionsWireFor } from './wires.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
-export const openaiChatCompletionsServePipeline = (payload: OpenAIChatCompletionsPayload): Pipeline<OpenAIChatCompletionsServeEntry, OpenAIChatCompletionsServeExit> =>
+export const openaiChatCompletionsServePipeline = (): Pipeline<OpenAIChatCompletionsServeEntry, OpenAIChatCompletionsServeExit> =>
   compose('openaiChatCompletionsServe', [
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, STREAMED_USAGE),
     emitOpenAIChatCompletions,
-    resolveChatCandidates(narrowing(payload)),
+    resolveChatCandidates(narrowing),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
       owns: ['response.http.body'],

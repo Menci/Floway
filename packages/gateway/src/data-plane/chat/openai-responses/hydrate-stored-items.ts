@@ -42,10 +42,7 @@ const refuseStoredItems = (
  * nowhere to be routed to. Both of its refusals are answers it already holds, which is why
  * it carries the `return` trait alongside `through`.
  */
-export const hydrateStoredItems = (
-  client: CanonicalOpenAIResponsesPayload,
-  prepared: (payload: CanonicalOpenAIResponsesPayload) => void,
-) => defineStage<
+export const hydrateStoredItems = defineStage<
   Fields<'request.chat.openaiResponses'>,
   Fields<'request.chat.openaiResponses' | 'request.chat.openaiResponses.privatePayloads'>,
   Record<string, never>,
@@ -92,7 +89,7 @@ export const hydrateStoredItems = (
 
     // Both lists: what the turn now names is read by id, and what the client itself sent is
     // read by item hash as well, so a body repeated verbatim finds the row it already made.
-    await store.loadInputItems(expanded.input, client.input);
+    await store.loadInputItems(expanded.input, asked.input);
 
     let hydrated: ReturnType<typeof hydrateOpenAIResponsesPayload>;
     try {
@@ -108,9 +105,8 @@ export const hydrateStoredItems = (
 
     // The client's own input, not the expansion's `item_reference` prefix: the prefix is
     // already in the snapshot this turn inherited, and staging it again would repeat it.
-    await store.stageInputItems(client.input);
+    await store.stageInputItems(asked.input);
 
-    prepared(hydrated.payload);
     return await next({
       ...facts,
       'request.chat.openaiResponses': move(hydrated.payload),
