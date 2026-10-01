@@ -22,7 +22,7 @@ export const compatibilitySchema = z.object({ openaiChatCompletions: z.object({ 
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
   openaiCompletions: endpointSchema.optional(),
-  openaiChatCompletions: z.object({ reasoning: reasoningOverridesSchema.optional() }).strict().optional(),
+  openaiChatCompletions: endpointSchema.optional(),
   openaiResponses: endpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
   openaiEmbeddings: endpointSchema.optional(),
@@ -76,9 +76,7 @@ const opaqueBlobCompatibilityScopeSchema = z.object({
   bindToUpstream: z.boolean(),
   key: z.string().min(1).optional(),
 }).strict();
-const resolvedEndpointsSchema = endpointsSchema.extend({
-  openaiChatCompletions: z.object({ reasoning: z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS) }).strict() }).strict().optional(),
-});
+const resolvedCompatibilitySchema = z.object({ openaiChatCompletions: z.object({ reasoning: z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS) }).strict() }).strict() }).strict();
 const providerModelSchema = z.object({
   id: z.string(),
   upstreamModelId: z.string(),
@@ -89,7 +87,8 @@ const providerModelSchema = z.object({
   kind: z.enum(MODEL_KINDS),
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
-  endpoints: resolvedEndpointsSchema,
+  endpoints: endpointsSchema,
+  resolvedCompatibility: resolvedCompatibilitySchema.optional(),
   compatibility: compatibilitySchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema,
   providerData: opaqueJsonSchema.optional(),

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { compatibilityDefaultsForKind, resolveProviderModelEndpoints } from '../../src/data-plane/providers/registry.ts';
+import { compatibilityDefaultsForKind, resolveProviderModelCompatibility } from '../../src/data-plane/providers/registry.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
 import type { ChatCompletionsReasoningFormat, ChatCompletionsReasoningOverrides } from '@floway-dev/protocols/openai-chat-completions';
@@ -53,7 +53,7 @@ const migratedModels = (record: UpstreamRecord): UpstreamModelConfig[] =>
   modelsField((record.config as { models: unknown }).models, record.kind);
 
 const resolvedFormat = (record: UpstreamRecord, config: Pick<UpstreamModelConfig, 'endpoints' | 'compatibility'> = { endpoints: { openaiChatCompletions: {} } }): ChatCompletionsReasoningOverrides | undefined =>
-  resolveProviderModelEndpoints(record, { ...stubProviderModel(), ...config }).endpoints.openaiChatCompletions?.reasoning;
+  resolveProviderModelCompatibility(record, { ...stubProviderModel(), ...config }).resolvedCompatibility?.openaiChatCompletions.reasoning;
 
 for (const kind of ['custom', 'azure', 'ollama'] as const) {
   test.each([true, false])(`${kind}: explicit upstream DeepSeek decision migrates independently from provider defaults (on=%s)`, async on => {

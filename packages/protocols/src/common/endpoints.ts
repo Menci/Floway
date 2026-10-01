@@ -1,5 +1,3 @@
-import type { ChatCompletionsReasoningOverrides } from '../openai-chat-completions/reasoning-format.ts';
-
 // Protocol-level model endpoint types and their intrinsic kind projection.
 // Provider projection and endpoint dispatch live in packages/gateway/src/data-plane/.
 
@@ -35,7 +33,7 @@ export interface ModelEndpoints {
   // no endpoint-specific metadata. Orthogonal to `openaiChatCompletions`: a
   // model can declare any non-empty subset.
   openaiCompletions?: {};
-  openaiChatCompletions?: { reasoning?: ChatCompletionsReasoningOverrides };
+  openaiChatCompletions?: {};
   openaiResponses?: {};
   anthropicMessages?: {};
   openaiEmbeddings?: {};

@@ -1,4 +1,4 @@
-import type { Compatibility } from './compatibility.ts';
+import type { Compatibility, CompatibilityDefaults } from './compatibility.ts';
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
@@ -183,6 +183,7 @@ export interface InternalAliasedFrom {
 // assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   compatibility?: Compatibility;
+  resolvedCompatibility?: CompatibilityDefaults;
   // The provider-neutral upstream catalog id shown on auto rows and used when
   // an opaque-blob scope omits its key. A provider that selects a request-time
   // wire variant still keeps that invocation detail in providerData.

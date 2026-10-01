@@ -1,8 +1,8 @@
+import { downstreamEndpointsFor } from './downstream-endpoints.ts';
 import { unionEndpoints } from './endpoint-union.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
-import { downstreamEndpointsFor } from '../chat/openai-chat-completions/reasoning.ts';
 import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
 import type { InternalModel, Provider, ProviderModel, UpstreamChatModelConfig, UpstreamRecord } from '@floway-dev/provider';
 
@@ -49,7 +49,7 @@ const mergedChatMetadata = (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, compatibility, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, compatibility, resolvedCompatibility, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
   const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {

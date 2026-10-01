@@ -41,17 +41,16 @@ export const createPreviewProvider = (record: UpstreamRecord): Provider => {
     ...provider,
     instance: {
       ...provider.instance,
-      getProvidedModels: async fetcher => (await nativeGetModels(fetcher)).map(model => resolveProviderModelEndpoints(record, model)),
+      getProvidedModels: async fetcher => (await nativeGetModels(fetcher)).map(model => resolveProviderModelCompatibility(record, model)),
     },
   };
 };
 
-export const resolveProviderModelEndpoints = (record: UpstreamRecord, model: ProviderModel): ProviderModel => {
+export const resolveProviderModelCompatibility = (record: UpstreamRecord, model: ProviderModel): ProviderModel => {
   if (model.endpoints.openaiChatCompletions === undefined) return model;
   return {
     ...model,
-    endpoints: {
-      ...model.endpoints,
+    resolvedCompatibility: {
       openaiChatCompletions: {
         reasoning: {
           ...compatibilityDefaultsForKind(record.kind).openaiChatCompletions.reasoning,

@@ -1,23 +1,7 @@
-import { eventFrame, type ProtocolFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorPayloadMessage, toFlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, FlowayOpenAIChatCompletionsReasoning, type ChatCompletionsReasoningFormat, type ReasoningConversionWarning, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 export const DOWNSTREAM_CHAT_COMPLETIONS_REASONING: ChatCompletionsReasoningFormat = { text: 'reasoning', data: 'reasoning-opaque' };
-export const downstreamEndpointsFor = (endpoints: ModelEndpoints): ModelEndpoints => {
-  if (endpoints.openaiChatCompletions === undefined && endpoints.openaiResponses === undefined && endpoints.anthropicMessages === undefined) return { ...endpoints };
-  const upstreamReasoning = endpoints.openaiChatCompletions?.reasoning;
-  return {
-    ...endpoints,
-    openaiChatCompletions: {
-      reasoning: {
-        text: upstreamReasoning?.text === 'passthrough' ? 'passthrough' : DOWNSTREAM_CHAT_COMPLETIONS_REASONING.text,
-        data: upstreamReasoning?.data === 'passthrough' ? 'passthrough' : DOWNSTREAM_CHAT_COMPLETIONS_REASONING.data,
-      },
-    },
-    openaiResponses: {},
-    anthropicMessages: {},
-  };
-};
-
 export const warnReasoningConversion = (warning: ReasoningConversionWarning): void => {
   console.warn('Floway Chat Completions reasoning format:', warning);
 };

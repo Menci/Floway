@@ -44,8 +44,8 @@ export const openaiChatCompletionsAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
-        const configured = providerModelOf(candidate).endpoints.openaiChatCompletions?.reasoning;
-        if (configured?.text === undefined || configured.data === undefined) throw new TypeError('Resolved upstream Chat Completions endpoint is missing its reasoning format');
+        const configured = providerModelOf(candidate).resolvedCompatibility?.openaiChatCompletions.reasoning;
+        if (configured?.text === undefined || configured.data === undefined) throw new TypeError('Resolved upstream Chat Completions compatibility is missing its reasoning format');
         const format: ChatCompletionsReasoningFormat = { text: configured.text, data: configured.data };
         ctx.dump?.setUpstreamTargetApi('openaiChatCompletions');
         const wireBody = { ...body, messages: body.messages.map(message => fromFlowayOpenAIChatCompletionsReasoning(message, format, { warn: warnReasoningConversion })) };

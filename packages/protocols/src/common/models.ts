@@ -115,8 +115,8 @@ export interface PublicModel {
   // Non-standard extra fields below.
   limits: PublicModelLimits;
   kind: ModelKind;
-  // The client-facing endpoint surface after gateway translation and format
-  // normalization. Upstream-native endpoints remain internal routing metadata.
+  // Client-facing endpoint availability after gateway translation.
+  // Upstream compatibility preferences remain internal.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;

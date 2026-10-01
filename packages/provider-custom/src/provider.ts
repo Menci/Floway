@@ -34,7 +34,6 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
   if (model.pricing) partial.pricing = model.pricing;
-  if (model.endpoints?.openaiChatCompletions?.reasoning) partial.compatibility = { openaiChatCompletions: { reasoning: model.endpoints.openaiChatCompletions.reasoning } };
   return partial;
 };
 
@@ -47,9 +46,7 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
     : model.kind === 'image' ? { openaiImagesGenerations: {}, openaiImagesEdits: {} }
       : model.kind === 'transcription' ? { openaiAudioTranscriptions: {} }
         : model.kind === 'chat' ? configured : inferEndpointsFromModelId(model.id) ?? configured;
-  const reasoning = model.endpoints?.openaiChatCompletions?.reasoning;
-  return endpoints.openaiChatCompletions !== undefined && reasoning !== undefined
-    ? { ...endpoints, openaiChatCompletions: { reasoning } } : endpoints;
+  return endpoints;
 };
 
 export const projectCustomDiscoveredModels = (
@@ -70,7 +67,6 @@ export const projectCustomDiscoveredModels = (
     if (displayName !== undefined) projected.display_name = displayName;
     if (model.limits !== undefined) projected.limits = { ...model.limits };
     if (model.pricing !== undefined) projected.pricing = model.pricing;
-    if (model.endpoints?.openaiChatCompletions?.reasoning) projected.compatibility = { openaiChatCompletions: { reasoning: model.endpoints.openaiChatCompletions.reasoning } };
     if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
     projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
     return projected;

@@ -34,7 +34,8 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
     opaqueBlobCompatibilityScope: { bindToUpstream: true },
     enabledFlags: new Set<FlagId>(),
     ...overrides,
-    endpoints: { ...endpoints, ...(endpoints.openaiChatCompletions !== undefined ? { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'reasoning-opaque', ...endpoints.openaiChatCompletions.reasoning } } } : {}) },
+    endpoints,
+    ...(endpoints.openaiChatCompletions !== undefined ? { resolvedCompatibility: overrides.resolvedCompatibility ?? { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'reasoning-opaque' } } } } : {}),
   };
 };
 

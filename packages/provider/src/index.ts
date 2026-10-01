@@ -92,6 +92,7 @@ export type {
 export {
   chatField,
   endpointsField,
+  endpointAvailabilityField,
   isRecord,
   modelsField,
   nonEmptyStringField,

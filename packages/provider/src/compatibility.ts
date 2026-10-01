@@ -20,20 +20,24 @@ const objectField = (value: unknown, keys: readonly string[], label: string): Re
   return value as Record<string, unknown>;
 };
 
+const reasoningOverridesField = (value: unknown, label: string): ChatCompletionsReasoningOverrides => {
+  const source = objectField(value, ['text', 'data'], label);
+  const reasoning: ChatCompletionsReasoningOverrides = {};
+  if (source.text !== undefined) {
+    if (!(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS as readonly unknown[]).includes(source.text)) throw new Error(`Malformed ${label}.text`);
+    reasoning.text = source.text as NonNullable<ChatCompletionsReasoningOverrides['text']>;
+  }
+  if (source.data !== undefined) {
+    if (!(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS as readonly unknown[]).includes(source.data)) throw new Error(`Malformed ${label}.data`);
+    reasoning.data = source.data as NonNullable<ChatCompletionsReasoningOverrides['data']>;
+  }
+  return reasoning;
+};
+
 export const compatibilityField = (value: unknown, label: string): Compatibility => {
   const raw = objectField(value, ['openaiChatCompletions'], label);
   if (raw.openaiChatCompletions === undefined) return {};
   const chat = objectField(raw.openaiChatCompletions, ['reasoning'], `${label}.openaiChatCompletions`);
   if (chat.reasoning === undefined) return { openaiChatCompletions: {} };
-  const source = objectField(chat.reasoning, ['text', 'data'], `${label}.openaiChatCompletions.reasoning`);
-  const reasoning: ChatCompletionsReasoningOverrides = {};
-  if (source.text !== undefined) {
-    if (!(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS as readonly unknown[]).includes(source.text)) throw new Error(`Malformed ${label}.openaiChatCompletions.reasoning.text`);
-    reasoning.text = source.text as NonNullable<ChatCompletionsReasoningOverrides['text']>;
-  }
-  if (source.data !== undefined) {
-    if (!(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS as readonly unknown[]).includes(source.data)) throw new Error(`Malformed ${label}.openaiChatCompletions.reasoning.data`);
-    reasoning.data = source.data as NonNullable<ChatCompletionsReasoningOverrides['data']>;
-  }
-  return { openaiChatCompletions: { reasoning } };
+  return { openaiChatCompletions: { reasoning: reasoningOverridesField(chat.reasoning, `${label}.openaiChatCompletions.reasoning`) } };
 };

@@ -1,6 +1,6 @@
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
-import { downstreamEndpointsFor } from '../chat/openai-chat-completions/reasoning.ts';
+import { downstreamEndpointsFor } from '../providers/downstream-endpoints.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';

@@ -25,7 +25,7 @@ describe('toPublicModel', () => {
   });
 
   test('projects the client endpoint map with the fixed reasoning format', () => {
-    expect(toPublicModel(base).endpoints).toEqual({ openaiChatCompletions: { reasoning: { text: 'reasoning', data: 'reasoning-opaque' } }, openaiResponses: {}, anthropicMessages: {} });
+    expect(toPublicModel(base).endpoints).toEqual({ openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} });
   });
 });
 

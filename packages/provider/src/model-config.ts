@@ -69,18 +69,24 @@ const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpoint
 // upstream-level fallback map (an upstream may serve only kind-derived
 // embedding/image/transcription models or manual rerank models and declare no
 // chat endpoint).
-export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
+const endpointMapField = (value: unknown, label: string, allowEmpty: boolean, metadata: boolean): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
   for (const [key, sub] of Object.entries(value)) {
     if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
-    if (Object.keys(sub).length > 0) throw new Error(`Malformed ${label}.${key}: configure protocol options through compatibility`);
+    if (!metadata && Object.keys(sub).length > 0) throw new Error(`Malformed ${label}.${key}: configure protocol options through compatibility`);
     endpoints[key as ModelEndpointKey] = {};
   }
-  if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
+  if (!allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
   return endpoints;
 };
+
+export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints =>
+  endpointMapField(value, label, options.allowEmpty === true, true);
+
+export const endpointAvailabilityField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints =>
+  endpointMapField(value, label, options.allowEmpty === true, false);
 
 const optionalNumberField = (value: unknown, label: string): number | undefined => {
   if (value === undefined) return undefined;
@@ -300,7 +306,7 @@ export const opaqueBlobCompatibilityScopeField = (
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const pricing = pricingField(value.pricing, `${label}.pricing`);
-  const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
+  const endpoints = endpointAvailabilityField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
