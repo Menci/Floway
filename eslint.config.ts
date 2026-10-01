@@ -69,6 +69,7 @@ const projectList = [
   './apps/web/tsconfig.scripts.json',
   './packages/agent-setup/tsconfig.json',
   './packages/agent-setup/tsconfig.scripts.json',
+  './packages/dump/tsconfig.json',
   './packages/gateway/tsconfig.json',
   './packages/http/tsconfig.json',
   './packages/pipeline/tsconfig.json',
@@ -118,6 +119,15 @@ const commonConfig: Linter.Config = {
       zones: [
         { target: './apps/platform-cloudflare', from: './apps/platform-node', message: 'Platform-target apps cannot import each other; share via packages/.' },
         { target: './apps/platform-node', from: './apps/platform-cloudflare', message: 'Platform-target apps cannot import each other; share via packages/.' },
+        ...['gateway', 'provider-azure', 'provider-claude-code', 'provider-codex', 'provider-copilot', 'provider-custom', 'provider-ollama'].map(name => ({
+          target: './packages/dump/src', from: `./packages/${name}/src`,
+          message: 'Run recording receives application ports; gateway and vendor composition stay outside the dump package.',
+        })),
+        { target: './packages/dump/src', from: './apps', message: 'Deployment and UI composition stay outside the dump package.' },
+        ...['pipeline', 'platform', 'provider', 'protocols', 'http', 'proxy'].map(name => ({
+          target: `./packages/${name}/src`, from: './packages/dump/src',
+          message: 'Foundation packages cannot depend on run recording; recording depends on their contracts.',
+        })),
         // components/ui holds generic primitives. `no-restricted-imports` only
         // sees package specifiers, so the relative route into a domain module
         // is closed here instead.
@@ -231,6 +241,34 @@ const config: Linter.Config[] = [
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions,
+    },
+  },
+  {
+    files: ['packages/dump/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          ...RESTRICTED_IMPORT_PATTERNS,
+          {
+            group: ['@floway-dev/gateway', '@floway-dev/gateway/*', '@floway-dev/provider-*', '@floway-dev/provider-*/*', '@floway-dev/web', '@floway-dev/web/*'],
+            message: 'Run recording receives application ports; gateway, vendor, and UI composition stay outside the dump package.',
+          },
+        ],
+      }],
+    },
+  },
+  {
+    files: ['packages/{pipeline,platform,provider,protocols,http,proxy}/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          ...RESTRICTED_IMPORT_PATTERNS,
+          {
+            group: ['@floway-dev/dump', '@floway-dev/dump/*'],
+            message: 'Foundation packages cannot depend on run recording; recording depends on their contracts.',
+          },
+        ],
+      }],
     },
   },
   {

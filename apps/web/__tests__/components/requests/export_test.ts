@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { exportRecords } from '../../../src/components/requests/export';
 import { redactHeaderValue } from '../../../src/components/requests/header-redact';
-import type { DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/dump/types';
 
 const SECRET = 'Bearer client-secret-token-1234567890abcd';
 const MASK = redactHeaderValue(SECRET);

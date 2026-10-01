@@ -1,8 +1,9 @@
 import type { OpenAICompletionsFacts, OpenAICompletionsFrames, Fields } from './facts.ts';
-import { recordStream, streamReferenceOf, type RunDump } from '../../dump/run-sink.ts';
+import type { RunDump } from '../../dump/run-sink.ts';
 import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
+import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, type SseFrame } from '@floway-dev/protocols/common';
 import { openaiCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/openai-completions';

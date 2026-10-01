@@ -1,5 +1,4 @@
-import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { StoredDumpRecord } from '../../src/dump/types.ts';
+import type { DumpStore, StoredDumpRecord } from '@floway-dev/dump/types';
 
 export const writeRun = (store: DumpStore, keyId: string, record: StoredDumpRecord): Promise<void> => store.putRun(keyId, {
   id: record.meta.id,

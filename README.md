@@ -206,23 +206,26 @@ stage throws. Client JSON serialization runs inside settlement and publishes UTF
 while retaining the canonical content for inspection. Streaming quantities settle at the deferred exit. Explicit protocol and
 transport errors take precedence over the settlement's generic failure marker.
 
-Run dumps encode stage facts, logs and protocol frames into one object space. The live
-recording layer streams those encoded NDJSON bytes into durable storage with backpressure
-and appends the same bytes to a temporary LogStream. Live appends retry at the same byte
-offset; a persistently unavailable live stream leaves durable recording active. Quiet runs
-renew their temporary-stream and staged-file leases even while durable writes apply
-backpressure. Closing waits for owned readers and
-deferred outcomes before publishing completed metadata. The live stream ends only after
-the durable artifact is published; an encoding or durable-write failure aborts its reader
-and stops its leases while retaining the original error. Run IDs are assigned at entry;
-listing remains ordered by completion time and ID.
+Pipeline owns the stage-event format and object-space encoding. `@floway-dev/dump` owns
+run recording, stream references, durable NDJSON writing, transient byte streams and metadata
+publication. Gateway supplies storage/broker ports and applies request admission, model
+attribution, HTTP byte measurement and retention policy. Encoded batches flow to durable
+storage with backpressure and to a LogStream at the same byte positions. Three same-offset
+append attempts tolerate lost acknowledgements; persistent live failure leaves durable
+recording active. Empty heartbeats renew the acknowledged position independently of a
+blocked durable writer.
+
+Closing waits for owned readers, deferred outcomes and queued events before assembling
+metadata. The artifact and metadata notification are published before the live stream ends.
+Encoding, metadata or publication failures abort incomplete writes, stop leases and retain
+original errors. Run IDs are assigned at entry; listing remains ordered by completion time
+and ID. The Collected view uses the selected recorded client stream and its `stream.end`
+event to establish recording completion.
 
 The authenticated `GET /api/dump/keys/:keyId/records/:recordId/live?offset=0` endpoint attaches
-to an existing per-key stream and uses the platform's framed byte protocol. The Collected
-view selects the recorded client stream and uses its `stream.end` event to establish
-recording completion. Active-run discovery, reconnect/list semantics and live dashboard
-interactions remain separate design work; completed records and their stage viewer retain
-the same run-only format.
+to an existing per-key stream through the platform framed byte protocol. Active-run
+discovery, reconnect/list semantics and live dashboard interactions remain separate design
+work; completed records retain the same run-only format.
 
 Pipeline endpoints are assembled from individual stage modules. Each stage owns
 its request and response contract; a large stage keeps local helpers in the same

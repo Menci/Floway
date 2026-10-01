@@ -1,11 +1,11 @@
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { internalErrorEnvelope } from './errors.ts';
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesStreamFraming, type Fields } from './facts.ts';
-import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesProtocolFrameToSSEFrame, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent, type ClientOpenAIResponsesStreamEvent, type ClientResponseResource } from '@floway-dev/protocols/openai-responses';

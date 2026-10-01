@@ -1,5 +1,6 @@
-import { recordStream, streamReferenceOf, type RunDump } from '../../../dump/run-sink.ts';
+import type { RunDump } from '../../../dump/run-sink.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
+import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defer, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 

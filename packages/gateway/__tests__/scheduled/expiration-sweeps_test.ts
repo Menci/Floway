@@ -1,7 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { initDumpStore } from '../../src/dump/registry.ts';
-import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
@@ -11,6 +10,7 @@ import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { writeRun } from '../dump/write-run.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());

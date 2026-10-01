@@ -7,7 +7,7 @@ import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata } from '@floway-dev/dump/types';
 
 interface Commit { ids: string[]; keyId: string | null }
 interface Selection { keyId: string | null; seed: DumpMetadata[] }

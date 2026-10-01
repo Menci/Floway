@@ -1,12 +1,11 @@
 import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import { runStreamId } from '../../src/dump/run-sink.ts';
-import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, DumpRecord, StoredDumpRecord } from '../../src/dump/types.ts';
 import { fakeMeta as baseFakeMeta, fakeRunRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { testLogStreamStore } from '../test-utils/log-stream.ts';
+import { runStreamId } from '@floway-dev/dump';
+import type { DumpStore, DumpMetadata, DumpRecord, StoredDumpRecord } from '@floway-dev/dump/types';
 import { initLogStreamStore, readLogStream } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 

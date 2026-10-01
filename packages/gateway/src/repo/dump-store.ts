@@ -7,14 +7,14 @@ import {
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
-import type { DumpListOptions, DumpStore, DumpRunWrite } from '../dump/store-contract.ts';
+import { gunzipBytes, gzipStream } from '../shared/gzip.ts';
 import type {
+  DumpListOptions, DumpStore, DumpRunWrite,
   DumpMetadata,
   DumpRecordId,
   DumpUpstreamRef,
   StoredDumpRecord,
-} from '../dump/types.ts';
-import { gunzipBytes, gzipStream } from '../shared/gzip.ts';
+} from '@floway-dev/dump/types';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.run.gz`.

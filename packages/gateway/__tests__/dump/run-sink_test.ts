@@ -2,11 +2,12 @@ import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import { openRunDump, runStreamId } from '../../src/dump/run-sink.ts';
-import type { StoredDumpRecord } from '../../src/dump/types.ts';
+import { openRunDump } from '../../src/dump/run-sink.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
 import { testLogStreamStore } from '../test-utils/log-stream.ts';
+import { runStreamId } from '@floway-dev/dump';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { compose, defineStage, defer, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import { getLogStreamStore, initLogStreamStore, LOG_STREAM_IDLE_MS } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';

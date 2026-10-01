@@ -18,10 +18,10 @@
 
 import type { ChatAnswer, ChatFacts } from './facts.ts';
 import type { ChatServices } from './services.ts';
-import { streamReferenceOf } from '../../dump/run-sink.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
+import { streamReferenceOf } from '@floway-dev/dump';
 import { defer, defineStage, move, setRelease, type Owned, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';

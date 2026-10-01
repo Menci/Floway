@@ -5,9 +5,8 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
-import { runStreamId } from '../dump/run-sink.ts';
-import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
+import { runStreamId, dumpRecordToWire } from '@floway-dev/dump';
 import { getLogStreamStore, serveLogStream } from '@floway-dev/platform';
 
 const LIST_LIMIT_DEFAULT = 100;

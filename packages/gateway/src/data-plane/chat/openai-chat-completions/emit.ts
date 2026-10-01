@@ -1,11 +1,11 @@
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import type { Fields } from './facts.ts';
-import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';

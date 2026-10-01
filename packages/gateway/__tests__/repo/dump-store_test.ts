@@ -6,13 +6,13 @@ import { expect, test, vi } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
 import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
-import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from '../../src/repo/spilled-files-policy.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
 import { writeRun } from '../dump/write-run.ts';
+import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { encodeRun, toNdjson, type Facts } from '@floway-dev/pipeline';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';

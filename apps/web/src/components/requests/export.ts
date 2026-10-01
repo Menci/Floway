@@ -1,5 +1,5 @@
 import { redactRunHeaders } from './run-redact';
-import type { DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/dump/types';
 
 const redactRecord = (record: DumpRecord): DumpRecord => ({ ...record, events: redactRunHeaders(record.events) });
 

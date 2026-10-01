@@ -1,8 +1,8 @@
 import type { Fields, OpenAIResponsesServeEntry, OpenAIResponsesServeExit } from './facts.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
 import type { ChatServices } from '../services.ts';
 import { bindClientRelease, withClientVerdict } from '../shared/client-stream.ts';
+import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, isOpenAIResponsesTerminalEvent, type ClientOpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';

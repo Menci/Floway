@@ -1,12 +1,12 @@
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { mintGeminiGenerateContentFailure } from './errors.ts';
 import type { Fields } from './facts.ts';
-import { recordStream } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
+import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, sseFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';

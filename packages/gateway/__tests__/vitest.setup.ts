@@ -1,12 +1,10 @@
 import { trackBackground } from './test-utils/background-tracker.ts';
 import { testLogStreamStore } from './test-utils/log-stream.ts';
-import type { DumpBroker } from '../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
-import type { DumpStore } from '../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from '../src/dump/types.ts';
 import { handleExecutionRequest } from '../src/execution/handler.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { initExecutionCellNamespace } from '../src/runtime/execution.ts';
+import type { DumpMetadata, StoredDumpRecord, DumpRecordId, DumpStore, DumpBroker } from '@floway-dev/dump/types';
 import { isReplayableBody } from '@floway-dev/http';
 import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace, initLogStreamStore } from '@floway-dev/platform';
 

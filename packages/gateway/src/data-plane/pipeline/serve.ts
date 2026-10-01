@@ -13,7 +13,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createCandidateRegistry } from './candidates.ts';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
-import { openRunDump, recordStream, type RunDump } from '../../dump/run-sink.ts';
+import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -22,6 +22,7 @@ import { stampUpstreamCallStart } from '../shared/attempt-timing.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
+import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 

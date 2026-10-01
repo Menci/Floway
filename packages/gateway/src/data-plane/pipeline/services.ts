@@ -3,8 +3,8 @@
 // next segment's facts — if it also supplied capabilities, the same pipeline value would
 // run with different capabilities depending on who called it.
 //
-// Everything in facts is dumpable, and that is the test: a live handle dumps as nothing,
-// so a live handle is never a fact.
+// Facts carry content and explicitly tagged run resources. Service handles bind application
+// behavior and stay outside those values.
 
 import type { AttemptSelector } from './facts.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';

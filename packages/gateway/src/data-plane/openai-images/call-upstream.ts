@@ -1,5 +1,4 @@
 import type { Fields, OpenAIImagesFrames } from './facts.ts';
-import { recordStream } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure } from '../pipeline/facts.ts';
 import { providerEntry } from '../pipeline/provider-entry.ts';
@@ -8,6 +7,7 @@ import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, readUpstreamBody, spentBody, retainReader } from '../pipeline/upstream-body.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
+import { recordStream } from '@floway-dev/dump';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, setRelease, defer, type Deferred } from '@floway-dev/pipeline';
 import { upstreamErrorMessage, isEventStreamMediaType, eventFrame, mediaTypeEssence, parseDecimalString } from '@floway-dev/protocols/common';
