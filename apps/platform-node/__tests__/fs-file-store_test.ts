@@ -113,11 +113,11 @@ test('deleteKeys collects an upload whose writer was killed without matching ano
   }
 }));
 
-test('Node reserves its internal staging segment while retaining published key paths', () => withTempRoot(async root => {
+test.each(['.floway-staging', '.FLOWAY-STAGING', '.Floway-Staging'])('Node reserves private segment %s while retaining published key paths', segment => withTempRoot(async root => {
   const store = new FsFileStore(root);
-  await expect(store.put('nested/.floway-staging/key', new Uint8Array([1]))).rejects.toThrow('reserved staging segment');
-  await expect(store.get('.floway-staging/key')).rejects.toThrow('reserved staging segment');
-  await expect(store.deleteKeys(['.floway-staging/key'])).rejects.toThrow('reserved staging segment');
+  await expect(store.put(`nested/${segment}/key`, new Uint8Array([1]))).rejects.toThrow('reserved staging segment');
+  await expect(store.get(`${segment}/key`)).rejects.toThrow('reserved staging segment');
+  await expect(store.deleteKeys([`${segment}/key`])).rejects.toThrow('reserved staging segment');
   await store.put('nested/key', new Uint8Array([7]));
   expect(await readdir(join(root, 'nested'))).toEqual(['.floway-staging', 'key']);
 }));

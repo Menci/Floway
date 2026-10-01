@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { FileBody, FileStore } from '@floway-dev/platform';
 
 const STAGING_SEGMENT = '.floway-staging';
+const isStagingSegment = (segment: string): boolean => segment.toLowerCase() === STAGING_SEGMENT;
 
 // Keys use POSIX separators so filesystem and object-storage deployments agree.
 // The operator's umask, mount permissions and service account own confidentiality;
@@ -83,12 +84,13 @@ export class FsFileStore implements FileStore {
   // to scrub user-controlled segments and a `..`-laden key would otherwise
   // walk to arbitrary host paths under R2 it would simply be a strange key.
   private pathFor(key: string): string {
-    if (key.split('/').includes(STAGING_SEGMENT)) throw new Error(`FsFileStore: reserved staging segment (${key})`);
+    if (key.split('/').some(isStagingSegment)) throw new Error(`FsFileStore: reserved staging segment (${key})`);
     if (isAbsolute(key)) throw new Error(`FsFileStore: absolute keys are not supported (${key})`);
     const path = resolve(this.root, ...key.split('/'));
     if (path !== this.root && !path.startsWith(this.root + sep)) {
       throw new Error(`FsFileStore: key escapes root (${key})`);
     }
+    if (relative(this.root, path).split(sep).some(isStagingSegment)) throw new Error(`FsFileStore: reserved staging segment (${key})`);
     return path;
   }
 }

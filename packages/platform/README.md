@@ -15,7 +15,8 @@ failures retain it in the error chain. `get` still returns complete bytes.
 Node stages each write inside the target parent’s reserved `.floway-staging`
 namespace and atomically renames it after closing. This preserves the published
 key paths and the target filesystem when a key prefix is a separate mount.
-Node keys cannot contain that private segment. `deleteKeys` removes the exact
+Node keys cannot contain that private segment in any ASCII case spelling,
+including components of the normalized filesystem path. `deleteKeys` removes the exact
 key’s unfinished writes as well as its published file, so retention cleanup
 also collects a writer killed before EOF. Public keys resembling UUID temporary
 filenames remain ordinary keys. Empty staging directories stay available to
