@@ -245,6 +245,34 @@ const config: Linter.Config[] = [
     },
   },
   {
+    files: ['packages/dump/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          ...RESTRICTED_IMPORT_PATTERNS,
+          {
+            group: ['@floway-dev/gateway', '@floway-dev/gateway/*', '@floway-dev/provider-*', '@floway-dev/provider-*/*', '@floway-dev/web', '@floway-dev/web/*'],
+            message: 'Run recording receives application ports; gateway, vendor, and UI composition stay outside the dump package.',
+          },
+        ],
+      }],
+    },
+  },
+  {
+    files: ['packages/{pipeline,platform,provider,protocols,http,proxy}/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          ...RESTRICTED_IMPORT_PATTERNS,
+          {
+            group: ['@floway-dev/dump', '@floway-dev/dump/*'],
+            message: 'Foundation packages cannot depend on run recording; recording depends on their contracts.',
+          },
+        ],
+      }],
+    },
+  },
+  {
     // Server-side production sources only. `apps/web` runs in a browser, where
     // Blob is the ordinary way to hand bytes to a download, and tests construct
     // Blobs deliberately as fixtures for code that must accept a caller-supplied
