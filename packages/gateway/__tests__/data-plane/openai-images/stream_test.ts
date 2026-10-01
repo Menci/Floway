@@ -1,5 +1,7 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels as requestApp, setupAppTest } from '../../test-utils/app.ts';
@@ -279,4 +281,34 @@ test('/v1/images/edits streams a multipart request, whose stream field arrives a
     { metric: 'input_image_tokens', quantity: '5' },
     { metric: 'output_tokens', quantity: '12' },
   ]);
+});
+
+test('rejects invalid streamed image quantities and completes owned background work', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerOpenAIImagesModel(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      () => Promise.resolve(sseResponse('data: {"type":"image_generation.completed","b64_json":"RklO","usage":{"input_tokens":1e999,"output_tokens":3}}\n\n')),
+      async () => {
+        const response = await requestApp('/v1/images/generations', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'gpt-image-2', prompt: 'image', stream: true }),
+        });
+        expect(await response.text()).toContain('image_generation.completed');
+        await flushAsyncWork();
+        const errors = reported.mock.calls.flat().filter(value => value instanceof TypeError && value.message.includes('Infinity'));
+        expect(errors.length).toBeGreaterThan(0);
+        expect(new Set(errors).size).toBe(1);
+      },
+    );
+    const [usage] = await repo.usage.listAll();
+    expect(usage).toMatchObject({ requests: 1, metrics: [] });
+    const [performance] = await repo.performance.listAll();
+    expect(performance).toMatchObject({ requests: 1, errorsNoOutput: 1 });
+    expect(runRecordOf(dumps.stored[0]?.record).meta).toMatchObject({ status: 200, upstream: { id: 'up_images' }, error: { kind: 'failed', reason: expect.stringContaining('Infinity') } });
+  } finally { reported.mockRestore(); }
 });
