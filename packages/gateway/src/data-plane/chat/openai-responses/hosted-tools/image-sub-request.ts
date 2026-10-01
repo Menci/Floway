@@ -42,15 +42,17 @@ export const runImageGenerationSubRequest = async (
     return {
       lifecycle: facts['response.imageGeneration.lifecycle'],
       drain: async () => {
+        let status = facts['response.http.status'];
         try {
           // Releasing the native body also drives an unread image to its usage terminal.
           // Waiting for that reading first would prevent the owner from ever starting it.
           await drain();
         } catch (error) {
           dump?.failed(error);
+          if ((await facts['response.imageGeneration.lifecycleOutcome']).kind === 'exception') status = 500;
           throw error;
         } finally {
-          dump?.finalize(facts['response.http.status'], 0);
+          dump?.finalize(status, 0);
         }
       },
     };
