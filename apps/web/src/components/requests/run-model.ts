@@ -14,6 +14,12 @@ export interface RunStage {
   readonly logs: Extract<DumpEvent, { type: 'stage.log' }>[];
 }
 
+export interface RunStream {
+  readonly id: number;
+  readonly frames: Stored[];
+  ended: boolean;
+}
+
 export interface ValueChange {
   readonly path: readonly (string | number)[];
   readonly kind: 'added' | 'removed' | 'changed';
@@ -32,6 +38,15 @@ export const readRun = (ndjson: string) => {
   const stages = new Map<number, RunStage>();
   const outcomes = new Map<number, Stored>();
   const roots: RunStage[] = [];
+  const streams = new Map<number, RunStream>();
+  const stream = (id: number): RunStream => {
+    let recorded = streams.get(id);
+    if (recorded === undefined) {
+      recorded = { id, frames: [], ended: false };
+      streams.set(id, recorded);
+    }
+    return recorded;
+  };
   const stage = (id: number): RunStage => {
     const found = stages.get(id);
     if (found === undefined) throw new Error(`Run references missing stage ${id}`);
@@ -62,8 +77,8 @@ export const readRun = (ndjson: string) => {
     case 'stage.leaved': stage(event.stageId).response = event.facts; break;
     case 'stage.failed': stage(event.stageId).failure = { error: event.error }; break;
     case 'stage.log': stage(event.stageId).logs.push(event); break;
-    case 'stream.frame':
-    case 'stream.end': break;
+    case 'stream.frame': stream(event.streamId).frames.push(...event.frames); break;
+    case 'stream.end': stream(event.streamId).ended = true; break;
     case 'deferred.settled': {
       const id = reference(event.deferred);
       if (id === null) throw new Error('Run deferred settlement has no object identity');
@@ -90,6 +105,24 @@ export const readRun = (ndjson: string) => {
     return Object.fromEntries(Object.entries(stored).map(([key, child]) => [decodeKey(key), value(child, ancestors)]));
   };
   const state = (facts: FactState): unknown => value(facts);
+  const referencedStreams = (...states: FactState[]): RunStream[] => {
+    const ids = new Set<number>();
+    const seen = new Set<number>();
+    const visit = (stored: Stored): void => {
+      const id = reference(stored);
+      if (id !== null) {
+        if (seen.has(id)) return;
+        seen.add(id);
+        visit(node(id));
+      } else if (Array.isArray(stored)) stored.forEach(visit);
+      else if (typeof stored === 'object' && stored !== null) {
+        if ('$stream' in stored) ids.add(stored.$stream as number);
+        else Object.values(stored).forEach(visit);
+      }
+    };
+    states.forEach(visit);
+    return [...ids].map(stream);
+  };
 
   const diff = (before: FactState, after: FactState): ValueChange[] => {
     const changes: ValueChange[] = [];
@@ -127,5 +160,5 @@ export const readRun = (ndjson: string) => {
     compare(before, after, []);
     return changes;
   };
-  return { roots, stages: [...stages.values()], state, diff };
+  return { roots, stages: [...stages.values()], state, diff, referencedStreams, frameValue: value };
 };

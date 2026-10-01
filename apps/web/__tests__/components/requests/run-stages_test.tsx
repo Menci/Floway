@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RunStages } from '../../../src/components/requests/run-stages';
 import { renderInApp } from '../../render';
+import { encodeRun, streamFact, toNdjson } from '@floway-dev/pipeline';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart: React.ReactNode }) => <div>{toolbarStart}<pre data-testid="state">{text}</pre></div>,
@@ -44,6 +45,27 @@ describe('run stages', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Stage view' }));
     fireEvent.click(screen.getByRole('option', { name: 'Stage error' }));
     expect(screen.getByTestId('state').textContent).toContain('projection failed');
+  });
+
+  it('shows decoded protocol frames and the completion of each referenced stream', async () => {
+    const events = toNdjson(encodeRun([
+      { type: 'stage.entered', stageId: 1, name: 'emit', parentStageId: null, facts: { source: streamFact(1) } },
+      { type: 'stage.leaved', stageId: 1, facts: { source: streamFact(1), client: streamFact(2) } },
+      { type: 'stream.frame', streamId: 1, frames: [{ type: 'event', event: { type: 'text', value: 'upstream content' } }] },
+      { type: 'stream.end', streamId: 1 },
+      { type: 'stream.frame', streamId: 2, frames: [{ type: 'event', event: { type: 'citation', source: 'https://citation.test' } }] },
+    ]));
+    renderInApp(<RunStages ndjson={events} />);
+    await screen.findByTestId('state');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Stage view' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Protocol frames' }));
+    expect(screen.getByText('Recording complete')).toBeTruthy();
+    expect(screen.getByText(/upstream content/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Protocol stream' }));
+    fireEvent.click(screen.getByRole('option', { name: '#2' }));
+    expect(screen.getByText('Recording incomplete')).toBeTruthy();
+    expect(screen.getByText(/https:\/\/citation.test/)).toBeTruthy();
+    expect(screen.queryByText(/upstream content/)).toBeNull();
   });
 
 });

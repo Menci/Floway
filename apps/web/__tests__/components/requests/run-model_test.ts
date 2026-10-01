@@ -65,4 +65,24 @@ describe('run stage model', () => {
     expect(model.state(stage.response!)).toMatchObject({ pending: { $deferred: { status: 'fulfilled', value: { usage: 5 } } } });
   });
 
+  it('resolves referenced protocol streams through aliases and cycles without treating schema keys as stream tags', () => {
+    const model = readRun([
+      {
+        type: 'object', fromObjectId: 1, nodes: [
+          { stream: { $stream: 2 }, '$$stream': 999, self: { $: 1 } },
+          { type: 'event', event: { type: 'citation', source: 'https://example.test', '$$schema': 'value' } },
+        ],
+      },
+      { type: 'stage.entered', stageId: 1, name: 'translate', parentStageId: null, facts: { source: { $: 1 } } },
+      { type: 'stage.leaved', stageId: 1, facts: { source: { $: 1 }, client: { $stream: 3 } } },
+      { type: 'stream.frame', streamId: 2, frames: [{ $: 2 }] },
+      { type: 'stream.end', streamId: 2 },
+    ].map(event => JSON.stringify(event)).join('\n'));
+    const stage = model.roots[0]!;
+    const streams = model.referencedStreams(stage.request, stage.response!);
+    expect(streams.map(stream => ({ id: stream.id, ended: stream.ended }))).toEqual([{ id: 2, ended: true }, { id: 3, ended: false }]);
+    expect(model.frameValue(streams[0]!.frames[0]!)).toEqual({ type: 'event', event: { type: 'citation', source: 'https://example.test', $schema: 'value' } });
+    expect(streams[1]!.frames).toEqual([]);
+  });
+
 });
