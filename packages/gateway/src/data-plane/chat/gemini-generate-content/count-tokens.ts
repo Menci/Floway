@@ -16,10 +16,8 @@ import { compose, type Pipeline } from '@floway-dev/pipeline';
 
 export const geminiGenerateContentCountTokensPipeline = (): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
   compose('geminiGenerateContentCountTokens', [
-    // A measurement goes through settlement like every other run. It provides an empty
-    // billed set because nothing here is billable today, not because the operation is
-    // exempt — an upstream that began charging for it would provide a non-empty one and
-    // nothing else would change.
+    // Native counts measure a request without generating AI usage; a failed reply must
+    // not recover a billable entity from the transport-call proof.
     writeSettlement(handedUp => Number(handedUp['response.http.status']) >= 400, undefined, false),
     serializeClientJson('response.chat.geminiGenerateContent.rendered'),
     emitGeminiGenerateContentTokenCount,
