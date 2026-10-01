@@ -3,7 +3,6 @@ import { expect, test } from 'vitest';
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
 import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest preserves scalar and content-part assistant refusals', () => {
@@ -21,43 +20,17 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+test.each([
+  ['trace', 'enc'],
+  ['visible trace', ''],
+  ['', 'enc'],
+])('buildTargetRequest ignores scalar reasoning history (%s, %s)', (text, opaque) => {
   const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        ...flowayReasoningFields('trace', 'enc'),
-
-      },
+    model: 'gpt-test', messages: [
+      { role: 'assistant', content: 'answer', ...flowayReasoningFields(text, opaque) },
     ],
   });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as OpenAIResponsesInputReasoning;
-  assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
-});
-
-test('buildTargetRequest preserves text-only scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        ...flowayReasoningFields('visible trace', ''),
-      },
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input[0], {
-    type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
-    summary: [{ type: 'summary_text', text: 'visible trace' }],
-  });
+  assertEquals(result.input, [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }]);
 });
 
 test('buildTargetRequest restores native items including empty-summary history', () => {
@@ -67,7 +40,7 @@ test('buildTargetRequest restores native items including empty-summary history',
       {
         role: 'assistant',
         content: 'answer',
-        ...flowayReasoningFields('legacy trace', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [
+        ...flowayReasoningFields('legacy trace', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_existing',
@@ -290,6 +263,6 @@ test("buildTargetRequest drops reasoning_effort='none' since OpenAI Responses ha
 });
 
 test('native Responses replay forwards the original opaque blob', () => {
-  const result = buildTargetRequest({ model: 'm', messages: [{ role: 'assistant', content: null, ...flowayReasoningFields('plan', 'native-ciphertext') }] });
+  const result = buildTargetRequest({ model: 'm', messages: [{ role: 'assistant', content: null, ...flowayReasoningFields('plan', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_signed', summary: [], encrypted_content: 'native-ciphertext' }])) }] });
   expect(result.input[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'native-ciphertext' });
 });

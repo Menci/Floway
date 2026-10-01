@@ -302,11 +302,12 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
       { role: 'assistant' },
       { ...flowayReasoningFields('trace', '') },
       {
-        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [
+        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_0',
             summary: [{ type: 'summary_text', text: 'trace' }],
+            encrypted_content: null,
           },
         ])) ?? ''),
       },
@@ -906,7 +907,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
     chunks.map(chunk => chunk.choices[0]?.delta),
     [
       { role: 'assistant' },
-      flowayReasoningFields('', encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [] }])),
+      flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: null }])),
       { content: 'answer' },
       {},
     ],
@@ -996,7 +997,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
     chunks.map(chunk => chunk.choices[0]?.delta),
     [
       { role: 'assistant' },
-      flowayReasoningFields('', encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [] }])),
+      flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: null }])),
       { content: 'answer' },
       {},
     ],
@@ -1299,16 +1300,18 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps first sca
       { role: 'assistant' },
       { ...flowayReasoningFields('first', '') },
       {
-        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [
+        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_0',
             summary: [{ type: 'summary_text', text: 'first' }],
+            encrypted_content: null,
           },
           {
             type: 'reasoning',
             id: 'rs_1',
             summary: [{ type: 'summary_text', text: 'second' }],
+            encrypted_content: null,
           },
         ])) ?? ''),
       },

@@ -761,7 +761,7 @@ test('full redacted_thinking + text stream scenario', () => {
   assertEquals(d.filter(delta => delta.content).map(delta => delta.content), ['Response']);
 });
 
-test('all thinking groups preserve readable text and complete native blocks', () => {
+test('all thinking groups preserve readable text and LiteLLM reasoning blocks', () => {
   const d = deltas([
     MSG_START,
     {

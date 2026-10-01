@@ -57,6 +57,7 @@ export interface OpenAIChatCompletionsMessage extends FlowayOpenAIChatCompletion
   tool_calls?: OpenAIChatCompletionsToolCall[];
   tool_call_id?: string;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+  provider_specific_fields?: Record<string, unknown>;
   refusal?: string | null;
 }
 
@@ -64,6 +65,7 @@ export interface OpenAIChatCompletionsReasoningItem {
   type: 'reasoning';
   id?: string;
   summary?: { type: 'summary_text'; text: string }[];
+  encrypted_content?: string | null;
 }
 
 export interface OpenAIChatCompletionsToolCall {
@@ -138,6 +140,7 @@ export interface OpenAIChatCompletionsChoiceNonStreaming {
     content: string | null;
     tool_calls?: OpenAIChatCompletionsToolCall[];
     reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+    provider_specific_fields?: Record<string, unknown>;
     refusal?: string | null;
   };
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter';
@@ -161,6 +164,7 @@ export interface OpenAIChatCompletionsDelta extends FlowayOpenAIChatCompletionsR
     }[]
     | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+  provider_specific_fields?: Record<string, unknown>;
   refusal?: string | null;
 }
 

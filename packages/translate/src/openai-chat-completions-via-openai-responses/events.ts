@@ -1,3 +1,4 @@
+import { chatCompletionsReasoningItemFromResponses } from './reasoning.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -76,7 +77,7 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
   const reasoningItems = state.reasoningItems;
   state.reasoningItems = [];
   state.emittedReasoningItems.push(...reasoningItems);
-  return [makeChunk(state, flowayReasoningFields('', encodeChatCompletionsReasoningData('openai-responses-reasoning-items', state.emittedReasoningItems)))];
+  return [makeChunk(state, flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', state.emittedReasoningItems)))];
 };
 
 const isReasoningOutputDone = (event: OpenAIResponsesStreamEvent): boolean => {
@@ -194,7 +195,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
     if (item.type !== 'reasoning') return [];
 
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
-    const reasoningItem = { ...item };
+    const reasoningItem = chatCompletionsReasoningItemFromResponses(item);
     state.reasoningItems.push(reasoningItem);
 
     for (const [summaryIndex, part] of item.summary.entries()) {

@@ -135,15 +135,29 @@ Native opaque strings are preserved verbatim. Malformed selected formats fail
 the request; recognized unselected formats produce a warning and remain
 uninterpreted.
 
-Two additional data standards are private to translated Chat Completions:
-`openai-responses-reasoning-items` preserves native reasoning items for Chat
-Completions via Responses; `anthropic-messages-content-blocks` preserves complete,
-ordered native content for Chat Completions via Messages. Their base64 JSON
-objects carry `reasoning_items` and `content`, respectively. They are not operator
-presets. Complete Messages content retains thinking signatures, text, tool calls
-and their interleaving so history does not reconstruct signed blocks in a
-changed position. Translators generate and consume Floway's reasoning Symbol;
-wire-format conversion happens at the Chat boundaries.
+Chat Completions via Messages carries only native thinking and redacted-thinking
+records using `litellm-thinking-blocks`. History replay follows LiteLLM: signed,
+nonempty thinking and redacted blocks precede reconstructed Chat text and tools.
+Server-tool calls and their results use Chat tool calls and
+`provider_specific_fields.web_search_results`; replay pairs thinking and server
+results by their positions in those separate lists. This does not recover the
+original interleaving of text, thinking and tools. Chat text and tool changes
+are used on the next request.
+
+Chat Completions via Responses uses the private `litellm-reasoning-items` data
+standard. Its base64 JSON object contains `reasoning_items`, projected to
+LiteLLM's item fields: `type`, `id`, `summary` and `encrypted_content`. The
+standard is not an operator preset. History replay puts stored reasoning items
+before reconstructed Chat text and function calls, preserving the reasoning
+array's own order without restoring its original position among other output
+items.
+
+Each of these translation paths consumes only the matching structured data
+standard from Floway's reasoning Symbol. Scalar reasoning text and ordinary
+opaque strings do not reconstruct history reasoning. Recognized other standards
+produce a warning and are ignored; malformed matching data fails the request.
+Translators generate and consume the Symbol, while wire-format conversion
+happens at the Chat boundaries.
 
 Normalized reasoning reaches clients as `reasoning` and `reasoning_opaque`;
 passthrough fields keep their original names. The public `endpoints` map

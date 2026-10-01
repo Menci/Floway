@@ -40,6 +40,6 @@ test('compatibility validates sparse protocol preferences independently of endpo
   expect(() => endpointAvailabilityField({ openaiChatCompletions: { reasoning: {} } }, 'model.endpoints')).toThrow('configure protocol options through compatibility');
 });
 
-test.each(['openai-responses-reasoning-items', 'anthropic-messages-content-blocks'])('internal data standard %s cannot become an operator preference', data => {
+test.each(['litellm-reasoning-items'])('internal data standard %s cannot become an operator preference', data => {
   expect(() => compatibilityField({ openaiChatCompletions: { reasoning: { data } } }, 'model.compatibility')).toThrow('reasoning.data');
 });

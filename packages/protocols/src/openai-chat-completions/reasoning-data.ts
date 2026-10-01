@@ -5,8 +5,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
 const DATA_FIELDS = {
   'openrouter-reasoning-details': 'reasoning_details',
   'litellm-thinking-blocks': 'thinking_blocks',
-  'openai-responses-reasoning-items': 'reasoning_items',
-  'anthropic-messages-content-blocks': 'content',
+  'litellm-reasoning-items': 'reasoning_items',
 } as const;
 
 export type StructuredChatCompletionsReasoningDataStandard = keyof typeof DATA_FIELDS;

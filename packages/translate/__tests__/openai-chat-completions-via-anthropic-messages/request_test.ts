@@ -7,14 +7,12 @@ import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesClientTool,
   type AnthropicMessagesPayload,
-  type AnthropicMessagesRedactedThinkingBlock,
   type AnthropicMessagesTextBlock,
-  type AnthropicMessagesThinkingBlock,
   type AnthropicMessagesToolResultBlock,
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
@@ -484,7 +482,7 @@ test('assistant blocks ordered: thinking → text → tool_use', async () => {
         {
           role: 'assistant',
           content: 'response text',
-          ...flowayReasoningFields('I think...', 'sig123'),
+          ...flowayReasoningFields('I think...', encodeChatCompletionsReasoningData('litellm-thinking-blocks', [{ type: 'thinking', thinking: 'I think...', signature: 'sig123' }])),
 
           tool_calls: [
             {
@@ -589,56 +587,19 @@ test('assistant tool_calls with invalid JSON arguments → raw_arguments fallbac
 
 // ── Thinking / Redacted thinking ──
 
-test('reasoning_text + reasoning_opaque → thinking block with signature', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        {
-          role: 'assistant',
-          content: 'resp',
-          ...flowayReasoningFields('My thoughts', 'sig'),
-
-        },
-      ],
-    }),
-  );
+test.each([
+  ['My thoughts', 'sig'],
+  ['My thoughts', ''],
+  ['', 'opaque_data'],
+])('scalar reasoning history is ignored (%s, %s)', async (text, opaque) => {
+  const result = await buildTargetRequest(mkPayload({
+    messages: [
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'resp', ...flowayReasoningFields(text, opaque) },
+    ],
+  }));
   const blocks = assistantBlocks(result, 1);
-  const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
-  assertEquals(thinking.type, 'thinking');
-  assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, 'sig');
-});
-
-test('reasoning_text only → thinking block without signature', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', ...flowayReasoningFields('My thoughts', '') },
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
-  assertEquals(thinking.type, 'thinking');
-  assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, undefined);
-});
-
-test('reasoning_opaque only → redacted_thinking block', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', ...flowayReasoningFields('', 'opaque_data') },
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  const redacted = blocks[0] as AnthropicMessagesRedactedThinkingBlock;
-  assertEquals(redacted.type, 'redacted_thinking');
-  assertEquals(redacted.data, 'opaque_data');
+  assertEquals(blocks.map(block => block.type), ['text']);
 });
 
 test('no reasoning fields → no thinking block', async () => {
@@ -1195,7 +1156,7 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: null,
-          ...flowayReasoningFields('thinking1', 'sig1'),
+          ...flowayReasoningFields('thinking1', encodeChatCompletionsReasoningData('litellm-thinking-blocks', [{ type: 'thinking', thinking: 'thinking1', signature: 'sig1' }])),
 
           tool_calls: [
             {
@@ -1209,7 +1170,7 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: 'The answer is 42.',
-          ...flowayReasoningFields('thinking2', 'sig2'),
+          ...flowayReasoningFields('thinking2', encodeChatCompletionsReasoningData('litellm-thinking-blocks', [{ type: 'thinking', thinking: 'thinking2', signature: 'sig2' }])),
 
         },
       ],

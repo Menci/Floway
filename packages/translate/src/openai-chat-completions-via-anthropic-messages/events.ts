@@ -4,7 +4,7 @@ import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-me
 import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsDelta, ReasoningRecord } from '@floway-dev/protocols/openai-chat-completions';
 
 const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopReason: AnthropicMessagesResult['stop_reason']): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
@@ -42,12 +42,11 @@ interface AnthropicMessagesToOpenAIChatCompletionsStreamState {
   created: number;
   nextToolCallIndex: number;
   usage: AnthropicMessagesUsageSnapshot;
-  contentBlocks: (Record<string, unknown> | undefined)[];
-  toolArguments: Map<number, string>;
+  thinkingBlocks: Map<number, ReasoningRecord>;
+  webSearchResults: Record<string, unknown>[];
   toolIndexes: Map<number, number>;
-  fallbackIndexes: Set<number>;
+  toolArgumentsStarted: Set<number>;
   lastOpaque?: string;
-  hasReasoning: boolean;
 }
 
 export const createAnthropicMessagesToOpenAIChatCompletionsStreamState = (): AnthropicMessagesToOpenAIChatCompletionsStreamState => ({
@@ -56,40 +55,26 @@ export const createAnthropicMessagesToOpenAIChatCompletionsStreamState = (): Ant
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
   usage: anthropicMessagesUsageSnapshot(),
-  contentBlocks: [],
-  toolArguments: new Map(),
+  thinkingBlocks: new Map(),
+  webSearchResults: [],
   toolIndexes: new Map(),
-  fallbackIndexes: new Set(),
-  hasReasoning: false,
+  toolArgumentsStarted: new Set(),
 });
 
-// Signed thinking can depend on its position among text and tools, so the
-// Chat history carrier retains complete native content rather than a sidecar.
-// https://github.com/BerriAI/litellm/issues/13834
-// https://github.com/BerriAI/litellm/issues/23047
-const captureContentEvent = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): boolean => {
+// LiteLLM carries only thinking/redacted blocks, separately from text and tools.
+// https://github.com/BerriAI/litellm/blob/0980f756bd031993329eb0b8b2caa193047e6465/litellm/llms/anthropic/chat/transformation.py#L2183-L2255
+const captureThinkingEvent = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): boolean => {
   if (event.type === 'content_block_start') {
-    if (event.content_block.type === 'fallback') { state.fallbackIndexes.add(event.index); return false; }
-    state.contentBlocks[event.index] = { ...event.content_block };
-    if (event.content_block.type === 'thinking' || event.content_block.type === 'redacted_thinking') state.hasReasoning = true;
+    if (event.content_block.type !== 'thinking' && event.content_block.type !== 'redacted_thinking') return false;
+    state.thinkingBlocks.set(event.index, { ...event.content_block });
     return true;
   }
   if (event.type !== 'content_block_delta' && event.type !== 'content_block_stop') return false;
-  if (state.fallbackIndexes.has(event.index)) return false;
-  const block = state.contentBlocks[event.index];
-  if (block === undefined) throw new TypeError(`Missing Anthropic Messages content block ${event.index}`);
-  if (event.type === 'content_block_stop') {
-    const json = state.toolArguments.get(event.index);
-    if (json !== undefined) block.input = JSON.parse(json);
-    return true;
-  }
-  const delta = event.delta;
-  switch (delta.type) {
-  case 'text_delta': block.text = (block.text as string) + delta.text; break;
-  case 'thinking_delta': block.thinking = (block.thinking as string) + delta.thinking; break;
-  case 'signature_delta': block.signature = typeof block.signature === 'string' ? block.signature + delta.signature : delta.signature; break;
-  case 'input_json_delta': state.toolArguments.set(event.index, (state.toolArguments.get(event.index) ?? '') + delta.partial_json); break;
-  case 'citations_delta': block.citations = [...(Array.isArray(block.citations) ? block.citations : []), delta.citation]; break;
+  const block = state.thinkingBlocks.get(event.index);
+  if (block === undefined) return false;
+  if (event.type === 'content_block_delta') {
+    if (event.delta.type === 'thinking_delta') block.thinking = (block.thinking as string) + event.delta.thinking;
+    if (event.delta.type === 'signature_delta') block.signature = typeof block.signature === 'string' ? block.signature + event.delta.signature : event.delta.signature;
   }
   return true;
 };
@@ -157,9 +142,11 @@ const translateContentEvent = (event: AnthropicMessagesStreamEvent, state: Anthr
       return block.thinking ? [makeChunk(state, flowayReasoningFields(block.thinking, ''))] : [];
     case 'redacted_thinking':
       return [];
+    case 'server_tool_use':
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
       state.toolIndexes.set(event.index, toolCallIndex);
+      if (Object.keys(block.input).length > 0) state.toolArgumentsStarted.add(event.index);
       return [
         makeChunk(state, {
           tool_calls: [
@@ -174,9 +161,9 @@ const translateContentEvent = (event: AnthropicMessagesStreamEvent, state: Anthr
       ];
     }
     case 'text': return block.text ? [makeChunk(state, { content: block.text })] : [];
-    case 'server_tool_use':
     case 'web_search_tool_result':
-      return [];
+      state.webSearchResults.push({ ...block });
+      return [makeChunk(state, { provider_specific_fields: { web_search_results: [...state.webSearchResults] } })];
     case 'fallback':
       state.model = block.to.model;
       return [];
@@ -196,6 +183,7 @@ const translateContentEvent = (event: AnthropicMessagesStreamEvent, state: Anthr
       return [makeChunk(state, { content: delta.text })];
     case 'input_json_delta':
       if (!state.toolIndexes.has(event.index)) return [];
+      if (delta.partial_json !== '') state.toolArgumentsStarted.add(event.index);
       return [
         makeChunk(state, {
           tool_calls: [
@@ -207,8 +195,6 @@ const translateContentEvent = (event: AnthropicMessagesStreamEvent, state: Anthr
         }),
       ];
     case 'citations_delta':
-      // Chat has no presentation field for citations. Ordered native content
-      // retains them in the internal history carrier when reasoning is present.
       return [];
     }
 
@@ -216,6 +202,10 @@ const translateContentEvent = (event: AnthropicMessagesStreamEvent, state: Anthr
   }
 
   case 'content_block_stop':
+    if (state.toolIndexes.has(event.index) && !state.toolArgumentsStarted.has(event.index)) {
+      state.toolArgumentsStarted.add(event.index);
+      return [makeChunk(state, { tool_calls: [{ index: state.toolIndexes.get(event.index)!, function: { arguments: '{}' } }] })];
+    }
     return [];
 
   case 'message_delta': {
@@ -249,12 +239,12 @@ const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEvent)
 };
 
 export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
-  const changed = captureContentEvent(event, state);
+  const changed = captureThinkingEvent(event, state);
   const chunks = translateContentEvent(event, state);
   if (chunks === 'DONE') return chunks;
   const snapshot = changed && (event.type === 'content_block_stop' || event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking' || event.type === 'content_block_delta' && event.delta.type === 'signature_delta') || event.type === 'message_delta';
-  if (snapshot && state.hasReasoning) {
-    const opaque = encodeChatCompletionsReasoningData('anthropic-messages-content-blocks', state.contentBlocks.filter(block => block !== undefined));
+  if (snapshot && state.thinkingBlocks.size > 0) {
+    const opaque = encodeChatCompletionsReasoningData('litellm-thinking-blocks', [...state.thinkingBlocks.entries()].toSorted(([left], [right]) => left - right).map(([, block]) => block));
     if (opaque !== state.lastOpaque) {
       state.lastOpaque = opaque;
       chunks.unshift(makeChunk(state, flowayReasoningFields('', opaque)));

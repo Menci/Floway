@@ -455,7 +455,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents ignores empty t
 
 test.each([false, true])('Responses-via-Chat keeps opaque data opaque and retains scalar text (late update=%s)', late => {
   const first = 'original-opaque';
-  const final = Buffer.from(JSON.stringify({ type: 'openai-responses-reasoning-items', reasoning_items: [{ type: 'reasoning', id: 'rs_foreign', summary: [{ type: 'summary_text', text: 'other text' }] }] }), 'utf8').toString('base64');
+  const final = Buffer.from(JSON.stringify({ type: 'litellm-reasoning-items', reasoning_items: [{ type: 'reasoning', id: 'rs_foreign', summary: [{ type: 'summary_text', text: 'other text' }] }] }), 'utf8').toString('base64');
   const events = translate([
     chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }),
     ...(late ? [chunk({ ...flowayReasoningFields('', first) })] : []),

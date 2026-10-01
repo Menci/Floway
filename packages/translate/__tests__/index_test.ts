@@ -35,7 +35,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
   messages: [
-    { role: 'assistant', content: 'hello', ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('openai-responses-reasoning-items', [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }])) ?? '') },
+    { role: 'assistant', content: 'hello', ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }])) ?? '') },
     { role: 'user', content: 'hi' },
   ],
   tools: [{ type: 'function', function: { name: 'f', parameters: schema } }],
