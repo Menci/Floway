@@ -518,13 +518,19 @@ const en = {
       upstreamEditor: {
         reasoningFormat: {
           title: 'Chat Completions reasoning format',
-          text: 'Text standard',
-          data: 'Data standard',
+          text: 'Reasoning text',
+          data: 'Reasoning data (i.e. encrypted / signatures)',
           inherit: 'Inherit: {{value}} ({{source}})',
+          inheritRich: 'Inherit: <format/> ({{source}})',
+          passthrough: 'Preserve unchanged',
+          clientResponseBoth: 'Clients connected to Floway receive <text/> as <reasoning>reasoning</reasoning> and <data/> as <opaque>reasoning_opaque</opaque>.',
+          clientResponseText: "Clients connected to Floway receive <text/> as <reasoning>reasoning</reasoning>; reasoning data stays in the server's original format.",
+          clientResponseData: "Clients connected to Floway receive reasoning text in the server's original format, and <data/> as <opaque>reasoning_opaque</opaque>.",
+          clientResponsePassthrough: "Clients connected to Floway receive reasoning text and data in the server's original format.",
           flowayDefault: 'Floway default',
           upstreamDefault: 'upstream override',
           providerDecision: 'Auto model options are determined by the provider.',
-          hint: 'Upstream messages are normalized at the gateway boundary. Clients receive reasoning + reasoning_opaque. Overrides apply independently to text and data.',
+          hint: 'Choose how Floway reads and writes upstream reasoning. Preserve unchanged keeps the original fields without format conversion. Text and data can be configured independently.',
         },
         readyToSave: {
           title: 'Ready to save',
@@ -618,7 +624,7 @@ const en = {
           addressable: 'Addressable',
           listed: 'Listed',
         },
-        tabs: { label: 'Upstream sections', models: 'Models', flags: 'Upstream feature flags' },
+        tabs: { label: 'Upstream sections', models: 'Models', flags: 'Compatibility' },
         flags: {
           intro:
               'Upstream behavior varies by provider, API surface, and model. Adjust these defaults only when compatibility requires it.',

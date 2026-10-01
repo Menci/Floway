@@ -18,13 +18,13 @@ test('upstream and per-model reasoning overrides inherit independently without e
 });
 
 test('provider auto model choices occupy the per-model layer above operator upstream overrides', () => {
-  const record = buildCustomUpstreamRecord({ chatCompletionsReasoningOverrides: { text: 'reasoning', data: 'none' } });
+  const record = buildCustomUpstreamRecord({ chatCompletionsReasoningOverrides: { text: 'reasoning', data: 'passthrough' } });
   const raw = stubProviderModel({ endpoints: { openaiChatCompletions: { reasoning: { text: 'reasoning-text', data: 'openrouter-reasoning-details' } } } });
   expect(resolveProviderModelEndpoints(record, raw).endpoints.openaiChatCompletions?.reasoning).toEqual({ text: 'reasoning-text', data: 'openrouter-reasoning-details' });
 });
 
 test('sparse endpoint reasoning validation retains overrides and rejects unknown configuration', () => {
-  expect(endpointsField({ openaiChatCompletions: { reasoning: { data: 'none' } } }, 'model')).toEqual({ openaiChatCompletions: { reasoning: { data: 'none' } } });
+  expect(endpointsField({ openaiChatCompletions: { reasoning: { data: 'passthrough' } } }, 'model')).toEqual({ openaiChatCompletions: { reasoning: { data: 'passthrough' } } });
   expect(() => endpointsField({ openaiChatCompletions: { reasoningFormat: { text: 'reasoning' } } }, 'model')).toThrow('unknown option');
   expect(() => endpointsField({ openaiChatCompletions: { reasoning: { text: 'reasoning_aaacontent' } } }, 'model')).toThrow('reasoning.text');
 });

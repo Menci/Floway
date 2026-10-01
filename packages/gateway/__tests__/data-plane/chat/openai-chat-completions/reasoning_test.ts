@@ -5,7 +5,7 @@ import { AffinityCodec } from '../../../../src/data-plane/chat/shared/affinity/i
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { decodeReasoningData, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent, type ChatCompletionsReasoningFormat } from '@floway-dev/protocols/openai-chat-completions';
+import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent, type ChatCompletionsReasoningFormat } from '@floway-dev/protocols/openai-chat-completions';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 const structured = {
@@ -19,7 +19,7 @@ for (const data of ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm
       const format: ChatCompletionsReasoningFormat = { text: 'reasoning-content', data };
       const fixture = await setupAppTest({
         copilotUpstream: buildCustomUpstreamRecord({
-          chatCompletionsReasoningOverrides: { text: 'reasoning-text', data: 'none' },
+          chatCompletionsReasoningOverrides: { text: 'reasoning-text', data: 'passthrough' },
           config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: { reasoning: format } } }] },
         }),
       });
@@ -97,6 +97,51 @@ for (const flag of ['vendor-deepseek', 'vendor-qwen', 'vendor-kimi'] as const) {
       expect(await codec.unwrap(choices[0].message.reasoning_opaque as string, 'openai-chat-completions.reasoning_opaque')).toMatchObject({ kind: 'owned', value: 'current-secret' });
       await flushBackground();
     });
+  });
+}
+
+for (const format of [
+  { text: 'passthrough', data: 'passthrough' },
+  { text: 'reasoning-text', data: 'passthrough' },
+  { text: 'passthrough', data: 'reasoning-opaque' },
+] as const) {
+  test.each([false, true])(`native ${format.text}/${format.data} preserves unconverted response and replay fields (stream=%s)`, async stream => {
+    const fixture = await setupAppTest({
+      copilotUpstream: buildCustomUpstreamRecord({
+        chatCompletionsReasoningOverrides: format,
+        config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] },
+      }),
+    });
+    const requests: OpenAIChatCompletionsPayload[] = [];
+    const blocks = [{ type: 'thinking', thinking: 'Thought', signature: 'signature' }, { type: 'future-type', custom: true }];
+    await withMockedFetch(async request => {
+      requests.push(await request.json() as OpenAIChatCompletionsPayload);
+      const base = { id: 'one', object: 'chat.completion.chunk', created: 1, model: 'model' };
+      return sseResponse([
+        { data: { ...base, choices: [{ index: 0, delta: { reasoning_text: 'First ' }, finish_reason: null }] } },
+        { data: { ...base, choices: [{ index: 0, delta: { reasoning_text: 'second', reasoning_opaque: 'secret', thinking_blocks: blocks, content: 'Answer' }, finish_reason: 'stop' }] } },
+        { data: '[DONE]' },
+      ]);
+    }, async () => {
+      const headers = { authorization: `Bearer ${fixture.apiKey.key}`, 'content-type': 'application/json' };
+      const response = await requestAppWithWarmModels('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'model', stream, messages: [{ role: 'user', content: 'Hello' }] }) });
+      expect(response.status).toBe(200);
+      let assistant: Record<string, unknown>;
+      if (stream) {
+        const events = (await response.text()).split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)) as OpenAIChatCompletionsStreamEvent);
+        const collected = await reassembleOpenAIChatCompletionsEvents((async function* () { yield* events; })());
+        assistant = collected.choices[0].message as unknown as Record<string, unknown>;
+      } else assistant = (await response.json() as { choices: { message: Record<string, unknown> }[] }).choices[0].message;
+      expect(assistant[format.text === 'passthrough' ? 'reasoning_text' : 'reasoning']).toBe('First second');
+      expect(assistant).not.toHaveProperty(format.text === 'passthrough' ? 'reasoning' : 'reasoning_text');
+      expect(assistant.thinking_blocks).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'future-type', custom: true })]));
+      const replay = await requestAppWithWarmModels('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'model', messages: [assistant, { role: 'user', content: 'Continue' }] }) });
+      expect(replay.status).toBe(200);
+      await replay.text();
+      await flushBackground();
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1].messages[0]).toMatchObject({ reasoning_text: 'First second', reasoning_opaque: 'secret', thinking_blocks: blocks });
   });
 }
 

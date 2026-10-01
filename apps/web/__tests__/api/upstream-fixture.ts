@@ -17,7 +17,7 @@ const commonFields = {
   updated_at: '',
   flag_overrides: {},
   chat_completions_reasoning_overrides: {},
-  chat_completions_reasoning_defaults: { text: 'reasoning-content', data: 'none' },
+  chat_completions_reasoning_defaults: { text: 'reasoning-content', data: 'passthrough' },
   flag_defaults: flagDefaults,
   disabled_public_model_ids: [],
   proxy_fallback_list: [],

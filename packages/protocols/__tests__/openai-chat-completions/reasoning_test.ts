@@ -1,7 +1,7 @@
 import { describe, expect, it, test, vi } from 'vitest';
 
 import { decodeReasoningData, encodeReasoningData } from '../../src/common/index.ts';
-import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning } from '../../src/openai-chat-completions/index.ts';
+import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, type ChatCompletionsReasoningDataStandard, type ChatCompletionsReasoningFormat, FlowayOpenAIChatCompletionsReasoning, fromFlowayOpenAIChatCompletionsReasoning, OPENROUTER_REASONING_OPAQUE_ID_PREFIX, toFlowayOpenAIChatCompletionsReasoning, reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/index.ts';
 
 const formats: ChatCompletionsReasoningDataStandard[] = ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm-thinking-blocks'];
 const format = (data: ChatCompletionsReasoningDataStandard): ChatCompletionsReasoningFormat => ({ text: 'reasoning', data });
@@ -24,7 +24,7 @@ const wire = (data: ChatCompletionsReasoningDataStandard) => ({
 });
 
 describe('Floway Chat Completions reasoning conversion', () => {
-  it.each(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS)('shares the %s parser between response and history messages', text => {
+  it.each(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS.filter(text => text !== 'passthrough'))('shares the %s parser between response and history messages', text => {
     const field = text.replaceAll('-', '_');
     const warn = vi.fn();
     for (const body of [{ role: 'assistant', content: null }, { content: 'Answer.' }]) {
@@ -77,7 +77,7 @@ describe('Floway Chat Completions reasoning conversion', () => {
   it('warns independently for alternate text and data and does not reinterpret them', () => {
     const warn = vi.fn();
     const converted = toFlowayOpenAIChatCompletionsReasoning({ content: 'Answer.', reasoning_content: 'Alternate.', thinking_blocks: [{ type: 'invalid' }] }, format('reasoning-opaque'), { warn });
-    expect(converted).toEqual({ content: 'Answer.' });
+    expect(converted).toEqual({ content: 'Answer.', reasoning_content: 'Alternate.', thinking_blocks: [{ type: 'invalid' }] });
     expect(warn.mock.calls.map(([warning]) => warning.channel)).toEqual(['text', 'data']);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('Alternate.');
   });
@@ -87,6 +87,55 @@ describe('Floway Chat Completions reasoning conversion', () => {
     const converted = toFlowayOpenAIChatCompletionsReasoning({ reasoning: 'Thought.', thinking_blocks: {} }, format('reasoning-opaque'), { warn });
     expect(converted[FlowayOpenAIChatCompletionsReasoning]).toEqual({ reasoning: 'Thought.', reasoning_opaque: '' });
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ channel: 'data' }));
+    expect(converted).toHaveProperty('thinking_blocks', {});
+  });
+
+  it('preserves both passthrough channels without parsing or warning', () => {
+    const warn = vi.fn();
+    const input = Object.freeze({ reasoning_content: 'Original thought', reasoning_text: null, reasoning_opaque: 'Original secret', reasoning_details: [{ type: 'future-type', custom: true }], thinking_blocks: { future: true } });
+    const converted = toFlowayOpenAIChatCompletionsReasoning(input, { text: 'passthrough', data: 'passthrough' }, { warn });
+    expect(converted).toEqual(input);
+    expect(converted[FlowayOpenAIChatCompletionsReasoning]).toBeUndefined();
+    expect(fromFlowayOpenAIChatCompletionsReasoning(converted, { text: 'passthrough', data: 'passthrough' }, { warn })).toEqual(input);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('retains null, empty and unknown passthrough values in nonstream responses', async () => {
+    const warn = vi.fn();
+    const input = { reasoning: null, reasoning_content: '', reasoning_text: '', reasoning_opaque: null, reasoning_details: [{ type: 'future-type', custom: true }], thinking_blocks: { future: true } };
+    const events = async function* () {
+      const delta = toFlowayOpenAIChatCompletionsReasoning(input, { text: 'passthrough', data: 'passthrough' }, { warn });
+      yield { id: 'one', object: 'chat.completion.chunk' as const, created: 1, model: 'model', choices: [{ index: 0, delta: delta as never, finish_reason: 'stop' as const }] };
+    };
+    expect((await reassembleOpenAIChatCompletionsEvents(events())).choices[0].message).toMatchObject(input);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps raw sibling fields while encoding internal values through passthrough', () => {
+    const warn = vi.fn();
+    const internal = toFlowayOpenAIChatCompletionsReasoning({ reasoning_text: 'Thought', reasoning_opaque: 'Secret', thinking_blocks: blocks }, { text: 'reasoning-text', data: 'reasoning-opaque' }, { warn });
+    expect(fromFlowayOpenAIChatCompletionsReasoning(internal, { text: 'passthrough', data: 'passthrough' }, { warn })).toEqual({ reasoning: 'Thought', reasoning_opaque: 'Secret', thinking_blocks: blocks });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { text: 'passthrough', data: 'reasoning-opaque' },
+    { text: 'reasoning', data: 'passthrough' },
+  ] as const)('keeps raw and internal channels separate through nonstream collection ($text/$data)', async format => {
+    const warn = vi.fn();
+    const input = { reasoning: 'Managed thought', reasoning_text: 'Raw thought', reasoning_opaque: 'Secret' };
+    const events = async function* () {
+      for (const fragment of ['first ', 'second']) {
+        const delta = toFlowayOpenAIChatCompletionsReasoning({ ...input, reasoning: fragment, reasoning_text: fragment }, format, { warn });
+        yield { id: 'one', object: 'chat.completion.chunk' as const, created: 1, model: 'model', choices: [{ index: 0, delta, finish_reason: 'stop' as const }] };
+      }
+    };
+    const result = await reassembleOpenAIChatCompletionsEvents(events());
+    const message = result.choices[0].message;
+    expect(message[FlowayOpenAIChatCompletionsReasoning]).toEqual({ reasoning: format.text === 'passthrough' ? '' : 'first second', reasoning_opaque: format.data === 'passthrough' ? '' : 'Secret' });
+    const output = fromFlowayOpenAIChatCompletionsReasoning(message, { text: 'reasoning', data: 'reasoning-opaque' }, { warn });
+    expect(output).toMatchObject({ reasoning: 'first second', reasoning_text: 'first second', reasoning_opaque: 'Secret' });
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it.each([

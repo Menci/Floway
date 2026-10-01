@@ -10,7 +10,7 @@ import { stubProviderModel } from '@floway-dev/test-utils';
 
 const MIGRATION = '0086_chat_completions_reasoning.sql';
 const CANONICAL: ChatCompletionsReasoningFormat = { text: 'reasoning-text', data: 'reasoning-opaque' };
-const DEEPSEEK: ChatCompletionsReasoningFormat = { text: 'reasoning-content', data: 'none' };
+const DEEPSEEK: ChatCompletionsReasoningFormat = { text: 'reasoning-content', data: 'passthrough' };
 
 const model = (flagOverrides?: FlagOverrides, reasoning?: ChatCompletionsReasoningOverrides): UpstreamModelConfig => ({
   upstreamModelId: 'chat-model',
@@ -84,7 +84,7 @@ for (const kind of ['custom', 'azure', 'ollama'] as const) {
 }
 
 test.each([
-  { format: { text: 'reasoning' } as const, expected: { text: 'reasoning', data: 'none' } },
+  { format: { text: 'reasoning' } as const, expected: { text: 'reasoning', data: 'passthrough' } },
   { format: { data: 'litellm-thinking-blocks' } as const, expected: { text: 'reasoning-content', data: 'litellm-thinking-blocks' } },
   { format: { text: 'reasoning', data: 'openrouter-reasoning-details' } as const, expected: { text: 'reasoning', data: 'openrouter-reasoning-details' } },
 ])('migration retains explicit reasoning channels ($format)', async ({ format, expected }) => {

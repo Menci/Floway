@@ -31,7 +31,7 @@ export const reasoningAffinitySlots = (message: object): ReasoningAffinitySlot[]
 export const wrapChatCompletionsReasoningAffinity = async <T extends object>(
   message: T,
   options: AffinityEgressOptions,
-  format: Exclude<ChatCompletionsReasoningDataStandard, 'none'> = 'reasoning-opaque',
+  format: Exclude<ChatCompletionsReasoningDataStandard, 'passthrough'> = 'reasoning-opaque',
 ): Promise<T> => {
   const output = { ...message } as Record<string, unknown>;
   const slots = reasoningAffinitySlots(message);

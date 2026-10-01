@@ -1,5 +1,5 @@
-export const CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS = ['reasoning-content', 'reasoning-text', 'reasoning'] as const;
-export const CHAT_COMPLETIONS_REASONING_DATA_STANDARDS = ['none', 'reasoning-opaque', 'openrouter-reasoning-details', 'litellm-thinking-blocks'] as const;
+export const CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS = ['passthrough', 'reasoning', 'reasoning-content', 'reasoning-text'] as const;
+export const CHAT_COMPLETIONS_REASONING_DATA_STANDARDS = ['passthrough', 'reasoning-opaque', 'openrouter-reasoning-details', 'litellm-thinking-blocks'] as const;
 
 export type ChatCompletionsReasoningTextStandard = typeof CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS[number];
 export type ChatCompletionsReasoningDataStandard = typeof CHAT_COMPLETIONS_REASONING_DATA_STANDARDS[number];

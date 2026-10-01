@@ -108,15 +108,20 @@ configuration owns all text and data conversion.
 }
 ```
 
-Text standards are `reasoning-content`, `reasoning-text`, and `reasoning`.
-Data standards are `none`, `reasoning-opaque`, `openrouter-reasoning-details`,
-and `litellm-thinking-blocks`. These select complete conversion behavior.
+Text standards are `reasoning`, `reasoning-content`, and `reasoning-text`.
+Data standards are `reasoning-opaque`, `openrouter-reasoning-details`, and
+`litellm-thinking-blocks`. Both channels also support `passthrough`, which keeps
+original fields without interpreting their format. Already normalized values
+use Floway's identity wire fields, `reasoning` and `reasoning_opaque`, when
+encoding passthrough. Raw passthrough channels are not inferred as reasoning
+when translating to another protocol. These options select conversion behavior.
 Structured arrays retain their members and metadata in reversible Floway
 opaque envelopes. Malformed selected formats fail the request; recognized
-unselected formats produce a warning and are ignored.
+unselected formats produce a warning and remain uninterpreted.
 
-Clients currently receive `reasoning` and `reasoning_opaque` for every Chat
-Completions model. The public `endpoints` map describes this client surface,
+Normalized reasoning reaches clients as `reasoning` and `reasoning_opaque`;
+passthrough fields keep their original names. The public `endpoints` map
+describes this client surface,
 including translated chat routes. Native dispatch continues to use the chosen
 upstream's own endpoint map. Normalization also applies to native Chat
 Completions passthrough and client history replay.

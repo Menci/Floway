@@ -1,5 +1,5 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
-import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall } from './index.ts';
+import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsToolCall } from './index.ts';
 import { FlowayOpenAIChatCompletionsReasoning } from './reasoning-format.ts';
 import { mergeReasoningStreamItems, type ReasoningRecord } from './reasoning.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
@@ -7,7 +7,7 @@ import { captureExtras } from '../common/reassemble-extras.ts';
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
 // unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'thinking_blocks', 'refusal', 'tool_calls']);
+const KNOWN_DELTA_KEYS = new Set(['content', 'role', 'reasoning', 'reasoning_content', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'thinking_blocks', 'refusal', 'tool_calls']);
 const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
 
@@ -20,13 +20,11 @@ interface ToolCallAccumulator {
 interface ChoiceAccumulator {
   readonly index: number;
   content: string;
-  reasoningText: string;
-  reasoningOpaque?: string;
+  readonly rawReasoning: Record<string, unknown>;
   canonicalReasoning: boolean;
-  reasoningDetails?: ReasoningRecord[];
-  thinkingBlocks?: ReasoningRecord[];
+  canonicalReasoningText: string;
+  canonicalReasoningOpaque?: string;
   refusal?: string;
-  readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
@@ -36,14 +34,34 @@ interface ChoiceAccumulator {
 const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   index,
   content: '',
-  reasoningText: '',
+  rawReasoning: {},
   canonicalReasoning: false,
-  reasoningItems: [],
+  canonicalReasoningText: '',
   finishReason: 'stop',
   toolCalls: new Map(),
   choiceExtras: {},
   messageExtras: {},
 });
+
+const isReasoningRecord = (value: unknown): value is ReasoningRecord => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const accumulateRawReasoning = (choice: ChoiceAccumulator, delta: OpenAIChatCompletionsDelta): void => {
+  const input = delta as Record<string, unknown>;
+  for (const key of ['reasoning', 'reasoning_content', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'reasoning_details', 'thinking_blocks'] as const) {
+    if (!Object.hasOwn(input, key)) continue;
+    const value = input[key];
+    const previous = choice.rawReasoning[key];
+    if (value == null && Object.hasOwn(choice.rawReasoning, key)) continue;
+    if (key === 'reasoning' || key === 'reasoning_content' || key === 'reasoning_text') {
+      choice.rawReasoning[key] = typeof previous === 'string' && typeof value === 'string' ? previous + value : value;
+    } else if (Array.isArray(value)) {
+      const prior = Array.isArray(previous) ? previous : [];
+      choice.rawReasoning[key] = (key === 'reasoning_details' || key === 'thinking_blocks') && value.every(isReasoningRecord) && prior.every(isReasoningRecord)
+        ? mergeReasoningStreamItems(prior, value, key === 'reasoning_details' ? 'openrouter-reasoning-details' : 'litellm-thinking-blocks')
+        : [...prior, ...value];
+    } else choice.rawReasoning[key] = value;
+  }
+};
 
 const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatCompletionsDelta['tool_calls']): void => {
   if (value == null) return;
@@ -75,13 +93,8 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
       role: 'assistant',
       content: choice.content || null,
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(choice.canonicalReasoning ? { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: choice.reasoningText, reasoning_opaque: choice.reasoningOpaque ?? '' }) } : {
-        ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
-        ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
-      }),
-      ...(choice.reasoningDetails !== undefined ? { reasoning_details: choice.reasoningDetails } : {}),
-      ...(choice.thinkingBlocks !== undefined ? { thinking_blocks: choice.thinkingBlocks } : {}),
-      ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
+      ...(choice.canonicalReasoning ? { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: choice.canonicalReasoningText, reasoning_opaque: choice.canonicalReasoningOpaque ?? '' }) } : {}),
+      ...choice.rawReasoning,
       ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
       ...choice.messageExtras,
     },
@@ -129,17 +142,11 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       const canonical = delta[FlowayOpenAIChatCompletionsReasoning];
       if (canonical !== undefined) {
         choice.canonicalReasoning = true;
-        choice.reasoningText += canonical.reasoning;
-        if (canonical.reasoning_opaque !== '') choice.reasoningOpaque = canonical.reasoning_opaque;
+        choice.canonicalReasoningText += canonical.reasoning;
+        if (canonical.reasoning_opaque !== '') choice.canonicalReasoningOpaque = canonical.reasoning_opaque;
       }
-      if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
-      if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
+      accumulateRawReasoning(choice, delta);
       if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
-      if (Array.isArray(delta.reasoning_items)) {
-        choice.reasoningItems.push(...delta.reasoning_items);
-      }
-      if (Array.isArray(delta.reasoning_details)) choice.reasoningDetails = mergeReasoningStreamItems(choice.reasoningDetails ?? [], delta.reasoning_details, 'openrouter-reasoning-details');
-      if (Array.isArray(delta.thinking_blocks)) choice.thinkingBlocks = mergeReasoningStreamItems(choice.thinkingBlocks ?? [], delta.thinking_blocks, 'litellm-thinking-blocks');
       accumulateToolCalls(choice, delta.tool_calls);
       if (streamed.finish_reason !== null) choice.finishReason = streamed.finish_reason;
     }

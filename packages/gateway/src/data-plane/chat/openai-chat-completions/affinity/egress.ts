@@ -46,7 +46,7 @@ const carrierDelta = (data: Record<string, unknown>): Record<string, unknown> =>
 export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
-  format: Exclude<ChatCompletionsReasoningDataStandard, 'none'> = 'reasoning-opaque',
+  format: Exclude<ChatCompletionsReasoningDataStandard, 'passthrough'> = 'reasoning-opaque',
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   // One choice is one logical assistant element, so its carrier frame before
   // finish_reason (or DONE when finish_reason is absent) is both the turn
@@ -95,16 +95,21 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       const state = previous === undefined || previous.finished ? { finished: false, data: {} } : previous;
       choices.set(index, state);
 
-      const { reasoning_opaque, reasoning_details, thinking_blocks, ...delta } = sourceDelta;
-      if (typeof reasoning_opaque === 'string') state.data.reasoning_opaque = reasoning_opaque;
+      const delta = { ...sourceDelta };
+      const { reasoning_opaque, reasoning_details, thinking_blocks } = sourceDelta;
+      if (typeof reasoning_opaque === 'string' && reasoning_opaque !== '') {
+        state.data.reasoning_opaque = reasoning_opaque;
+        delete delta.reasoning_opaque;
+      }
       for (const [field, incoming, standard] of [
         ['reasoning_details', reasoning_details, 'openrouter-reasoning-details'],
         ['thinking_blocks', thinking_blocks, 'litellm-thinking-blocks'],
       ] as const) {
-        if (!Array.isArray(incoming)) continue;
+        if (!Array.isArray(incoming) || incoming.length === 0) continue;
+        delete delta[field];
         state.data[field] = mergeReasoningStreamItems(state.data[field] as ReasoningRecord[] | undefined ?? [], incoming, standard);
         const readable = incoming.flatMap(item => {
-          if (item.type === 'reasoning.encrypted' || item.type === 'redacted_thinking') return [];
+          if ((item.type === 'reasoning.encrypted' || item.type === 'redacted_thinking') && typeof item.data === 'string') return [];
           const { signature: _signature, ...visible } = item;
           if ((item.type === 'reasoning.text' && !item.text) || (item.type === 'thinking' && !item.thinking)) return [];
           return [visible];

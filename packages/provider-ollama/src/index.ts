@@ -5,7 +5,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const ollamaProviderModule: ProviderModule = {
   create: createOllamaProvider,
   // https://github.com/ollama/ollama/blob/1abe35e6e6e777e858bbfbba283667ee8d516801/openai/openai.go#L32-L48
-  defaultChatCompletionsReasoning: { text: 'reasoning', data: 'none' },
+  defaultChatCompletionsReasoning: { text: 'reasoning', data: 'passthrough' },
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
 };
 

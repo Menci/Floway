@@ -108,7 +108,12 @@ export function UpstreamWorkspace({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
-  const { formState: { errors, submitCount }, getValues } = useFormContext<UpstreamEditorValues>();
+  const { control, formState: { errors, submitCount }, getValues } = useFormContext<UpstreamEditorValues>();
+  const config = useWatch({ control, name: 'config' });
+  const manualModels = useWatch({ control, name: 'manualModels' });
+  const hasChatCompletions = 'endpoints' in config
+    ? config.endpoints.openaiChatCompletions !== undefined
+    : [...manualModels, ...discovered].some(model => model.endpoints.openaiChatCompletions !== undefined);
   const [params, setParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   // The YAML text is a projection of the manual models — serialized on the way
@@ -224,7 +229,7 @@ export function UpstreamWorkspace({
               <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
-              <Controller name="chatCompletionsReasoningOverrides" render={({ field }) => <ReasoningFormatEditor defaults={record.chat_completions_reasoning_defaults} value={field.value} onChange={field.onChange} />} />
+              {hasChatCompletions && <Controller name="chatCompletionsReasoningOverrides" render={({ field }) => <ReasoningFormatEditor defaults={record.chat_completions_reasoning_defaults} value={field.value} onChange={field.onChange} />} />}
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}

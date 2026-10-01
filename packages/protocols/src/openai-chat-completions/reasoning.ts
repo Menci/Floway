@@ -18,7 +18,9 @@ export interface ReasoningConversionOptions {
   readonly stream?: { readonly previousOpaque: string };
 }
 
-export type FlowayReasoningMessage<T extends object> = Omit<T, ReasoningWireField> & FlowayOpenAIChatCompletionsReasoningCarrier;
+export type FlowayReasoningMessage<T extends object> = Omit<T, ReasoningWireField>
+  & Partial<Pick<T, Extract<keyof T, ReasoningWireField>>>
+  & FlowayOpenAIChatCompletionsReasoningCarrier;
 export type WireReasoningMessage<T extends object> = Omit<T, ReasoningWireField | typeof FlowayOpenAIChatCompletionsReasoning> & {
   reasoning?: string;
   reasoning_text?: string;
@@ -28,8 +30,8 @@ export type WireReasoningMessage<T extends object> = Omit<T, ReasoningWireField 
   thinking_blocks?: ReasoningRecord[];
 };
 
-const TEXT_FIELDS = { 'reasoning-content': 'reasoning_content', 'reasoning-text': 'reasoning_text', reasoning: 'reasoning' } as const;
-const DATA_FIELDS = { none: undefined, 'reasoning-opaque': 'reasoning_opaque', 'openrouter-reasoning-details': 'reasoning_details', 'litellm-thinking-blocks': 'thinking_blocks' } as const;
+const TEXT_FIELDS = { passthrough: undefined, 'reasoning-content': 'reasoning_content', 'reasoning-text': 'reasoning_text', reasoning: 'reasoning' } as const;
+const DATA_FIELDS = { passthrough: undefined, 'reasoning-opaque': 'reasoning_opaque', 'openrouter-reasoning-details': 'reasoning_details', 'litellm-thinking-blocks': 'thinking_blocks' } as const;
 const TEXT_KEYS = ['reasoning_content', 'reasoning_text', 'reasoning'] as const;
 const DATA_KEYS = ['reasoning_opaque', 'reasoning_details', 'thinking_blocks', 'reasoning_items'] as const;
 const hasValue = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length !== 0);
@@ -96,7 +98,20 @@ const sameGroup = (left: ReasoningRecord, right: ReasoningRecord): boolean =>
 
 export const mergeReasoningStreamItems = (previous: readonly ReasoningRecord[], incoming: readonly ReasoningRecord[], standard: ChatCompletionsReasoningDataStandard): ReasoningRecord[] => {
   const merged = previous.map(item => ({ ...item }));
+  const matchedSnapshots = new Set<number>();
   for (const [incomingIndex, item] of incoming.entries()) {
+    // Signed snapshots may refer to a plaintext block before an intervening
+    // block. Match only previous-frame members so an incoming array stays whole.
+    // https://github.com/BerriAI/litellm/blob/b370996b9d2fc9aaec356013a698711ee3e127cc/tests/unit/llms/anthropic/pass_through/adapters/test_streaming_iterator_first_delta.py#L559-L584
+    const snapshotIndex = standard === 'litellm-thinking-blocks' && typeof item.signature === 'string' && typeof item.thinking === 'string' && item.thinking !== ''
+      ? previous.findIndex((prior, index) => !matchedSnapshots.has(index) && prior.type === 'thinking' && sameGroup(prior, item)
+        && prior.thinking === item.thinking && (prior.signature == null || prior.signature === item.signature))
+      : -1;
+    if (snapshotIndex !== -1) {
+      merged[snapshotIndex] = { ...merged[snapshotIndex], ...item };
+      matchedSnapshots.add(snapshotIndex);
+      continue;
+    }
     const last = incomingIndex === 0 ? merged.at(-1) : undefined;
     if (standard === 'openrouter-reasoning-details' && last !== undefined && sameGroup(last, item)
       && (item.type === 'reasoning.text' || item.type === 'reasoning.summary')) {
@@ -121,7 +136,7 @@ export const mergeReasoningStreamItems = (previous: readonly ReasoningRecord[], 
 };
 
 const readOpaque = (value: unknown, standard: ChatCompletionsReasoningDataStandard, previousOpaque: string | undefined): string => {
-  if (value === undefined || value === null || standard === 'none') return '';
+  if (value === undefined || value === null || standard === 'passthrough') return '';
   if (standard === 'reasoning-opaque') {
     if (typeof value !== 'string') return malformed('reasoning_opaque', 'a string or null');
     decodeReasoningData(value);
@@ -137,47 +152,45 @@ const readOpaque = (value: unknown, standard: ChatCompletionsReasoningDataStanda
   return encodeReasoningData(standard, items);
 };
 
-const copyWithoutReasoning = <T extends object>(message: T): Omit<T, ReasoningWireField | typeof FlowayOpenAIChatCompletionsReasoning> => {
-  const copy = { ...message } as Record<PropertyKey, unknown>;
-  for (const key of REASONING_WIRE_FIELDS) delete copy[key];
-  delete copy[FlowayOpenAIChatCompletionsReasoning];
-  return copy as Omit<T, ReasoningWireField | typeof FlowayOpenAIChatCompletionsReasoning>;
-};
-
 export const toFlowayOpenAIChatCompletionsReasoning = <T extends object>(message: T, format: ChatCompletionsReasoningFormat, options: ReasoningConversionOptions): FlowayReasoningMessage<T> => {
   const input = message as Record<PropertyKey, unknown>;
   if (input[FlowayOpenAIChatCompletionsReasoning] !== undefined) throw new TypeError('Chat Completions wire message already contains Floway reasoning');
   const textField = TEXT_FIELDS[format.text];
   const dataField = DATA_FIELDS[format.data];
-  const textValue = input[textField];
-  if (textValue !== undefined && textValue !== null && typeof textValue !== 'string') malformed(textField, 'a string or null');
+  const textValue = textField === undefined ? undefined : input[textField];
+  if (textField !== undefined && textValue !== undefined && textValue !== null && typeof textValue !== 'string') malformed(textField, 'a string or null');
   const text = typeof textValue === 'string' ? textValue : '';
   const opaque = readOpaque(dataField === undefined ? undefined : input[dataField], format.data, options.stream?.previousOpaque);
-  if (!hasValue(textValue)) {
+  if (textField !== undefined && !hasValue(textValue)) {
     const fields = TEXT_KEYS.filter(key => key !== textField && hasValue(input[key]));
     if (fields.length !== 0) options.warn({ kind: 'unexpected-format', channel: 'text', standard: format.text, fields });
   }
-  if (dataField === undefined || !hasValue(input[dataField])) {
+  if (dataField !== undefined && !hasValue(input[dataField])) {
     const fields = DATA_KEYS.filter(key => key !== dataField && hasValue(input[key]));
     if (fields.length !== 0) options.warn({ kind: 'unexpected-format', channel: 'data', standard: format.data, fields });
   }
-  const copy = copyWithoutReasoning(message) as FlowayReasoningMessage<T>;
+  const copy = { ...message } as Record<PropertyKey, unknown>;
+  if (textField !== undefined) delete copy[textField];
+  if (dataField !== undefined) delete copy[dataField];
   if (text !== '' || opaque !== '') Object.assign(copy, { [FlowayOpenAIChatCompletionsReasoning]: Object.freeze({ reasoning: text, reasoning_opaque: opaque }) });
-  return copy;
+  return copy as FlowayReasoningMessage<T>;
 };
 
 export const fromFlowayOpenAIChatCompletionsReasoning = <T extends object>(message: T, format: ChatCompletionsReasoningFormat, options: ReasoningConversionOptions): WireReasoningMessage<T> => {
   const reasoning = (message as FlowayOpenAIChatCompletionsReasoningCarrier)[FlowayOpenAIChatCompletionsReasoning];
   if (reasoning === undefined) return message as WireReasoningMessage<T>;
-  const textField = TEXT_FIELDS[format.text];
-  const dataField = DATA_FIELDS[format.data];
+  // Passthrough leaves raw fields untouched; internal values use Floway's
+  // canonical wire fields when translation produced no original Chat fields.
+  const textField = TEXT_FIELDS[format.text] ?? 'reasoning';
+  const dataField = DATA_FIELDS[format.data] ?? 'reasoning_opaque';
   const input = message as Record<string, unknown>;
-  if (Object.hasOwn(input, textField)) options.warn({ kind: 'overwriting-field', channel: 'text', standard: format.text, fields: [textField] });
-  if (dataField !== undefined && Object.hasOwn(input, dataField)) options.warn({ kind: 'overwriting-field', channel: 'data', standard: format.data, fields: [dataField] });
-  const output = copyWithoutReasoning(message) as Record<string, unknown>;
+  if (reasoning.reasoning !== '' && Object.hasOwn(input, textField)) options.warn({ kind: 'overwriting-field', channel: 'text', standard: format.text, fields: [textField] });
+  if (reasoning.reasoning_opaque !== '' && Object.hasOwn(input, dataField)) options.warn({ kind: 'overwriting-field', channel: 'data', standard: format.data, fields: [dataField] });
+  const output = { ...message } as Record<PropertyKey, unknown>;
+  delete output[FlowayOpenAIChatCompletionsReasoning];
   if (reasoning.reasoning !== '') output[textField] = reasoning.reasoning;
-  if (reasoning.reasoning_opaque !== '' && dataField !== undefined && format.data !== 'none') {
-    if (format.data === 'reasoning-opaque') output[dataField] = reasoning.reasoning_opaque;
+  if (reasoning.reasoning_opaque !== '') {
+    if (format.data === 'passthrough' || format.data === 'reasoning-opaque') output[dataField] = reasoning.reasoning_opaque;
     else {
       const envelope = decodeReasoningData(reasoning.reasoning_opaque);
       if (envelope?.type === format.data) output[dataField] = validateStructuredReasoning(envelope.value, format.data);

@@ -492,13 +492,19 @@ const zhHansCN = {
       upstreamEditor: {
         reasoningFormat: {
           title: 'Chat Completions reasoning 格式',
-          text: '文本标准',
-          data: '数据标准',
+          text: '思考文本',
+          data: '思考数据（即密文/签名）',
           inherit: '继承：{{value}}（{{source}}）',
+          inheritRich: '继承：<format/>（{{source}}）',
+          passthrough: '保留原样',
+          clientResponseBoth: '连接 Floway 的客户端会收到规范化响应：<text/> → <reasoning>reasoning</reasoning>，<data/> → <opaque>reasoning_opaque</opaque>。',
+          clientResponseText: '连接 Floway 的客户端会收到规范化思考文本：<text/> → <reasoning>reasoning</reasoning>；思考数据保留服务器端原样。',
+          clientResponseData: '连接 Floway 的客户端收到的思考文本保留服务器端原样；思考数据会规范化为 <data/> → <opaque>reasoning_opaque</opaque>。',
+          clientResponsePassthrough: '连接 Floway 的客户端收到的思考文本和思考数据均保留服务器端原样。',
           flowayDefault: 'Floway 默认值',
           upstreamDefault: '上游覆盖值',
           providerDecision: 'Auto 模型的选项由 provider 决定。',
-          hint: '网关边界会规范化上游消息。客户端统一收到 reasoning + reasoning_opaque。文本和数据可以分别覆盖。',
+          hint: '选择 Floway 读写上游思考内容的格式。“保留原样”会保留原始字段，不进行格式转换。文本和数据可以分别配置。',
         },
         readyToSave: {
           title: '可以保存了',
@@ -588,7 +594,7 @@ const zhHansCN = {
           addressable: '可路由',
           listed: '模型列表可见',
         },
-        tabs: { label: '上游分区', models: '模型列表', flags: '上游特性开关' },
+        tabs: { label: '上游分区', models: '模型列表', flags: '兼容性' },
         flags: {
           intro:
               '不同提供商、API 和模型的上游行为可能不同。仅在兼容性需要时调整这些默认设置。',

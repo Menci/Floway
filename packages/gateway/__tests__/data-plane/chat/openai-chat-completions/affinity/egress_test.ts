@@ -50,6 +50,16 @@ const immediateCodec: AffinityEgressCodec = {
 };
 
 describe('OpenAI Chat Completions affinity egress', () => {
+  test('preserves null and empty data fields in visible passthrough chunks', async () => {
+    const raw = { content: 'Answer', reasoning_opaque: null, reasoning_details: [], thinking_blocks: null };
+    const source = frames([eventFrame(chunk([{ index: 0, delta: raw, finish_reason: 'stop' }])), doneFrame()]);
+    const output = wrapOpenAIChatCompletionsAffinityEgress(source, { codec: immediateCodec, affinity });
+    const first = await output.next();
+    expect(first.value).toEqual(eventFrame(chunk([{ index: 0, delta: raw, finish_reason: null }])));
+    const finish = await output.next();
+    expect(finish.value?.type === 'event' ? finish.value.event.choices[0].delta.reasoning_opaque : undefined).toBe('wrapped:synthetic');
+  });
+
   test('forwards visible final data before wrapping the last opaque snapshot', async () => {
     const codec = new DelayedCodec();
     const output = wrapOpenAIChatCompletionsAffinityEgress(frames([

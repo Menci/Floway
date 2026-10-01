@@ -155,7 +155,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
 
       assertEquals(model?.display_name, 'Shared Model');
       // The merged endpoint surface is the OR of both upstreams' endpoint maps.
-      assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'none' } } });
+      assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } });
       assertEquals(model?.kind, 'chat');
       assertEquals(model?.chat?.image_detail_original, false);
       assertEquals(model?.opaqueBlobCompatibilityScope, { bindToUpstream: true });
@@ -172,7 +172,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       // each provider originally advertised.
       assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
       assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { anthropicMessages: {} });
-      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'none' } } });
+      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } });
       assertEquals(realProviderModels(model)['up_copilot']?.chat?.image_detail_original, undefined);
       assertEquals(realProviderModels(model)['up_custom']?.chat?.image_detail_original, true);
       // `enabledFlags` is required on every ProviderModel — proves the
@@ -185,13 +185,13 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.candidates[0]?.model.endpoints, { anthropicMessages: {} });
-      assertEquals(resolved.candidates[1]?.model.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'none' } } });
+      assertEquals(resolved.candidates[1]?.model.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } });
       // Each enumerated candidate seeds `providerModels[provider.upstreamId]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
       assertEquals(Object.keys(realProviderModels(resolved.candidates[0]?.model)), ['up_copilot']);
       assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
       assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { anthropicMessages: {} });
-      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'none' } } });
+      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } });
     },
   );
 });

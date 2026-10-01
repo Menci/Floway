@@ -6,7 +6,7 @@ UPDATE upstreams SET chat_completions_reasoning_overrides = json_object(
   'text', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
                THEN 'reasoning-content' ELSE 'reasoning-text' END,
   'data', CASE WHEN json_extract(flag_overrides, '$.vendor-deepseek') = 1
-               THEN 'none' ELSE 'reasoning-opaque' END)
+               THEN 'passthrough' ELSE 'reasoning-opaque' END)
 WHERE json_type(flag_overrides, '$.vendor-deepseek') IN ('true', 'false');
 
 -- Explicit manual-model flag decisions must keep overriding the migrated
@@ -20,7 +20,7 @@ UPDATE upstreams SET config_json = json_set(config_json, '$.models', json((
                    CASE WHEN json_extract(value, '$.flagOverrides.vendor-deepseek') = 1 THEN 'reasoning-content'
                    ELSE 'reasoning-text' END,
       '$.endpoints.openaiChatCompletions.reasoning.data',
-                   CASE WHEN json_extract(value, '$.flagOverrides.vendor-deepseek') = 1 THEN 'none'
+                   CASE WHEN json_extract(value, '$.flagOverrides.vendor-deepseek') = 1 THEN 'passthrough'
                    ELSE 'reasoning-opaque' END)
     ELSE value END)) FROM json_each(config_json, '$.models')
 ))) WHERE json_type(config_json, '$.models') = 'array';
