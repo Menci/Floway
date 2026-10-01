@@ -4,30 +4,12 @@ This package defines portable runtime services. Implementations live in the
 platform applications; runtime composition installs them through the exported
 initializers.
 
-## Durable file writes
+## Stored files
 
-`FileStore.put(key, body)` accepts bytes or a `ReadableStream<Uint8Array>`.
-It consumes the stream with storage backpressure and publishes the complete
-object at EOF. Until then, readers see the previous value or a missing key.
-Failures preserve the prior object and expose the original error; cleanup
-failures retain it in the error chain. `get` still returns complete bytes.
-
-Node stages each write inside the target parent’s reserved `.floway-staging`
-namespace and atomically renames it after closing. This preserves the published
-key paths and the target filesystem when a key prefix is a separate mount.
-Node keys cannot contain that private segment in any ASCII case spelling,
-including components of the normalized filesystem path. `deleteKeys` removes the exact
-key’s unfinished writes as well as its published file, so retention cleanup
-also collects a writer killed before EOF. Public keys resembling UUID temporary
-filenames remain ordinary keys. Empty staging directories stay available to
-concurrent writers until key deletion; the common private directory stays in
-place like other parent directories.
-
-Cloudflare uses bounded 5 MiB multipart parts for unknown-length
-streams, since R2's single put requires a known length. Short and empty streams
-use a single byte put. A storage/source failure cancels the source and cleans
-up unfinished multipart state; live-view degradation does not affect this path.
-The in-memory implementation collects bytes as part of its storage semantics.
+`FileStore.put(key, bytes)` stores a complete `Uint8Array`. `get` returns the
+stored bytes or null, and `deleteKeys` removes exact keys. Node uses the
+configured filesystem directory, Cloudflare uses R2, and the in-memory
+implementation stores byte copies.
 
 ## Transient run streams
 
@@ -45,8 +27,8 @@ A `LogStream` contains bytes, independent of any event format:
   the stream ended; cancellation or expiry interrupts the read.
 
 `LOG_STREAM_IDLE_MS` is the shared idle lease. Append activity, including an
-empty heartbeat, and read progress renew it. A quiet active writer sends empty
-appends while upstream work is pending; a completed or abandoned stream is
+empty heartbeat, and read progress renew it. To keep a quiet active stream open, its writer sends empty
+appends while work is pending; a completed or abandoned stream is
 reclaimed after idle activity stops. Existing handles then raise
 `LogStreamExpiredError`. Expiration affects transient live viewing; the durable
 artifact is a separate writer-owned path.
