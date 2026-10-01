@@ -84,7 +84,9 @@ opaque data. Upstream-wide `chat_completions_reasoning_overrides` and manual
 model `endpoints.openaiChatCompletions.reasoning` are sparse overrides; absent
 members inherit the provider default or the current upstream setting. Auto
 models use provider-owned per-model choices. The dashboard shows inherited
-values and their source.
+values and their source. Vendor Compatibility flags configure request controls,
+cached-token usage, and structured-output workarounds; endpoint reasoning
+configuration owns all text and data conversion.
 
 ```json
 {

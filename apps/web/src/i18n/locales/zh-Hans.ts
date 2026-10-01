@@ -606,7 +606,7 @@ const zhHansCN = {
             'vendor-deepseek': {
               label: 'DeepSeek 兼容',
               description:
-                  'DeepSeek API 的思考开关、缓存 Token 用量和结构化输出采用了非标准格式。\n开启此开关，以转换思考开关 (`thinking`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。思考文本和数据应在 Chat Completions reasoning 格式中单独配置。\n当上游为 **DeepSeek chat completions API** 时应开启。',
+                  'DeepSeek API 的思考开关、缓存 Token 用量和结构化输出采用了非标准格式。\n开启此开关，以转换思考开关 (`thinking`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
             },
             'vendor-qwen': {
               label: '阿里云百炼兼容',

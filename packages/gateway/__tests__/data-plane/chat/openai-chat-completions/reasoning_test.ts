@@ -66,6 +66,40 @@ for (const data of ['reasoning-opaque', 'openrouter-reasoning-details', 'litellm
   }
 }
 
+for (const flag of ['vendor-deepseek', 'vendor-qwen', 'vendor-kimi'] as const) {
+  test.each([true, false])(`${flag} does not select the history or response reasoning format (on=%s)`, async on => {
+    const fixture = await setupAppTest({
+      copilotUpstream: buildCustomUpstreamRecord({
+        flagOverrides: { [flag]: on },
+        chatCompletionsReasoningOverrides: { text: 'reasoning-text', data: 'reasoning-opaque' },
+        config: { baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: false }, models: [{ kind: 'chat', upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] },
+      }),
+    });
+    await withMockedFetch(async request => {
+      const payload = await request.json() as OpenAIChatCompletionsPayload;
+      expect(payload.messages[0]).toEqual({ role: 'assistant', content: 'Previous answer', reasoning_text: 'Previous thought', reasoning_opaque: 'previous-secret' });
+      return sseResponse([
+        { data: { id: 'chat_test', object: 'chat.completion.chunk', created: 1, model: 'model', choices: [{ index: 0, delta: { reasoning_text: 'Current thought', reasoning_opaque: 'current-secret', content: 'Answer' }, finish_reason: 'stop' }] } },
+        { data: '[DONE]' },
+      ]);
+    }, async () => {
+      const response = await requestAppWithWarmModels('/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${fixture.apiKey.key}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'model', messages: [{ role: 'assistant', content: 'Previous answer', reasoning: 'Previous thought', reasoning_opaque: 'previous-secret' }, { role: 'user', content: 'Continue' }] }),
+      });
+      expect(response.status).toBe(200);
+      const { choices } = await response.json() as { choices: { message: Record<string, unknown> }[] };
+      expect(choices[0].message.reasoning).toBe('Current thought');
+      expect(choices[0].message).not.toHaveProperty('reasoning_text');
+      expect(choices[0].message).not.toHaveProperty('reasoning_content');
+      const codec = new AffinityCodec(fixture.apiKey.serverSecret);
+      expect(await codec.unwrap(choices[0].message.reasoning_opaque as string, 'openai-chat-completions.reasoning_opaque')).toMatchObject({ kind: 'owned', value: 'current-secret' });
+      await flushBackground();
+    });
+  });
+}
+
 test('both reasoning frame boundaries preserve upstream error frames', async () => {
   const error = eventFrame({ error: { message: 'Original upstream error', type: 'api_error' } } as unknown as OpenAIChatCompletionsStreamEvent);
   const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> { yield error; };

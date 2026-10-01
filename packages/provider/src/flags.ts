@@ -4,11 +4,9 @@
 // copy, while this package owns the ids shared by providers and persisted
 // overrides.
 //
-// Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
-// mutually exclusive per model: a vendor interceptor translates the
-// gateway's OpenAI-canonical request and response shape into the vendor's
-// wire dialect; with no vendor flag set, behavior defaults to the OpenAI
-// standard and no vendor rewrite runs.
+// Vendor-style flags select request controls, structured-output workarounds,
+// and usage normalization. Chat Completions reasoning text and data formats
+// are selected independently through endpoint configuration.
 //
 // Defaults are NOT declared in this catalog. Each provider owns the
 // decision of which flags default on for its own upstream (and, when

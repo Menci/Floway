@@ -636,7 +636,7 @@ const en = {
             'vendor-deepseek': {
               label: 'DeepSeek Compatibility',
               description:
-                  "DeepSeek's API uses non-standard reasoning controls, cached-token usage, and structured outputs.\nEnable this option to translate reasoning controls (`thinking`), normalize cached-token usage, and downgrade the unsupported `json_schema` response format to `json_object`. Configure reasoning text and data separately under Chat Completions reasoning format.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
+                  "DeepSeek's API uses non-standard reasoning controls, cached-token usage, and structured outputs.\nEnable this option to translate reasoning controls (`thinking`), normalize cached-token usage, and downgrade the unsupported `json_schema` response format to `json_object`.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
             },
             'vendor-qwen': {
               label: 'Alibaba Cloud Model Studio Compatibility',
