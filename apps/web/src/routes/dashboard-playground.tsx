@@ -88,18 +88,20 @@ const reachedPaint = (color: string) => ({ color: takenBack(color), [ICON]: { co
 
 // `null` is a fetch that failed, distinct from an empty list -- which would tell
 // the operator to create a key.
-interface LoaderData { keys: ApiKey[] | null; models: ControlPlaneModel[] | null; error: string | null }
+interface LoaderData { keys: ApiKey[] | null; models: ControlPlaneModel[] | null; targetModels: ControlPlaneModel[] | null; error: string | null }
 
 export async function clientLoader(): Promise<LoaderData> {
   requireDashboardSession();
-  const [keys, models] = await Promise.all([
+  const [keys, models, targetModels] = await Promise.all([
     callApi(() => api.api.keys.$get()),
     callApi(() => api.api.models.$get({ query: {} })),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
     keys: keys.data ?? null,
     models: models.data?.data ?? null,
-    error: keys.error?.message ?? models.error?.message ?? null,
+    targetModels: targetModels.data?.data ?? null,
+    error: keys.error?.message ?? models.error?.message ?? targetModels.error?.message ?? null,
   };
 }
 
@@ -177,10 +179,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
     [selectedKey, user.upstreamIds],
   );
-  const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
+  const catalog = useMemo(() => indexCatalog(loaderData.targetModels), [loaderData.targetModels]);
   const models = useMemo(
-    () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat'),
-    [cap, loaderData.models],
+    () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat', loaderData.targetModels ?? []),
+    [cap, loaderData.models, loaderData.targetModels],
   );
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
@@ -425,7 +427,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0 -m-1.5" contentClassName="flex min-h-full flex-col" noTabIndex viewportClassName="p-1.5">
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
-            {loaderData.keys === null || loaderData.models === null
+            {loaderData.keys === null || loaderData.models === null || loaderData.targetModels === null
               ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
               : messages.length === 0 && !sending
                 ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div>
