@@ -1,26 +1,26 @@
-import type { Fields } from './facts.ts';
+import type { Fields, ImageLifecycleOutcome } from './facts.ts';
 import { errorFromBody, extractEcho, imageTerminal, isRetryableImageError, projectImageStreamEvent, serverError, type ImageOutcome } from './result.ts';
-import type { RunDump } from '../../../../../dump/run-sink.ts';
+import { streamReferenceOf, type RunDump } from '../../../../../dump/run-sink.ts';
 import { isFailure } from '../../../../pipeline/facts.ts';
 import type { GatewayServices } from '../../../../pipeline/services.ts';
 import type { HostedToolLifecycleEvent, HostedToolTerminal } from '../types.ts';
-import { defineStage, move } from '@floway-dev/pipeline';
+import { defineStage, move, own, defer } from '@floway-dev/pipeline';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIImagesResponse } from '@floway-dev/protocols/openai-images';
 
 export const emitHostedImageGeneration = defineStage<
   Fields<'request.imageGeneration.canonical'>,
   Fields<'request.imageGeneration.canonical'>,
-  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status'>,
-  Fields<'response.imageGeneration.lifecycle' | 'response.openaiImages.streamedUsage' | 'response.http.status'>,
+  Fields<'response.openaiImages.canonical' | 'response.openaiImages.streamedUsage' | 'response.http.status' | 'response.usage.billable'>,
+  Fields<'response.imageGeneration.lifecycle' | 'response.imageGeneration.lifecycleOutcome' | 'response.openaiImages.streamedUsage' | 'response.http.status'>,
   GatewayServices
 >({
   name: 'emitHostedImageGeneration',
   through: {
     request: { needs: ['request.imageGeneration.canonical'], consumes: [], provides: [] },
     response: {
-      needs: ['response.openaiImages.canonical', 'response.openaiImages.streamedUsage', 'response.http.status'],
-      consumes: ['response.openaiImages.canonical'], provides: ['response.imageGeneration.lifecycle'],
+      needs: ['response.openaiImages.canonical', 'response.openaiImages.streamedUsage', 'response.http.status', 'response.usage.billable'],
+      consumes: ['response.openaiImages.canonical'], provides: ['response.imageGeneration.lifecycle', 'response.imageGeneration.lifecycleOutcome', 'response.openaiImages.streamedUsage'],
     },
   },
   execute: async (facts, next, use) => {
@@ -35,9 +35,20 @@ export const emitHostedImageGeneration = defineStage<
           : errorFromBody(JSON.stringify(answer.body), answer.status);
         outcome = { ok: false, error: { ...error, type: error.type ?? 'image_generation_error', retryable: isRetryableImageError(error.code, error.type) } };
       } else if (Symbol.asyncIterator in answer) {
+        const reader = answer[Symbol.asyncIterator]();
         try {
-          for await (const event of answer) {
-            const signal = projectImageStreamEvent(event);
+          for (;;) {
+            let step;
+            try { step = await reader.next(); } catch (error) {
+              use.gateway.dump?.failed(error);
+              outcome = { ok: false, error: serverError(error) };
+              break;
+            }
+            if (step.done) {
+              outcome = { ok: false, error: serverError(new Error('Image backend stream ended without a completed image.')) };
+              break;
+            }
+            const signal = projectImageStreamEvent(step.value);
             if (signal === null) continue;
             if (signal.kind === 'partial') {
               yield { type: 'response.image_generation_call.partial_image', partial_image_index: signal.index, partial_image_b64: signal.b64, ...signal.echo };
@@ -49,17 +60,44 @@ export const emitHostedImageGeneration = defineStage<
               return imageTerminal(request.prompt, request.action, { ok: false, error: signal.error });
             }
           }
-          outcome = { ok: false, error: serverError(new Error('Image backend stream ended without a completed image.')) };
-        } catch (error) {
-          use.gateway.dump?.failed(error);
-          outcome = { ok: false, error: serverError(error) };
+        } finally {
+          await reader.return?.();
         }
       } else {
         outcome = imageOutcome(answer);
       }
       return imageTerminal(request.prompt, request.action, outcome);
     })();
-    return { ...rest, 'response.imageGeneration.lifecycle': move(recordLifecycle(lifecycle, use.gateway.dump)) };
+    // Formatting continues after the stage hands up. Releasing undemanded output stays
+    // neutral, while an observed emission exception must reach both settlement and drain.
+    const emission = Promise.withResolvers<ImageLifecycleOutcome>();
+    let exception: Extract<ImageLifecycleOutcome, { kind: 'exception' }> | null = null;
+    const recorded = recordLifecycle(lifecycle, use.gateway.dump);
+    const observed = (async function* () {
+      try { return yield* recorded; } catch (error) {
+        exception = move({ kind: 'exception' as const, error });
+        use.gateway.dump?.failed(error);
+        await use.log.error('image lifecycle emission failed', { error });
+        throw error;
+      } finally {
+        emission.resolve(exception ?? move({ kind: 'released' as const }));
+      }
+    })();
+    const owned = own(Object.assign(observed, streamReferenceOf(recorded)), async () => {
+      try { await observed.return(undefined as never); } finally {
+        emission.resolve(exception ?? move({ kind: 'released' as const }));
+      }
+      if (exception !== null) throw exception.error;
+    });
+    const reading = back['response.openaiImages.streamedUsage'] ?? Promise.resolve({ billable: back['response.usage.billable'], failed: false });
+    return move({
+      ...rest,
+      'response.imageGeneration.lifecycle': owned,
+      'response.imageGeneration.lifecycleOutcome': defer(emission.promise),
+      'response.openaiImages.streamedUsage': defer(Promise.all([reading, emission.promise]).then(([outcome, completed]) => ({
+        ...outcome, failed: outcome.failed || completed.kind === 'exception',
+      }))),
+    });
   },
 });
 
