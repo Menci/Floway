@@ -1,12 +1,15 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openRunDump } from '../../src/dump/run-sink.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
+import { testLogStreamStore } from '../test-utils/log-stream.ts';
+import { runStreamId } from '@floway-dev/dump';
 import type { StoredDumpRecord } from '@floway-dev/dump/types';
 import { compose, defineStage, defer, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { getLogStreamStore, initLogStreamStore, LOG_STREAM_IDLE_MS } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
@@ -184,7 +187,120 @@ test('a run reads the stable timing state at completion alongside its stage hist
   assertEquals(lines(record).some(event => event.type === 'stage.entered'), true);
 });
 
+test('live bytes are visible before completion and equal the durable NDJSON artifact', async () => {
+  initLogStreamStore(testLogStreamStore());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'open', parentStageId: null, facts: move({ input: '中' }) });
+  const live = await getLogStreamStore().get(runStreamId(apiKey(3600).id, dump.id));
+  const reader = live!.read(0, new AbortController().signal)[Symbol.asyncIterator]();
+  const first = await reader.next();
+  expect(new TextDecoder().decode(first.value)).toContain('stage.entered');
+  expect(stubs.stored).toHaveLength(0);
+  dump.finalize(200, 0);
+  await flushBackground();
+  const rest: Uint8Array[] = [first.value!];
+  for (;;) { const item = await reader.next(); if (item.done) break; rest.push(item.value); }
+  expect(rest.map(bytes => new TextDecoder().decode(bytes)).join('')).toBe(ndjson(runRecordOf(stubs.stored[0])));
+  expect(stubs.stored[0]!.record.meta.id).toBe(dump.id);
+});
+
+test('retries a lost live acknowledgement at the same offset without duplicating bytes', async () => {
+  const underlying = testLogStreamStore();
+  const positions: number[] = [];
+  initLogStreamStore({
+    get: id => underlying.get(id),
+    open: async id => {
+      const stream = await underlying.open(id);
+      return {
+        ...stream, append: async (offset, bytes) => {
+          positions.push(offset);
+          await stream.append(offset, bytes);
+          if (positions.length === 1) throw new Error('lost acknowledgement');
+        },
+      };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'retry', parentStageId: null, facts: move({ input: 'x' }) });
+  dump.finalize(200, 0);
+  await flushBackground();
+  expect(positions).toEqual([0, 0]);
+  const stream = await underlying.get(runStreamId(apiKey(3600).id, dump.id));
+  const text: string[] = [];
+  for await (const bytes of stream!.read(0, new AbortController().signal)) text.push(new TextDecoder().decode(bytes));
+  expect(text.join('')).toBe(ndjson(runRecordOf(stubs.stored[0])));
+});
+
+test('a repeatedly failed live stream still stores the complete durable artifact', async () => {
+  const original = new Error('live transport unavailable');
+  const append = vi.fn(async () => { throw original; });
+  initLogStreamStore({
+    open: async () => ({ append, end: async () => {}, read: () => (async function* () {})() }),
+    get: async () => null,
+  });
+  const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  try {
+    const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    const { drain } = await run(pipeline, move({ 'in.text': 'hello' }), { dump: dump.sink });
+    dump.afterRun(drain);
+    dump.finalize(200, 0);
+    await flushBackground();
+    expect(append).toHaveBeenCalledTimes(3);
+    expect(lines(runRecordOf(stubs.stored[0])).filter(event => event.type === 'stage.entered')).toHaveLength(2);
+    expect(reported.mock.calls.some(call => call[1] === original)).toBe(true);
+  } finally { reported.mockRestore(); initLogStreamStore(testLogStreamStore()); }
+});
+
+test('durable backpressure blocks a producer behind an acquired native reader', async () => {
+  const underlying = testLogStreamStore();
+  const append = vi.fn();
+  initLogStreamStore({
+    get: id => underlying.get(id), open: async id => {
+      const stream = await underlying.open(id);
+      return { ...stream, append: async (offset, bytes) => { append(); await stream.append(offset, bytes); } };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const gate = Promise.withResolvers<void>();
+  const acquired = Promise.withResolvers<void>();
+  initDumpStore({
+    ...stubs.store, putRun: async (keyId, writing) => {
+      const reader = writing.events.getReader();
+      acquired.resolve();
+      await gate.promise;
+      try {
+        await stubs.store.putRun(keyId, {
+          ...writing, events: new ReadableStream({
+            async pull(controller) {
+              const { value, done } = await reader.read();
+              if (done) controller.close(); else controller.enqueue(value);
+            },
+          }),
+        });
+      } finally { reader.releaseLock(); }
+    },
+  });
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await acquired.promise;
+  let wrote = false;
+  const write = dump.sink({ type: 'stage.entered', stageId: 1, name: 'blocked', parentStageId: null, facts: move({}) }).then(() => { wrote = true; });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(wrote).toBe(false);
+  expect(append).not.toHaveBeenCalled();
+  gate.resolve();
+  await write;
+  expect(wrote).toBe(true);
+  expect(append).toHaveBeenCalledOnce();
+  dump.finalize(200, 0);
+  await flushBackground();
+  expect(stubs.stored).toHaveLength(1);
+});
+
 test('closing waits for deferred outcomes and persists their settlement event', async () => {
+  initLogStreamStore(testLogStreamStore());
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   const result = Promise.withResolvers<string>();
   const deferred = defer(result.promise);
@@ -201,4 +317,196 @@ test('closing waits for deferred outcomes and persists their settlement event', 
   await flushBackground();
   expect(lines(runRecordOf(stubs.stored[0])).some(event => event.type === 'deferred.settled')).toBe(true);
   expect(ndjson(runRecordOf(stubs.stored[0]))).toContain('late value');
+});
+
+test('heartbeats renew the acknowledged offset while an event append awaits acknowledgement', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const underlying = testLogStreamStore();
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const positions: { offset: number; length: number }[] = [];
+  initLogStreamStore({
+    get: id => underlying.get(id),
+    open: async id => {
+      const stream = await underlying.open(id);
+      return {
+        ...stream, append: async (offset, bytes) => {
+          positions.push({ offset, length: bytes.byteLength });
+          if (positions.length === 1) { entered.resolve(); await release.promise; }
+          await stream.append(offset, bytes);
+        },
+      };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  try {
+    const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    const event = dump.sink({ type: 'stage.entered', stageId: 1, name: 'slow append', parentStageId: null, facts: move({}) });
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS / 2);
+    expect(positions).toEqual([{ offset: 0, length: positions[0]!.length }, { offset: 0, length: 0 }]);
+    release.resolve();
+    await event;
+    await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS / 2);
+    dump.finalize(200, 0);
+    await flushBackground();
+    expect(positions).toEqual([
+      { offset: 0, length: positions[0]!.length }, { offset: 0, length: 0 },
+      { offset: positions[0]!.length, length: 0 },
+    ]);
+    expect(stubs.stored).toHaveLength(1);
+  } finally { release.resolve(); vi.useRealTimers(); initLogStreamStore(testLogStreamStore()); }
+});
+
+test('an encoding failure aborts the durable reader instead of leaving it waiting for EOF', async () => {
+  initLogStreamStore(testLogStreamStore());
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const rejected = Promise.withResolvers<unknown>();
+  initDumpStore({
+    ...stubs.store, putRun: async (_keyId, writing) => {
+      try { await new Response(writing.events).arrayBuffer(); } catch (error) { rejected.resolve(error); throw error; }
+      await writing.metadata;
+    },
+  });
+  const work: Promise<unknown>[] = [];
+  const dump = openRunDump(apiKey(3600), turn, pending => { work.push(pending); }, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  const error = await dump.sink({ type: 'stage.entered', stageId: 1, name: 'invalid', parentStageId: null, facts: move({ upload: new Blob(['data']) }) }).catch(error => error as Error);
+  expect(error).toBeInstanceOf(TypeError);
+  expect((error as Error).message).toContain('Blob');
+  dump.finalize(500, 0);
+  expect(await rejected.promise).toBe(error);
+  const outcomes = await Promise.allSettled(work);
+  expect(outcomes).toHaveLength(2);
+  expect(outcomes.every(outcome => outcome.status === 'rejected' && outcome.reason === error)).toBe(true);
+  expect(stubs.stored).toEqual([]);
+});
+
+test('an early durable failure stops heartbeats even when the live stream opens later', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const original = new Error('durable store unavailable');
+  const opening = Promise.withResolvers<void>();
+  const underlying = testLogStreamStore();
+  initLogStreamStore({ get: id => underlying.get(id), open: async id => { await opening.promise; return await underlying.open(id); } });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  initDumpStore({ ...stubs.store, putRun: async () => { throw original; } });
+  const work: Promise<unknown>[] = [];
+  try {
+    const dump = openRunDump(apiKey(3600), turn, pending => { work.push(pending); }, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    expect(await Promise.allSettled(work)).toEqual([{ status: 'rejected', reason: original }]);
+    opening.resolve();
+    await getLogStreamStore().open('test-open-barrier');
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(dump.sink({ type: 'stage.entered', stageId: 1, name: 'failed storage', parentStageId: null, facts: move({}) })).rejects.toBe(original);
+  } finally { opening.resolve(); vi.clearAllTimers(); vi.useRealTimers(); initLogStreamStore(testLogStreamStore()); }
+});
+
+test('live EOF waits until the durable artifact has been published', async () => {
+  const underlying = testLogStreamStore();
+  const end = vi.fn();
+  initLogStreamStore({
+    get: id => underlying.get(id), open: async id => {
+      const stream = await underlying.open(id);
+      return { ...stream, end: async () => { end(); await stream.end(); } };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const consumed = Promise.withResolvers<void>();
+  const publish = Promise.withResolvers<void>();
+  initDumpStore({
+    ...stubs.store, putRun: async (keyId, writing) => {
+      const bytes = new Uint8Array(await new Response(writing.events).arrayBuffer());
+      await writing.metadata;
+      consumed.resolve();
+      await publish.promise;
+      await stubs.store.putRun(keyId, {
+        ...writing, events: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }),
+      });
+    },
+  });
+  const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'publication', parentStageId: null, facts: move({}) });
+  dump.finalize(200, 0);
+  await consumed.promise;
+  expect(stubs.stored).toHaveLength(0);
+  expect(end).not.toHaveBeenCalled();
+  publish.resolve();
+  await flushBackground();
+  expect(stubs.stored).toHaveLength(1);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+test('a durable publication failure never ends the live stream and preserves its original error', async () => {
+  const underlying = testLogStreamStore();
+  const end = vi.fn();
+  initLogStreamStore({
+    get: id => underlying.get(id), open: async id => {
+      const stream = await underlying.open(id);
+      return { ...stream, end: async () => { end(); await stream.end(); } };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const consumed = Promise.withResolvers<void>();
+  const publish = Promise.withResolvers<void>();
+  const original = new Error('durable publication failed');
+  initDumpStore({
+    ...stubs.store, putRun: async (_keyId, writing) => {
+      await new Response(writing.events).arrayBuffer();
+      consumed.resolve();
+      await publish.promise;
+      await writing.metadata;
+    },
+  });
+  const work: Promise<unknown>[] = [];
+  const dump = openRunDump(apiKey(3600), turn, pending => { work.push(pending); }, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+  await dump.sink({ type: 'stage.entered', stageId: 1, name: 'publication failure', parentStageId: null, facts: move({}) });
+  dump.finalize(200, 0);
+  await consumed.promise;
+  publish.reject(original);
+  const outcomes = await Promise.allSettled(work);
+  expect(outcomes).toHaveLength(2);
+  expect(outcomes.every(outcome => outcome.status === 'rejected' && outcome.reason === original)).toBe(true);
+  expect(stubs.stored).toHaveLength(0);
+  expect(stubs.published).toHaveLength(0);
+  expect(end).not.toHaveBeenCalled();
+});
+
+test('heartbeats remain active through a long durable reader backpressure gate', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const underlying = testLogStreamStore();
+  const positions: { offset: number; length: number }[] = [];
+  initLogStreamStore({
+    get: id => underlying.get(id), open: async id => {
+      const stream = await underlying.open(id);
+      return { ...stream, append: async (offset, bytes) => { positions.push({ offset, length: bytes.byteLength }); await stream.append(offset, bytes); } };
+    },
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const acquired = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  initDumpStore({
+    ...stubs.store, putRun: async (_keyId, writing) => {
+      const reader = writing.events.getReader();
+      acquired.resolve();
+      await release.promise;
+      try { while (!(await reader.read()).done) {} } finally { reader.releaseLock(); }
+      await writing.metadata;
+    },
+  });
+  try {
+    const dump = openRunDump(apiKey(3600), turn, trackBackground, false, { upstreamCallStartedAt: null, firstOutputTokenAt: null })!;
+    await acquired.promise;
+    let wrote = false;
+    const writing = dump.sink({ type: 'stage.entered', stageId: 1, name: 'long backpressure', parentStageId: null, facts: move({}) }).then(() => { wrote = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(wrote).toBe(false);
+    await vi.advanceTimersByTimeAsync(LOG_STREAM_IDLE_MS * 2);
+    expect(wrote).toBe(false);
+    expect(positions).toEqual(Array.from({ length: 4 }, () => ({ offset: 0, length: 0 })));
+    release.resolve();
+    await writing;
+    expect(positions[4]!.length).toBeGreaterThan(0);
+    dump.finalize(200, 0);
+    await flushBackground();
+    expect(await underlying.get(runStreamId(apiKey(3600).id, dump.id))).not.toBeNull();
+  } finally { release.resolve(); vi.useRealTimers(); initLogStreamStore(testLogStreamStore()); }
 });

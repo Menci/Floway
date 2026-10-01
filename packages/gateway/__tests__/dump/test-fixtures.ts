@@ -38,7 +38,7 @@ export const eventsOf = (record: StoredDumpRecord): readonly Record<string, unkn
     .map(line => JSON.parse(line) as Record<string, unknown>);
 
 type DumpStubFailMethod =
-  | 'put'
+  | 'putRun'
   | 'list'
   | 'get'
   | 'publish'
@@ -66,9 +66,11 @@ export const installDumpStubs = (
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
-    async put(keyId, record) {
-      if (throws.put) throw throws.put;
-      const storedRecord: StoredDumpRecord = record;
+    async putRun(keyId, writing) {
+      const events = new Uint8Array(await new Response(writing.events).arrayBuffer());
+      const meta = await writing.metadata;
+      if (throws.putRun) throw throws.putRun;
+      const storedRecord: StoredDumpRecord = { meta, events };
       stored.push({ keyId, record: storedRecord });
       const list = records.get(keyId) ?? [];
       list.unshift(storedRecord);

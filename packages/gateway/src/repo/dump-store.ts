@@ -7,9 +7,9 @@ import {
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
-import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
+import { gunzipBytes, gzipStream } from '../shared/gzip.ts';
 import type {
-  DumpListOptions, DumpStore,
+  DumpListOptions, DumpStore, DumpRunWrite,
   DumpMetadata,
   DumpRecordId,
   DumpUpstreamRef,
@@ -75,23 +75,43 @@ const EMPTY_HEADERS_JSON = '[]';
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
-  async put(keyId: string, record: StoredDumpRecord): Promise<void> {
-    const { meta, events } = record;
-    const fileKey = bodyPath(keyId, hourBucket(meta.completedAt), meta.id);
+  async putRun(keyId: string, run: DumpRunWrite): Promise<void> {
+    const fileKey = bodyPath(keyId, hourBucket(run.startedAt), run.id);
     await this.db.prepare(
       `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
        VALUES (?, 'dump-response', ?, 'staged', ?)`,
-    ).bind(fileKey, JSON.stringify([keyId, meta.id]), Date.now() + SPILLED_FILE_STAGE_GRACE_MS).run();
-    await this.files.put(fileKey, await gzipBytes(events));
-    await this.db.prepare(
-      `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
-    ).bind(
-      keyId, meta.id, meta.completedAt, meta.upstream?.id ?? null,
-      encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`), EMPTY_HEADERS_JSON,
-      encodeDumpBodyDescriptor({ key: fileKey, type: 'run' }, `dump record ${meta.id} run descriptor`),
-    ).run();
+    ).bind(fileKey, JSON.stringify([keyId, run.id]), Date.now() + SPILLED_FILE_STAGE_GRACE_MS).run();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let finished = false;
+    let renewal: Promise<void> = Promise.resolve();
+    const stopRenewing = () => { finished = true; clearTimeout(timer); };
+    const scheduleRenewal = () => {
+      timer = setTimeout(() => {
+        renewal = this.db.prepare(
+          "UPDATE spilled_files SET collect_after = ? WHERE file_key = ? AND state = 'staged'",
+        ).bind(Date.now() + SPILLED_FILE_STAGE_GRACE_MS, fileKey).run().then(() => {
+          if (!finished) scheduleRenewal();
+        });
+        // Awaited before publication even if the lease write failed while upstream was quiet.
+        void renewal.catch(() => {});
+      }, SPILLED_FILE_STAGE_GRACE_MS / 2);
+    };
+    scheduleRenewal();
+    try {
+      await this.files.put(fileKey, gzipStream(run.events));
+      const meta = await run.metadata;
+      stopRenewing();
+      await renewal;
+      await this.db.prepare(
+        `INSERT INTO dump_records
+         (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor, response_upstream_body_descriptor)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)`,
+      ).bind(
+        keyId, meta.id, meta.completedAt, meta.upstream?.id ?? null,
+        encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`), EMPTY_HEADERS_JSON,
+        encodeDumpBodyDescriptor({ key: fileKey, type: 'run' }, `dump record ${meta.id} run descriptor`),
+      ).run();
+    } finally { stopRenewing(); }
   }
 
   async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
