@@ -4136,6 +4136,29 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
   });
 });
 
+test('responses target with an unavailable OpenAI passthrough model resolves nothing until a search runs', async () => {
+  makeStubDeps();
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftWebIq: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
+  } satisfies WebSearchConfig);
+  mockResolveAlpha.mockClear();
+  mockResolveAlpha.mockRejectedValue(new Error('Selected OpenAI search model gpt-missing is unavailable'));
+  const inv = makeInvocation({
+    targetApi: 'openaiResponses',
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+  });
+
+  // A rejected dispatcher promise nobody awaited is an unhandled rejection,
+  // which crashes the Node process.
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), scriptedRun([messageTurn('done', 0)]).run);
+
+  assertEquals(mockResolveAlpha.mock.calls.length, 0);
+});
+
 test('local and cascaded Floway unsupported commands produce the same agent-visible error', async () => {
   makeStubDeps();
   const commands = { image_query: [{ q: 'Floway logo' }] };

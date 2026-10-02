@@ -744,7 +744,11 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
   if (webSearchConfig.passthroughOpenAiSearch.enabled) {
-    const dispatcher = resolveAlphaSearchDispatcher({
+    // Resolved on first use: an eagerly created promise that rejects (e.g. the
+    // selected search model is unavailable) before anything awaits it is an
+    // unhandled rejection, which kills the Node process.
+    let dispatcher: ReturnType<typeof resolveAlphaSearchDispatcher> | undefined;
+    const getDispatcher = () => dispatcher ??= resolveAlphaSearchDispatcher({
       config: webSearchConfig.passthroughOpenAiSearch,
       upstreamIds: gatewayCtx.upstreamIds,
       scheduler: gatewayCtx.backgroundScheduler,
@@ -752,7 +756,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     });
     const sessionId = crypto.randomUUID();
     state.executeAlpha = async (commands, action) => await executeAlphaSearch({
-      dispatcher: await dispatcher,
+      dispatcher: await getDispatcher(),
       sessionId,
       commands,
       settings,
