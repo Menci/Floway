@@ -1221,6 +1221,8 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1233,7 +1235,7 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through without touching state', async () => {
@@ -1573,6 +1575,8 @@ describe('callCodexOpenAIResponsesCompact', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached' } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1585,7 +1589,7 @@ describe('callCodexOpenAIResponsesCompact', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through verbatim without touching state', async () => {

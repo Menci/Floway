@@ -9,6 +9,30 @@ export const codexQuotaActiveLimitKey = (snapshot: CodexQuotaSnapshot): string =
   return key && !isUnsafeObjectKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
 };
 
+// Each window has independent usage and optional reset metadata.
+// https://github.com/openai/codex/blob/602d2add6e6df7e2c301c0507434b02a7463337d/codex-rs/codex-api/src/rate_limits.rs
+// This is the latest KNOWN timed quota restriction, not a recovery guarantee:
+// an exhausted window without a reset remains in the snapshot but cannot date it.
+const codexQuotaRestrictionUntil = (snapshot: CodexQuotaSnapshot): string | undefined => {
+  const horizons = [
+    [snapshot.primary_used_percent, snapshot.primary_reset_after_at],
+    [snapshot.secondary_used_percent, snapshot.secondary_reset_after_at],
+  ] as const;
+  const resets = horizons.flatMap(([used, reset]) => {
+    if (used === undefined || !Number.isFinite(used) || used < 100 || reset === undefined) return [];
+    const instant = Date.parse(reset);
+    return Number.isFinite(instant) && instant > 0 ? [instant] : [];
+  });
+  return resets.length > 0 ? new Date(Math.max(...resets)).toISOString() : undefined;
+};
+
+const projectCodexQuota = (snapshot: CodexQuotaSnapshot): CodexQuotaSnapshot => {
+  if (snapshot.ratelimited_until === undefined) return snapshot;
+  const { ratelimited_until: _legacyUntil, ...reading } = snapshot;
+  const until = codexQuotaRestrictionUntil(reading);
+  return until === undefined ? reading : { ...reading, ratelimited_until: until };
+};
+
 interface ParseCodexQuotaOptions {
   now: Date;
   isRateLimited: boolean;
@@ -85,16 +109,9 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   setBool('credits_has_credits', 'x-codex-credits-has-credits');
   setNumber('credits_balance', 'x-codex-credits-balance');
 
-  // The furthest window is when the block lifts, read through the same
-  // preference so a response carrying only the new header still dates it.
   if (options.isRateLimited) {
-    const horizons = [snapshot.primary_reset_after_at, snapshot.secondary_reset_after_at]
-      .filter((instant): instant is string => instant !== undefined)
-      .map(instant => Date.parse(instant))
-      .filter(Number.isFinite);
-    if (horizons.length > 0) {
-      snapshot.ratelimited_until = new Date(Math.max(...horizons)).toISOString();
-    }
+    const until = codexQuotaRestrictionUntil(snapshot);
+    if (until !== undefined) snapshot.ratelimited_until = until;
   }
 
   return snapshot;
@@ -122,7 +139,7 @@ export const getCodexQuota = async (
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   const snapshots = account?.quotaSnapshot;
   if (!snapshots || Object.keys(snapshots).length === 0) return null;
-  return Object.fromEntries(Object.entries(snapshots).map(([key, entry]) => [key, entry.data]));
+  return Object.fromEntries(Object.entries(snapshots).map(([key, entry]) => [key, projectCodexQuota(entry.data)]));
 };
 
 export const putCodexQuota = async (
