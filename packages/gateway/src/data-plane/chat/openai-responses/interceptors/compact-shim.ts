@@ -3,7 +3,8 @@
 //
 // Engagement is the OR of two conditions:
 //   1. The per-upstream `openai-responses-compact-shim` flag is on. This is the
-//      operator-controlled opt-in for OpenAI-Responses-target upstreams that
+//      default for every provider and can be disabled by the operator for
+//      OpenAI-Responses-target upstreams that
 //      already answer a compact request themselves — natively through
 //      `/responses/compact` (codex / azure / custom), or by replaying
 //      `RemoteCompactionV2` over `/responses` (copilot) — but where we still
