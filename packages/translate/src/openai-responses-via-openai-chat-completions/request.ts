@@ -3,7 +3,6 @@ import { klona } from 'klona/json';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
-import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
@@ -199,15 +198,6 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
   for (const item of payload.input) {
     if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
     rejectProgramCaller(item);
-    if (item.type === 'agent_message') {
-      flushAssistant();
-      messages.push({
-        role: 'user',
-        content: openaiResponsesContentToOpenAIChatCompletionsContent(agentMessageContent(item)),
-      });
-      continue;
-    }
-
     if (item.type === 'reasoning') {
       assistant = ensureAssistant(assistant);
       addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection(assistant.reasoning, item);

@@ -657,6 +657,10 @@ const en = {
               label: 'OpenAI Responses Collaboration Shim',
               description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every provider; disable it for an upstream or model that should use its native collaboration contract.',
             },
+            'openai-responses-agent-message-shim': {
+              label: 'OpenAI Responses Agent Message Shim',
+              description: 'Codex sends sub-agent tasks and inter-agent messages as `agent_message` input items, which some OpenAI Responses-compatible upstreams drop or reject.\nEnable this option to rewrite them into ordinary user messages that are explicitly framed as coming from another agent before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:

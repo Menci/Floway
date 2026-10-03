@@ -2,7 +2,6 @@ import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
-import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
@@ -241,13 +240,6 @@ const translateOpenAIResponsesInput = async (
       default:
         throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
       }
-      break;
-    case 'agent_message':
-      messages.push(await translateUserMessage({
-        type: 'message',
-        role: 'user',
-        content: agentMessageContent(item),
-      }, loadRemoteImage));
       break;
     case 'function_call': {
       appendAssistantBlock(messages, {

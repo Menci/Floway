@@ -23,6 +23,7 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-compact-shim': true,
   'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
+  'openai-responses-agent-message-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
