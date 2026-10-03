@@ -8,12 +8,8 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'anthropic-messages-web-search-shim': true,
   'openai-responses-web-search-shim': true,
   'openai-responses-image-generation-shim': true,
-  // Custom targets are OpenAI-compatible and typically expose a native
-  // /responses/compact endpoint (or don't need compaction at all), so the
-  // shim stays off by default. Operator can turn it on for a specific
-  // upstream that lacks native compact.
-  'openai-responses-compact-shim': false,
-  'openai-responses-compact-decrypt': true,
+  'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,

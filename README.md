@@ -94,6 +94,15 @@ Audio transcription is a buffered multipart passthrough for Custom, Azure, and
 Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
 responses retain their upstream wire shape.
 
+Context compaction defaults to the gateway shim for every provider:
+`openai-responses-compact-shim` is enabled and
+`openai-responses-compact-decrypt` is disabled. The shim uses a normal generation
+request to summarize the conversation into gateway-readable compaction state.
+Upstream and manual-model flag overrides remain authoritative. To use native
+compaction on a Responses target, disable the shim; optionally enable decryption
+to recover native opaque compaction state through an additional billed generation
+request per compaction item. Non-Responses targets always require the shim.
+
 ### Upstreams
 
 Provider-owned auto models expose a read-only opaque blob compatibility scope.
