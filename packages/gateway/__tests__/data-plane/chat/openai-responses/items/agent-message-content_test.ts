@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { agentMessageContent } from '../../../src/shared/openai-responses-via/agent-message.ts';
+import { agentMessageContent } from '../../../../../src/data-plane/chat/openai-responses/items/agent-message-content.ts';
 import type { OpenAIResponsesInputAgentMessageItem } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 

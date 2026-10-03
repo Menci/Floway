@@ -627,6 +627,10 @@ const zhHansCN = {
               label: 'OpenAI Responses 协作兼容',
               description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
             },
+            'openai-responses-agent-message-shim': {
+              label: 'OpenAI Responses 智能体消息兼容层',
+              description: 'Codex 会以 `agent_message` 输入项发送子智能体任务和智能体之间的消息，部分兼容 OpenAI Responses 的上游会丢弃或拒绝该类型。\n开启此开关，以在转发到上游前，将其改写为明确标注来自其他智能体的普通用户消息。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
               description:

@@ -1,5 +1,5 @@
-import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 interface AgentContentFields {
   type: string;
