@@ -90,9 +90,13 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const clipboard = useCopyToClipboard();
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
+  // `null` when the catalog is not known yet — no key picked, or the listing
+  // failed — as against an empty array, which means the gateway serves nothing.
+  // The card says different things about those two, and `[]` for both had it
+  // telling a first-time visitor their upstreams were wrong.
   const agentSetupModels = selectedKey && data.models
     ? reachableModels(data.models, effectiveUpstreamCap(selectedKey.upstream_ids, user.upstreamIds))
-    : [];
+    : null;
 
   // Written where the picking happens rather than mirrored off rendered state:
   // the loader answers with no id whenever the key list did not arrive, so an

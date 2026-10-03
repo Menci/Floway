@@ -23,6 +23,7 @@ import {
   SETUP_POWERSHELL_COMMON,
 } from '../src/script-assets.generated.ts';
 import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
+import type { PublicModel } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
@@ -104,6 +105,7 @@ const harness = (options: {
   keys?: readonly string[];
   secrets?: Record<string, string>;
   users?: readonly number[];
+  models?: readonly PublicModel[];
   publicOverrides?: Partial<AgentSetupPublicDeps>;
   controlOverrides?: Partial<AgentSetupControlDeps<Record<never, never>>>;
 } = {}): Harness => {
@@ -113,12 +115,30 @@ const harness = (options: {
   const secrets = options.secrets ?? { key_primary: RAW_KEY };
   const users = new Set(options.users ?? [USER_ID]);
 
+  const CATALOG: readonly PublicModel[] = [
+    {
+      id: 'claude-opus-4-6', object: 'model', type: 'model', display_name: 'Claude Opus 4.6',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 1_000_000, max_output_tokens: 64_000 },
+    },
+    // Discrete efforts, because `reasoningEffortFormat` is the only field the
+    // configured API path reaches — without a reasoning model the wiring
+    // between the two cannot be observed at all.
+    {
+      id: 'effort-model', object: 'model', type: 'model', display_name: 'Effort',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 200_000 },
+      chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'low' } } },
+    },
+  ];
+
   const publicDeps: AgentSetupPublicDeps = {
     repository: repo,
     userExists: userId => Promise.resolve(users.has(userId)),
     resolveApiKey: (_userId, apiKeyId) => Promise.resolve(
       secrets[apiKeyId] === undefined ? null : { name: apiKeyId === 'key_primary' ? 'Primary key' : apiKeyId, secret: secrets[apiKeyId] },
     ),
+    listModels: () => Promise.resolve(options.models ?? CATALOG),
     ...options.publicOverrides,
   };
   const controlDeps = {
@@ -143,12 +163,16 @@ interface LeaseResponse {
     apiKeyId: string;
     claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean; disableAutoMemory: boolean; disableAgentView: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
+    zed: { providerName: string };
+    vscode: { providerName: string; apiType: string };
   };
   configurationRevision: number;
   expiresAt: number;
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    zed: { sh: string; ps1: string };
+    vscode: { sh: string; ps1: string };
   };
 }
 
@@ -158,6 +182,8 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
+  zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -184,7 +210,7 @@ const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseRespon
 
 // --- create: first use, restore, multi-page independence ---
 
-test('POST first use selects the first key and enables both agents at revision 1', async () => {
+test('POST first use selects the first key and configures every agent at revision 1', async () => {
   const h = harness();
   const body = await create(h);
 
@@ -200,6 +226,13 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  assertEquals(body.scripts.zed.sh, `/api/setup/${body.token}/zed.sh`);
+  assertEquals(body.scripts.zed.ps1, `/api/setup/${body.token}/zed.ps1`);
+  assertEquals(body.configuration.zed.providerName, 'Floway');
+  assertEquals(body.scripts.vscode.sh, `/api/setup/${body.token}/vscode.sh`);
+  assertEquals(body.scripts.vscode.ps1, `/api/setup/${body.token}/vscode.ps1`);
+  assertEquals(body.configuration.vscode.providerName, 'Floway');
+  assertEquals(body.configuration.vscode.apiType, 'messages');
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -446,6 +479,7 @@ test('near-miss public URLs are consumed before host middleware can log their to
       repository: { findByToken: () => Promise.resolve(null) },
       userExists: () => Promise.resolve(false),
       resolveApiKey: () => Promise.resolve(null),
+      listModels: () => Promise.resolve([]),
     }))
     .use('*', async (c, next) => {
       downstream(c.req.path);
@@ -481,14 +515,125 @@ test('GET re-reads the current configuration each request', async () => {
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
 });
 
+test('the served VS Code script carries the projected catalog and its API path', async () => {
+  const h = harness();
+  const lease = await create(h);
+  // Both languages, because the lease projects both and a typo in either path
+  // makes the feature's own one-liner 404 with nothing else noticing.
+  const ps1 = await h.request(lease.scripts.vscode.ps1, { method: 'GET' });
+  expect(ps1.status).toBe(200);
+  expect(await ps1.text()).toContain("$SetupVSCodeProviderName = 'Floway'");
+  const body = await (await h.request(lease.scripts.vscode.sh, { method: 'GET' })).text();
+  expect(body).toContain("SETUP_VSCODE_PROVIDER_NAME='Floway'");
+  expect(body).toContain("SETUP_VSCODE_API_TYPE='messages'");
+  const embedded = body.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!;
+  expect(embedded).toContain('"id":"claude-opus-4-6"');
+  // The configured path reaches the projection, not just the shell variable:
+  // `reasoningEffortFormat` is the only field it lands in. Asserted against a
+  // path the operator chose rather than the default, or a projection that
+  // hardcoded the default would satisfy it.
+  expect(embedded).toContain('"reasoningEffortFormat":"messages"');
+  const chosen = { ...lease.configuration, vscode: { ...lease.configuration.vscode, apiType: 'responses' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: chosen, expectedRevision: lease.configurationRevision }));
+  const rechosen = await (await h.request(lease.scripts.vscode.sh, { method: 'GET' })).text();
+  expect(rechosen).toContain("SETUP_VSCODE_API_TYPE='responses'");
+  expect(rechosen.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!).toContain('"reasoningEffortFormat":"responses"');
+  // The endpoint and the credential are the merge's to attach, so the embedded
+  // catalog carries neither — the merge program in the body still names them.
+  expect(embedded).not.toContain('"url"');
+  expect(embedded).not.toContain('requestHeaders');
+});
+
+// Neither editor can discover models, so the script carries the projection and
+// listing happens on the gateway. A listing failure is the operator's to see:
+// an opaque 404 would read as a dead setup link and a 500 as a gateway fault,
+// so the script says what happened and exits non-zero before touching anything.
+test('a model listing failure serves a script that reports it', async () => {
+  const h = harness({ publicOverrides: { listModels: () => Promise.reject(new Error('upstream listing exploded')) } });
+  const lease = await create(h);
+  for (const editor of ['zed', 'vscode'] as const) {
+    const sh = await h.request(lease.scripts[editor].sh, { method: 'GET' });
+    expect(sh.status).toBe(200);
+    const shBody = await sh.text();
+    expect(shBody).toContain('could not list models');
+    expect(shBody).toContain('exit 1');
+    // The upstream detail stays in the operator's log; anyone holding the setup
+    // URL can read this body.
+    expect(shBody).not.toContain('exploded');
+
+    // The PowerShell arm cannot use `exit`: it runs as `irm … | iex` in the
+    // operator's own console, which `exit` would close, taking the message with
+    // it. Nothing else exercises that arm.
+    const ps1 = await h.request(lease.scripts[editor].ps1, { method: 'GET' });
+    expect(ps1.status).toBe(200);
+    const ps1Body = await ps1.text();
+    expect(ps1Body).toContain('could not list models');
+    expect(ps1Body).toContain('$global:LASTEXITCODE = 1');
+    expect(ps1Body).not.toMatch(/^exit\b/m);
+    expect(ps1Body).not.toContain('exploded');
+  }
+});
+
+// The listing catch is the only place in this module that puts an upstream
+// message in the log, and an upstream is not ours: whatever it says may quote
+// the request it was given. Both secrets in hand are redacted by hand there,
+// and nothing observed either redaction — the served body carries neither, so
+// asserting on the body alone leaves the log free to carry both.
+test('a model listing failure keeps both secrets out of the log', async () => {
+  // The message is built when the listing runs, by which point the lease it
+  // quotes has been created.
+  let servedToken = '';
+  const h = harness({
+    publicOverrides: {
+      listModels: () => Promise.reject(new Error(`upstream refused ${RAW_KEY} for lease ${servedToken}`)),
+    },
+  });
+  const lease = await create(h);
+  servedToken = lease.token;
+  const logged: string[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  try {
+    const response = await h.request(lease.scripts.zed.sh, { method: 'GET' });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('could not list models');
+  } finally {
+    errorSpy.mockRestore();
+  }
+  const joined = logged.join('\n');
+  expect(joined).toContain('[api-key]');
+  expect(joined).toContain('[setup-token]');
+  expect(joined).not.toContain(RAW_KEY);
+  expect(joined).not.toContain(lease.token);
+});
+
+test('the served Zed script carries the projected catalog', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const body = await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text();
+  expect(body).toContain('SETUP_ZED_MODELS=');
+  expect(body).toContain('"name":"claude-opus-4-6"');
+  expect(body).toContain('"max_tokens":1000000');
+});
+
+test('a renamed Zed provider reaches the served script', async () => {
+  const h = harness();
+  const lease = await create(h);
+  expect(await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text())
+    .toContain("SETUP_ZED_PROVIDER_NAME='Floway'");
+  const edited = { ...lease.configuration, zed: { providerName: 'Floway staging' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+  const after = await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text();
+  expect(after).toContain("SETUP_ZED_PROVIDER_NAME='Floway staging'");
+});
+
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"disableAutoMemory":false,"disableAgentView":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
+  const config = FULL_CONFIG_JSON('key_primary');
 
   await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
   await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"disableAutoMemory":false,"disableAgentView":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_gone'), now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

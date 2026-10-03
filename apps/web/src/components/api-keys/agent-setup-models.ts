@@ -74,10 +74,11 @@ export const rankAgentSetupModels = (
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 
-// The docs name the `[1m]` suffix only for the pinned opus and sonnet
-// variables, but its whole wire effect is a `context-1m-2025-08-07` beta added
-// behind a test with no family condition, so every picker is offered the window
-// its model reports. https://code.claude.com/docs/en/model-config
+// Claude Code only. The suffix is a discovery-protocol representation the CLI
+// itself unwinds — it strips `[1m]` and pairs the request with the
+// `context-1m-2025-08-07` beta — so the gateway's own resolution never sees it
+// and an editor sending it back verbatim would address a model that does not
+// exist. https://code.claude.com/docs/en/model-config
 const claudeModelOverride = (model: ControlPlaneModel): string => {
   const contextWindow = model.limits.max_context_window_tokens
     ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
@@ -106,3 +107,9 @@ export const buildAgentModelOptions = (
 export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
     .map(option => ({ value: option.value, label: option.publicModelId }));
+
+// The projection itself belongs to the gateway: it embeds the result in the
+// setup script, so a preview built from a second implementation could show a
+// document a setup run would never write. The dashboard renders exactly what
+// the script carries.
+export { addressVSCodeModels, projectVSCodeModels, projectZedModels, type VSCodeApiType, type VSCodeModel, type ZedModel } from '@floway-dev/agent-setup/models';

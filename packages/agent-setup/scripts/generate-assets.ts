@@ -15,9 +15,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
 
-interface SourceSection {
+// A source embedded whole, under one constant.
+interface WholeFileSection {
   name: string;
   file: string;
+}
+
+// A slice of one, tiled with its siblings into a platform's common body.
+interface SourceSection extends WholeFileSection {
   start?: string;
   end?: string;
   append?: string;
@@ -25,7 +30,14 @@ interface SourceSection {
 
 interface PlatformSources {
   common: readonly SourceSection[];
-  agents: readonly SourceSection[];
+  agents: readonly WholeFileSection[];
+  // Embedded as a constant but joined into no platform body: a fragment only
+  // one agent's script needs, composed into that script by `script-assets.ts`.
+  // Putting it in `common` would compile a P/Invoke declaration into every
+  // operator's console for the three agents that never call it. Whole-file,
+  // because nothing tiles these — a cut point here would be accepted and
+  // ignored.
+  standalone?: readonly WholeFileSection[];
 }
 
 // Source files are grouped by responsibility, while these section boundaries
@@ -45,6 +57,8 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_BASH_CLAUDE', file: 'installers/bash/claude.sh' },
       { name: 'SETUP_BASH_CODEX', file: 'installers/bash/codex.sh' },
+      { name: 'SETUP_BASH_ZED', file: 'installers/bash/zed.sh' },
+      { name: 'SETUP_BASH_VSCODE', file: 'installers/bash/vscode.sh' },
     ],
   },
   powershell: {
@@ -67,14 +81,20 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Run a child process with captured output' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', start: '# --- run' },
     ],
+    standalone: [
+      { name: 'SETUP_POWERSHELL_ZED_CREDENTIAL', file: 'installers/powershell/zed-credential.ps1' },
+    ],
     agents: [
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
+      { name: 'SETUP_POWERSHELL_ZED', file: 'installers/powershell/zed.ps1' },
+      { name: 'SETUP_POWERSHELL_VSCODE', file: 'installers/powershell/vscode.ps1' },
     ],
   },
 } as const satisfies Record<string, PlatformSources>;
 
-const allSections = Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]);
+const allSections = Object.values(scriptSources).flatMap(({ common, agents, ...rest }) =>
+  [...common, ...('standalone' in rest ? rest.standalone : []), ...agents]);
 const sourceFiles = new Map<string, string>();
 for (const { name, file } of allSections) {
   const existing = sourceFiles.get(name);

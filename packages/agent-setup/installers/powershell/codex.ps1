@@ -61,20 +61,25 @@ function Backup-SetupCodexFiles {
   if (Test-Path -LiteralPath $script:CodexConfigPath) {
     $script:CodexConfigExisted = $true
     $script:CodexConfigBackup = "$($script:CodexConfigPath).floway-backup.$stamp.$PID"
-    Copy-Item -LiteralPath $script:CodexConfigPath -Destination $script:CodexConfigBackup
+    try {
+      Backup-SetupManagedFile $script:CodexConfigPath $script:CodexConfigBackup
+    } catch {
+      $script:CodexConfigBackup = $null
+      Stop-Setup "could not back up $($script:CodexConfigPath)"
+    }
   }
   if (Test-Path -LiteralPath $script:CodexTokenPath) {
     $script:CodexTokenExisted = $true
     $script:CodexTokenBackup = "$($script:CodexTokenPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:CodexTokenPath -Destination $script:CodexTokenBackup
-      Protect-SetupFile $script:CodexTokenBackup
+      Backup-SetupManagedFile $script:CodexTokenPath $script:CodexTokenBackup -Protect
     } catch {
-      if (Test-Path -LiteralPath $script:CodexTokenBackup) {
-        Remove-Item -LiteralPath $script:CodexTokenBackup -Force
-      }
       $script:CodexTokenBackup = $null
-      throw
+      # This arm restricts the copy's mode, and that failure reports itself
+      # before it raises — the copy-only arm above cannot produce the sentinel
+      # and so does not ask about it.
+      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
+      Stop-Setup "could not back up $($script:CodexTokenPath)"
     }
   }
 }
@@ -271,8 +276,11 @@ function Set-SetupAgent {
 
   Write-SetupAgentNotice 'Configuring' 'Codex'
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-  $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
-  $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
+  # Resolved even though `codex login` writes config.toml itself: the backup and
+  # the rollback rename are ours, and a rename onto the link would leave the
+  # operator's dotfile behind while the CLI kept editing the real file.
+  $script:CodexConfigPath = Resolve-SetupManagedPath (Join-Path $script:CodexHomeDir 'config.toml')
+  $script:CodexTokenPath = Resolve-SetupManagedPath (Join-Path $script:CodexHomeDir 'floway-token')
   if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
   }

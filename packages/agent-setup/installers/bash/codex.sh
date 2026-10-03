@@ -65,16 +65,22 @@ codex_backup_files() {
   if [ -e "$CODEX_CONFIG_PATH" ]; then
     CODEX_CONFIG_EXISTED=1
     CODEX_CONFIG_BACKUP="$CODEX_CONFIG_PATH.floway-backup.$_cbf_stamp"
-    if ! cp "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
-      out_error "could not back up $CODEX_CONFIG_PATH"
+    # `-p` because the backup is what a rollback hands back: created under the
+    # installer's `umask 077` it would return narrower than the operator's own
+    # file, so a run reporting that it changed nothing would still have changed
+    # its mode. The PowerShell half's Copy-Item preserves the mode already.
+    if ! _back_up_managed_file "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP" keep-mode; then
+      CODEX_CONFIG_BACKUP=""
       return 1
     fi
   fi
   if [ -e "$CODEX_TOKEN_PATH" ]; then
     CODEX_TOKEN_EXISTED=1
     CODEX_TOKEN_BACKUP="$CODEX_TOKEN_PATH.floway-backup.$_cbf_stamp"
-    if ! cp "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP"; then
-      out_error "could not back up $CODEX_TOKEN_PATH"
+    # No `-p`: the provider token is the credential, so its backup is
+    # owner-only, which the chmod below states outright.
+    if ! _back_up_managed_file "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP" own-mode; then
+      CODEX_TOKEN_BACKUP=""
       return 1
     fi
     if ! chmod 600 "$CODEX_TOKEN_BACKUP"; then
@@ -358,8 +364,11 @@ configure_agent() {
     return 1
   fi
   CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
+  # Resolved even though `codex login` writes config.toml itself: the backup and
+  # the rollback rename are ours, and a rename onto the link would leave the
+  # operator's dotfile behind while the CLI kept editing the real file.
+  CODEX_CONFIG_PATH=$(_resolve_managed_path "$CODEX_HOME_DIR/config.toml") || return 1
+  CODEX_TOKEN_PATH=$(_resolve_managed_path "$CODEX_HOME_DIR/floway-token") || return 1
   if ! mkdir -p "$CODEX_HOME_DIR"; then
     out_error "could not create $CODEX_HOME_DIR"
     return 1

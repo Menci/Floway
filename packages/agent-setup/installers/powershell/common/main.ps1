@@ -40,7 +40,7 @@ function Main {
   try {
     Set-SetupAgent
   } catch {
-    if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
+    if (-not [string]::Equals([string]$_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
     return 1
   }
   return 0
