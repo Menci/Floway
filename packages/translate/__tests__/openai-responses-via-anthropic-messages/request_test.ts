@@ -688,12 +688,12 @@ test('buildTargetRequest envelopes root combinators after namespace flattening a
         arguments: {
           type: 'object',
           properties: {},
-          oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+          oneOf: [{ $ref: '#/properties/arguments/$defs/view' }, { $ref: '#/properties/arguments/$defs/delete' }],
+          $defs: updateSchema.$defs,
         },
       },
       required: ['arguments'],
       additionalProperties: false,
-      $defs: updateSchema.$defs,
     },
     strict: false,
     cache_control: { type: 'ephemeral' },
@@ -763,6 +763,62 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
   const toolResult = userMessage.content[0];
   assert(toolResult.type === 'tool_result');
   assertEquals(toolResult.content, 'plain text body');
+});
+
+test('buildTargetRequest keeps parallel tool results contiguous across interleaved developer notices', async () => {
+  const notice = (index: number) => ({
+    type: 'message' as const,
+    role: 'developer' as const,
+    content: `<image_resize_notice>Image ${index} was resized.</image_resize_notice>`,
+  });
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'assistant', content: 'viewing images' },
+      { type: 'function_call', call_id: 'call_1', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_2', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_3', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_4', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'image 1' },
+      notice(1),
+      { type: 'function_call_output', call_id: 'call_2', output: 'image 2' },
+      notice(2),
+      { type: 'function_call_output', call_id: 'call_3', output: 'image 3' },
+      notice(3),
+      { type: 'function_call_output', call_id: 'call_4', output: 'image 4' },
+      notice(4),
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'assistant', 'user', 'system', 'system', 'system', 'system']);
+  const toolResults = result.target.messages[2];
+  assert(toolResults?.role === 'user' && Array.isArray(toolResults.content));
+  assertEquals(toolResults.content.map(block => block.type === 'tool_result' ? block.tool_use_id : block.type), [
+    'call_1', 'call_2', 'call_3', 'call_4',
+  ]);
+  assertEquals(result.target.messages.slice(3).map(message => {
+    assert(message.role === 'system' && Array.isArray(message.content));
+    const block = message.content[0];
+    return block?.type === 'text' ? block.text : null;
+  }), [1, 2, 3, 4].map(index => `<image_resize_notice>Image ${index} was resized.</image_resize_notice>`));
+});
+
+test('buildTargetRequest does not regroup tool results across ordinary messages', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'function_call_output', call_id: 'call_1', output: 'first' },
+      { type: 'message', role: 'user', content: 'new turn' },
+      { type: 'function_call_output', call_id: 'call_2', output: 'second' },
+    ],
+  });
+  assertEquals(result.target.messages.map(message => message.role), ['user', 'user', 'user']);
+  const first = result.target.messages[0];
+  const last = result.target.messages[2];
+  assert(first?.role === 'user' && Array.isArray(first.content));
+  assert(last?.role === 'user' && Array.isArray(last.content));
+  assertEquals(first.content[0]?.type === 'tool_result' ? first.content[0].tool_use_id : null, 'call_1');
+  assertEquals(last.content[0]?.type === 'tool_result' ? last.content[0].tool_use_id : null, 'call_2');
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest maps multimodal %s into tool_result image and text blocks', async type => {
