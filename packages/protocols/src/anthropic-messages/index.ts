@@ -1,24 +1,27 @@
 import type { AnthropicMessagesUsage, AnthropicMessagesUsageDelta } from './usage.ts';
 
 /**
- * Anthropic Messages requires `max_tokens`, but the OpenAI Chat Completions, OpenAI Responses, and
- * Gemini generateContent sources may omit their output-token cap. When we translate one of
- * those sources to an Anthropic Messages target, the data-plane prefers the model's
- * advertised `/models` output cap (`limits.max_output_tokens`); this
- * constant is the last-resort gateway policy default when both the source
- * payload and the model capability are silent.
+ * Anthropic Messages requires `max_tokens`, but translated source protocols
+ * and Claude Code-shaped clients may omit their output-token cap. Whenever
+ * Floway must synthesize one, the data-plane prefers the model's advertised
+ * `/models` output cap (`limits.max_output_tokens`); this constant is the
+ * last-resort gateway policy when both the payload and model capability are
+ * silent. The Playground uses the same value for its initial request budget.
  *
  * There is no single ecosystem standard catch-all value here: `new-api`
- * defaults Claude to `8192`, while `one-api` and LiteLLM use `4096`. We keep
- * `8192` to match the gateway's prior behavior. Native Anthropic Messages requests are
- * untouched: their `max_tokens` is whatever the client sent.
+ * defaults Claude to `8192`, while `one-api` and LiteLLM use `4096`. Those
+ * conservative values can stop modern Claude generations prematurely, so
+ * Floway uses `32768`; this is a gateway policy, not an upstream default.
+ * Explicit client values are preserved. Claude Code subscription requests
+ * that omit the required field are completed from this policy so they reach
+ * the upstream with a usable output budget.
  *
  * References:
  * - https://github.com/BerriAI/litellm/blob/e9e86ed956ba53d5192e10b75634fe0246e836a7/litellm/llms/anthropic/chat/transformation.py
  * - https://github.com/QuantumNous/new-api/blob/65b16547329625f619cf797ae1eb9b748525056c/setting/model_setting/claude.go
  * - https://github.com/songquanpeng/one-api/blob/8df4a2670b98266bd287c698243fff327d9748cf/relay/adaptor/anthropic/main.go
  */
-export const ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS = 8192;
+export const ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS = 32768;
 
 export type AnthropicMessagesThinkingDisplay = 'omitted' | 'summarized' | 'full';
 
