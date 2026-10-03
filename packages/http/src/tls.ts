@@ -47,13 +47,14 @@ export const addTrustedRootCAs = (pems: readonly string[]): void => {
 
 export interface UserspaceTlsOptions {
   /**
-   * TLS ClientHello server_name extension and (unless `verifyHost` is set)
-   * the hostname against which the cert chain is validated.
+   * TLS peer identity. DNS names are sent in the ClientHello `server_name`
+   * extension; IPv4 and IPv6 literals cause that extension to be omitted.
+   * Also used for certificate verification unless `verifyHost` is set.
    */
   host: string;
   /**
-   * Override the cert-validation hostname independently from `host` (the
-   * SNI). The cert's SAN/CN must prove this name. Defaults to `host`.
+   * Override the certificate reference identity independently from `host`.
+   * An IP literal must match an `iPAddress` SAN. Defaults to `host`.
    */
   verifyHost?: string;
   alpn?: string[];

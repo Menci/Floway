@@ -10,12 +10,21 @@ import { dialTrojan } from '../src/protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from '../src/protocols/vless.ts';
 import type { ProxyConfig } from '../src/proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from '../src/types.ts';
+import { userspaceTls } from '@floway-dev/http';
 
 const noopStream = (): DialResult => {
   const readable = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
   const writable = new WritableStream<Uint8Array>();
   return { readable, writable };
 };
+
+vi.mock('@floway-dev/http', async importOriginal => {
+  const actual = await importOriginal<typeof import('@floway-dev/http')>();
+  return {
+    ...actual,
+    userspaceTls: vi.fn(actual.userspaceTls),
+  };
+});
 
 vi.mock('../src/protocols/http-connect.ts', () => ({
   dialHttpConnect: vi.fn(async () => noopStream()),
@@ -173,6 +182,11 @@ describe('runProxiedRequest — post-dial teardown', () => {
 });
 
 describe('runDirectConnectRequest', () => {
+  beforeEach(() => {
+    vi.mocked(userspaceTls).mockReset();
+    vi.mocked(userspaceTls).mockImplementation(async () => noopStream());
+  });
+
   const makeSocketDial = (responseHead: string, connect: () => void = () => {}): {
     socketDial: SocketDial;
     written: () => string;
@@ -296,6 +310,50 @@ describe('runDirectConnectRequest', () => {
     controller.abort('client gone');
     await Promise.resolve();
     expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('passes an IPv4 literal through as both the TLS host and verification identity', async () => {
+    const cause = new Error('certificate rejected');
+    vi.mocked(userspaceTls).mockRejectedValueOnce(cause);
+    const direct = makeSocketDial('');
+
+    const failure = runDirectConnectRequest(
+      { host: '192.0.2.10', port: 443, tls: true },
+      { method: 'GET', path: '/v1/models', headers: [] },
+      { socketDial: direct.socketDial },
+    );
+
+    await expect(failure).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'inner-tls',
+      cause,
+    });
+    expect(userspaceTls).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        host: '192.0.2.10',
+        verifyHost: '192.0.2.10',
+      }),
+    );
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('preserves an IPv6 literal as the verification identity', async () => {
+    vi.mocked(userspaceTls).mockRejectedValueOnce(new Error('stop after options'));
+    const direct = makeSocketDial('');
+
+    await expect(runDirectConnectRequest(
+      { host: '2001:db8::1', port: 443, tls: true },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    )).rejects.toMatchObject({ stage: 'inner-tls' });
+    expect(userspaceTls).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        host: '2001:db8::1',
+        verifyHost: '2001:db8::1',
+      }),
+    );
   });
 
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {

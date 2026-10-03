@@ -137,14 +137,17 @@ describe('callCodexOpenAIResponses — gates', () => {
       expect(await result.response.text()).toMatch(/session_terminated/);
     }
   });
-  test('continues to upstream when a cached rate-limited quota snapshot is still open', async () => {
+  test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {
+    const until = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+    const unrelated = { fetchedAt: 1, data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'other', primary_used_percent: 100, ratelimited_until: until } };
     seedAccountState({
       accessToken: farFutureAccessToken,
       quotaSnapshot: {
         premium: {
           fetchedAt: new Date('2026-06-05T00:00:00.000Z').getTime(),
-          data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', ratelimited_until: '2026-06-05T01:00:00.000Z' },
+          data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 100, primary_reset_after_at: until, ratelimited_until: until },
         },
+        other: unrelated,
       },
     });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -154,6 +157,32 @@ describe('callCodexOpenAIResponses — gates', () => {
     });
     expect(result.ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await flushMicrotasks();
+    expect(readQuotaEntry()?.premium.data.primary_used_percent).toBe(42);
+    expect(readQuotaEntry()?.premium.data.ratelimited_until).toBeUndefined();
+    expect(readQuotaEntry()?.other).toEqual(unrelated);
+  });
+
+  test('preserves a real 429 response despite a future cached restriction', async () => {
+    const until = new Date(Date.now() + 3600_000).toISOString();
+    seedAccountState({
+      accessToken: farFutureAccessToken, quotaSnapshot: {
+        premium: { fetchedAt: Date.now(), data: { observed_at: new Date().toISOString(), primary_used_percent: 100, primary_reset_after_at: until, ratelimited_until: until } },
+      },
+    });
+    const body = { error: { type: 'usage_limit_reached', message: 'controlled upstream rejection' } };
+    const upstream = errorJson(429, body, { 'retry-after': '60', 'x-upstream-request-id': 'fixture-429', 'x-codex-active-limit': 'premium', 'x-codex-primary-used-percent': '100', 'x-codex-primary-reset-after-seconds': '60' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream);
+    const result = await callCodexOpenAIResponses({
+      upstreamId, account: activeAccount, model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected upstream rejection');
+    expect(result.response.status).toBe(429);
+    expect(result.response.headers.get('retry-after')).toBe('60');
+    expect(result.response.headers.get('x-upstream-request-id')).toBe('fixture-429');
+    expect(await result.response.text()).toBe(JSON.stringify(body));
   });
 });
 
@@ -1221,6 +1250,8 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1233,7 +1264,7 @@ describe('callCodexOpenAIResponses — upstream classification', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through without touching state', async () => {
@@ -1573,6 +1604,8 @@ describe('callCodexOpenAIResponsesCompact', () => {
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached' } }, {
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -1585,7 +1618,7 @@ describe('callCodexOpenAIResponsesCompact', () => {
     if (!result.ok) expect(result.response.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
+    expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
   test('5xx passes through verbatim without touching state', async () => {
