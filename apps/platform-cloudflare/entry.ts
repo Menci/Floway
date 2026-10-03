@@ -14,6 +14,7 @@ import {
 // Re-exported here because the current binding and the rename migration's
 // target resolve the class by its Worker-module export name.
 export { ExecutionDO } from './src/execution-do.ts';
+export { LogStreamDO } from './src/log-stream-do.ts';
 
 export class ExecutionOperationEntrypoint extends WorkerEntrypoint<CloudflareEnv> {
   async fetch(request: Request): Promise<Response> {

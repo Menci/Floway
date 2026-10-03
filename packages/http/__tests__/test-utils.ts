@@ -10,6 +10,7 @@ export interface FakeDuplex {
 
   written(): Uint8Array;
   waitWritableClosed(): Promise<void>;
+  waitFirstWrite(): Promise<void>;
 
   respond(bytes: Uint8Array | string): void;
   /** Close the readable (server EOF). */
@@ -18,6 +19,8 @@ export interface FakeDuplex {
 
 export const makeFakeDuplex = (): FakeDuplex => {
   let writeBuffer = new Uint8Array(0);
+  let firstWriteResolve!: () => void;
+  const firstWrite = new Promise<void>(resolve => { firstWriteResolve = resolve; });
   let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
 
@@ -27,6 +30,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
       writeBuffer = next;
+      firstWriteResolve();
     },
     close() { writableClosedResolve(); },
     abort() { writableClosedResolve(); },
@@ -44,6 +48,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
     writable,
     written: () => new Uint8Array(writeBuffer),
     waitWritableClosed: () => writableClosedPromise,
+    waitFirstWrite: () => firstWrite,
     respond(bytes) {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;
       controller.enqueue(new Uint8Array(u));
