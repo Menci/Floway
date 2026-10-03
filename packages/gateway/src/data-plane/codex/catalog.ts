@@ -26,6 +26,7 @@ export interface CatalogModel {
   max_context_window?: number | null;
   model_messages?: { instructions_template?: string | null; [key: string]: unknown } | null;
   multi_agent_version?: string | null;
+  multi_agent_reasoning_effort?: string | null;
   supported_reasoning_levels?: CodexReasoningLevel[];
   service_tiers?: CodexServiceTier[];
   [key: string]: unknown;
