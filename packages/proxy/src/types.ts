@@ -40,8 +40,10 @@ export interface DialTarget {
  *   - **Domain fronting**: `host` and `sni` point at the front
  *     (e.g. a CDN edge), the HTTP request's `Host:` carries the real
  *     upstream name.
- *   - **Dial-by-IP**: `host` is a literal IP, `sni` and `verifyHost`
- *     are the cert's hostname.
+ *   - **Direct IP identity**: `host` is a literal IP; omitted `sni` and
+ *     `verifyHost` make TLS omit `server_name` and verify its IP SAN.
+ *   - **Dial-by-IP for a DNS identity**: `host` is a literal IP while `sni`
+ *     and `verifyHost` are the certificate's hostname.
  *   - **SNI hiding**: `sni` is benign, `verifyHost` is internal.
  */
 export interface ProxyRequestTarget extends DialTarget {
@@ -49,14 +51,16 @@ export interface ProxyRequestTarget extends DialTarget {
   tls: boolean;
 
   /**
-   * TLS ClientHello `server_name` extension value. Defaults to `host`.
-   * If `host` is an IP, set this explicitly — IPs in SNI are invalid.
+   * TLS peer identity. DNS names are sent in the ClientHello `server_name`
+   * extension; IP literals automatically omit that extension. Defaults to
+   * `host`.
    */
   sni?: string;
 
   /**
-   * Hostname the upstream's certificate chain must prove. Defaults to
-   * `sni` (which itself defaults to `host`).
+   * Reference identity the upstream certificate chain must prove. IP
+   * literals match only `iPAddress` SANs. Defaults to `sni` (which itself
+   * defaults to `host`).
    */
   verifyHost?: string;
 
