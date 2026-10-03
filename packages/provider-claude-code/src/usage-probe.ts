@@ -1,5 +1,5 @@
 // Active quota probe against Anthropic's `GET /api/oauth/usage` endpoint.
-// Real `@anthropic-ai/claude-code@2.1.181` calls this endpoint directly
+// Real `@anthropic-ai/claude-code@2.1.280` calls this endpoint directly
 // (binary string `fetchUtilization: GET /api/oauth/usage`); mirroring the
 // behavior gives operators a clean snapshot of the rate-limit windows
 // without burning a model call. The endpoint requires only the OAuth

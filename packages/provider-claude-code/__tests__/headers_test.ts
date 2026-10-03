@@ -8,21 +8,21 @@ import {
 } from '../src/headers.ts';
 
 describe('CLAUDE_CLI_VERSION', () => {
-  test('is the pinned 2.1.181 release', () => {
-    expect(CLAUDE_CLI_VERSION).toBe('2.1.181');
+  test('is the pinned 2.1.280 release', () => {
+    expect(CLAUDE_CLI_VERSION).toBe('2.1.280');
   });
 });
 
 describe('CLAUDE_CODE_HEADERS_SONNET_OPUS', () => {
   test('carries every required mimicry header with the pinned value', () => {
     expect(CLAUDE_CODE_HEADERS_SONNET_OPUS).toMatchObject({
-      'User-Agent': 'claude-cli/2.1.181 (external, cli)',
+      'User-Agent': 'claude-cli/2.1.280 (external, cli)',
       'x-app': 'cli',
       'anthropic-dangerous-direct-browser-access': 'true',
       'anthropic-version': '2023-06-01',
       Accept: 'application/json',
       'X-Stainless-Lang': 'js',
-      'X-Stainless-Package-Version': '0.94.0',
+      'X-Stainless-Package-Version': '0.112.1',
       'X-Stainless-OS': 'Linux',
       'X-Stainless-Arch': 'arm64',
       'X-Stainless-Runtime': 'node',

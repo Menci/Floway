@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { backfillRequiredFields } from '../../../src/interceptors/anthropic-messages/backfill-required-fields.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -19,7 +19,7 @@ const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = st
 // client actually sends: AnthropicMessagesPayload's type says max_tokens is required,
 // but the bug exists precisely because clients (cline, aider, etc.) omit it.
 
-test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both payload and model limits are silent', async () => {
+test('backfills max_tokens to the 32768 gateway policy when both payload and model limits are silent', async () => {
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',
     messages: [{ role: 'user', content: 'hi' }],
@@ -28,7 +28,7 @@ test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both
 
   await backfillRequiredFields(ctx, {}, okEvents);
 
-  assertEquals(ctx.payload.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
+  assertEquals(ctx.payload.max_tokens, 32768);
 });
 
 test('prefers model.limits.max_output_tokens over the gateway fallback when set', async () => {

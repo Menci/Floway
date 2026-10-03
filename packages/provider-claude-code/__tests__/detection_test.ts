@@ -16,7 +16,7 @@ const validUserIdJson = JSON.stringify({
 
 const baseHeaders = (overrides: Record<string, string> = {}): Headers => {
   const init: Record<string, string> = {
-    'user-agent': 'claude-cli/2.1.181 (external, cli)',
+    'user-agent': 'claude-cli/2.1.280 (external, cli)',
     'x-app': 'cli',
     'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
@@ -71,7 +71,7 @@ describe('parseMetadataUserID', () => {
 describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('accepts canonical UA', () => {
     expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.181' }),
+      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.280' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
     })).toBe(true);
   });
@@ -132,14 +132,14 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
   test('accepts a request whose first system block is the billing header', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; cc_entrypoint=cli; cch=00000;'),
+      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;'),
     })).toBe(true);
   });
 
   test('rejects a billing-like header missing cc_entrypoint=cli', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; some_other_marker=1;'),
+      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; some_other_marker=1;'),
     })).toBe(false);
   });
 });

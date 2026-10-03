@@ -65,14 +65,14 @@ describe('computeCcVersionFingerprint', () => {
     const body = minimalBody('hello world this is a test prompt');
     // 'hello world this is a test prompt' — bytes[4]='o' (0x6F),
     // bytes[7]='o' (0x6F, second 'o' in "world"), bytes[20]='a' (0x61).
-    expect(computeCcVersionFingerprint('2.1.181', body)).toBe('1f4');
+    expect(computeCcVersionFingerprint('2.1.280', body)).toBe('309');
   });
 
   test('pads short first-user text with 0x30 and still returns 3 hex chars', () => {
     const body = minimalBody('hi');
     // All three indices fall past end; chars = '000'.
-    const fp = computeCcVersionFingerprint('2.1.181', body);
-    expect(fp).toBe('2f9');
+    const fp = computeCcVersionFingerprint('2.1.280', body);
+    expect(fp).toBe('d7b');
     expect(fp).toMatch(/^[0-9a-f]{3}$/);
   });
 
@@ -85,7 +85,7 @@ describe('computeCcVersionFingerprint', () => {
         { role: 'assistant', content: 'ack' },
       ],
     };
-    expect(computeCcVersionFingerprint('2.1.181', body)).toBe('1f4');
+    expect(computeCcVersionFingerprint('2.1.280', body)).toBe('309');
   });
 
   test('reads the first text block when content is an array', () => {
@@ -96,7 +96,7 @@ describe('computeCcVersionFingerprint', () => {
         { role: 'user', content: [{ type: 'text', text: 'hello world this is a test prompt' }] },
       ],
     };
-    expect(computeCcVersionFingerprint('2.1.181', body)).toBe('1f4');
+    expect(computeCcVersionFingerprint('2.1.280', body)).toBe('309');
   });
 
   test('returns 3-hex output for an empty first-user message', () => {
@@ -105,22 +105,22 @@ describe('computeCcVersionFingerprint', () => {
       max_tokens: 1,
       messages: [{ role: 'user', content: '' }],
     };
-    const fp = computeCcVersionFingerprint('2.1.181', body);
+    const fp = computeCcVersionFingerprint('2.1.280', body);
     expect(fp).toMatch(/^[0-9a-f]{3}$/);
-    expect(fp).toBe('2f9'); // same as the all-padding case
+    expect(fp).toBe('d7b'); // same as the all-padding case
   });
 });
 
 describe('buildBillingBlock', () => {
   test('produces the byte-exact billing line', () => {
-    expect(buildBillingBlock('2.1.181', 'abc')).toEqual({
+    expect(buildBillingBlock('2.1.280', 'abc')).toEqual({
       type: 'text',
-      text: 'x-anthropic-billing-header: cc_version=2.1.181.abc; cc_entrypoint=cli; cch=00000;',
+      text: 'x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;',
     });
   });
 
   test('always carries the cch=00000 literal placeholder', () => {
-    const block = buildBillingBlock('2.1.181', '000');
+    const block = buildBillingBlock('2.1.280', '000');
     expect(block.text).toContain('cch=00000;');
   });
 });

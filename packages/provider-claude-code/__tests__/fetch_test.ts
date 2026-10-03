@@ -185,10 +185,10 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
       call: {
         ...noopUpstreamCallOptions(),
         headers: new Headers({
-          'user-agent': 'claude-cli/2.1.181 (external, cli)',
+          'user-agent': 'claude-cli/2.1.280 (external, cli)',
           'x-app': 'cli',
           'anthropic-version': '2023-06-01',
-          'x-stainless-package-version': '0.94.0',
+          'x-stainless-package-version': '0.112.1',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
         }),
@@ -198,11 +198,11 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
-    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
+    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.280 (external, cli)');
     expect(wireHeaders.get('x-app')).toBe('cli');
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
     expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20,claude-code-20250219');
-    expect(wireHeaders.get('x-stainless-package-version')).toBe('0.94.0');
+    expect(wireHeaders.get('x-stainless-package-version')).toBe('0.112.1');
     expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
   });
@@ -213,7 +213,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     await callClaudeCodeAnthropicMessages({
       upstreamId, model: sonnetModel, body: minimalBody,
       shaped: true,
-      call: { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      call: { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.280' }) },
     });
     const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
     expect(wireHeaders.get('content-type')).toBe('application/json');
@@ -227,7 +227,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
       shaped: true,
       call: {
         ...noopUpstreamCallOptions(),
-        headers: new Headers({ 'user-agent': 'claude-cli/2.1.181', 'content-type': 'application/json; charset=utf-8' }),
+        headers: new Headers({ 'user-agent': 'claude-cli/2.1.280', 'content-type': 'application/json; charset=utf-8' }),
       },
     });
     const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
