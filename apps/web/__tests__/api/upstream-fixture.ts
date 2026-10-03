@@ -16,6 +16,8 @@ const commonFields = {
   created_at: '',
   updated_at: '',
   flag_overrides: {},
+  compatibility: {},
+  compatibility_defaults: { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'passthrough' } } },
   flag_defaults: flagDefaults,
   disabled_public_model_ids: [],
   proxy_fallback_list: [],

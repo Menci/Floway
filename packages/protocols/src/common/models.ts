@@ -115,17 +115,8 @@ export interface PublicModel {
   // Non-standard extra fields below.
   limits: PublicModelLimits;
   kind: ModelKind;
-  // The merged upstream wire surface: the union of the endpoint keys the
-  // contributing upstreams expose natively, and on an alias-synthesized row
-  // the union across the alias's currently-available targets, so every key
-  // advertised here is served natively by at least one of them. It is not a
-  // list of client-callable Floway routes. Translation widens the callable
-  // chat surface past the listed keys — a chat source protocol reaches any
-  // candidate carrying one of its preferred chat targets, and Gemini
-  // generateContent has no key of its own at all. The non-chat keys
-  // (`openaiCompletions`, `openaiEmbeddings`, `openaiImagesGenerations`,
-  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`) are callable
-  // exactly where they appear.
+  // Client-facing endpoint availability after gateway translation.
+  // Upstream compatibility preferences remain internal.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;

@@ -21,6 +21,7 @@ const record: StoredUpstreamRecord = {
   state: null,
   configVersion: 1,
   modelsCache: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

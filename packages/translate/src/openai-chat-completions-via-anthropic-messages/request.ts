@@ -1,7 +1,6 @@
 import { klona } from 'klona/json';
 
-import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
-import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { thinkingBlocksFromChatCompletions } from './reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
@@ -9,7 +8,7 @@ import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anth
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlock, type AnthropicMessagesUserContentBlock, type AnthropicMessagesWebSearchToolResultBlock, type AnthropicMessagesServerToolUseBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
@@ -24,10 +23,9 @@ interface BuildTargetRequestOptions {
 }
 
 const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicMessagesAssistantInputContentBlock[] => {
+  const sidecar = thinkingBlocksFromChatCompletions(message);
+  const thinkingBlocks = sidecar ?? [];
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(message), message.reasoning_opaque);
-
-  if (thinkingBlock) blocks.push(thinkingBlock);
 
   if (typeof message.content === 'string') {
     if (message.content) blocks.push({ type: 'text', text: message.content });
@@ -40,16 +38,33 @@ const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicM
 
   if (message.refusal) blocks.push({ type: 'text', text: message.refusal });
 
+  const results = message.provider_specific_fields?.web_search_results;
+  if (results !== undefined && (!Array.isArray(results) || results.some(result => result === null || typeof result !== 'object' || result.type !== 'web_search_tool_result' || typeof result.tool_use_id !== 'string'))) throw new TypeError('Malformed Chat Completions web search results');
+  const toolGroups: AnthropicMessagesAssistantInputContentBlock[][] = [];
   for (const toolCall of message.tool_calls ?? []) {
-    blocks.push({
-      type: 'tool_use',
+    const result = toolCall.id.startsWith('srvtoolu_') && Array.isArray(results) ? results.find(result => result.tool_use_id === toolCall.id) : undefined;
+    const tool = {
       id: toolCall.id,
       name: toolCall.function.name,
       input: parseToolArgumentsObject(toolCall.function.arguments),
-    });
+    };
+    if (result === undefined) toolGroups.push([{ ...tool, type: 'tool_use' }]);
+    else toolGroups.push([{ ...tool, type: 'server_tool_use' } as AnthropicMessagesServerToolUseBlock, klona(result) as AnthropicMessagesWebSearchToolResultBlock]);
   }
-
-  return blocks.length > 0 ? blocks : [{ type: 'text', text: '' }];
+  // Match LiteLLM's positional server-tool reconstruction.
+  // https://github.com/BerriAI/litellm/blob/0980f756bd031993329eb0b8b2caa193047e6465/litellm/litellm_core_utils/prompt_templates/factory.py#L2530-L2654
+  const reasoningAndServerTools: AnthropicMessagesAssistantInputContentBlock[] = [];
+  const interleaveServerTools = sidecar !== undefined && message.tool_calls?.some(tool => tool.id.startsWith('srvtoolu_')) && !Array.isArray(message.content);
+  if (interleaveServerTools) {
+    const serverGroups = toolGroups.filter(group => group[0].type === 'server_tool_use');
+    for (let index = 0; index < Math.max(thinkingBlocks.length, serverGroups.length); index++) {
+      if (index < thinkingBlocks.length) reasoningAndServerTools.push(thinkingBlocks[index]);
+      if (index < serverGroups.length) reasoningAndServerTools.push(...serverGroups[index]);
+    }
+  } else reasoningAndServerTools.push(...thinkingBlocks);
+  const trailingTools = interleaveServerTools ? toolGroups.filter(group => group[0].type === 'tool_use').flat() : toolGroups.flat();
+  const content = [...reasoningAndServerTools, ...blocks, ...trailingTools];
+  return content.length > 0 ? content : [{ type: 'text', text: '' }];
 };
 
 const appendUserBlocks = (messages: AnthropicMessagesMessage[], blocks: AnthropicMessagesUserContentBlock[]): void => {

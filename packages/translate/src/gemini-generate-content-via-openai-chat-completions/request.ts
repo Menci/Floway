@@ -16,6 +16,7 @@ import {
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
@@ -99,10 +100,9 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
   };
 
   if (toolCalls.length) message.tool_calls = toolCalls;
-  if (thoughtTexts.length) message.reasoning_text = thoughtTexts.join('\n\n');
-  if (reasoningOpaque !== null) message.reasoning_opaque = reasoningOpaque;
+  Object.assign(message, flowayReasoningFields(thoughtTexts.join('\n\n'), reasoningOpaque ?? ''));
 
-  return message.content !== null || message.tool_calls?.length || message.reasoning_text !== undefined || message.reasoning_opaque !== undefined ? message : null;
+  return message.content !== null || message.tool_calls?.length || thoughtTexts.length > 0 || reasoningOpaque !== null ? message : null;
 };
 
 const buildToolMessage = (part: GeminiGenerateContentPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIChatCompletionsMessage => {

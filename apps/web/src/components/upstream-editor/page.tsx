@@ -80,6 +80,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     modelPrefix: z.any(),
     disabledPublicModelIds: z.array(z.string()),
     flagOverrides: z.any(),
+    compatibility: z.any(),
     config: z.any(),
     state: z.any(),
     manualModels: z.any(),

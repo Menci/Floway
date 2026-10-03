@@ -4,6 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const codexProviderModule: ProviderModule = {
   create: createCodexProvider,
+  defaultCompatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning', data: 'passthrough' } } },
   defaultFlags: CODEX_DEFAULT_FLAGS,
 };
 

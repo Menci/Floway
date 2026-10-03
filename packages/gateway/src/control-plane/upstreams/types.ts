@@ -1,5 +1,6 @@
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type {
+  Compatibility, CompatibilityDefaults,
   FlagDefaults,
   FlagOverrides,
   ModelPrefixConfig,
@@ -137,6 +138,8 @@ interface SerializedUpstreamRecordBase {
   created_at: string;
   updated_at: string;
   flag_overrides: FlagOverrides;
+  compatibility: Compatibility;
+  compatibility_defaults: CompatibilityDefaults;
   flag_defaults: FlagDefaults;
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];

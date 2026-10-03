@@ -57,6 +57,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   updatedAt: '2026-01-01T00:00:00.000Z',
   config: { accounts: [{ email: 'a@b.com', accountUuid: 'acc-1', organizationUuid: null, subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x' }] },
   state,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

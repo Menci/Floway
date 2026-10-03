@@ -516,6 +516,22 @@ const en = {
         },
       },
       upstreamEditor: {
+        reasoningFormat: {
+          title: 'Chat Completions reasoning format',
+          text: 'Reasoning text',
+          data: 'Reasoning data (i.e. encrypted / signatures)',
+          inherit: 'Inherit: {{value}} ({{source}})',
+          inheritRich: 'Inherit: <format/> ({{source}})',
+          passthrough: 'Preserve unchanged',
+          clientResponseBoth: 'Clients connected to Floway receive <text/> as <reasoning>reasoning</reasoning> and <data/> as <opaque>reasoning_opaque</opaque>.',
+          clientResponseText: "Clients connected to Floway receive <text/> as <reasoning>reasoning</reasoning>; reasoning data stays in the server's original format.",
+          clientResponseData: "Clients connected to Floway receive reasoning text in the server's original format, and <data/> as <opaque>reasoning_opaque</opaque>.",
+          clientResponsePassthrough: "Clients connected to Floway receive reasoning text and data in the server's original format.",
+          flowayDefault: 'Floway default',
+          upstreamDefault: 'upstream override',
+          providerDecision: 'Auto model options are determined by the provider.',
+          hint: 'Choose how Floway reads and writes upstream reasoning. Preserve unchanged keeps the original fields without format conversion. Text and data can be configured independently.',
+        },
         readyToSave: {
           title: 'Ready to save',
           description: 'Save this {{provider}} upstream to load its model catalog.',
@@ -608,7 +624,7 @@ const en = {
           addressable: 'Addressable',
           listed: 'Listed',
         },
-        tabs: { label: 'Upstream sections', models: 'Models', flags: 'Upstream feature flags' },
+        tabs: { label: 'Upstream sections', models: 'Models', flags: 'Compatibility' },
         flags: {
           intro:
               'Upstream behavior varies by provider, API surface, and model. Adjust these defaults only when compatibility requires it.',
@@ -626,7 +642,7 @@ const en = {
             'vendor-deepseek': {
               label: 'DeepSeek Compatibility',
               description:
-                  "DeepSeek's “OpenAI-compatible API” uses non-standard formats for reasoning fields and structured outputs.\nEnable this option to translate requests and responses bidirectionally between the OpenAI canonical format and DeepSeek's non-standard format, including translating reasoning controls (`thinking`) and reasoning content (`reasoning_text`), normalizing cached-token usage, and downgrading the unsupported `json_schema` response format to `json_object`.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
+                  "DeepSeek's API uses non-standard reasoning controls, cached-token usage, and structured outputs.\nEnable this option to translate reasoning controls (`thinking`), normalize cached-token usage, and downgrade the unsupported `json_schema` response format to `json_object`.\nEnable this when the upstream is the **DeepSeek Chat Completions API**.",
             },
             'vendor-qwen': {
               label: 'Alibaba Cloud Model Studio Compatibility',

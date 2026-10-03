@@ -79,8 +79,99 @@ optional key defaults to the immediate upstream model ID, and
 in the compatibility identity. A downstream Floway reads the same metadata and
 materializes the identity at its own upstream boundary.
 
+Upstream and model compatibility settings live in `compatibility`, independently
+of endpoint availability and feature `flag_overrides`. Compatibility describes
+upstream dialects and the accommodations they require. They remain internal
+configuration and are omitted from public model metadata. Feature flags select
+additional gateway functionality. Existing compatibility flags remain until
+their behavior is moved to dedicated settings.
+
+Chat Completions reasoning text and data formats use
+`compatibility.openaiChatCompletions.reasoning` at both the upstream and manual
+model levels. Settings are sparse: absent members inherit the provider default
+or the current upstream setting. Auto models use provider-owned per-model
+choices. The dashboard shows inherited values and their source. Disabling a
+Chat Completions endpoint hides these controls and retains their settings.
+Vendor Compatibility flags still configure request controls, cached-token usage,
+and structured-output workarounds; reasoning format settings own text and data
+conversion.
+
+```json
+{
+  "compatibility": {
+    "openaiChatCompletions": {
+      "reasoning": {
+        "text": "reasoning-content",
+        "data": "openrouter-reasoning-details"
+      }
+    }
+  },
+  "config": {
+    "models": [{
+      "upstreamModelId": "example-model",
+      "kind": "chat",
+      "endpoints": { "openaiChatCompletions": {} },
+      "compatibility": {
+        "openaiChatCompletions": {
+          "reasoning": { "text": "reasoning-text" }
+        }
+      }
+    }]
+  }
+}
+```
+
+Text standards are `reasoning`, `reasoning-content`, and `reasoning-text`.
+Data standards are `reasoning-opaque`, `openrouter-reasoning-details`, and
+`litellm-thinking-blocks`. Both channels also support `passthrough`, which keeps
+original fields without interpreting their format. Already normalized values
+use Floway's identity wire fields, `reasoning` and `reasoning_opaque`, when
+encoding passthrough. Raw passthrough channels are not inferred as reasoning
+when translating to another protocol. These options select conversion behavior.
+Structured arrays retain their members and metadata as
+`base64(JSON.stringify({ type: "openrouter-reasoning-details", reasoning_details }))`
+or `base64(JSON.stringify({ type: "litellm-thinking-blocks", thinking_blocks }))`.
+Native opaque strings are preserved verbatim. Malformed selected formats fail
+the request; recognized unselected formats produce a warning and remain
+uninterpreted.
+
+Chat Completions via Messages carries only native thinking and redacted-thinking
+records using `litellm-thinking-blocks`. History replay follows LiteLLM: signed,
+nonempty thinking and redacted blocks precede reconstructed Chat text and tools.
+Server-tool calls and their results use Chat tool calls and
+`provider_specific_fields.web_search_results`; replay pairs thinking and server
+results by their positions in those separate lists. This does not recover the
+original interleaving of text, thinking and tools. Chat text and tool changes
+are used on the next request.
+
+Chat Completions via Responses uses the private `litellm-reasoning-items` data
+standard. Its base64 JSON object contains `reasoning_items`, projected to
+LiteLLM's item fields: `type`, `id`, `summary` and `encrypted_content`. The
+standard is not an operator preset. History replay puts stored reasoning items
+before reconstructed Chat text and function calls, preserving the reasoning
+array's own order without restoring its original position among other output
+items.
+
+Each of these translation paths consumes only the matching structured data
+standard from Floway's reasoning Symbol. Scalar reasoning text and ordinary
+opaque strings do not reconstruct history reasoning. Recognized other standards
+produce a warning and are ignored; malformed matching data fails the request.
+Translators generate and consume the Symbol, while wire-format conversion
+happens at the Chat boundaries.
+
+Normalized reasoning reaches clients as `reasoning` and `reasoning_opaque`;
+passthrough fields keep their original names. The public `endpoints` map
+describes endpoint availability, including translated chat routes; reasoning
+format preferences are internal compatibility settings. Native dispatch continues
+to use the chosen upstream's own endpoint map. Normalization also applies to native Chat
+Completions passthrough and client history replay.
+
 Floway wraps natural reasoning signatures, encrypted content, fingerprints,
-and other supported opaque blobs with authenticated routing metadata. New
+and other supported opaque blobs with authenticated routing metadata. Chat
+Completions affinity processing supports `reasoning_opaque`, encrypted or
+signed OpenRouter reasoning details, and signed or redacted LiteLLM thinking
+blocks. It wraps existing opaque members and removes synthetic carriers during
+replay, outside the reasoning-format converters. New
 carriers record both their exact source target and their compatibility identity.
 Compatible targets receive the original blob; incompatible optional blobs are
 removed, while incompatible required Responses state fails routing. Existing v1

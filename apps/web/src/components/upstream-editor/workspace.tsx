@@ -18,6 +18,7 @@ import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
 import { modelValidationIssues } from './model-validation';
 import { parseModels, serializeModels } from './models-yaml';
+import { ReasoningFormatEditor } from './reasoning-format';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -107,7 +108,12 @@ export function UpstreamWorkspace({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
-  const { formState: { errors, submitCount }, getValues } = useFormContext<UpstreamEditorValues>();
+  const { control, formState: { errors, submitCount }, getValues } = useFormContext<UpstreamEditorValues>();
+  const config = useWatch({ control, name: 'config' });
+  const manualModels = useWatch({ control, name: 'manualModels' });
+  const hasChatCompletions = 'endpoints' in config
+    ? config.endpoints.openaiChatCompletions !== undefined
+    : [...manualModels, ...discovered].some(model => model.endpoints.openaiChatCompletions !== undefined);
   const [params, setParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   // The YAML text is a projection of the manual models — serialized on the way
@@ -223,6 +229,7 @@ export function UpstreamWorkspace({
               <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
+              {hasChatCompletions && <Controller name="compatibility.openaiChatCompletions.reasoning" render={({ field }) => <ReasoningFormatEditor defaults={record.compatibility_defaults.openaiChatCompletions.reasoning} value={field.value ?? {}} onChange={field.onChange} />} />}
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}
@@ -256,6 +263,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
+  const upstreamCompatibility = useWatch({ control, name: 'compatibility' });
   const deleteDialog = useDialogInvocation<ModelRow>();
   const [pendingManualUpstreamModelId, setPendingManualUpstreamModelId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
@@ -392,7 +400,7 @@ function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsErro
       shouldDirty: true,
       shouldTouch: true,
     });
-  }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
+  }} record={record} upstreamFlags={upstreamFlags} upstreamCompatibility={upstreamCompatibility} />{deleteConfirmation}</>;
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <SectionHeader

@@ -1,3 +1,4 @@
+import type { Compatibility, CompatibilityDefaults } from './compatibility.ts';
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
@@ -80,6 +81,7 @@ export interface UpstreamRecord {
   // refresh stores an empty entry with its error.
   modelsCache: UpstreamModelsCache | null;
   flagOverrides: FlagOverrides;
+  compatibility: Compatibility;
   // Model ids the operator switched off for this upstream, matched against the
   // provider-emitted id before any model prefix is applied — so one entry hides
   // both the bare and the prefixed surface. Orthogonal to every per-model
@@ -99,9 +101,9 @@ export interface UpstreamRecord {
   hue: number;
 }
 
-// Public identity + capability surface shared by `InternalModel` (the merged,
+// Internal identity and native capability surface shared by `InternalModel` (the merged,
 // gateway-facing view) and `ProviderModel` (a single upstream's emission).
-// The two shapes carry the same metadata verbatim; the merge step OR-unions
+// Public projection substitutes downstreamEndpoints; the merge step OR-unions
 // `endpoints` and recomputes `kind`. Kept internal so callers can only touch
 // the wrapper types — this base has no meaning on its own.
 //
@@ -149,7 +151,7 @@ interface ModelMetadata {
 // The two carriers are exclusive: a row is either real or alias, never both.
 // `providerModelOf` throws with distinct messages for each miss so a mis-used
 // alias row surfaces the correct diagnostic.
-export type InternalModel = ModelMetadata & (
+export type InternalModel = ModelMetadata & { downstreamEndpoints?: ModelEndpoints } & (
   | { readonly providerModels: Record<string, ProviderModel>; readonly aliasedFrom?: never }
   | { readonly providerModels?: never; readonly aliasedFrom: InternalAliasedFrom }
 );
@@ -180,6 +182,8 @@ export interface InternalAliasedFrom {
 // ever see their own emission — the surrounding `InternalModel` map is
 // assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
+  compatibility?: Compatibility;
+  resolvedCompatibility?: CompatibilityDefaults;
   // The provider-neutral upstream catalog id shown on auto rows and used when
   // an opaque-blob scope omits its key. A provider that selects a request-time
   // wire variant still keeps that invocation detail in providerData.

@@ -88,12 +88,13 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     config: { opaque: { value: true } },
     state: { cursor: ['a', 1] },
     modelsCache: null,
+    compatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning-content', data: 'openrouter-reasoning-details' } } },
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
     hue: 210,
-  };
+  } satisfies Parameters<typeof repo.upstreams.insertForModels>[0];
   const inserted = await repo.upstreams.insertForModels(upstreamRecord);
   if (inserted === null) throw new Error('expected upstream fixture insert');
   const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
@@ -106,6 +107,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
       provider: storedUpstream.kind,
       configJson: JSON.stringify(storedUpstream.config),
       flagOverridesJson: '{}',
+      compatibilityJson: JSON.stringify(storedUpstream.compatibility),
       proxyFallbackListJson: '[]',
     },
     cache: {

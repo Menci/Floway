@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createOpenAIChatCompletionsToOpenAIResponsesStreamState, flushOpenAIChatCompletionsToOpenAIResponsesEvents, translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents, translateToSourceEvents } from '../../src/openai-responses-via-openai-chat-completions/events.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -136,48 +137,13 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves tool 
   );
 });
 
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents replaces buffered scalar reasoning with carrier items', () => {
-  const events = translate([
-    chunk({ role: 'assistant' }),
-    chunk({ reasoning_text: 'trace' }),
-    chunk({ content: 'answer' }),
-    chunk({
-      reasoning_items: [
-        {
-          type: 'reasoning',
-          id: 'rs_carrier',
-          summary: [{ type: 'summary_text', text: 'trace' }],
-        },
-      ],
-    }),
-    chunk({}, 'stop'),
-  ]);
-
-  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
-
-  assertEquals(completed?.response.output, [
-    {
-      type: 'reasoning',
-      id: 'rs_carrier',
-      summary: [{ type: 'summary_text', text: 'trace' }],
-    },
-    {
-      type: 'message',
-      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
-      status: 'completed',
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
-    },
-  ]);
-});
-
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reasoning_content deltas', () => {
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves normalized normalized reasoning deltas', () => {
   // Scalar reasoning arrives as `reasoning_content`; the translated Responses
   // stream must surface it as a reasoning item regardless of the field name.
   const events = translate([
-    chunk({ role: 'assistant', reasoning_content: null }),
-    chunk({ reasoning_content: 'We need ' }),
-    chunk({ reasoning_content: 'answer poem' }),
+    chunk({ role: 'assistant', ...flowayReasoningFields('', '') }),
+    chunk({ ...flowayReasoningFields('We need ', '') }),
+    chunk({ ...flowayReasoningFields('answer poem', '') }),
     chunk({ content: 'The sky is grey.' }),
     chunk({}, 'stop'),
   ]);
@@ -194,13 +160,13 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   assertEquals(completed?.response.output.map(item => item.type), ['reasoning', 'message']);
 });
 
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reasoning deltas', () => {
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves normalized reasoning deltas', () => {
   // Scalar reasoning arrives as `reasoning`; the translated Responses stream
   // must surface it as a reasoning item regardless of the field name.
   const events = translate([
-    chunk({ role: 'assistant', reasoning: null }),
-    chunk({ reasoning: 'Let me ' }),
-    chunk({ reasoning: 'think.' }),
+    chunk({ role: 'assistant', ...flowayReasoningFields('', '') }),
+    chunk({ ...flowayReasoningFields('Let me ', '') }),
+    chunk({ ...flowayReasoningFields('think.', '') }),
     chunk({ content: 'Done.' }),
     chunk({}, 'stop'),
   ]);
@@ -217,9 +183,9 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   assertEquals(completed?.response.output.map(item => item.type), ['reasoning', 'message']);
 });
 
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoning_text over dialect when both are present', () => {
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents consumes normalized reasoning independently of its wire dialect', () => {
   const events = translate([
-    chunk({ role: 'assistant', reasoning_text: 'canonical', reasoning_content: 'dialect' }),
+    chunk({ role: 'assistant', ...flowayReasoningFields('canonical', '')  }),
     chunk({ content: 'answer' }),
     chunk({}, 'stop'),
   ]);
@@ -408,9 +374,9 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps late opaque with prior scalar reasoning text', () => {
   const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }), state),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ ...flowayReasoningFields('', 'sig') }), state),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'stop'), state),
     ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
   ];
@@ -423,55 +389,8 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps late opaq
     type: 'reasoning',
     id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
+    encrypted_content: 'sig',
   });
-});
-
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoning_items over scalar reasoning in streaming composition', () => {
-  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
-  const events = [
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(
-      chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_carrier',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'stop'), state),
-    ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
-  ];
-
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
-
-  assertEveryAddedOutputItemIsDone(events);
-  assertEquals(reasoningDoneEvents.length, 1);
-  assertEquals(reasoningDoneEvents[0].item, {
-    type: 'reasoning',
-    id: 'rs_carrier',
-    summary: [{ type: 'summary_text', text: 'trace' }],
-  });
-  assertEquals(completed?.response.output, [
-    {
-      type: 'reasoning',
-      id: 'rs_carrier',
-      summary: [{ type: 'summary_text', text: 'trace' }],
-    },
-    {
-      type: 'message',
-      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
-      status: 'completed',
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
-    },
-  ]);
 });
 
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps terminal output ordered by output_index', () => {
@@ -493,13 +412,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps terminal 
     ),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(
       chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_after_tool',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
+        ...flowayReasoningFields('trace', 'opaque-after-tool'),
       }),
       state,
     ),
@@ -523,55 +436,6 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps terminal 
   );
 });
 
-test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents discards scalar reasoning when carrier arrives after opaque', () => {
-  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
-  const events = [
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_opaque: 'sig' }), state),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(
-      chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_carrier',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'stop'), state),
-    ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
-  ];
-
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
-
-  assertEveryAddedOutputItemIsDone(events);
-  assertEquals(reasoningDoneEvents.length, 1);
-  assertEquals(reasoningDoneEvents[0].item, {
-    type: 'reasoning',
-    id: 'rs_carrier',
-    summary: [{ type: 'summary_text', text: 'trace' }],
-  });
-  assertEquals(completed?.response.output, [
-    {
-      type: 'reasoning',
-      id: 'rs_carrier',
-      summary: [{ type: 'summary_text', text: 'trace' }],
-    },
-    {
-      type: 'message',
-      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
-      status: 'completed',
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
-    },
-  ]);
-});
-
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents ignores empty tool_calls arrays', () => {
   const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
   const initialEvents = translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
@@ -587,4 +451,23 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents ignores empty t
   const deltaEvents = contentEvents.filter(event => event.type === 'response.output_text.delta');
   assertEquals(deltaEvents.length, 1);
   assertEquals((deltaEvents[0] as { delta: string }).delta, 'hello');
+});
+
+test.each([false, true])('Responses-via-Chat keeps opaque data opaque and retains scalar text (late update=%s)', late => {
+  const first = 'original-opaque';
+  const final = Buffer.from(JSON.stringify({ type: 'litellm-reasoning-items', reasoning_items: [{ type: 'reasoning', id: 'rs_foreign', summary: [{ type: 'summary_text', text: 'other text' }] }] }), 'utf8').toString('base64');
+  const events = translate([
+    chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }),
+    ...(late ? [chunk({ ...flowayReasoningFields('', first) })] : []),
+    chunk({ content: 'answer' }),
+    chunk({ ...flowayReasoningFields('', final) }),
+    chunk({}, 'stop'),
+  ]);
+  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
+  assertEveryAddedOutputItemIsDone(events);
+  assertEquals(completed?.response.output[0], {
+    type: 'reasoning', id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
+    summary: [{ type: 'summary_text', text: 'trace' }], encrypted_content: final,
+  });
+  assertEquals(completed?.response.output.map(item => item.type), ['reasoning', 'message']);
 });

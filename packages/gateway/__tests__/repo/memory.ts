@@ -760,7 +760,8 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const { previous, upstream } = input;
     const modelConfigChanged = previous.kind !== upstream.kind
       || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
-      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides)
+      || serializeStoredConfig(previous.compatibility) !== serializeStoredConfig(upstream.compatibility);
     const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
     const refreshInputsChanged = modelConfigChanged || transportChanged;
     const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
@@ -833,6 +834,7 @@ const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamReco
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
   modelsCache: structuredClone(upstream.modelsCache),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
+  compatibility: structuredClone(upstream.compatibility),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
   modelPrefix: structuredClone(upstream.modelPrefix),

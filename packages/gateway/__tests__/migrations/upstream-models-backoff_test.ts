@@ -28,6 +28,8 @@ test('config-version migration preserves cached models and gives existing failur
   if (!migration) throw new Error('config version migration missing');
   db.run(migration[1]);
 
+  for (const [filename, sql] of migrationSqlByFilename) if (filename > '0085_upstream_config_version.sql') db.run(sql);
+
   const record = await new SqlRepo(wrapSqlJsDatabase(db)).upstreams.getById('up_legacy_failure');
   expect(record?.configVersion).toBe(1);
   expect(record?.modelsCache).toBeNull();

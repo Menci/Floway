@@ -1,7 +1,7 @@
 import { getRepo } from '../../repo/index.ts';
 import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { CompatibilityDefaults, FlagDefaults, ProviderModel, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
 import { codexProviderModule } from '@floway-dev/provider-codex';
@@ -26,7 +26,7 @@ export type GatewayProvider = Provider & {
 export const createProvider = (
   record: StoredUpstreamRecord,
 ): GatewayProvider => {
-  const provider = providersByKind[record.kind].create(record);
+  const provider = createPreviewProvider(record);
   return {
     ...provider,
     configVersion: record.configVersion,
@@ -34,8 +34,36 @@ export const createProvider = (
   };
 };
 
-export const createPreviewProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
+export const createPreviewProvider = (record: UpstreamRecord): Provider => {
+  const provider = providersByKind[record.kind].create(record);
+  const nativeGetModels = provider.instance.getProvidedModels;
+  return {
+    ...provider,
+    instance: {
+      ...provider.instance,
+      getProvidedModels: async fetcher => (await nativeGetModels(fetcher)).map(model => resolveProviderModelCompatibility(record, model)),
+    },
+  };
+};
+
+export const resolveProviderModelCompatibility = (record: UpstreamRecord, model: ProviderModel): ProviderModel => {
+  if (model.endpoints.openaiChatCompletions === undefined) return model;
+  return {
+    ...model,
+    resolvedCompatibility: {
+      openaiChatCompletions: {
+        reasoning: {
+          ...compatibilityDefaultsForKind(record.kind).openaiChatCompletions.reasoning,
+          ...record.compatibility.openaiChatCompletions?.reasoning,
+          ...model.compatibility?.openaiChatCompletions?.reasoning,
+        },
+      },
+    },
+  };
+};
+
+export const compatibilityDefaultsForKind = (kind: UpstreamProviderKind): CompatibilityDefaults =>
+  providersByKind[kind].defaultCompatibility;
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;

@@ -1,5 +1,6 @@
 import { openaiChatCompletionsInterceptors } from './interceptors/index.ts';
 import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
+import { decodeChatCompletionsFrames, warnReasoningConversion } from './reasoning.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
@@ -12,7 +13,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent, fromFlowayOpenAIChatCompletionsReasoning, type ChatCompletionsReasoningFormat  } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
@@ -43,13 +44,18 @@ export const openaiChatCompletionsAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
+        const configured = providerModelOf(candidate).resolvedCompatibility?.openaiChatCompletions.reasoning;
+        if (configured?.text === undefined || configured.data === undefined) throw new TypeError('Resolved upstream Chat Completions compatibility is missing its reasoning format');
+        const format: ChatCompletionsReasoningFormat = { text: configured.text, data: configured.data };
+        ctx.dump?.setUpstreamTargetApi('openaiChatCompletions');
+        const wireBody = { ...body, messages: body.messages.map(message => fromFlowayOpenAIChatCompletionsReasoning(message, format, { warn: warnReasoningConversion })) };
         const providerResult = await candidate.provider.instance.callOpenAIChatCompletions(
           providerModelOf(candidate),
-          body,
+          wireBody,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+        return await providerStreamResultToExecuteResult(providerResult.ok ? { ...providerResult, events: decodeChatCompletionsFrames(providerResult.events, format, frame => ctx.dump?.upstreamFrame(frame)) } : providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
       }
       if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(

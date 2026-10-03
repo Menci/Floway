@@ -23,6 +23,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   updatedAt: '2026-06-19T00:00:00.000Z',
   config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

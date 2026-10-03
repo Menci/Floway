@@ -1,4 +1,9 @@
 // OpenAI Chat Completions type definitions (subset needed for translation)
+import type { ChatCompletionsReasoningWireFields, FlowayOpenAIChatCompletionsReasoningCarrier } from './reasoning-format.ts';
+
+export * from './reasoning-format.ts';
+export * from './reasoning-data.ts';
+export * from './reasoning.ts';
 
 export interface OpenAIChatCompletionsPayload {
   model: string;
@@ -45,21 +50,14 @@ export interface OpenAIChatCompletionsTool {
   };
 }
 
-export interface OpenAIChatCompletionsMessage {
+export interface OpenAIChatCompletionsMessage extends FlowayOpenAIChatCompletionsReasoningCarrier, ChatCompletionsReasoningWireFields {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'developer';
   content: string | OpenAIChatCompletionsContentPart[] | null;
   name?: string;
   tool_calls?: OpenAIChatCompletionsToolCall[];
   tool_call_id?: string;
-  /** Human-readable reasoning text (thinking content) */
-  reasoning_text?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
-  reasoning_content?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
-  reasoning?: string | null;
-  /** Opaque reasoning token/signature for round-tripping */
-  reasoning_opaque?: string | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+  provider_specific_fields?: Record<string, unknown>;
   refusal?: string | null;
 }
 
@@ -67,6 +65,7 @@ export interface OpenAIChatCompletionsReasoningItem {
   type: 'reasoning';
   id?: string;
   summary?: { type: 'summary_text'; text: string }[];
+  encrypted_content?: string | null;
 }
 
 export interface OpenAIChatCompletionsToolCall {
@@ -136,13 +135,12 @@ interface OpenAIChatCompletionsUsage {
 
 export interface OpenAIChatCompletionsChoiceNonStreaming {
   index: number;
-  message: {
+  message: FlowayOpenAIChatCompletionsReasoningCarrier & ChatCompletionsReasoningWireFields & {
     role: 'assistant';
     content: string | null;
     tool_calls?: OpenAIChatCompletionsToolCall[];
-    reasoning_text?: string | null;
-    reasoning_opaque?: string | null;
     reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+    provider_specific_fields?: Record<string, unknown>;
     refusal?: string | null;
   };
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter';
@@ -154,7 +152,7 @@ interface OpenAIChatCompletionsChoiceStreaming {
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
 }
 
-export interface OpenAIChatCompletionsDelta {
+export interface OpenAIChatCompletionsDelta extends FlowayOpenAIChatCompletionsReasoningCarrier, ChatCompletionsReasoningWireFields {
   content?: string | null;
   role?: string;
   tool_calls?:
@@ -165,15 +163,8 @@ export interface OpenAIChatCompletionsDelta {
       function?: { name?: string; arguments?: string };
     }[]
     | null;
-  /** Human-readable reasoning text delta */
-  reasoning_text?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
-  reasoning_content?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
-  reasoning?: string | null;
-  /** Opaque reasoning token/signature delta */
-  reasoning_opaque?: string | null;
   reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null;
+  provider_specific_fields?: Record<string, unknown>;
   refusal?: string | null;
 }
 

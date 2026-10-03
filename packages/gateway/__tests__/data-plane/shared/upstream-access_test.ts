@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { resolveProviderModelCompatibility } from '../../../src/data-plane/providers/registry.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -41,7 +42,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
     assertEquals(await seedModelsCache(repo.upstreams, upstream.id, modelsRefreshIdentity(stored), {
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: Date.now(),
-      models: projectCustomModels(stored),
+      models: projectCustomModels(stored).map(model => resolveProviderModelCompatibility(stored, model)),
     }), true);
   }
 

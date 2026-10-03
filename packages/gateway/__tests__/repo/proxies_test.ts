@@ -28,6 +28,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   updatedAt: '2026-06-01T00:00:00.000Z',
   config: { baseUrl: 'https://example.test', authStyle: 'bearer', apiKey: 'sk', endpoints: { openaiChatCompletions: {} } },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList,

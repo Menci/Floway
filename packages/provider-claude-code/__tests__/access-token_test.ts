@@ -33,6 +33,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   updatedAt: '2026-06-01T00:00:00.000Z',
   config: baseConfig,
   state,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

@@ -22,7 +22,7 @@
 import { customIngressHeaderNameIssue, isCustomIngressHeaderValue } from './ingress-header-rules.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/provider';
+import { endpointAvailabilityField, modelsField, validateUpstreamPath } from '@floway-dev/provider';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 
@@ -213,7 +213,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
   const authStyle = authStyleField(raw.authStyle);
   const base = {
     baseUrl: baseUrlField(raw.baseUrl),
-    endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
+    endpoints: endpointAvailabilityField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),

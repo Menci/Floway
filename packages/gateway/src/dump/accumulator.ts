@@ -7,6 +7,7 @@
 import type { Context } from 'hono';
 
 import { HttpCapture } from './http-capture.ts';
+import { projectReasoningForDump } from './reasoning.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
   DumpErrorMeta,
@@ -152,7 +153,7 @@ export class DumpAccumulator {
   // derives the SSE wire view on demand via the per-protocol
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
-    this.events.push({ frame, ts: Date.now() - this.startedAt });
+    this.events.push({ frame: projectReasoningForDump(frame) as ProtocolFrame<unknown>, ts: Date.now() - this.startedAt });
   }
 
   // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
@@ -168,7 +169,7 @@ export class DumpAccumulator {
   // the upstream view with the same collected+events experience, dispatched
   // by `meta.targetApi` instead of `meta.path`.
   upstreamFrame(frame: ProtocolFrame<unknown>): void {
-    this.upstreamEvents.push({ frame, ts: Date.now() - this.startedAt });
+    this.upstreamEvents.push({ frame: projectReasoningForDump(frame) as ProtocolFrame<unknown>, ts: Date.now() - this.startedAt });
   }
 
   // Captures the verbatim upstream api-error envelope (status/headers/body)

@@ -1,7 +1,8 @@
-import { hasReadableSummary, openAIChatCompletionsScalarReasoningText, toOpenAIResponsesReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } from '@floway-dev/protocols/openai-chat-completions';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
@@ -49,6 +50,7 @@ const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIter
 
 interface PendingScalarReasoningItem {
   text: string;
+  opaque?: string;
 }
 
 interface PendingTextItem {
@@ -104,7 +106,6 @@ interface OpenAIChatCompletionsToOpenAIResponsesStreamState {
   openRefusal?: PendingRefusalItem;
   openFunctionCalls: Map<number, PendingFunctionCallItem>;
   deferredAfterReasoning: DeferredAfterReasoning[];
-  reasoningItemsSeen: boolean;
   usage?: NonNullable<OpenAIResponsesResult['usage']>;
   serviceTier?: OpenAIResponsesResult['service_tier'];
   pendingFinishReason?: OpenAIChatCompletionsFinishReason;
@@ -122,7 +123,6 @@ export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customTo
   completedItems: [],
   openFunctionCalls: new Map(),
   deferredAfterReasoning: [],
-  reasoningItemsSeen: false,
   completed: false,
   customToolNames,
 });
@@ -173,7 +173,7 @@ const commitPendingScalarReasoning = (state: OpenAIChatCompletionsToOpenAIRespon
   const reasoning = state.pendingScalarReasoning;
   state.pendingScalarReasoning = undefined;
   const outputIndex = state.outputIndex++;
-  const item = openaiResponses.reasoningItem(createRandomOpenAIResponsesItemId('reasoning'), reasoning.text);
+  const item = { ...openaiResponses.reasoningItem(createRandomOpenAIResponsesItemId('reasoning'), reasoning.text), ...(reasoning.opaque !== undefined ? { encrypted_content: reasoning.opaque } : {}) };
 
   return emitCompletedReasoningItem(item, outputIndex, state);
 };
@@ -398,45 +398,16 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
   }
 
   for (const choice of chunk.choices) {
-    const readableReasoningItems = choice.delta.reasoning_items?.filter(hasReadableSummary) ?? [];
-
-    if (readableReasoningItems.length) {
-      const hadPendingScalarReasoning = state.pendingScalarReasoning !== undefined;
-      state.reasoningItemsSeen = true;
-
-      if (hadPendingScalarReasoning) {
-        // OpenAI Chat Completions stream composition can emit legacy scalar reasoning first and a
-        // richer item-level `reasoning_items[]` carrier later. OpenAI Responses SSE
-        // items are not retractable, so scalar reasoning remains buffered until
-        // either a carrier replaces it or finalization commits it.
-        state.pendingScalarReasoning = undefined;
-      } else {
-        events.push(...commitReasoningAndReplayDeferredDeltas(state));
+    if (openAIChatCompletionsScalarReasoningText(choice.delta) !== undefined || openAIChatCompletionsReasoningOpaque(choice.delta) !== undefined) {
+      if (!state.pendingScalarReasoning) {
         events.push(...closeText(state));
         events.push(...closeRefusal(state));
       }
-
-      for (const item of readableReasoningItems) {
-        const outputIndex = state.outputIndex++;
-        events.push(...emitCompletedReasoningItem(toOpenAIResponsesReasoningItem<OpenAIResponsesOutputReasoning>(item), outputIndex, state));
-      }
-
-      if (hadPendingScalarReasoning) {
-        events.push(...commitReasoningAndReplayDeferredDeltas(state));
-      }
-    } else if (openAIChatCompletionsScalarReasoningText(choice.delta) !== undefined) {
-      if (!state.reasoningItemsSeen) {
-        if (!state.pendingScalarReasoning) {
-          events.push(...closeText(state));
-          events.push(...closeRefusal(state));
-        }
-        const reasoning = openScalarReasoning(state);
-        const reasoningText = openAIChatCompletionsScalarReasoningText(choice.delta);
-
-        if (reasoningText) {
-          reasoning.text += reasoningText;
-        }
-      }
+      const reasoning = openScalarReasoning(state);
+      const opaque = openAIChatCompletionsReasoningOpaque(choice.delta);
+      if (opaque !== undefined) reasoning.opaque = opaque;
+      const reasoningText = openAIChatCompletionsScalarReasoningText(choice.delta);
+      if (reasoningText) reasoning.text += reasoningText;
     }
 
     if (choice.delta.content) {

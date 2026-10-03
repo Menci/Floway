@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest preserves scalar and content-part assistant refusals', () => {
@@ -20,55 +20,27 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+test.each([
+  ['trace', 'enc'],
+  ['visible trace', ''],
+  ['', 'enc'],
+])('buildTargetRequest ignores scalar reasoning history (%s, %s)', (text, opaque) => {
   const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'trace',
-        reasoning_opaque: 'enc',
-      },
+    model: 'gpt-test', messages: [
+      { role: 'assistant', content: 'answer', ...flowayReasoningFields(text, opaque) },
     ],
   });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as OpenAIResponsesInputReasoning;
-  assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
+  assertEquals(result.input, [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }]);
 });
 
-test('buildTargetRequest preserves text-only scalar reasoning', () => {
+test('buildTargetRequest restores native items including empty-summary history', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
         role: 'assistant',
         content: 'answer',
-        reasoning_text: 'visible trace',
-      },
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input[0], {
-    type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
-    summary: [{ type: 'summary_text', text: 'visible trace' }],
-  });
-});
-
-test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'legacy trace',
-        reasoning_opaque: 'legacy_enc',
-        reasoning_items: [
+        ...flowayReasoningFields('legacy trace', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_existing',
@@ -76,9 +48,11 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
           },
           {
             type: 'reasoning',
+            id: 'rs_empty',
             summary: [],
           },
-        ],
+        ])) ?? ''),
+
       },
     ],
   });
@@ -90,6 +64,7 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
       id: 'rs_existing',
       summary: [{ type: 'summary_text', text: 'first' }],
     },
+    { type: 'reasoning', id: 'rs_empty', summary: [] },
   ]);
 });
 
@@ -285,4 +260,9 @@ test("buildTargetRequest drops reasoning_effort='none' since OpenAI Responses ha
   });
 
   assertEquals(result.reasoning, undefined);
+});
+
+test('native Responses replay forwards the original opaque blob', () => {
+  const result = buildTargetRequest({ model: 'm', messages: [{ role: 'assistant', content: null, ...flowayReasoningFields('plan', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_signed', summary: [], encrypted_content: 'native-ciphertext' }])) }] });
+  expect(result.input[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'native-ciphertext' });
 });

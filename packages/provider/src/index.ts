@@ -77,6 +77,8 @@ export {
 export type { ProviderModelsFailureResponse } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
+export type { Compatibility, CompatibilityDefaults } from './compatibility.ts';
+export { compatibilityField } from './compatibility.ts';
 export {
   OPTIONAL_FLAG_IDS,
   parseFlagOverridesWire,
@@ -90,6 +92,7 @@ export type {
 export {
   chatField,
   endpointsField,
+  endpointAvailabilityField,
   isRecord,
   modelsField,
   nonEmptyStringField,

@@ -22,6 +22,7 @@ import type {
   AnthropicMessagesUserContentBlock,
   AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsContentPart[] | null => {
@@ -90,8 +91,7 @@ const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], 
     ...(pending.toolCalls.length > 0 ? { tool_calls: [...pending.toolCalls] } : {}),
     ...(reasoning
       ? {
-          reasoning_text: reasoning.reasoningText,
-          reasoning_opaque: reasoning.reasoningOpaque,
+          ...flowayReasoningFields(reasoning.reasoningText ?? '', reasoning.reasoningOpaque ?? ''),
         }
       : {}),
   });

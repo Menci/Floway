@@ -25,7 +25,8 @@ export const captureFromDump = (
 ): TranslationUpstreamCapture | undefined => {
   if (dump === null) return undefined;
   dump.setUpstreamTargetApi(targetApi);
-  const upstreamFrame = (frame: ProtocolFrame<unknown>) => dump.upstreamFrame(frame);
+  // Native Chat Completions captures wire frames before reasoning normalization.
+  const upstreamFrame = (frame: ProtocolFrame<unknown>) => { if (targetApi !== 'openaiChatCompletions') dump.upstreamFrame(frame); };
   const upstreamApiError = (error: { status: number; headers: Headers; body: Uint8Array }) => dump.upstreamApiError(error);
   return { upstreamFrame, upstreamApiError };
 };

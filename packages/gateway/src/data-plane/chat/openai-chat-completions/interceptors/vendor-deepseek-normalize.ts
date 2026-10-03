@@ -12,11 +12,6 @@
 //   doesn't accept 'none' in its `reasoning_effort` enum and instead uses
 //   a top-level `thinking: { type: 'disabled' }` field. We strip the
 //   sentinel and emit the DeepSeek form.
-// - Assistant messages: rewrite `reasoning_text` → `reasoning_content` (and
-//   synthesise `reasoning_content` from `reasoning_items.summary` when the
-//   newer OpenAI shape is the only thing present). DeepSeek documents only
-//   the scalar `reasoning_content` field and reports 400s when it is
-//   omitted from the assistant-message replay of a multi-turn tool-call loop.
 // - `response_format: { type: 'json_schema', … }` is downgraded to
 //   `response_format: { type: 'json_object' }`. DeepSeek's structured-output
 //   API supports only `json_object`; the schema body is dropped on the floor
@@ -24,8 +19,6 @@
 //
 // Inbound (stream → client):
 //
-// - Each delta: rewrite `reasoning_content` → `reasoning_text` so downstream
-//   gateway code sees the OpenAI shape.
 // - Each usage chunk: remap `prompt_cache_hit_tokens` /
 //   `prompt_cache_miss_tokens` into OpenAI's
 //   `prompt_tokens_details.cached_tokens`. The remap is computed from
@@ -40,24 +33,8 @@
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
-
-const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
-  if (!items?.length) return undefined;
-  const parts = items.flatMap(item => item.summary?.map(s => s.text) ?? []);
-  return parts.length > 0 ? parts.join('') : undefined;
-};
-
-const rewriteOutboundMessage = (message: OpenAIChatCompletionsMessage): OpenAIChatCompletionsMessage => {
-  // `reasoning_opaque` is the OpenAI-canonical signature for cross-turn
-  // reasoning replay; DeepSeek doesn't accept it, so it's dropped on the
-  // floor when we project assistant messages onto `reasoning_content`.
-  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message;
-  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items);
-  if (text === undefined) return rest as OpenAIChatCompletionsMessage;
-  return { ...rest, reasoning_content: text } as OpenAIChatCompletionsMessage;
-};
 
 const stripCanonicalReasoningSentinel = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
   if (payload.reasoning_effort !== 'none') return payload;
@@ -69,34 +46,6 @@ const downgradeJsonSchemaResponseFormat = (payload: OpenAIChatCompletionsPayload
   const rf = payload.response_format;
   if (rf?.type !== 'json_schema') return payload;
   return { ...payload, response_format: { type: 'json_object' } };
-};
-
-const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
-  const withDisable = stripCanonicalReasoningSentinel(payload);
-  const withResponseFormat = downgradeJsonSchemaResponseFormat(withDisable);
-  return {
-    ...withResponseFormat,
-    messages: withResponseFormat.messages.map(rewriteOutboundMessage),
-  };
-};
-
-const rewriteInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
-  let changed = false;
-  const choices = chunk.choices.map(choice => {
-    const delta = choice.delta as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'];
-    if (typeof delta.reasoning_content !== 'string') return choice;
-
-    const { reasoning_content, ...rest } = delta;
-    changed = true;
-    return {
-      ...choice,
-      delta: {
-        ...rest,
-        ...(delta.reasoning_text === undefined ? { reasoning_text: reasoning_content } : {}),
-      },
-    };
-  });
-  return changed ? { ...chunk, choices } : chunk;
 };
 
 const VENDOR_CACHE_FIELDS = ['prompt_cache_hit_tokens', 'prompt_cache_miss_tokens'] as const;
@@ -122,7 +71,7 @@ const rewriteInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICha
 export const withVendorDeepSeekOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
 
-  ctx.payload = rewriteOutboundPayload(ctx.payload);
+  ctx.payload = downgradeJsonSchemaResponseFormat(stripCanonicalReasoningSentinel(ctx.payload));
 
   const result = await run();
   if (result.type !== 'events') return result;
@@ -135,7 +84,7 @@ export const withVendorDeepSeekOpenAIChatCompletionsNormalize: OpenAIChatComplet
           yield frame;
           continue;
         }
-        const event = rewriteInboundUsage(rewriteInboundDeltas(frame.event));
+        const event = rewriteInboundUsage(frame.event);
         yield event === frame.event ? frame : eventFrame(event);
       }
     })(),

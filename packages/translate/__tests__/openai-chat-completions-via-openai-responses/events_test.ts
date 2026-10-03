@@ -1,7 +1,9 @@
 import { test } from 'vitest';
 
 import { createOpenAIResponsesToOpenAIChatCompletionsStreamState, translateOpenAIResponsesEventToOpenAIChatCompletionsChunks, translateToSourceEvents } from '../../src/openai-chat-completions-via-openai-responses/events.ts';
+import { openAIChatCompletionsReasoningItems } from '../../src/openai-chat-completions-via-openai-responses/reasoning.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields, FlowayOpenAIChatCompletionsReasoning } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -298,15 +300,16 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
     events.slice(0, -1).map(event => event.choices[0]?.delta),
     [
       { role: 'assistant' },
-      { reasoning_text: 'trace' },
+      { ...flowayReasoningFields('trace', '') },
       {
-        reasoning_items: [
+        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_0',
             summary: [{ type: 'summary_text', text: 'trace' }],
+            encrypted_content: null,
           },
-        ],
+        ])) ?? ''),
       },
       { content: 'answer' },
       {},
@@ -405,7 +408,7 @@ test('translateToSourceEvents rejects truncated OpenAI Responses streams without
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream OpenAI Responses stream ended without a terminal event.');
 });
 
-test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning items without readable summary', () => {
+test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves native reasoning IDs without readable summaries', () => {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   const created = translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
@@ -439,7 +442,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
     },
     state,
   );
-  assertEquals(during, []);
+  assertEquals(openAIChatCompletionsReasoningItems(during[0].choices[0].delta), [{ type: 'reasoning', id: 'rs_1', summary: [] }]);
 
   const completed = translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
     {
@@ -475,7 +478,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
   });
 });
 
-test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill scalar opaque from later empty reasoning', () => {
+test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps readable items without manufacturing data from an empty item', () => {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
@@ -550,13 +553,13 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
   );
 
   assertEquals(
-    [...chunks, ...completed].some(chunk => chunk.choices[0]?.delta.reasoning_opaque !== undefined),
-    false,
+    openAIChatCompletionsReasoningItems([...chunks, ...completed].findLast(chunk => chunk.choices[0]?.delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning_opaque)?.choices[0].delta ?? {}),
+    [{ type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'first' }] }, { type: 'reasoning', id: 'rs_2', summary: [] }],
   );
   assertEquals(completed[0].usage, undefined);
 });
 
-test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple reasoning items without readable summaries', () => {
+test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves multiple native reasoning IDs without readable summaries', () => {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
@@ -623,8 +626,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
     state,
   );
 
-  assertEquals(firstReasoning, []);
-  assertEquals(secondReasoning, []);
+  assertEquals(openAIChatCompletionsReasoningItems(firstReasoning[0].choices[0].delta), [{ type: 'reasoning', id: 'rs_1', summary: [] }]);
+  assertEquals(openAIChatCompletionsReasoningItems(secondReasoning[0].choices[0].delta), [{ type: 'reasoning', id: 'rs_1', summary: [] }, { type: 'reasoning', id: 'rs_2', summary: [] }]);
   assertEquals(completed.length, 2);
   assertEquals(completed[0].choices[0].finish_reason, 'stop');
   assertEquals(completed[0].usage, undefined);
@@ -636,7 +639,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
   });
 });
 
-test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-only summary text into scalar reasoning_text', () => {
+test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-only summary text into scalar reasoning', () => {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
@@ -695,8 +698,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'done trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals(reasoning[0].choices[0].delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning, 'done trace');
+  assertEquals(openAIChatCompletionsReasoningItems(reasoning[1].choices[0].delta), [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -706,7 +709,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
   assertEquals(completed[0].choices[0].finish_reason, 'stop');
 });
 
-test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output_item.done summary into scalar reasoning_text', () => {
+test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output_item.done summary into scalar reasoning', () => {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(
@@ -755,8 +758,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'output trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals(reasoning[0].choices[0].delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning, 'output trace');
+  assertEquals(openAIChatCompletionsReasoningItems(reasoning[1].choices[0].delta), [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -904,6 +907,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
     chunks.map(chunk => chunk.choices[0]?.delta),
     [
       { role: 'assistant' },
+      flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: null }])),
       { content: 'answer' },
       {},
     ],
@@ -993,6 +997,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
     chunks.map(chunk => chunk.choices[0]?.delta),
     [
       { role: 'assistant' },
+      flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', [{ type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: null }])),
       { content: 'answer' },
       {},
     ],
@@ -1171,7 +1176,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits all done-
   ].flatMap(result => result);
 
   assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
+    chunks.map(chunk => chunk.choices[0]?.delta[FlowayOpenAIChatCompletionsReasoning]?.reasoning).filter(text => text !== undefined && text !== ''),
     ['first', 'second'],
   );
 });
@@ -1224,7 +1229,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks flushes pending
 
   assertEquals(
     completed.map(chunk => chunk.choices[0]?.delta),
-    [{ reasoning_text: 'terminal trace' }, {}],
+    [{ ...flowayReasoningFields('terminal trace', '') }, {}],
   );
 });
 
@@ -1293,20 +1298,22 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps first sca
     chunks.map(chunk => chunk.choices[0]?.delta),
     [
       { role: 'assistant' },
-      { reasoning_text: 'first' },
+      { ...flowayReasoningFields('first', '') },
       {
-        reasoning_items: [
+        ...flowayReasoningFields('', (encodeChatCompletionsReasoningData('litellm-reasoning-items', [
           {
             type: 'reasoning',
             id: 'rs_0',
             summary: [{ type: 'summary_text', text: 'first' }],
+            encrypted_content: null,
           },
           {
             type: 'reasoning',
             id: 'rs_1',
             summary: [{ type: 'summary_text', text: 'second' }],
+            encrypted_content: null,
           },
-        ],
+        ])) ?? ''),
       },
     ],
   );

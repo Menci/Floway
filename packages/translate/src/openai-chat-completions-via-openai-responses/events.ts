@@ -1,7 +1,8 @@
-import { hasReadableSummary, toOpenAIChatCompletionsReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { chatCompletionsReasoningItemFromResponses } from './reasoning.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { encodeChatCompletionsReasoningData, flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
@@ -34,6 +35,7 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   toolCallIndex: number;
   functionCallIndices: Map<number, number>;
   reasoningItems: OpenAIChatCompletionsReasoningItem[];
+  emittedReasoningItems: OpenAIChatCompletionsReasoningItem[];
   firstScalarReasoningOutputIndex?: number;
   pendingReasoningSummaryTexts: Map<
     string,
@@ -58,6 +60,7 @@ export const createOpenAIResponsesToOpenAIChatCompletionsStreamState = (): OpenA
   toolCallIndex: -1,
   functionCallIndices: new Map(),
   reasoningItems: [],
+  emittedReasoningItems: [],
   pendingReasoningSummaryTexts: new Map(),
   emittedReasoningSummaryKeys: new Set(),
   emittedTextContentKeys: new Set(),
@@ -73,7 +76,8 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
 
   const reasoningItems = state.reasoningItems;
   state.reasoningItems = [];
-  return [makeChunk(state, { reasoning_items: reasoningItems })];
+  state.emittedReasoningItems.push(...reasoningItems);
+  return [makeChunk(state, flowayReasoningFields('', encodeChatCompletionsReasoningData('litellm-reasoning-items', state.emittedReasoningItems)))];
 };
 
 const isReasoningOutputDone = (event: OpenAIResponsesStreamEvent): boolean => {
@@ -104,7 +108,7 @@ const flushReadyDeferredChatChunks = (state: OpenAIResponsesToOpenAIChatCompleti
 const shouldProjectScalarReasoning = (outputIndex: number, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): boolean => {
   // OpenAI Chat Completions scalar reasoning is a compatibility projection, not an ordered
   // reasoning IR; once the first OpenAI Responses reasoning output is chosen, later
-  // reasoning outputs only travel through `reasoning_items[]`.
+  // reasoning outputs only travel through the opaque reasoning envelope.
   state.firstScalarReasoningOutputIndex ??= outputIndex;
   return state.firstScalarReasoningOutputIndex === outputIndex;
 };
@@ -121,7 +125,7 @@ const emitReasoningSummaryText = (outputIndex: number, summaryIndex: number, tex
 
   state.emittedReasoningSummaryKeys.add(key);
   state.pendingReasoningSummaryTexts.delete(key);
-  return [makeChunk(state, { reasoning_text: text })];
+  return [makeChunk(state, flowayReasoningFields(text, ''))];
 };
 
 const queueReasoningSummaryDoneFallback = (outputIndex: number, summaryIndex: number, text: string, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): void => {
@@ -191,8 +195,8 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
     if (item.type !== 'reasoning') return [];
 
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
-    const reasoningItem = toOpenAIChatCompletionsReasoningItem(item);
-    if (hasReadableSummary(reasoningItem)) state.reasoningItems.push(reasoningItem);
+    const reasoningItem = chatCompletionsReasoningItemFromResponses(item);
+    state.reasoningItems.push(reasoningItem);
 
     for (const [summaryIndex, part] of item.summary.entries()) {
       chunks.push(...emitReasoningSummaryText(output_index, summaryIndex, part.text, state, 'done-fallback'));

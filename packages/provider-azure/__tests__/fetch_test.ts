@@ -34,6 +34,7 @@ const baseRecord: UpstreamRecord = {
     ],
   },
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],

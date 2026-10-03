@@ -8,6 +8,7 @@ import {
   preserveDecodedStoredJsonProperties,
 } from './stored-json.ts';
 import { BILLING_METRICS, MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS, CHAT_COMPLETIONS_REASONING_DATA_STANDARDS } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamModelsCache } from '@floway-dev/provider';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 
@@ -15,6 +16,9 @@ import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 // the repository boundary explicit without reconstructing objects and losing
 // unusual-but-valid own keys such as `__proto__`.
 const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
+const reasoningOverridesSchema = z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS).optional(), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS).optional() }).strict();
+export const compatibilitySchema = z.object({ openaiChatCompletions: z.object({ reasoning: reasoningOverridesSchema.optional() }).strict().optional() }).strict();
+
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
   openaiCompletions: endpointSchema.optional(),
@@ -72,6 +76,7 @@ const opaqueBlobCompatibilityScopeSchema = z.object({
   bindToUpstream: z.boolean(),
   key: z.string().min(1).optional(),
 }).strict();
+const resolvedCompatibilitySchema = z.object({ openaiChatCompletions: z.object({ reasoning: z.object({ text: z.enum(CHAT_COMPLETIONS_REASONING_TEXT_STANDARDS), data: z.enum(CHAT_COMPLETIONS_REASONING_DATA_STANDARDS) }).strict() }).strict() }).strict();
 const providerModelSchema = z.object({
   id: z.string(),
   upstreamModelId: z.string(),
@@ -83,6 +88,8 @@ const providerModelSchema = z.object({
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
   endpoints: endpointsSchema,
+  resolvedCompatibility: resolvedCompatibilitySchema.optional(),
+  compatibility: compatibilitySchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema,
   providerData: opaqueJsonSchema.optional(),
   rerankTarget: z.object({
@@ -102,6 +109,7 @@ const discoveredModelSchema = z.object({
   pricing: pricingSchema.optional(),
   chat: chatSchema.optional(),
   endpoints: endpointsSchema,
+  compatibility: compatibilitySchema.optional(),
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),
@@ -171,3 +179,5 @@ export const decodeModelPrefix = (raw: string, id: string): ModelPrefixConfig =>
 
 export const encodeUpstreamModelsCache = (cache: UpstreamModelsCache): string =>
   JSON.stringify(cache, (_key, value) => value instanceof Set ? [...value] : value);
+
+export const decodeCompatibility = (raw: string, id: string) => decodeUpstreamJson(raw, compatibilitySchema, 'compatibility_json', id);

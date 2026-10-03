@@ -30,6 +30,8 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): {
     updated_at: '',
     flag_overrides: structuredClone(source.flag_overrides),
     flag_defaults: structuredClone(source.flag_defaults),
+    compatibility: structuredClone(source.compatibility),
+    compatibility_defaults: structuredClone(source.compatibility_defaults),
     disabled_public_model_ids: [...source.disabled_public_model_ids],
     proxy_fallback_list: structuredClone(source.proxy_fallback_list),
     model_prefix: source.model_prefix === null ? null : structuredClone(source.model_prefix),

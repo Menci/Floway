@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/gemini-generate-content-via-openai-chat-completions/request.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
@@ -77,8 +78,8 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
     {
       role: 'assistant',
       content: 'I will call a tool.',
-      reasoning_text: 'private trace',
-      reasoning_opaque: 'sig_1',
+      ...flowayReasoningFields('private trace', 'sig_1'),
+
       tool_calls: [
         {
           id: 'gemini_call_0_2',

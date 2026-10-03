@@ -4,6 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const claudeCodeProviderModule: ProviderModule = {
   create: createClaudeCodeProvider,
+  defaultCompatibility: { openaiChatCompletions: { reasoning: { text: 'reasoning', data: 'passthrough' } } },
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
 };
 

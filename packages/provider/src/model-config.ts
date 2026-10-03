@@ -1,3 +1,4 @@
+import { compatibilityField, type Compatibility } from './compatibility.ts';
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type OpaqueBlobCompatibilityScope, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
@@ -35,6 +36,7 @@ export interface UpstreamModelConfig {
   // `ProviderModel.flagOverrides`, sourced from the provider's per-model
   // rule rather than an operator-authored config row.
   flagOverrides?: FlagOverrides;
+  compatibility?: Compatibility;
 }
 
 // The public catalog id a model is exposed under: an explicit override when set,
@@ -63,22 +65,28 @@ const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpoint
 ]);
 
 // The structured per-model capability map. A present key declares the model is
-// served by that endpoint; the empty value object is a placeholder reserved
-// for future per-endpoint sub-capabilities. `allowEmpty` is set for the
+// served by that endpoint. `allowEmpty` is set for the
 // upstream-level fallback map (an upstream may serve only kind-derived
 // embedding/image/transcription models or manual rerank models and declare no
 // chat endpoint).
-export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
+const endpointMapField = (value: unknown, label: string, allowEmpty: boolean, metadata: boolean): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
   for (const [key, sub] of Object.entries(value)) {
     if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
+    if (!metadata && Object.keys(sub).length > 0) throw new Error(`Malformed ${label}.${key}: configure protocol options through compatibility`);
     endpoints[key as ModelEndpointKey] = {};
   }
-  if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
+  if (!allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
   return endpoints;
 };
+
+export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints =>
+  endpointMapField(value, label, options.allowEmpty === true, true);
+
+export const endpointAvailabilityField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints =>
+  endpointMapField(value, label, options.allowEmpty === true, false);
 
 const optionalNumberField = (value: unknown, label: string): number | undefined => {
   if (value === undefined) return undefined;
@@ -298,7 +306,7 @@ export const opaqueBlobCompatibilityScopeField = (
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const pricing = pricingField(value.pricing, `${label}.pricing`);
-  const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
+  const endpoints = endpointAvailabilityField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
@@ -325,6 +333,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
       : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
+    ...(value.compatibility !== undefined ? { compatibility: compatibilityField(value.compatibility, `${label}.compatibility`) } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),
   };
 };

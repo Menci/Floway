@@ -1,6 +1,7 @@
-import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { openAIChatCompletionsReasoningOpaque, openAIChatCompletionsScalarReasoningText, decodeChatCompletionsReasoningData } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const toAnthropicMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -126,7 +127,7 @@ const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => 
   const delta = choice.delta;
   return Boolean(delta.content)
     || openAIChatCompletionsScalarReasoningText(delta) !== undefined
-    || delta.reasoning_opaque != null
+    || openAIChatCompletionsReasoningOpaque(delta) != null
     || (delta.tool_calls?.length ?? 0) > 0;
 };
 
@@ -299,17 +300,23 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
     });
   }
 
-  if (delta.reasoning_opaque === undefined || delta.reasoning_opaque === null) {
+  const reasoningOpaque = openAIChatCompletionsReasoningOpaque(delta);
+  if (reasoningOpaque === undefined) {
     return;
   }
 
+  const envelope = decodeChatCompletionsReasoningData(reasoningOpaque);
+  const structured = envelope?.type === 'litellm-thinking-blocks' || envelope?.type === 'openrouter-reasoning-details';
   if (state.openBlock === 'thinking') {
-    state.pendingThinkingSignature = delta.reasoning_opaque;
+    state.pendingThinkingSignature = reasoningOpaque;
+    // Structured opaque values are cumulative choice snapshots. Keep the
+    // thinking gate open until finish so replay carries the complete array.
+    if (structured) return;
     emitPendingReasoningAndDeferred(state, events);
     return;
   }
 
-  state.pendingReasoningOpaque = delta.reasoning_opaque;
+  state.pendingReasoningOpaque = reasoningOpaque;
 };
 
 const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {

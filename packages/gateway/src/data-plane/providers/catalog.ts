@@ -1,3 +1,4 @@
+import { downstreamEndpointsFor } from './downstream-endpoints.ts';
 import { unionEndpoints } from './endpoint-union.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
@@ -48,13 +49,14 @@ const mergedChatMetadata = (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
+  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget, compatibility, resolvedCompatibility, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
   const chat = mergedChatMetadata(providerModel.chat, providerModels);
   return {
     ...metadata,
     ...(chat === undefined ? {} : { chat }),
     endpoints: { ...endpoints },
+    downstreamEndpoints: downstreamEndpointsFor(endpoints),
     providerModels,
   };
 };
@@ -103,6 +105,7 @@ export const mergeIntoCatalog = (
     ...(chat === undefined ? {} : { chat }),
     opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(Object.values(providerModels)),
     endpoints,
+    downstreamEndpoints: downstreamEndpointsFor(endpoints),
     kind: kindForEndpoints(endpoints),
     providerModels,
   });

@@ -117,6 +117,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       limits: { ...(model.limits ?? {}) },
       kind,
       endpoints,
+      ...(model.compatibility ? { compatibility: model.compatibility } : {}),
       providerData: model.upstreamModelId,
       enabledFlags,
       opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },

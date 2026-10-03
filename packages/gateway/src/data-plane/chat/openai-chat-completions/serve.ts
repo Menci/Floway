@@ -1,6 +1,7 @@
 import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 import { openaiChatCompletionsAttempt, openaiChatCompletionsTarget } from './attempt.ts';
 import { renderOpenAIChatCompletionsFailure } from './errors.ts';
+import { decodeChatCompletionsHistory } from './reasoning.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -46,7 +47,7 @@ export const openaiChatCompletionsServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await openaiChatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const result = await openaiChatCompletionsAttempt.generate({ payload: decodeChatCompletionsHistory(selection.payloadFor(candidate)), ctx, candidate, headers });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },

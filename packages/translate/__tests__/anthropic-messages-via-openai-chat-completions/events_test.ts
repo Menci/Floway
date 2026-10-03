@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
+import { flowayReasoningFields } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse } from '@floway-dev/test-utils';
 
@@ -72,8 +73,8 @@ test('OpenAI Chat Completions refusal deltas become Anthropic Messages refusal s
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-only reasoning as redacted_thinking at finish', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc_old' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'enc_only' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('', 'enc_old') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'enc_only') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -91,7 +92,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'enc' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'enc') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -119,7 +120,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves opaque reasoning before later text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('', 'enc') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
@@ -148,8 +149,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves opa
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -176,9 +177,9 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text an
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoning_content in one thinking block', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_content: null }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_content: 'trace' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('', '') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('trace', '') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -205,9 +206,9 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoni
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early opaque after later thinking text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'old' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('', 'old') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('trace', '') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -234,9 +235,9 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early o
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late opaque with prior reasoning text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -273,10 +274,10 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late op
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves later opaque-only reasoning after earlier thinking', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig1' }), state),
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig2' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig1') }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ ...flowayReasoningFields('', 'sig2') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -320,7 +321,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves lat
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits signature for text-only reasoning', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', ...flowayReasoningFields('trace', '') }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 

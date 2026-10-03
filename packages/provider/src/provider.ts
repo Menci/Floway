@@ -1,4 +1,5 @@
 import type { OpenAIAudioTranscriptionRequest } from './audio.ts';
+import type { CompatibilityDefaults } from './compatibility.ts';
 import type { FlagDefaults } from './flags.ts';
 import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
@@ -167,4 +168,5 @@ export interface ProviderModule {
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;
+  defaultCompatibility: CompatibilityDefaults;
 }

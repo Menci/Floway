@@ -274,6 +274,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
       models: over.models.map(m => ({ ...m, endpoints: { openaiChatCompletions: {} } })),
     },
     state: null,
+    compatibility: {},
     flagOverrides: {},
     disabledPublicModelIds: over.disabledPublicModelIds,
     proxyFallbackList: [],

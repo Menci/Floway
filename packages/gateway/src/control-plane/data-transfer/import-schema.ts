@@ -11,7 +11,7 @@ import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
-import { USERNAME_PATTERN } from '../schemas.ts';
+import { compatibilitySchema, USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
@@ -160,6 +160,7 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
     updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
     flagOverrides: parseValue(parsedBy(parseFlagOverridesWire), wire.flag_overrides),
+    compatibility: parseValue(compatibilitySchema.optional().default({}), wire.compatibility),
     disabledPublicModelIds: parseValue(parsedBy(parseDisabledPublicModelIdsWire).optional().default([]), wire.disabled_public_model_ids),
     proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
     modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),

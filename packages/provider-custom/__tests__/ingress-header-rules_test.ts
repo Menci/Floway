@@ -17,6 +17,7 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
   state: null,
+  compatibility: {},
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
