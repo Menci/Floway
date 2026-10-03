@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { ReactElement } from 'react';
 
 import {
   buildAgentClaudeSnippet,
@@ -15,6 +16,10 @@ import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import ompIconUrl from '../../assets/omp.svg';
+import opencodeIconUrl from '../../assets/opencode.svg';
+import vscodeIconUrl from '../../assets/vscode.svg';
+import zedIconUrl from '../../assets/zed.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
@@ -28,8 +33,12 @@ import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex';
+type Agent = 'claude' | 'codex' | 'omp' | 'vscode' | 'zed' | 'opencode';
 type Platform = AgentSetupPlatform;
+// The harness agents convert every model the gateway serves, so they take no
+// model selection or per-agent configuration.
+type ConfigurableAgent = Extract<Agent, 'claude' | 'codex'>;
+const isConfigurableAgent = (agent: Agent): agent is ConfigurableAgent => agent === 'claude' || agent === 'codex';
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
 // id.
@@ -75,9 +84,13 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
     <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
-        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
-          <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
-          <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value as Agent)} selectedValue={agent} vertical>
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={claudeIconUrl} />} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={codexIconUrl} />} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={ompIconUrl} />} label={t('dashboard.apiKeys.configuration.omp')} value="omp" />
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={vscodeIconUrl} />} label={t('dashboard.apiKeys.configuration.vscode')} value="vscode" />
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={zedIconUrl} />} label={t('dashboard.apiKeys.configuration.zed')} value="zed" />
+          <AgentTab icon={<img alt="" className="h-4 w-4" src={opencodeIconUrl} />} label={t('dashboard.apiKeys.configuration.opencode')} value="opencode" />
         </TabList>
       </nav>
 
@@ -91,10 +104,10 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
             >{setup.createError}</OutcomeMessageBar>
           : setup.error && <OutcomeMessageBar onDismiss={setup.dismissError}>{setup.error}</OutcomeMessageBar>}
 
-        <section className={SECTION_STACK_CLASS}>
+        {isConfigurableAgent(agent) && <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
           <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
-        </section>
+        </section>}
 
         {view === 'snippets' && selectedKey
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
@@ -161,30 +174,49 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
       <CodeBlock code={snippet} copyOutcome={clipboard.outcomeFor('agent-snippet-claude')} language="json" onCopy={() => clipboard.copy(snippet, 'agent-snippet-claude')} />
     </div>;
   }
-  // Both snippets are one platform's pair -- the config's auth command reads the
-  // file the credential snippet writes -- so one choice drives them and each
-  // block carries the picker, whichever the reader reaches first.
-  const config = buildAgentCodexSnippet(origin, configuration.codex, platform);
-  const credential = platform === 'windows' ? codexWindowsCredentialSnippet(apiKey) : codexUnixCredentialSnippet(apiKey);
-  const configTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
-  const credentialTag = `${configTag}-token`;
-  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
-  return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
+  if (agent === 'codex') {
+    // Both snippets are one platform's pair -- the config's auth command reads the
+    // file the credential snippet writes -- so one choice drives them and each
+    // block carries the picker, whichever the reader reaches first.
+    const config = buildAgentCodexSnippet(origin, configuration.codex, platform);
+    const credential = platform === 'windows' ? codexWindowsCredentialSnippet(apiKey) : codexUnixCredentialSnippet(apiKey);
+    const configTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
+    const credentialTag = `${configTag}-token`;
+    const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
+    return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.codexConfigHintWindows' : 'dashboard.apiKeys.configuration.codexConfigHint'} />
+      </Text>
+      <CodeBlock code={config} copyOutcome={clipboard.outcomeFor(configTag)} header={tabs} language="toml" onCopy={() => clipboard.copy(config, configTag)} />
+      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexAuthHint')}</Text>
+      <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={tabs} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
+    </div>;
+  }
+  // The harness agents have no config file to paste: the setup script fetches
+  // the model list and writes (omp, zed, opencode) or prints (vscode) the
+  // settings, so the snippet view just points at where the installer puts the
+  // result.
+  const harnessHints = {
+    omp: 'dashboard.apiKeys.configuration.ompHint',
+    vscode: 'dashboard.apiKeys.configuration.vscodeHint',
+    zed: 'dashboard.apiKeys.configuration.zedHint',
+    opencode: 'dashboard.apiKeys.configuration.opencodeHint',
+  } as const;
+  const hintKey = harnessHints[agent];
+  return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
     <Text size={200} className="text-fui-fg2">
-      <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.codexConfigHintWindows' : 'dashboard.apiKeys.configuration.codexConfigHint'} />
+      <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={hintKey} />
     </Text>
-    <CodeBlock code={config} copyOutcome={clipboard.outcomeFor(configTag)} header={tabs} language="toml" onCopy={() => clipboard.copy(config, configTag)} />
-    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexAuthHint')}</Text>
-    <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={tabs} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.harnessHint')}</Text>
   </div>;
 }
 
-function AgentTab({ icon, label, value }: { icon: string; label: string; value: Agent }) {
-  return <Tab value={value} icon={<img alt="" className="h-4 w-4" src={icon} />}>{label}</Tab>;
+function AgentTab({ icon, label, value }: { icon: ReactElement; label: string; value: Agent }) {
+  return <Tab value={value} icon={icon}>{label}</Tab>;
 }
 
 function AgentConfigurationFields({ agent, configuration, models, onChange }: {
-  agent: Agent;
+  agent: ConfigurableAgent;
   configuration: AgentSetupConfiguration;
   models: ControlPlaneModel[];
   onChange: (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => void;

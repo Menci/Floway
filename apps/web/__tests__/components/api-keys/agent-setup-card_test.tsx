@@ -34,6 +34,10 @@ const lease = (apiKeyId: string): AgentSetupLease => ({
   scripts: {
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
+    omp: { sh: '/omp.sh', ps1: '/omp.ps1' },
+    vscode: { sh: '/vscode.sh', ps1: '/vscode.ps1' },
+    zed: { sh: '/zed.sh', ps1: '/zed.ps1' },
+    opencode: { sh: '/opencode.sh', ps1: '/opencode.ps1' },
   },
 });
 

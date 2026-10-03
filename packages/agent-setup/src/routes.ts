@@ -23,7 +23,7 @@ import {
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
-import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
+import { type ScriptAgent, type ScriptLanguage, SETUP_PYTHON_CONVERTERS, SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
@@ -75,6 +75,22 @@ const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string)
     codex: {
       sh: `${publicScriptBasePath}/${record.token}/codex.sh`,
       ps1: `${publicScriptBasePath}/${record.token}/codex.ps1`,
+    },
+    omp: {
+      sh: `${publicScriptBasePath}/${record.token}/omp.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/omp.ps1`,
+    },
+    vscode: {
+      sh: `${publicScriptBasePath}/${record.token}/vscode.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/vscode.ps1`,
+    },
+    zed: {
+      sh: `${publicScriptBasePath}/${record.token}/zed.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/zed.ps1`,
+    },
+    opencode: {
+      sh: `${publicScriptBasePath}/${record.token}/opencode.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/opencode.ps1`,
     },
   },
 });
@@ -148,11 +164,31 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
   const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
+  // The Python harness converters carry no secret, so they are served publicly
+  // (no lease token) for the installer bodies to download. The route is
+  // registered before the token-shaped sealer; `harness` is far shorter than
+  // the 43-character token pattern, so the sealer never shadows it.
+  const serveHarnessConverter = (c: Context) => {
+    const name = c.req.param('name')!.replace(/\.py$/, '');
+    const source = SETUP_PYTHON_CONVERTERS[name as keyof typeof SETUP_PYTHON_CONVERTERS];
+    if (source === undefined) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+    return c.body(source, 200, { ...SCRIPT_RESPONSE_HEADERS, 'content-type': 'text/x-python; charset=utf-8' });
+  };
+
   return new Hono()
+    .on(['GET', 'HEAD'], '/harness/:name', serveHarnessConverter)
     .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
     .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/omp.sh', serveSetupScript('omp', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/omp.ps1', serveSetupScript('omp', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/vscode.sh', serveSetupScript('vscode', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/vscode.ps1', serveSetupScript('vscode', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/zed.sh', serveSetupScript('zed', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/zed.ps1', serveSetupScript('zed', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/opencode.sh', serveSetupScript('opencode', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/opencode.ps1', serveSetupScript('opencode', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

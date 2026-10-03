@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import {
   SETUP_BASH_COMMON,
   SETUP_BASH_COMMON_CLI,
+  SETUP_BASH_COMMON_HARNESS,
   SETUP_BASH_COMMON_JQ,
   SETUP_BASH_COMMON_MAIN,
   SETUP_BASH_COMMON_MANAGED_FILE,
@@ -10,6 +11,7 @@ import {
   SETUP_BASH_COMMON_PROCESS,
   SETUP_POWERSHELL_COMMON,
   SETUP_POWERSHELL_COMMON_CLI,
+  SETUP_POWERSHELL_COMMON_HARNESS,
   SETUP_POWERSHELL_COMMON_JSON_DOCUMENT,
   SETUP_POWERSHELL_COMMON_MAIN,
   SETUP_POWERSHELL_COMMON_MANAGED_FILE,
@@ -41,6 +43,7 @@ const BASH_COMMON_SECTIONS: readonly Section[] = [
   { file: 'installers/bash/common/cli.sh', source: SETUP_BASH_COMMON_CLI, end: '_install_brew_cask() {' },
   { file: 'installers/bash/common/managed-file.sh', source: SETUP_BASH_COMMON_MANAGED_FILE, append: '\n' },
   { file: 'installers/bash/common/cli.sh', source: SETUP_BASH_COMMON_CLI, start: '_install_brew_cask() {' },
+  { file: 'installers/bash/common/harness.sh', source: SETUP_BASH_COMMON_HARNESS, append: '\n' },
   { file: 'installers/bash/common/main.sh', source: SETUP_BASH_COMMON_MAIN, start: '# --- run' },
 ];
 
@@ -61,6 +64,7 @@ const POWERSHELL_COMMON_SECTIONS: readonly Section[] = [
   { file: 'installers/powershell/common/cli.ps1', source: SETUP_POWERSHELL_COMMON_CLI, append: '\n' },
   { file: 'installers/powershell/common/managed-file.ps1', source: SETUP_POWERSHELL_COMMON_MANAGED_FILE, start: '# Rollback retains', append: '\n' },
   { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, start: '# Run a child process with captured output' },
+  { file: 'installers/powershell/common/harness.ps1', source: SETUP_POWERSHELL_COMMON_HARNESS, append: '\n' },
   { file: 'installers/powershell/common/main.ps1', source: SETUP_POWERSHELL_COMMON_MAIN, start: '# --- run' },
 ];
 
