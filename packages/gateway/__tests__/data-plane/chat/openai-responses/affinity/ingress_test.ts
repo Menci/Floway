@@ -240,6 +240,59 @@ test('removes only items explicitly marked synthetic and preserves markerless or
   expect(projectionB.degrades).toBe(false);
 });
 
+// A cross-target switch cannot replay an upstream-signed blob, and an item
+// whose blob was its entire content used to survive as `{type, id}`. The
+// upstream rejects that shape outright and names the remedy itself:
+//
+//   "Item with id 'rs_...' not found. Items are not persisted when `store` is
+//    set to false. Try again with `store` set to true, or remove this item
+//    from your input."
+//
+// https://github.com/openai/codex/blob/8c41ed33ce3e39460e7b13b14c35e0c39bb5980d/codex-rs/protocol/src/models.rs#L1076-L1094
+test('drops an item left as a bare reference when its carrier cannot follow', async () => {
+  const carrier = await codec.wrap(
+    'upstream-signed-reasoning',
+    targetFor(candidateA),
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+  const prepared = await analyzeOpenAIResponsesAffinity({
+    model: 'model',
+    input: [
+      // The blob was the whole item, so nothing survives its removal.
+      { type: 'reasoning', id: 'rs_empty', summary: [], content: null, encrypted_content: carrier },
+      // The same carrier, but this item still has a readable summary.
+      {
+        type: 'reasoning',
+        id: 'rs_visible',
+        summary: [{ type: 'summary_text', text: 'visible' }],
+        encrypted_content: carrier,
+      },
+    ] as unknown as CanonicalOpenAIResponsesPayload['input'],
+  }, codec);
+
+  // The exact target replays the blob, so both items travel untouched.
+  const exact = acceptedAffinityEvaluation(prepared, candidateA).materialize();
+  expect(exact.input).toEqual([
+    { type: 'reasoning', id: 'rs_empty', summary: [], content: null, encrypted_content: 'upstream-signed-reasoning' },
+    {
+      type: 'reasoning',
+      id: 'rs_visible',
+      summary: [{ type: 'summary_text', text: 'visible' }],
+      encrypted_content: 'upstream-signed-reasoning',
+    },
+  ]);
+
+  // Another target cannot replay it: the content-free item is dropped instead
+  // of being sent as a name no row can resolve, and the item that still says
+  // something keeps its place.
+  const foreign = acceptedAffinityEvaluation(prepared, candidateB).materialize();
+  expect(foreign.input).toEqual([{
+    type: 'reasoning',
+    id: 'rs_visible',
+    summary: [{ type: 'summary_text', text: 'visible' }],
+  }]);
+});
+
 test('derives force routing from blob-less program state after the turn carrier', async () => {
   const firstVariant = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
   const lastRoutedVariant = { ...candidateA, rules: { reasoning: { effort: 'high' } } };

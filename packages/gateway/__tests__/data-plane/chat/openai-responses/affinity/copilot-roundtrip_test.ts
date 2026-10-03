@@ -152,7 +152,10 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const exact = acceptedAffinityEvaluation(prepared, candidate).materialize();
       const foreign = acceptedAffinityEvaluation(prepared, otherCandidate).materialize();
       expect(exact.input[0]).toMatchObject({ type: 'reasoning', id: publicItem.id });
-      expect(foreign.input[0]).toEqual({ type: 'reasoning', id: publicItem.id, summary: [] });
+      // The public item's only content is the blob this gateway attached, so a
+      // candidate that cannot replay it has nothing left to send: the item is
+      // dropped rather than replayed as an id that upstream never stored.
+      expect(foreign.input).toEqual([]);
 
       const { model: _model, ...exactBody } = exact;
       const second = await provider.instance.callOpenAIResponses(
