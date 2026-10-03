@@ -25,6 +25,10 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-collaboration-shim': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
+  // Anthropic updates inline-system support independently of the dynamic
+  // Claude Code catalog. Keep capable models lossless by default; operators
+  // should enable this for models that reject inline system sections.
+  // https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
   'rewrite-system-to-developer': false,

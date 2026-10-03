@@ -133,3 +133,46 @@ test('the complete Anthropic Messages trip restores the namespace after target t
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
   expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });
 });
+
+test('the complete Anthropic Messages trip envelopes a namespace root union and restores its call', async () => {
+  const source: OpenAIResponsesRequestPayload = {
+    model: 'm', input: [{ type: 'message', role: 'user', content: 'delete it' }], tools: [{
+      type: 'namespace', name: 'mcp__codex_app', description: 'Codex app tools.', tools: [{
+        type: 'function', name: 'automation_update', parameters: {
+          type: 'object', properties: {},
+          oneOf: [{ $ref: '#/$defs/delete' }, { $ref: '#/$defs/view' }],
+          $defs: {
+            delete: { type: 'object', properties: { mode: { const: 'delete' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+            view: { type: 'object', properties: { mode: { const: 'view' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+          },
+        },
+      }],
+    }],
+  };
+  const trip = await translateOpenAIResponsesViaAnthropicMessages(source, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
+  const targetTool = trip.target.tools?.[0];
+  if (targetTool === undefined || !('input_schema' in targetTool)) throw new Error('Expected translated client tool');
+  expect(targetTool.input_schema).toMatchObject({
+    type: 'object', properties: { arguments: { oneOf: expect.any(Array) } }, required: ['arguments'],
+  });
+  expect(targetTool.input_schema).not.toHaveProperty('oneOf');
+
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+    yield eventFrame({ type: 'message_start', message: { id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'mcp__codex_app_automation_update', input: {} } });
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"arguments":{"mode":"delete","id":"job-1"}}' } });
+    yield eventFrame({ type: 'content_block_stop', index: 0 });
+    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } });
+    yield eventFrame({ type: 'message_stop' });
+  })();
+  const events: OpenAIResponsesStreamEvent[] = [];
+  for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
+  expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
+    type: 'response.output_item.done',
+    item: expect.objectContaining({ namespace: 'mcp__codex_app', name: 'automation_update', arguments: '{"mode":"delete","id":"job-1"}' }),
+  })]));
+  expect(events.at(-1)).toMatchObject({
+    type: 'response.completed',
+    response: { output: [expect.objectContaining({ namespace: 'mcp__codex_app', name: 'automation_update', arguments: '{"mode":"delete","id":"job-1"}' })] },
+  });
+});
