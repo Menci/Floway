@@ -112,6 +112,18 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145
              handshakeMsgs.push(clientHello);
              if (opts?.psk) {
                  earlySecret = opts.psk.earlySecret;
+diff --git a/lib/types/x509.d.ts b/lib/types/x509.d.ts
+index 7291581cfd496c4e32c28078e2373ee05f49ceed..aa5281ba4b98b3dfd9e7661f01b0628442eddbce 100644
+--- a/lib/types/x509.d.ts
++++ b/lib/types/x509.d.ts
+@@ -16,6 +16,7 @@ export type X509Certificate<T = any> = {
+     isWithinValidity(): boolean;
+     getSubjectField(key: string): string[];
+     getAlternativeDNSNames(): string[];
++    getAlternativeIPAddresses?(): string[];
+     isIssuer(ofCert: X509Certificate<T>): boolean;
+     getPublicKey(): CertificatePublicKey;
+     /**
 diff --git a/lib/utils/additional-root-cas.js b/lib/utils/additional-root-cas.js
 index 269141c7eba8168a4cb4d7d0da5f3e1e0321a1de..308bb84d34173d74a57e580544c902b2623f259c 100644
 --- a/lib/utils/additional-root-cas.js
@@ -302,6 +314,30 @@ index 269141c7eba8168a4cb4d7d0da5f3e1e0321a1de..308bb84d34173d74a57e580544c902b2
 ------END CERTIFICATE-----` // Sectigo Public Server Authentication CA DV R36
 -);
  export {};
+diff --git a/lib/utils/client-hello.js b/lib/utils/client-hello.js
+index 8ecb8226beb284d78c309a4ae5223ad3aa756ba1..fadda3ad356ffd427e573f23e3b36ff3309ecedc 100644
+--- a/lib/utils/client-hello.js
++++ b/lib/utils/client-hello.js
+@@ -2,6 +2,7 @@ import { crypto } from "../crypto/index.js";
+ import { getHash } from "../utils/decryption-utils.js";
+ import { SUPPORTED_CIPHER_SUITE_MAP, SUPPORTED_EXTENSION_MAP, SUPPORTED_NAMED_CURVE_MAP, SUPPORTED_RECORD_TYPE_MAP, SUPPORTED_SIGNATURE_ALGS_MAP, TLS_PROTOCOL_VERSION_MAP } from "./constants.js";
+ import { asciiToUint8Array, concatenateUint8Arrays, uint8ArrayToDataView } from "./generics.js";
++import { classifyHostIdentity } from "./ip.js";
+ import { packWith3ByteLength, packWithLength } from "./packets.js";
+ const CLIENT_VERSION = new Uint8Array([0x03, 0x03]);
+ // no compression, as our client won't support it
+@@ -15,9 +16,10 @@ export async function packClientHello({ host, sessionId = crypto.randomBytes(32)
+     const packedSessionId = packWithLength(sessionId).slice(1);
+     const cipherSuiteList = (cipherSuites || Object.keys(SUPPORTED_CIPHER_SUITE_MAP)).map(cipherSuite => SUPPORTED_CIPHER_SUITE_MAP[cipherSuite].identifier);
+     const packedCipherSuites = packWithLength(concatenateUint8Arrays(cipherSuiteList));
++    const identity = classifyHostIdentity(host);
+     const extensionsList = [
+         RENEGOTIATION_INFO,
+-        packServerNameExtension(host),
++        ...(identity.type === 'ip' ? [] : [packServerNameExtension(host)]),
+         packSupportedGroupsExtension(keysToShare.map(k => k.type)),
+         packSessionTicketExtension(),
+         packVersionsExtension(supportedProtocolVersions),
 diff --git a/lib/utils/generics.js b/lib/utils/generics.js
 index 4e2986ab30883f62e4c1ff3c283260032ca017f5..b380375ecb560416c513e6b35454c9c1d87cb008 100644
 --- a/lib/utils/generics.js
@@ -327,3 +363,227 @@ index 4e2986ab30883f62e4c1ff3c283260032ca017f5..b380375ecb560416c513e6b35454c9c1
  }
  export function xor(a, b) {
      const result = new Uint8Array(a.length);
+diff --git a/lib/utils/ip.d.ts b/lib/utils/ip.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b631a4ff25a023dc30a540fe737828234e6fdc36
+--- /dev/null
++++ b/lib/utils/ip.d.ts
+@@ -0,0 +1,7 @@
++export declare function classifyHostIdentity(value: string): {
++    type: 'dns';
++    value: string;
++} | {
++    type: 'ip';
++    value: Uint8Array;
++};
+diff --git a/lib/utils/ip.js b/lib/utils/ip.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..31859d41861a7265847c51d578160269ec582983
+--- /dev/null
++++ b/lib/utils/ip.js
+@@ -0,0 +1,106 @@
++export function classifyHostIdentity(value) {
++    const ip = parseIpLiteral(value);
++    if (ip) {
++        return { type: 'ip', value: ip };
++    }
++    if (!isDnsIdentity(value)) {
++        throw new Error(`Invalid TLS host identity ${value}`);
++    }
++    return { type: 'dns', value };
++}
++function parseIpLiteral(value) {
++    return parseIpv4(value) || parseIpv6(value);
++}
++function isDnsIdentity(value) {
++    if (!value
++        || /\s/.test(value)
++        || value.includes(':')
++        || value.includes('%')
++        || value.startsWith('[')
++        || value.endsWith(']')) {
++        return false;
++    }
++    const labels = value.split('.');
++    return !labels.every(label => (/^(?:[+-]?(?:\d+|0x[0-9a-f]+))?$/i.test(label)));
++}
++function parseIpv4(value) {
++    const components = value.split('.');
++    if (components.length !== 4) {
++        return null;
++    }
++    const result = new Uint8Array(4);
++    for (const [i, component] of components.entries()) {
++        if (!/^\d+$/.test(component)
++            || (component.length > 1 && component[0] === '0')) {
++            return null;
++        }
++        const number = Number(component);
++        if (number > 255) {
++            return null;
++        }
++        result[i] = number;
++    }
++    return result;
++}
++function parseIpv6(value) {
++    if (!value.includes(':') || value.includes('%')) {
++        return null;
++    }
++    const compressionIndex = value.indexOf('::');
++    if (compressionIndex !== value.lastIndexOf('::')) {
++        return null;
++    }
++    const hasCompression = compressionIndex !== -1;
++    const sides = hasCompression ? value.split('::') : [value];
++    const left = parseIpv6Side(sides[0], !hasCompression);
++    const right = hasCompression ? parseIpv6Side(sides[1], true) : [];
++    if (!left || !right) {
++        return null;
++    }
++    const groupCount = left.length + right.length;
++    if ((hasCompression && groupCount >= 8)
++        || (!hasCompression && groupCount !== 8)) {
++        return null;
++    }
++    const groups = hasCompression
++        ? [
++            ...left,
++            ...new Array(8 - groupCount).fill(0),
++            ...right
++        ]
++        : left;
++    const result = new Uint8Array(16);
++    for (const [i, group] of groups.entries()) {
++        result[i * 2] = group >>> 8;
++        result[i * 2 + 1] = group & 0xff;
++    }
++    return result;
++}
++function parseIpv6Side(value, canContainIpv4) {
++    if (!value) {
++        return [];
++    }
++    const components = value.split(':');
++    if (components.some(component => !component)) {
++        return null;
++    }
++    const groups = [];
++    for (const [i, component] of components.entries()) {
++        if (component.includes('.')) {
++            if (!canContainIpv4 || i !== components.length - 1) {
++                return null;
++            }
++            const ipv4 = parseIpv4(component);
++            if (!ipv4) {
++                return null;
++            }
++            groups.push((ipv4[0] << 8) | ipv4[1], (ipv4[2] << 8) | ipv4[3]);
++            continue;
++        }
++        if (!/^[0-9a-f]{1,4}$/i.test(component)) {
++            return null;
++        }
++        groups.push(Number.parseInt(component, 16));
++    }
++    return groups;
++}
+diff --git a/lib/utils/parse-certificate.js b/lib/utils/parse-certificate.js
+index 0e0dcdd4b61b80670ebf59a998596103b9892e4c..fd106081d8b5b4a61fb5eb173e54e53093ef5afd 100644
+--- a/lib/utils/parse-certificate.js
++++ b/lib/utils/parse-certificate.js
+@@ -3,6 +3,7 @@ import { crypto } from "../crypto/index.js";
+ import { SUPPORTED_NAMED_CURVE_MAP, SUPPORTED_SIGNATURE_ALGS, SUPPORTED_SIGNATURE_ALGS_MAP } from "./constants.js";
+ import { getHash } from "./decryption-utils.js";
+ import { areUint8ArraysEqual, asciiToUint8Array, concatenateUint8Arrays } from "./generics.js";
++import { classifyHostIdentity } from "./ip.js";
+ import { MOZILLA_ROOT_CA_LIST } from "./mozilla-root-cas.js";
+ import { expectReadWithLength, packWithLength } from "./packets.js";
+ import { defaultFetchCertificateBytes, loadX509FromDer, loadX509FromPem } from "./x509.js";
+@@ -98,11 +99,24 @@ export async function verifyCertificateChain(chain, host, logger, fetchCertifica
+         ...(additionalRootCAs || [])
+     ];
+     const leaf = chain[0];
+-    const commonNames = [
+-        ...leaf.getSubjectField('CN'),
+-        ...leaf.getAlternativeDNSNames()
+-    ];
+-    if (!commonNames.some(cn => matchHostname(host, cn))) {
++    const identity = classifyHostIdentity(host);
++    const matchesIdentity = identity.type === 'ip'
++        ? (leaf.getAlternativeIPAddresses?.() || []).some(value => {
++            let sanIdentity;
++            try {
++                sanIdentity = classifyHostIdentity(value);
++            }
++            catch {
++                return false;
++            }
++            return sanIdentity.type === 'ip'
++                && areUint8ArraysEqual(identity.value, sanIdentity.value);
++        })
++        : [
++            ...leaf.getSubjectField('CN'),
++            ...leaf.getAlternativeDNSNames()
++        ].some(name => matchHostname(host, name));
++    if (!matchesIdentity) {
+         throw new Error(`Certificate is not for host ${host}`);
+     }
+     chain = [...chain]; // clone to allow appending fetched certs
+diff --git a/lib/utils/x509.d.ts b/lib/utils/x509.d.ts
+index 92adf6b7adef6f004229ce3b7aa526aa5e7338f7..e6c4a0567b763b005633d855a023dfcc7f268e0a 100644
+--- a/lib/utils/x509.d.ts
++++ b/lib/utils/x509.d.ts
+@@ -1,5 +1,9 @@
+ import * as peculiar from '@peculiar/x509';
+ import type { X509Certificate } from '../types/index.ts';
+-export declare function loadX509FromPem(pem: string | Uint8Array): X509Certificate<peculiar.X509Certificate>;
+-export declare function loadX509FromDer(der: Uint8Array): X509Certificate<peculiar.X509Certificate>;
++export declare function loadX509FromPem(pem: string | Uint8Array): X509Certificate<peculiar.X509Certificate> & {
++    getAlternativeIPAddresses(): string[];
++};
++export declare function loadX509FromDer(der: Uint8Array): X509Certificate<peculiar.X509Certificate> & {
++    getAlternativeIPAddresses(): string[];
++};
+ export declare function defaultFetchCertificateBytes(url: string): Promise<Uint8Array<any>>;
+diff --git a/lib/utils/x509.js b/lib/utils/x509.js
+index f733b968d2b622d02bb0d23a9295819dedb16f9a..dca98a1a62464a82e0f8bbb1104257c3190844f2 100644
+--- a/lib/utils/x509.js
++++ b/lib/utils/x509.js
+@@ -25,15 +25,10 @@ export function loadX509FromPem(pem) {
+             return cert.subjectName.getField(name);
+         },
+         getAlternativeDNSNames() {
+-            // search for names in SubjectAlternativeNameExtension
+-            const ext = cert.extensions
+-                .find(e => e.type === '2.5.29.17'); //subjectAltName
+-            if (ext instanceof SubjectAlternativeNameExtension) {
+-                return ext.names.items
+-                    .filter(n => n.type === 'dns')
+-                    .map(n => n.value);
+-            }
+-            return [];
++            return getAlternativeNames(cert, 'dns');
++        },
++        getAlternativeIPAddresses() {
++            return getAlternativeNames(cert, 'ip');
+         },
+         isIssuer({ internal: ofCert }) {
+             var i = ofCert.issuer;
+@@ -63,6 +58,16 @@ export function loadX509FromPem(pem) {
+         },
+     };
+ }
++function getAlternativeNames(cert, type) {
++    const ext = cert.extensions
++        .find(e => e.type === '2.5.29.17'); //subjectAltName
++    if (ext instanceof SubjectAlternativeNameExtension) {
++        return ext.names.items
++            .filter(n => n.type === type)
++            .map(n => n.value);
++    }
++    return [];
++}
+ function getSigAlgorithm(key, { signatureAlgorithm }) {
+     if (!('name' in signatureAlgorithm)) {
+         throw new Error('Missing signature algorithm name');
