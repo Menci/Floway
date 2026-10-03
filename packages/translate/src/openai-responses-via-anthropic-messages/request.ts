@@ -214,9 +214,21 @@ const translateOpenAIResponsesInput = async (
   }
 
   const messages: AnthropicMessagesMessage[] = [];
+  const pendingToolResultInstructions: AnthropicMessagesMessage[] = [];
+  let collectingToolResults = false;
+  const flushToolResultInstructions = (): void => {
+    messages.push(...pendingToolResultInstructions);
+    pendingToolResultInstructions.length = 0;
+    collectingToolResults = false;
+  };
 
   for (const item of input.slice(prefixEnd)) {
     rejectProgramCaller(item);
+    const isToolOutput = item.type === 'function_call_output' || item.type === 'custom_tool_call_output';
+    const isDeferredInstruction = collectingToolResults
+      && item.type === 'message'
+      && (item.role === 'system' || item.role === 'developer');
+    if (!isToolOutput && !isDeferredInstruction) flushToolResultInstructions();
     switch (item.type) {
     case 'message':
       switch (item.role) {
@@ -231,7 +243,9 @@ const translateOpenAIResponsesInput = async (
         // The leading prefix was lifted above; keep later instruction messages
         // inline so chronology reaches the target role-compatibility pass.
         const blocks = openaiResponsesSystemBlocks(item);
-        messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
+        const message: AnthropicMessagesMessage = { role: 'system', content: blocks.length > 0 ? blocks : '' };
+        if (isDeferredInstruction) pendingToolResultInstructions.push(message);
+        else messages.push(message);
         break;
       }
       default:
@@ -265,6 +279,7 @@ const translateOpenAIResponsesInput = async (
         content: await translateToolOutput(item.output, loadRemoteImage),
         is_error: item.type === 'function_call_output' && item.status === 'incomplete' ? true : undefined,
       });
+      collectingToolResults = true;
       break;
     case 'custom_tool_call':
       // Project the freeform invocation back into the wrapped function-tool
@@ -297,6 +312,7 @@ const translateOpenAIResponsesInput = async (
       throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
     }
   }
+  flushToolResultInstructions();
 
   return { messages, systemBlocks };
 };
