@@ -136,8 +136,10 @@ describe('parseCodexQuotaHeaders', () => {
     expect(snapshot.secondary_used_percent).toBeUndefined();
   });
 
-  test('dates a 429 from the absolute instant when only that header arrives', () => {
+  test('dates a 429 from the exhausted windows when only absolute reset headers arrive', () => {
     const headers = new Headers({
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '100',
       'x-codex-primary-reset-at': '1780272000',
       'x-codex-secondary-reset-at': '1780358400',
     });
@@ -145,14 +147,75 @@ describe('parseCodexQuotaHeaders', () => {
     expect(snapshot.ratelimited_until).toBe(new Date(1780358400 * 1000).toISOString());
   });
 
-  test('sets ratelimited_until from max(primary, secondary) reset window on 429', () => {
+  test('sets ratelimited_until from the latest exhausted reset window on 429', () => {
     const headers = new Headers({
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '101',
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
     });
     const observedAt = new Date('2026-06-05T00:00:00.000Z');
     const snapshot = parseCodexQuotaHeaders(headers, { now: observedAt, isRateLimited: true });
     expect(snapshot.ratelimited_until).toBe('2026-06-05T02:00:00.000Z');
+  });
+
+  test.each([
+    ['primary only', '100', '35', '2026-06-05T01:00:00.000Z'],
+    ['secondary only', '35', '100', '2026-06-05T02:00:00.000Z'],
+    ['both', '100', '100', '2026-06-05T02:00:00.000Z'],
+    ['neither', '99.9', '35', undefined],
+    ['zero usage', '0', '0', undefined],
+    ['blank usage', '', ' ', undefined],
+    ['invalid usage', 'NaN', 'Infinity', undefined],
+    ['absent usage', undefined, undefined, undefined],
+    ['unknown primary', undefined, '100', '2026-06-05T02:00:00.000Z'],
+    ['unknown secondary', '100', undefined, '2026-06-05T01:00:00.000Z'],
+  ])('uses only known exhausted windows: %s', (_name, primary, secondary, expected) => {
+    const headers = new Headers({
+      'x-codex-primary-reset-after-seconds': '3600',
+      'x-codex-secondary-reset-after-seconds': '7200',
+    });
+    if (primary !== undefined) headers.set('x-codex-primary-used-percent', primary);
+    if (secondary !== undefined) headers.set('x-codex-secondary-used-percent', secondary);
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBe(expected);
+  });
+
+  test.each(['primary', 'secondary'] as const)('retains the known horizon when the other exhausted %s window has no reset', missing => {
+    const known = missing === 'primary' ? 'secondary' : 'primary';
+    const snapshot = parseCodexQuotaHeaders(new Headers({
+      'x-codex-primary-used-percent': '100',
+      'x-codex-secondary-used-percent': '100',
+      [`x-codex-${known}-reset-after-seconds`]: '3600',
+    }), { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBe('2026-06-05T01:00:00.000Z');
+    expect(snapshot.primary_used_percent).toBe(100);
+    expect(snapshot.secondary_used_percent).toBe(100);
+    expect(snapshot[`${missing}_reset_after_at`]).toBeUndefined();
+  });
+
+  test.each([undefined, '', '0', 'invalid'])('does not guess an expiry without a usable exhausted reset: %s', reset => {
+    const headers = new Headers({ 'x-codex-primary-used-percent': '100' });
+    if (reset !== undefined) {
+      headers.set('x-codex-primary-reset-at', reset);
+      headers.set('x-codex-primary-reset-after-seconds', reset);
+    }
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBeUndefined();
+    expect(snapshot.primary_used_percent).toBe(100);
+  });
+
+  test.each([
+    ['epoch', '1780621200', '9999'],
+    ['RFC 3339', '2026-06-05T03:00:00+02:00', '9999'],
+    ['offset', '', '3600'],
+  ])('uses the supported %s exhausted reset format', (_name, at, after) => {
+    const snapshot = parseCodexQuotaHeaders(new Headers({
+      'x-codex-primary-used-percent': '100',
+      'x-codex-primary-reset-at': at,
+      'x-codex-primary-reset-after-seconds': after,
+    }), { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBe('2026-06-05T01:00:00.000Z');
   });
 
   test('normalizes string headers at the provider boundary', () => {
@@ -191,6 +254,50 @@ describe('getCodexQuota', () => {
     const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 10 };
     current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: Date.now(), data: snap } } }] });
     expect(await getCodexQuota(upstreamId, accountId)).toEqual({ premium: snap });
+  });
+
+  test('projects legacy expiry per family without changing stored observations or successful snapshots', async () => {
+    const primary: CodexQuotaSnapshot = {
+      observed_at: '2026-06-05T00:00:00.000Z',
+      primary_used_percent: 100,
+      primary_reset_after_at: '2026-06-05T01:00:00.000Z',
+      secondary_used_percent: 35,
+      secondary_reset_after_at: '2026-06-09T00:00:00.000Z',
+      ratelimited_until: '2026-06-09T00:00:00.000Z',
+    };
+    const secondary: CodexQuotaSnapshot = { ...primary, primary_used_percent: 35, secondary_used_percent: 100 };
+    const unknown: CodexQuotaSnapshot = { ...primary, primary_used_percent: undefined, secondary_used_percent: undefined };
+    const partial: CodexQuotaSnapshot = { ...secondary, primary_used_percent: 100, secondary_reset_after_at: undefined };
+    const neither: CodexQuotaSnapshot = { ...primary, primary_used_percent: 35 };
+    const untimed: CodexQuotaSnapshot = { ...primary, primary_reset_after_at: undefined };
+    const invalid: CodexQuotaSnapshot = { ...primary, primary_reset_after_at: 'invalid' };
+    const { ratelimited_until: _until, ...successful } = primary;
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        quotaSnapshot: Object.fromEntries(
+          Object.entries({ primary, secondary, unknown, partial, neither, untimed, invalid, successful }).map(([key, data]) => [key, { fetchedAt: 1, data }]),
+        ),
+      }],
+    });
+    const stored = structuredClone(current);
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-06-06T00:00:00.000Z'));
+    const { ratelimited_until: _unknownUntil, ...unknownReading } = unknown;
+    const { ratelimited_until: _neitherUntil, ...neitherReading } = neither;
+    const { ratelimited_until: _untimedUntil, ...untimedReading } = untimed;
+    const { ratelimited_until: _invalidUntil, ...invalidReading } = invalid;
+    expect(await getCodexQuota(upstreamId, accountId)).toEqual({
+      primary: { ...primary, ratelimited_until: primary.primary_reset_after_at },
+      secondary,
+      unknown: unknownReading,
+      partial: { ...partial, ratelimited_until: primary.primary_reset_after_at },
+      neither: neitherReading,
+      untimed: untimedReading,
+      invalid: invalidReading,
+      successful,
+    });
+    expect(current).toEqual(stored);
+    expect(repo.writes).toEqual([]);
   });
 
   test('reads quota from the null account slot', async () => {

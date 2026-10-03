@@ -2807,6 +2807,43 @@ test('GET /api/upstreams/:id returns the full record with fresh Codex quota for 
   assertEquals('refresh_token_set' in body.state.accounts[0], false);
 });
 
+test('GET upstream list and detail repair legacy Codex expiry per family without rewriting state', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await createCodexUpstreamViaExchange(adminSession);
+  const stored = await getRecord(repo, created.id);
+  const primary = {
+    observed_at: '2026-06-05T00:00:00.000Z',
+    primary_used_percent: 100,
+    primary_window_minutes: 300,
+    primary_reset_after_at: '2026-06-05T01:00:00.000Z',
+    secondary_used_percent: 35,
+    secondary_window_minutes: 10080,
+    secondary_reset_after_at: '2026-06-09T00:00:00.000Z',
+    ratelimited_until: '2026-06-09T00:00:00.000Z',
+  };
+  const secondary = { ...primary, primary_used_percent: 35, secondary_used_percent: 100 };
+  const { ratelimited_until: _until, ...successful } = primary;
+  const state = structuredClone(stored.state) as JsonObject;
+  state.accounts[0].quotaSnapshot = Object.fromEntries(
+    Object.entries({ primary, secondary, successful }).map(([key, data]) => [key, { fetchedAt: 1, data }]),
+  );
+  await repo.upstreams.saveState(created.id, () => state);
+
+  for (const path of ['/api/upstreams', `/api/upstreams/${created.id}`]) {
+    const resp = await requestApp(path, { headers: { 'x-floway-session': adminSession } });
+    assertEquals(resp.status, 200);
+    const json = await resp.json() as JsonObject;
+    const body = path === '/api/upstreams' ? (json as JsonObject[]).find(item => item.id === created.id) : json;
+    assertEquals(body?.codex_quota, {
+      primary: { ...primary, ratelimited_until: primary.primary_reset_after_at },
+      secondary,
+      successful,
+    });
+  }
+  assertEquals((await getRecord(repo, created.id)).state, state);
+});
+
 test('GET /api/upstreams/:id returns null Codex quota when no fresh snapshot exists', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
