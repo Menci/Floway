@@ -1,5 +1,6 @@
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
+import { unwrapToolArguments } from '../shared/openai-responses-via/root-tool-schema-envelope.ts';
 import { anthropicMessagesRefusalOpenAIResponsesError } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
@@ -73,6 +74,14 @@ type OutputBlockInfo =
     toolCallId: string;
     toolName: string;
     wrappedArguments: string;
+  }
+  | {
+    type: 'enveloped_function_tool_use';
+    outputIndex: number;
+    itemId: string;
+    toolCallId: string;
+    toolName: string;
+    wrappedArguments: string;
   };
 
 interface AnthropicMessagesToOpenAIResponsesStreamState {
@@ -87,6 +96,7 @@ interface AnthropicMessagesToOpenAIResponsesStreamState {
   stopReason?: AnthropicMessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: AnthropicMessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
+  envelopedFunctionToolNames: ReadonlySet<string>;
 }
 
 const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => {
@@ -201,6 +211,19 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
       return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
     }
 
+    if (state.envelopedFunctionToolNames.has(event.content_block.name)) {
+      const itemId = createRandomOpenAIResponsesItemId('function_call');
+      state.blockMap.set(event.index, {
+        type: 'enveloped_function_tool_use',
+        outputIndex,
+        itemId,
+        toolCallId: event.content_block.id,
+        toolName: event.content_block.name,
+        wrappedArguments: '',
+      });
+      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(itemId, event.content_block.id, event.content_block.name, '', 'in_progress'));
+    }
+
     const itemId = createRandomOpenAIResponsesItemId('function_call');
     const info: OutputBlockInfo = {
       type: 'tool_use',
@@ -311,6 +334,7 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
     info.toolArguments += event.delta.partial_json;
     return openaiResponses.argumentsDelta(state, info.outputIndex, info.itemId, event.delta.partial_json);
   case 'custom_tool_use':
+  case 'enveloped_function_tool_use':
     // Buffer the wrapped JSON argument blob without emitting a delta; we need
     // the complete value to extract the freeform `input` field at stop time.
     if (event.delta.type === 'input_json_delta') {
@@ -354,6 +378,16 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
     return openaiResponses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
+  if (info.type === 'enveloped_function_tool_use') {
+    const argumentsJson = unwrapToolArguments(info.wrappedArguments);
+    const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, argumentsJson, 'completed');
+    state.completedItems.push(item);
+    return [
+      ...(argumentsJson.length > 0 ? openaiResponses.argumentsDelta(state, info.outputIndex, info.itemId, argumentsJson) : []),
+      ...openaiResponses.functionCallDone(state, info.outputIndex, info.itemId, argumentsJson, item),
+    ];
+  }
+
   const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
@@ -365,6 +399,7 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
+  envelopedFunctionToolNames: ReadonlySet<string> = new Set(),
 ): AnthropicMessagesToOpenAIResponsesStreamState => ({
   responseId,
   model,
@@ -375,6 +410,7 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   completedItems: [],
   usage: anthropicMessagesUsageSnapshot(),
   customToolNames,
+  envelopedFunctionToolNames,
 });
 
 export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
@@ -435,8 +471,9 @@ export const translateToSourceEvents = async function* (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
+  envelopedFunctionToolNames: ReadonlySet<string> = new Set(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames);
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames, envelopedFunctionToolNames);
 
   for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {
     for (const translated of translateAnthropicMessagesEventToOpenAIResponsesEvents(event, state)) {

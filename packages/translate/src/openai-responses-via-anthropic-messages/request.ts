@@ -7,6 +7,7 @@ import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-too
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
+import { envelopeRootToolSchema, envelopeToolArguments, hasRootToolSchemaCombinator } from '../shared/openai-responses-via/root-tool-schema-envelope.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
@@ -59,6 +60,8 @@ export interface TargetRequestResult {
    * `custom_tool_call` outputs.
    */
   customToolNames: Set<string>;
+  /** Function tools whose root schema combinator is wrapped for Anthropic. */
+  envelopedFunctionToolNames: Set<string>;
   namespaceToolNames: NamespaceToolNames;
 }
 
@@ -204,6 +207,7 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
 const translateOpenAIResponsesInput = async (
   input: OpenAIResponsesInputItem[],
   loadRemoteImage: RemoteImageLoader,
+  envelopedFunctionToolNames: ReadonlySet<string>,
 ): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlock[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
@@ -250,11 +254,12 @@ const translateOpenAIResponsesInput = async (
       }, loadRemoteImage));
       break;
     case 'function_call': {
+      const argumentsObject = parseToolArgumentsObject(item.arguments);
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
         name: item.name,
-        input: parseToolArgumentsObject(item.arguments),
+        input: envelopedFunctionToolNames.has(item.name) ? envelopeToolArguments(argumentsObject) : argumentsObject,
       });
       break;
     }
@@ -305,11 +310,14 @@ const translateOpenAIResponsesInput = async (
 const translateTools = (
   tools: OpenAIResponsesTool[] | null | undefined,
   customToolNames: Set<string>,
+  envelopedFunctionToolNames: ReadonlySet<string>,
 ): AnthropicMessagesTool[] | undefined => {
   const out: AnthropicMessagesTool[] = [];
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
+      const schema = klona(tool.parameters) ?? { type: 'object', properties: {} };
+      const inputSchema = envelopedFunctionToolNames.has(tool.name) ? envelopeRootToolSchema(schema) : schema;
       out.push({
         name: tool.name,
         // OpenAI Responses spells "this tool has no description" as an explicit
@@ -321,7 +329,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
+        input_schema: inputSchema,
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
@@ -369,11 +377,17 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
+  // Build from the complete flattened inventory before allowed_tools removes
+  // declarations. Historical calls to a currently excluded tool still need
+  // the same envelope that its original declaration established.
+  const envelopedFunctionToolNames = new Set((payload.tools ?? []).flatMap(tool =>
+    tool.type === 'function' && tool.parameters && hasRootToolSchemaCombinator(tool.parameters) ? [tool.name] : []));
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
-  const tools = translateTools(allowed.tools, customToolNames);
+  const tools = translateTools(allowed.tools, customToolNames, envelopedFunctionToolNames);
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
     payload.input,
     options.loadRemoteImage ?? unavailableRemoteImageLoader,
+    envelopedFunctionToolNames,
   );
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
@@ -429,5 +443,5 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
     ...serviceTierFields,
   };
 
-  return { target, customToolNames, namespaceToolNames };
+  return { target, customToolNames, envelopedFunctionToolNames, namespaceToolNames };
 };

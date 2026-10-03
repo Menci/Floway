@@ -655,6 +655,74 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
 
+test('buildTargetRequest envelopes root combinators after namespace flattening and wraps replay history', async () => {
+  const updateSchema = {
+    type: 'object',
+    properties: {},
+    oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+    $defs: {
+      view: { type: 'object', properties: { mode: { const: 'view' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+      delete: { type: 'object', properties: { mode: { const: 'delete' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+    },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'user', content: 'delete it' },
+      { type: 'function_call', call_id: 'call_update', namespace: 'mcp__codex_app', name: 'automation_update', arguments: '{"mode":"delete","id":"job-1"}', status: 'completed' },
+    ],
+    tools: [{
+      type: 'namespace', name: 'mcp__codex_app', description: 'Codex app tools.', tools: [{
+        type: 'function', name: 'automation_update', description: 'Update an automation.', parameters: updateSchema, strict: false,
+      }],
+    }],
+  });
+
+  assertEquals(result.envelopedFunctionToolNames, new Set(['mcp__codex_app_automation_update']));
+  assertEquals(result.target.tools?.[0], {
+    name: 'mcp__codex_app_automation_update',
+    description: 'Codex app tools.\n\nUpdate an automation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        arguments: {
+          type: 'object',
+          properties: {},
+          oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+        },
+      },
+      required: ['arguments'],
+      additionalProperties: false,
+      $defs: updateSchema.$defs,
+    },
+    strict: false,
+    cache_control: { type: 'ephemeral' },
+  });
+  assertEquals(result.target.messages[1], {
+    role: 'assistant',
+    content: [{
+      type: 'tool_use', id: 'call_update', name: 'mcp__codex_app_automation_update',
+      input: { arguments: { mode: 'delete', id: 'job-1' } }, cache_control: { type: 'ephemeral' },
+    }],
+  });
+});
+
+test('buildTargetRequest leaves nested schema combinators unwrapped', async () => {
+  const parameters = {
+    type: 'object',
+    properties: { value: { oneOf: [{ type: 'string' }, { type: 'number' }] } },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{ type: 'function', name: 'nested_union', parameters }],
+  });
+
+  assertEquals(result.envelopedFunctionToolNames, new Set());
+  assertEquals(result.target.tools?.[0], {
+    name: 'nested_union', input_schema: parameters, cache_control: { type: 'ephemeral' },
+  });
+});
+
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,

@@ -410,6 +410,48 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });
 
+test('unwraps enveloped function tool calls after buffering Anthropic argument deltas', () => {
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState(
+    'resp_enveloped', 'claude-test', new Set(), new Set(['mcp__codex_app_automation_update']),
+  );
+  const startEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_update', name: 'mcp__codex_app_automation_update', input: {} } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const deltaA = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"arguments":{"mode":"delete"' } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const deltaB = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ',"id":"job-1"}}' } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  assertEquals(deltaA, []);
+  assertEquals(deltaB, []);
+
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const added = startEvents.find((event): event is OpenAIResponsesOutputItemAddedEvent => event.type === 'response.output_item.added');
+  if (!added || added.item.type !== 'function_call') throw new Error('expected function_call item');
+  assertEquals(added.item.arguments, '');
+  assertEquals(stopEvents.map(event => event.type), [
+    'response.function_call_arguments.delta',
+    'response.function_call_arguments.done',
+    'response.output_item.done',
+  ]);
+  const argumentsJson = '{"mode":"delete","id":"job-1"}';
+  assertEquals((stopEvents[0] as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>).delta, argumentsJson);
+  assertEquals((stopEvents[1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>).arguments, argumentsJson);
+  const done = stopEvents[2] as OpenAIResponsesOutputItemDoneEvent;
+  assertEquals(done.item, {
+    type: 'function_call', id: added.item.id, call_id: 'call_update', name: 'mcp__codex_app_automation_update', arguments: argumentsJson, status: 'completed',
+  });
+  assertEquals(state.completedItems, [done.item]);
+  assertEquals([...startEvents, ...stopEvents].map(event => event.sequence_number), [0, 1, 2, 3]);
+});
+
 // ── citation_delta → response.output_text.annotation.added ──
 
 type AnnotationAddedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.annotation.added' }>;
