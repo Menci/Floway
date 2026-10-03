@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { createAnthropicMessagesToOpenAIResponsesStreamState, translateAnthropicMessagesEventToOpenAIResponsesEvents } from '../../src/openai-responses-via-anthropic-messages/events.ts';
+import { createAnthropicMessagesToolProjection } from '../../src/openai-responses-via-anthropic-messages/tool-projection.ts';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -331,7 +332,9 @@ test('max_tokens stream stop becomes response.incomplete', () => {
 });
 
 test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
-  const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_ctc', 'claude-test', new Set(['apply_patch']));
+  const projection = createAnthropicMessagesToolProjection();
+  projection.targetCallables.set('apply_patch', { kind: 'custom-tool' });
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_ctc', 'claude-test', projection);
 
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
     {
@@ -408,6 +411,48 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
   if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
   assertEquals(itemDone.item.input, '*** Begin Patch\n*** End Patch');
   assertEquals(itemDone.item.call_id, 'call_ctc');
+});
+
+test('unwraps enveloped function tool calls after buffering Anthropic argument deltas', () => {
+  const projection = createAnthropicMessagesToolProjection();
+  projection.targetCallables.set('mcp__codex_app_automation_update', { kind: 'root-schema-envelope' });
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_enveloped', 'claude-test', projection);
+  const startEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_update', name: 'mcp__codex_app_automation_update', input: {} } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const deltaA = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"arguments":{"mode":"delete"' } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const deltaB = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ',"id":"job-1"}}' } } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  assertEquals(deltaA, []);
+  assertEquals(deltaB, []);
+
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  const added = startEvents.find((event): event is OpenAIResponsesOutputItemAddedEvent => event.type === 'response.output_item.added');
+  if (!added || added.item.type !== 'function_call') throw new Error('expected function_call item');
+  assertEquals(added.item.arguments, '');
+  assertEquals(stopEvents.map(event => event.type), [
+    'response.function_call_arguments.delta',
+    'response.function_call_arguments.done',
+    'response.output_item.done',
+  ]);
+  const argumentsJson = '{"mode":"delete","id":"job-1"}';
+  assertEquals((stopEvents[0] as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>).delta, argumentsJson);
+  assertEquals((stopEvents[1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>).arguments, argumentsJson);
+  const done = stopEvents[2] as OpenAIResponsesOutputItemDoneEvent;
+  assertEquals(done.item, {
+    type: 'function_call', id: added.item.id, call_id: 'call_update', name: 'mcp__codex_app_automation_update', arguments: argumentsJson, status: 'completed',
+  });
+  assertEquals(state.completedItems, [done.item]);
+  assertEquals([...startEvents, ...stopEvents].map(event => event.sequence_number), [0, 1, 2, 3]);
 });
 
 // ── citation_delta → response.output_text.annotation.added ──

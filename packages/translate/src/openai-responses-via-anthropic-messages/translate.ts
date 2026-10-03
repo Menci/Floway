@@ -1,6 +1,5 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
-import { restoreNamespaceEvents } from '../shared/openai-responses-via/namespace-tools.ts';
 import type { RemoteImageLoader, TranslateTrip } from '../types.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
@@ -15,16 +14,15 @@ export const translateOpenAIResponsesViaAnthropicMessages: TranslateTrip<
   { fallbackMaxOutputTokens?: number; loadRemoteImage: RemoteImageLoader }
 > = async (src, ctx) => {
   const responseId = synthesizeResponseId();
-  // Tool-name maps are produced inside the request translator (it sees the
-  // tools first) and read by the events translator so wrapped custom calls and
-  // flattened namespace calls recover their source OpenAI Responses identities.
-  const { target, customToolNames, namespaceToolNames } = await buildTargetRequest(src, {
+  // Request translation records every callable representation change in one
+  // trip-scoped projection captured by the response-events closure.
+  const { target, projection } = await buildTargetRequest(src, {
     fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
     loadRemoteImage: ctx.loadRemoteImage,
   });
 
   return {
     target,
-    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, ctx.model, customToolNames), namespaceToolNames),
+    events: frames => translateToSourceEvents(frames, responseId, ctx.model, projection),
   };
 };

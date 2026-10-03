@@ -26,7 +26,8 @@ for (const target of ['chat', 'messages'] as const) {
       const wire = JSON.parse(JSON.stringify(result.target)) as { tools: Array<{ name?: string; function?: { name: string } }>; tool_choice: unknown };
       assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['read', 'edit']);
       assertEquals(wire.tool_choice, target === 'chat' ? mode : { type: mode === 'required' ? 'any' : 'auto' });
-      assertEquals(result.customToolNames, new Set(['edit']));
+      if ('customToolNames' in result) assertEquals(result.customToolNames, new Set(['edit']));
+      else assertEquals(result.projection.targetCallables, new Map([['edit', { kind: 'custom-tool' }]]));
       assertEquals(payload, original);
     });
   }
@@ -36,7 +37,8 @@ for (const target of ['chat', 'messages'] as const) {
     payload.tools!.push({ type: 'custom', name: 'read' });
     const result = await build(payload);
     assertEquals(result.target.tools?.length, 1);
-    assertEquals(result.customToolNames, new Set(['read']));
+    if ('customToolNames' in result) assertEquals(result.customToolNames, new Set(['read']));
+    else assertEquals(result.projection.targetCallables, new Map([['read', { kind: 'custom-tool' }]]));
   });
 
   for (const history of ['additional_tools', 'tool_search_output'] as const) {

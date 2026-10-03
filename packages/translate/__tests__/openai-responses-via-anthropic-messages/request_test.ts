@@ -516,7 +516,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
     parallel_tool_calls: true,
   });
 
-  assertEquals(result.customToolNames.has('apply_patch'), true);
+  assertEquals(result.projection.targetCallables.get('apply_patch'), { kind: 'custom-tool' });
   assertEquals(result.target.tools, [
     {
       name: 'apply_patch',
@@ -625,8 +625,8 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     tool_choice: { type: 'function', name: 'web.run' },
   });
 
-  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
+  assertEquals(result.projection.namespaces.sourceToTarget, new Map([['web.run', 'web_run_2']]));
+  assertEquals(result.projection.namespaces.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
@@ -653,6 +653,97 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     }],
   });
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
+});
+
+test('buildTargetRequest envelopes root combinators after namespace flattening and wraps replay history', async () => {
+  const updateSchema = {
+    type: 'object',
+    properties: {},
+    oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+    $defs: {
+      view: { type: 'object', properties: { mode: { const: 'view' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+      delete: { type: 'object', properties: { mode: { const: 'delete' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+    },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'user', content: 'delete it' },
+      { type: 'function_call', call_id: 'call_update', namespace: 'mcp__codex_app', name: 'automation_update', arguments: '{"mode":"delete","id":"job-1"}', status: 'completed' },
+    ],
+    tools: [{
+      type: 'namespace', name: 'mcp__codex_app', description: 'Codex app tools.', tools: [{
+        type: 'function', name: 'automation_update', description: 'Update an automation.', parameters: updateSchema, strict: false,
+      }],
+    }],
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map([['function:mcp__codex_app_automation_update', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.projection.targetCallables, new Map([['mcp__codex_app_automation_update', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.target.tools?.[0], {
+    name: 'mcp__codex_app_automation_update',
+    description: 'Codex app tools.\n\nUpdate an automation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        arguments: {
+          type: 'object',
+          properties: {},
+          oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+        },
+      },
+      required: ['arguments'],
+      additionalProperties: false,
+      $defs: updateSchema.$defs,
+    },
+    strict: false,
+    cache_control: { type: 'ephemeral' },
+  });
+  assertEquals(result.target.messages[1], {
+    role: 'assistant',
+    content: [{
+      type: 'tool_use', id: 'call_update', name: 'mcp__codex_app_automation_update',
+      input: { arguments: { mode: 'delete', id: 'job-1' } }, cache_control: { type: 'ephemeral' },
+    }],
+  });
+});
+
+test('buildTargetRequest leaves nested schema combinators unwrapped', async () => {
+  const parameters = {
+    type: 'object',
+    properties: { value: { oneOf: [{ type: 'string' }, { type: 'number' }] } },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{ type: 'function', name: 'nested_union', parameters }],
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map());
+  assertEquals(result.projection.targetCallables, new Map());
+  assertEquals(result.target.tools?.[0], {
+    name: 'nested_union', input_schema: parameters, cache_control: { type: 'ephemeral' },
+  });
+});
+
+test('buildTargetRequest keeps excluded historical function projection separate from a selected same-name custom tool', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'function_call', call_id: 'call_shared', name: 'shared', arguments: '{"mode":"view"}', status: 'completed' }],
+    tools: [
+      { type: 'function', name: 'shared', parameters: { type: 'object', oneOf: [{ type: 'object', properties: { mode: { const: 'view' } } }] } },
+      { type: 'custom', name: 'shared' },
+    ],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'custom', name: 'shared' }] },
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map([['function:shared', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.projection.targetCallables, new Map([['shared', { kind: 'custom-tool' }]]));
+  assertEquals(result.target.tools?.[0]?.name, 'shared');
+  const replay = result.target.messages[0];
+  assert(replay?.role === 'assistant' && Array.isArray(replay.content));
+  assertEquals(replay.content[0], {
+    type: 'tool_use', id: 'call_shared', name: 'shared', input: { arguments: { mode: 'view' } }, cache_control: { type: 'ephemeral' },
+  });
 });
 
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
