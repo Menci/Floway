@@ -13,6 +13,11 @@ import type { CodexContextWindow } from '@floway-dev/provider-codex';
 // provider has no published limit. Operators can replace it with a model limit.
 const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 
+// Search the documented effort scale from highest to lowest; provider lists
+// preserve source order and may also contain unranked vendor-specific values.
+// https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#reasoning-effort
+const REASONING_EFFORTS_DESCENDING = ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'];
+
 // Current model metadata and legacy wire fields for older Codex clients.
 // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L404-L511
 // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L838-L943
@@ -146,14 +151,12 @@ export const synthesizeCatalogEntry = (
   if (shouldEnableUltra) entry.multi_agent_version = 'v2';
 
   // Codex resolves Ultra through this field before sending the wire effort.
-  // Prefer Max whenever advertised, including entries that already had Ultra
-  // and inherited a lower effort from the client catalog.
+  // Select the highest advertised known effort independently of catalog order.
+  // Preserve the catalog mapping when no known effort is advertised.
   // https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L10-L40
-  if (
-    advertisedReasoning.some(level => level.effort === 'ultra')
-    && advertisedReasoning.some(level => level.effort === 'max')
-  ) {
-    entry.multi_agent_reasoning_effort = 'max';
+  if (advertisedReasoning.some(level => level.effort === 'ultra')) {
+    const highestEffort = REASONING_EFFORTS_DESCENDING.find(effort => advertisedReasoning.some(level => level.effort === effort));
+    if (highestEffort !== undefined) entry.multi_agent_reasoning_effort = highestEffort;
   }
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both

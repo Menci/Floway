@@ -365,17 +365,58 @@ describe('synthesizeCatalogEntry', () => {
     });
 
     test.each([
-      { efforts: ['xhigh', 'ultra'] },
-      { efforts: ['xhigh', 'max'] },
-    ])('preserves the catalog mapping when Ultra and Max are not both advertised: $efforts', ({ efforts }) => {
+      { efforts: ['max', 'ultra', 'high', 'minimal', 'xhigh', 'low', 'medium', 'none', 'vendor-specific'], expected: 'max' },
+      { efforts: ['xhigh', 'none', 'ultra', 'medium', 'high', 'minimal', 'low'], expected: 'xhigh' },
+      { efforts: ['high', 'low', 'ultra', 'medium', 'none', 'minimal'], expected: 'high' },
+      { efforts: ['medium', 'ultra', 'minimal', 'none', 'low'], expected: 'medium' },
+      { efforts: ['low', 'ultra', 'none', 'minimal'], expected: 'low' },
+      { efforts: ['minimal', 'ultra', 'none'], expected: 'minimal' },
+      { efforts: ['ultra', 'none'], expected: 'none' },
+    ])('maps Ultra to $expected as the highest supported effort regardless of list order', ({ efforts, expected }) => {
+      const supportedReasoning = efforts.map(effort => ({ effort, description: effort }));
+      const entry = synthesizeCatalogEntry(base, {
+        ...bundledBase,
+        supported_reasoning_levels: supportedReasoning,
+        default_reasoning_level: 'none',
+        multi_agent_version: 'v2',
+      });
+      expect(entry.multi_agent_reasoning_effort).toBe(expected);
+      expect(entry.supported_reasoning_levels).toEqual(supportedReasoning);
+      expect(entry.default_reasoning_level).toBe('none');
+      expect(entry.multi_agent_version).toBe('v2');
+    });
+
+    test.each([
+      { efforts: ['xhigh', 'max'], mapping: 'xhigh' },
+      { efforts: ['vendor-specific', 'ultra'], mapping: 'vendor-specific' },
+      { efforts: ['ultra'], mapping: undefined },
+    ])('preserves the catalog mapping without Ultra or a ranked effort: $efforts', ({ efforts, mapping }) => {
       const supportedReasoning = efforts.map(effort => ({ effort, description: '' }));
       const entry = synthesizeCatalogEntry(base, {
         ...bundledBase,
         supported_reasoning_levels: supportedReasoning,
-        multi_agent_reasoning_effort: 'xhigh',
+        multi_agent_reasoning_effort: mapping,
       });
       expect(entry.supported_reasoning_levels).toEqual(supportedReasoning);
-      expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
+      expect(entry.multi_agent_reasoning_effort).toBe(mapping);
+    });
+
+    test('ranks registry efforts instead of higher efforts inherited from the catalog', () => {
+      const entry = synthesizeCatalogEntry({
+        ...base,
+        chat: { reasoning: { effort: { supported: ['high', 'ultra', 'low'], default: 'low' } } },
+      }, {
+        ...bundledBase,
+        supported_reasoning_levels: ['max', 'xhigh', 'ultra'].map(effort => ({ effort, description: '' })),
+        multi_agent_reasoning_effort: 'max',
+      });
+      expect(entry.multi_agent_reasoning_effort).toBe('high');
+      expect(entry.supported_reasoning_levels).toEqual([
+        { effort: 'high', description: '' },
+        { effort: 'ultra', description: '' },
+        { effort: 'low', description: '' },
+      ]);
+      expect(entry.default_reasoning_level).toBe('low');
     });
 
     test('uses registry reasoning support when deciding whether to map Ultra to Max', () => {
