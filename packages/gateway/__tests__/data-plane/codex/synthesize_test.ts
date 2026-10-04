@@ -365,12 +365,12 @@ describe('synthesizeCatalogEntry', () => {
     });
 
     test.each([
-      { efforts: ['max', 'ultra', 'high', 'minimal', 'xhigh', 'low', 'medium', 'none', 'vendor-specific'], expected: 'max' },
-      { efforts: ['xhigh', 'none', 'ultra', 'medium', 'high', 'minimal', 'low'], expected: 'xhigh' },
-      { efforts: ['high', 'low', 'ultra', 'medium', 'none', 'minimal'], expected: 'high' },
-      { efforts: ['medium', 'ultra', 'minimal', 'none', 'low'], expected: 'medium' },
-      { efforts: ['low', 'ultra', 'none', 'minimal'], expected: 'low' },
-      { efforts: ['minimal', 'ultra', 'none'], expected: 'minimal' },
+      { efforts: ['high', 'max', 'ultra', 'minimal', 'xhigh', 'low', 'medium', 'none', 'vendor-specific'], expected: 'max' },
+      { efforts: ['low', 'none', 'ultra', 'medium', 'xhigh', 'minimal', 'high'], expected: 'xhigh' },
+      { efforts: ['low', 'high', 'ultra', 'medium', 'none', 'minimal'], expected: 'high' },
+      { efforts: ['minimal', 'ultra', 'medium', 'none', 'low'], expected: 'medium' },
+      { efforts: ['none', 'ultra', 'low', 'minimal'], expected: 'low' },
+      { efforts: ['none', 'minimal', 'ultra'], expected: 'minimal' },
       { efforts: ['ultra', 'none'], expected: 'none' },
     ])('maps Ultra to $expected as the highest supported effort regardless of list order', ({ efforts, expected }) => {
       const supportedReasoning = efforts.map(effort => ({ effort, description: effort }));
