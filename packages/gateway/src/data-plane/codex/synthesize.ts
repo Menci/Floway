@@ -141,10 +141,20 @@ export const synthesizeCatalogEntry = (
     max_context_window: maxContextWindow,
   };
 
-  // Ultra is a client-local v2 orchestration mode whose wire effort remains
-  // Max. The caller supplies this capability only from an exact Codex catalog;
-  // a model advertising Max alone does not establish either client behavior.
+  // The caller supplies Ultra capability only from an exact Codex catalog;
+  // a model advertising Max alone does not establish v2 orchestration support.
   if (shouldEnableUltra) entry.multi_agent_version = 'v2';
+
+  // Codex resolves Ultra through this field before sending the wire effort.
+  // Prefer Max whenever advertised, including entries that already had Ultra
+  // and inherited a lower effort from the client catalog.
+  // https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L10-L40
+  if (
+    advertisedReasoning.some(level => level.effort === 'ultra')
+    && advertisedReasoning.some(level => level.effort === 'max')
+  ) {
+    entry.multi_agent_reasoning_effort = 'max';
+  }
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
   // come from the same source. When registry supplied `effort`, its schema
