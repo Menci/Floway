@@ -1,3 +1,4 @@
+import { discardAnthropicMessagesChatReplay } from './assistant-message-private/request.ts';
 import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
@@ -57,6 +58,7 @@ export const anthropicMessagesAttempt = {
       headers,
     };
     return await runInterceptors(invocation, ctx, anthropicMessagesInterceptors, async () => {
+      if (targetApi !== 'openaiChatCompletions') invocation.payload = await discardAnthropicMessagesChatReplay(invocation.payload, ctx.assistantMessagePrivate.codec);
       if (targetApi === 'anthropicMessages') {
         if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
@@ -81,9 +83,9 @@ export const anthropicMessagesAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateAnthropicMessagesViaOpenAIChatCompletions(p, { model: candidate.model.id }),
+          p => translateAnthropicMessagesViaOpenAIChatCompletions(p, { model: candidate.model.id, privateContext: ctx.assistantMessagePrivate }),
           translated => openaiChatCompletionsAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers, privateContext: ctx.assistantMessagePrivate,
           }),
           captureFromDump(ctx.dump, targetApi),
         );
@@ -108,6 +110,7 @@ export const anthropicMessagesAttempt = {
       headers,
     };
     const response = await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
+      invocation.payload = await discardAnthropicMessagesChatReplay(invocation.payload, ctx.assistantMessagePrivate.codec);
       if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(

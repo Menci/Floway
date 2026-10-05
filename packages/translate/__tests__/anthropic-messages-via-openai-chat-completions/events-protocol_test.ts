@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
+import { privateContext } from '../test-utils/assistant-message-private.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -27,5 +28,5 @@ test('translateToSourceEvents accepts OpenAI Chat Completions streams without DO
     } satisfies OpenAIChatCompletionsStreamEvent);
   }
 
-  await drain(translateToSourceEvents(stream()));
+  await drain(translateToSourceEvents(stream(), privateContext()));
 });

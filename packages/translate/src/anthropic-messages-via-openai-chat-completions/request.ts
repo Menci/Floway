@@ -6,7 +6,6 @@ import { openAIServiceTierFromAnthropicMessages } from '../shared/anthropic-mess
 import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthropic-messages-via/structured-output.ts';
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
-import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -22,7 +21,7 @@ import type {
   AnthropicMessagesUserContentBlock,
   AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsStreamOptionsEx, type OpenAIChatCompletionsTextPart, type OpenAIChatCompletionsUserContentPart, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsMessage, type OpenAIChatCompletionsTool, type OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsUserContentPart[] => {
   if (typeof content === 'string') return content;
@@ -63,38 +62,24 @@ const toOpenAIChatCompletionsFunctionCall = (block: AnthropicMessagesToolUseBloc
 type PendingAssistantMessage = {
   textParts: string[];
   toolCalls: OpenAIChatCompletionsToolCall[];
-  scalarReasoning: OpenAIChatCompletionsScalarReasoning | null;
-};
-
-const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: AnthropicMessagesAssistantContentBlock): void => {
-  // OpenAI Chat Completions scalar reasoning cannot represent ordered interleaved Anthropic Messages
-  // thinking blocks. Project only the first source-order group so readable text
-  // is never paired with an opaque signature from a later block.
-  pending.scalarReasoning ??= openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock(block);
+  privateState?: OpenAIChatCompletionsAssistantMessagePrivate;
 };
 
 const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
-  if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && !pending.scalarReasoning) {
+  if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && pending.privateState === undefined) {
     return;
   }
 
-  const reasoning = pending.scalarReasoning;
-
   messages.push({
     role: 'assistant',
-    content: pending.textParts.join('\n\n') || null,
+    content: pending.textParts.length > 0 ? pending.textParts.join('') : null,
     ...(pending.toolCalls.length > 0 ? { tool_calls: [...pending.toolCalls] } : {}),
-    ...(reasoning
-      ? {
-          reasoning_text: reasoning.reasoningText,
-          reasoning_opaque: reasoning.reasoningOpaque,
-        }
-      : {}),
+    ...(pending.privateState !== undefined ? { [OpenAIChatCompletionsAssistantMessagePrivate]: pending.privateState } : {}),
   });
 
   pending.textParts.length = 0;
   pending.toolCalls.length = 0;
-  pending.scalarReasoning = null;
+  pending.privateState = undefined;
 };
 
 const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
@@ -145,7 +130,7 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
   return messages;
 };
 
-const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
+const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistantMessage, messageIdx: number, privateState?: OpenAIChatCompletionsAssistantMessagePrivate): OpenAIChatCompletionsMessage[] => {
   if (!Array.isArray(message.content)) {
     return [
       {
@@ -159,7 +144,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
   const pending: PendingAssistantMessage = {
     textParts: [],
     toolCalls: [],
-    scalarReasoning: null,
+    privateState,
   };
 
   for (const [blockIdx, block] of message.content.entries()) {
@@ -169,7 +154,6 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
       break;
     case 'thinking':
     case 'redacted_thinking':
-      recordPendingScalarReasoning(pending, block);
       break;
     case 'tool_use':
     case 'server_tool_use':
@@ -211,7 +195,7 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined): OpenAIChatCompletionsMessage[] => {
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined, decoded: ReadonlyMap<object, OpenAIChatCompletionsAssistantMessagePrivate>): OpenAIChatCompletionsMessage[] => {
   const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
   const systemMessages: OpenAIChatCompletionsMessage[] = isEmptySystem
     ? []
@@ -227,7 +211,7 @@ const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], s
     ...messages.flatMap((message, messageIdx): OpenAIChatCompletionsMessage[] => {
       switch (message.role) {
       case 'user': return translateAnthropicMessagesUser(message, messageIdx);
-      case 'assistant': return translateAnthropicMessagesAssistant(message, messageIdx);
+      case 'assistant': return translateAnthropicMessagesAssistant(message, messageIdx, decoded.get(message));
       case 'system': return translateAnthropicMessagesSystem(message);
       default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
@@ -263,7 +247,7 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
   }
 };
 
-export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => {
+export const buildTargetRequest = (payload: AnthropicMessagesPayload, decoded: ReadonlyMap<object, OpenAIChatCompletionsAssistantMessagePrivate>): OpenAIChatCompletionsPayload => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
@@ -275,7 +259,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
 
   return {
     model: payload.model,
-    messages: translateAnthropicMessagesInput(payload.messages, payload.system),
+    messages: translateAnthropicMessagesInput(payload.messages, payload.system, decoded),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
     stop: klona(payload.stop_sequences),

@@ -26,8 +26,6 @@ files at the top level of either `shared/` tree.
 - `openai-chat-completions/` — available to every pair with Chat Completions as either source or target; owns the shared streamed item/block lifecycle and authenticated history decoding.
 - `openai-chat-completions-and-openai-responses/` — available only to
   `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
-- `openai-chat-completions-and-anthropic-messages/` — available only to
-  `openai-chat-completions-via-anthropic-messages` and `anthropic-messages-via-openai-chat-completions`.
 - `anthropic-messages-and-openai-responses/` — available only to `anthropic-messages-via-openai-responses` and
   `openai-responses-via-anthropic-messages`.
 - `anthropic-messages-via/` — available only to `anthropic-messages-via-*` pairs.
