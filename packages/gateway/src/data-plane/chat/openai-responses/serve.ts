@@ -6,9 +6,10 @@ import { syntheticEventsFromCompaction } from './items/output.ts';
 import { prepareOpenAIResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ExecuteResult } from '@floway-dev/provider';
+import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
 
 interface OpenAIResponsesServeArgs {
   readonly payload: CanonicalOpenAIResponsesPayload;
@@ -42,8 +43,10 @@ export const openaiResponsesServe = {
           candidate,
           headers,
         });
-        if (result.type === 'events') ctx.affinity.select(candidate);
-        return result;
+        if (result.type !== 'events') return result;
+        ctx.affinity.select(candidate);
+        const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'openaiResponses', headers.get('user-agent'));
+        return { ...result, events: serializeOpenAIResponsesStream(result.events, enabled) };
       },
     );
     return result;

@@ -22,6 +22,7 @@ const flagGroupById = {
   'openai-responses-compact-decrypt': 'shims',
   'openai-responses-collaboration-shim': 'shims',
   'openai-responses-agent-message-shim': 'shims',
+  'serialize-stream-items': 'apiCompatibility',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
   'empty-tools-tool-choice-none': 'apiCompatibility',
   'rewrite-mid-conv-system-to-user': 'apiCompatibility',
