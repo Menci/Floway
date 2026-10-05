@@ -3,6 +3,8 @@ import { base64, base64urlnopad, hex } from '@scure/base';
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const BASE64_BODY = /^[A-Za-z0-9+/]*$/;
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$/;
+const BASE64URL_BODY = /^[A-Za-z0-9_-]*$/;
 
 export const normalizeForgivingBase64 = (value: string): string => {
   // https://infra.spec.whatwg.org/#forgiving-base64-decode
@@ -37,7 +39,10 @@ export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
 
 export const decodeHex = (value: string): Uint8Array => hex.decode(value);
 
+export const isCanonicalBase64 = (value: string): boolean => value.length % 4 === 0 && CANONICAL_BASE64.test(value);
+
 export const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
+  if (!isCanonicalBase64(value)) return null;
   try {
     const bytes = base64.decode(value);
     return base64.encode(bytes) === value ? bytes : null;
@@ -47,6 +52,7 @@ export const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
 };
 
 export const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
+  if (value.length % 4 === 1 || !BASE64URL_BODY.test(value)) return null;
   try {
     const bytes = base64urlnopad.decode(value);
     return base64urlnopad.encode(bytes) === value ? bytes : null;

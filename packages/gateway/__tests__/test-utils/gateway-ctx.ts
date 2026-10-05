@@ -1,5 +1,6 @@
 import { createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityRequestContext } from '../../src/data-plane/chat/shared/affinity/index.ts';
+import { createOpenAIChatCompletionsPrivateCodec } from '../../src/data-plane/chat/shared/assistant-message-private/codec.ts';
 import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ctx.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -32,6 +33,10 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
+    assistantMessagePrivate: overrides.assistantMessagePrivate ?? {
+      codec: createOpenAIChatCompletionsPrivateCodec({ serverSecret: '00'.repeat(32) }),
+      preference: { textFieldName: 'reasoning', reasoningEncapsulationFormat: 'openrouter-reasoning_details' },
+    },
     store: overrides.store ?? createOpenAIResponsesHttpStore({ id: base.apiKeyId, openaiResponsesRetentionSeconds: 0 }, base.requestStartedAt, false),
   };
 };

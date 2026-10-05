@@ -1,8 +1,10 @@
 import { AffinityRequestContext } from './affinity/index.ts';
+import { createOpenAIChatCompletionsPrivateCodec } from './assistant-message-private/codec.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { createGatewayCtxFromHono, type CreateGatewayCtxOptions, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/store.ts';
+import type { OpenAIChatCompletionsPrivateContext } from '@floway-dev/protocols/openai-chat-completions';
 
 // Chat-protocol ctx adds the affinity membrane and the OpenAI Responses item store.
 // The store is present on every chat ctx: native OpenAI Responses entries supply a
@@ -14,6 +16,7 @@ import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/sto
 // Completions) have no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
+  readonly assistantMessagePrivate: OpenAIChatCompletionsPrivateContext;
   readonly store: OpenAIResponsesStatefulStore;
 }
 
@@ -27,9 +30,14 @@ export const createChatGatewayCtxFromHono = (
   storeFactory: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
+  const apiKey = apiKeyFromContext(c);
   return {
     ...base,
-    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(apiKeyFromContext(c), base.requestStartedAt),
+    affinity: new AffinityRequestContext(apiKey.serverSecret),
+    assistantMessagePrivate: {
+      codec: createOpenAIChatCompletionsPrivateCodec(apiKey),
+      preference: { textFieldName: 'reasoning', reasoningEncapsulationFormat: 'openrouter-reasoning_details' },
+    },
+    store: storeFactory(apiKey, base.requestStartedAt),
   };
 };

@@ -1,3 +1,4 @@
+import type { OpenAIChatCompletionsAssistantMessagePrivate, OpenAIChatCompletionsPrivateDelta } from './private.ts';
 import type * as Official from './sdk.ts';
 
 // Request, response and chunk shapes follow the official Chat Completions wire contracts.
@@ -65,6 +66,7 @@ export interface OpenAIChatCompletionsUserMessage { role: 'user'; content: strin
 export interface OpenAIChatCompletionsToolMessage { role: 'tool'; content: string | OpenAIChatCompletionsTextPart[]; tool_call_id: string }
 export interface OpenAIChatCompletionsFunctionMessage { role: 'function'; content: string | null; name: string }
 export interface OpenAIChatCompletionsAssistantMessage {
+  [OpenAIChatCompletionsAssistantMessagePrivate]?: OpenAIChatCompletionsAssistantMessagePrivate;
   role: 'assistant';
   content?: string | OpenAIChatCompletionsAssistantContentPart[] | null;
   name?: string;
@@ -108,6 +110,7 @@ export interface OpenAIChatCompletionsAssistantExtensions {
   // DeepSeek and compatible providers: https://api-docs.deepseek.com/guides/reasoning_model
   reasoning_content?: string | null;
   // OpenRouter: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details
+  // Floway also emits this preferred readable field and reasoning_details carriers.
   reasoning?: string | null;
   reasoning_details?: unknown;
   // LiteLLM: https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/types/llms/openai.py#L646-L651
@@ -149,7 +152,7 @@ export interface OpenAIChatCompletionsResult {
 export interface OpenAIChatCompletionsToolCallDelta { index: number; id?: string; type?: 'function' | 'custom'; function?: { name?: string; arguments?: string }; custom?: { name?: string; input?: string } }
 export interface OpenAIChatCompletionsToolCallDeltaEx extends OpenAIChatCompletionsToolCallDelta { [field: string]: unknown; extra_content?: unknown; provider_specific_fields?: unknown }
 interface OpenAIChatCompletionsDeltaFields { audio?: Partial<OpenAIChatCompletionsAudio> | null; content?: string | null; refusal?: string | null; function_call?: { name?: string; arguments?: string }; tool_calls?: OpenAIChatCompletionsToolCallDelta[] }
-export interface OpenAIChatCompletionsAssistantDelta extends OpenAIChatCompletionsDeltaFields { role?: 'assistant' }
+export interface OpenAIChatCompletionsAssistantDelta extends OpenAIChatCompletionsDeltaFields { role?: 'assistant'; [OpenAIChatCompletionsAssistantMessagePrivate]?: OpenAIChatCompletionsPrivateDelta }
 export type OpenAIChatCompletionsDelta = OpenAIChatCompletionsAssistantDelta | {
   [Role in 'developer' | 'system' | 'user' | 'tool']: OpenAIChatCompletionsDeltaFields & { role: Role };
 }['developer' | 'system' | 'user' | 'tool'];
@@ -169,3 +172,8 @@ export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStream
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { reassembleOpenAIChatCompletionsEvents } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';
+
+export * from './private.ts';
+export * from './extensions.ts';
+
+export { createOpenAIChatCompletionsReferencedTextHash, openAIChatCompletionsReferencedTextHash, appendOpenAIChatCompletionsTextRange, openAIChatCompletionsTextFromRanges, matchesOpenAIChatCompletionsReferencedTextHash } from './thin.ts';

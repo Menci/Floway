@@ -1,11 +1,9 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
-import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
+import { OPENAI_CHAT_COMPLETIONS_ASSISTANT_FIELDS, OPENAI_CHAT_COMPLETIONS_TOOL_CALL_FIELDS, accumulateOpenAIChatCompletionsExtension, createOpenAIChatCompletionsExtensionAccumulator, finalizeOpenAIChatCompletionsExtensions, type OpenAIChatCompletionsExtensionAccumulator } from './extensions.ts';
+import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs, OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsAnnotation } from './index.ts';
+import { accumulateOpenAIChatCompletionsPrivate, finalizeOpenAIChatCompletionsPrivate, OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsPrivateDraft } from './private.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-// Field-fidelity contract: every field an upstream emits must reach the
-// non-streaming result. Known streaming fields use their protocol semantics;
-// unknown fields fall through to captureExtras so future extensions survive.
-const KNOWN_DELTA_KEYS = new Set(['audio', 'function_call', 'content', 'role', 'reasoning_text', 'reasoning_opaque', 'reasoning_items', 'refusal', 'tool_calls']);
 const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason', 'logprobs']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
 
@@ -14,34 +12,31 @@ interface ToolCallAccumulator {
   name: string;
   arguments: string;
   type: 'function' | 'custom';
-  extras: Record<string, unknown>;
+  extensions: OpenAIChatCompletionsExtensionAccumulator;
 }
 
 interface ChoiceAccumulator {
   readonly index: number;
-  content: string;
-  reasoningText: string;
+  content?: string;
   audio?: Partial<OpenAIChatCompletionsAudio>;
   functionCall?: { name: string; arguments: string };
   logprobs?: OpenAIChatCompletionsLogprobs;
-  reasoningOpaque?: string;
+  annotations?: OpenAIChatCompletionsAnnotation[];
   refusal?: string;
-  readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
   finishReason: OpenAIChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
-  readonly messageExtras: Record<string, unknown>;
+  readonly extensions: OpenAIChatCompletionsExtensionAccumulator;
+  readonly private: OpenAIChatCompletionsPrivateDraft;
 }
 
 const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   index,
-  content: '',
-  reasoningText: '',
-  reasoningItems: [],
   finishReason: 'stop',
   toolCalls: new Map(),
   choiceExtras: {},
-  messageExtras: {},
+  extensions: createOpenAIChatCompletionsExtensionAccumulator('assistant'),
+  private: {},
 });
 
 const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatCompletionsDelta['tool_calls']): void => {
@@ -50,14 +45,16 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: OpenAIChatComplet
   for (const toolCall of value) {
     const fn = toolCall.function;
     const custom = toolCall.custom;
-    const current = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '', type: 'function', extras: {} };
+    const current = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '', type: 'function', extensions: createOpenAIChatCompletionsExtensionAccumulator('tool') };
     if (toolCall.id !== undefined) current.id = toolCall.id;
     if (fn?.name !== undefined) current.name = fn.name;
     if (fn?.arguments !== undefined) current.arguments += fn.arguments;
     if (custom?.name !== undefined) current.name = custom.name;
     if (custom?.input !== undefined) current.arguments += custom.input;
     if (toolCall.type !== undefined) current.type = toolCall.type;
-    captureExtras(toolCall as unknown as Record<string, unknown>, new Set(['index', 'id', 'type', 'function', 'custom']), current.extras);
+    for (const [field, value] of Object.entries(toolCall)) {
+      if (!OPENAI_CHAT_COMPLETIONS_TOOL_CALL_FIELDS.has(field)) accumulateOpenAIChatCompletionsExtension(current.extensions, field, value);
+    }
     choice.toolCalls.set(toolCall.index, current);
   }
 };
@@ -66,7 +63,7 @@ const finalizedToolCalls = (choice: ChoiceAccumulator): OpenAIChatCompletionsToo
   [...choice.toolCalls.entries()]
     .toSorted(([left], [right]) => left - right)
     .map(([, toolCall]): OpenAIChatCompletionsToolCall => ({
-      ...toolCall.extras,
+      ...finalizeOpenAIChatCompletionsExtensions(toolCall.extensions),
       id: toolCall.id,
       ...(toolCall.type === 'custom'
         ? { type: 'custom', custom: { name: toolCall.name, input: toolCall.arguments } }
@@ -91,25 +88,25 @@ const completeAudio = (audio: Partial<OpenAIChatCompletionsAudio>): OpenAIChatCo
 
 const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreaming => {
   const toolCalls = finalizedToolCalls(choice);
+  const privateValue = finalizeOpenAIChatCompletionsPrivate(choice.private);
+  const message: OpenAIChatCompletionsAssistantOutputMessageEx = {
+    role: 'assistant',
+    content: choice.content ?? null,
+    refusal: choice.refusal ?? null,
+    ...(choice.annotations === undefined ? {} : { annotations: choice.annotations }),
+    ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
+    ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
+    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    ...finalizeOpenAIChatCompletionsExtensions(choice.extensions),
+    ...(privateValue === undefined ? {} : { [OpenAIChatCompletionsAssistantMessagePrivate]: privateValue }),
+  };
   return {
     index: choice.index,
     logprobs: choice.logprobs ?? null,
-    message: {
-      role: 'assistant',
-      content: choice.content || null,
-      refusal: choice.refusal ?? null,
-      ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
-      ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
-      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
-      ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
-      ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
-      ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
-      ...choice.messageExtras,
-    },
+    message,
     finish_reason: choice.finishReason,
     ...choice.choiceExtras,
-  } as OpenAIChatCompletionsChoiceNonStreaming;
+  };
 };
 
 export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResult> {
@@ -146,14 +143,13 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       captureExtras(streamed as unknown as Record<string, unknown>, KNOWN_CHOICE_KEYS, choice.choiceExtras);
 
       const delta = streamed.delta as OpenAIChatCompletionsAssistantDeltaEx;
-      captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
-      if (typeof delta.content === 'string') choice.content += delta.content;
-      if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
-      if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
-      if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
-      if (Array.isArray(delta.reasoning_items)) {
-        choice.reasoningItems.push(...delta.reasoning_items as OpenAIChatCompletionsReasoningItem[]);
+      for (const [field, value] of Object.entries(delta)) {
+        if (!OPENAI_CHAT_COMPLETIONS_ASSISTANT_FIELDS.has(field)) accumulateOpenAIChatCompletionsExtension(choice.extensions, field, value);
       }
+      const privateDelta = delta[OpenAIChatCompletionsAssistantMessagePrivate];
+      if (privateDelta !== undefined) accumulateOpenAIChatCompletionsPrivate(choice.private, privateDelta);
+      if (typeof delta.content === 'string') choice.content = (choice.content ?? '') + delta.content;
+      if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
       if (delta.function_call !== undefined) {
         const call = choice.functionCall ??= { name: '', arguments: '' };
         if (delta.function_call.name !== undefined) call.name = delta.function_call.name;
@@ -166,6 +162,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       }
       accumulateToolCalls(choice, delta.tool_calls);
       accumulateAudio(choice, delta.audio);
+      if (delta.annotations !== undefined) choice.annotations = delta.annotations;
       if (streamed.finish_reason != null) choice.finishReason = streamed.finish_reason;
     }
   }

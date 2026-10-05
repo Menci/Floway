@@ -272,19 +272,19 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
   assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'first-final');
   assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_items, [{ type: 'reasoning', id: 'rs_a', summary: [] }]);
   assertEquals(result.choices[0].message.tool_calls, [{ id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a":1}' } }]);
-  assertEquals(result.choices[0].message.vendor_trace, 'a1a2');
+  assertEquals(result.choices[0].message.vendor_trace, 'a2');
   assertEquals(result.choices[0].content_filter_results, { sexual: { filtered: false } });
   assertEquals(result.choices[0].finish_reason, 'tool_calls');
   assertEquals(result.choices[1].message.content, 'second answer');
   assertEquals((result.choices[1].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'second-final');
   assertEquals(result.choices[1].message.tool_calls, [{ id: 'call_b', type: 'function', function: { name: 'beta', arguments: '{"b":2}' } }]);
-  assertEquals(result.choices[1].message.vendor_trace, 'b1b2');
+  assertEquals(result.choices[1].message.vendor_trace, 'b2');
   assertEquals(result.choices[1].content_filter_results, { hate: { filtered: false } });
   assertEquals(result.choices[1].finish_reason, 'stop');
   assertEquals(result.usage, { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 });
 });
 
-test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in order', async () => {
+test('reassembleOpenAIChatCompletionsEvents uses the latest reasoning_items snapshot without duplicating earlier items', async () => {
   const body = makeEvents([
     {
       data: {
@@ -321,6 +321,7 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
             index: 0,
             delta: {
               reasoning_items: [
+                { type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'first' }] },
                 {
                   type: 'reasoning',
                   id: 'rs_2',
@@ -672,4 +673,19 @@ test('accumulates legacy function arguments and logprob entries across chunks', 
   const result = await reassembleOpenAIChatCompletionsEvents(events());
   assertEquals(result.choices[0].message.function_call, { name: 'lookup', arguments: '{}' });
   assertEquals(result.choices[0].logprobs, { content: [token, token], refusal: null });
+});
+
+test('Chat annotation arrays replace the prior field as in the official SDK', async () => {
+  const first = [{ type: 'url_citation', url_citation: { start_index: 0, end_index: 1, title: 'first', url: 'https://example.com/first' } }];
+  const second = [...first, { type: 'url_citation', url_citation: { start_index: 2, end_index: 3, title: 'second', url: 'https://example.com/second' } }];
+  for (const last of [second, []]) {
+    const events = makeEvents([first, last].map(annotations => ({
+      data: {
+        id: 'cmpl_annotations', object: 'chat.completion.chunk', created: 0, model: 'test',
+        choices: [{ index: 0, delta: { annotations }, finish_reason: null }],
+      },
+    })));
+    const result = await reassembleOpenAIChatCompletionsEvents(events);
+    assertEquals(result.choices[0].message.annotations, last);
+  }
 });
