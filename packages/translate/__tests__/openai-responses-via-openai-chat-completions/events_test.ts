@@ -588,3 +588,18 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents ignores empty t
   assertEquals(deltaEvents.length, 1);
   assertEquals((deltaEvents[0] as { delta: string }).delta, 'hello');
 });
+
+test('id-less reasoning_items receive output IDs shared by all child events', () => {
+  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
+  const events = [
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'trace' }] }] }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'stop'), state),
+    ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
+  ];
+  const done = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'reasoning');
+  if (done?.type !== 'response.output_item.done') throw new Error('Expected output reasoning');
+  expect(done.item.id).toMatch(/^rs_[0-9a-f]{32}$/);
+  const children = events.filter(event => 'item_id' in event);
+  expect(children.length).toBeGreaterThan(0);
+  for (const event of children) if ('item_id' in event) expect(event.item_id).toBe(done.item.id);
+});

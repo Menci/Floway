@@ -214,7 +214,8 @@ export interface OpenAIResponsesInputFile {
 
 export interface OpenAIResponsesInputReasoning {
   type: 'reasoning';
-  id: string;
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#/components/schemas/ReasoningItemParam
+  id?: string | null;
   summary: { type: 'summary_text'; text: string }[];
   // Opaque reasoning blob the upstream signs against `(account, id)`. Never
   // auto-requested via `include: ['reasoning.encrypted_content']` (forcing it

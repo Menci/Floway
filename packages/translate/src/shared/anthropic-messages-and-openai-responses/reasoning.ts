@@ -1,5 +1,5 @@
 import type { AnthropicMessagesRedactedThinkingBlock, AnthropicMessagesThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputReasoning, OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
 
 export type AnthropicMessagesReasoningBlock = AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock;
 
@@ -47,7 +47,7 @@ export const packReasoningSignature = (id: string, encryptedContent: string): st
  * - `opaque-sig` (no `@`) → `{ id: null, encryptedContent: 'opaque-sig' }` —
  *   a genuine upstream signature (native Anthropic encrypted reasoning, or a
  *   base64 blob that contains no `@`). It is preserved verbatim and the caller
- *   synthesizes a fresh reasoning id; we NEVER overwrite the signature.
+ *   leaves the Responses ID absent; the signature is preserved verbatim.
  * - `enc@` (trailing `@`, empty id) → treated as a native signature.
  *
  * Splitting on the LAST `@` is safe because genuine upstream signatures are
@@ -66,8 +66,8 @@ const unpackReasoningSignature = (signature: string): { id: string | null; encry
  * Project an Anthropic Messages reasoning carrier echoed by a downstream Anthropic Messages CLIENT
  * into an OpenAI Responses reasoning item bound for the OpenAI Responses UPSTREAM. Unpacks the
  * carrier so the upstream sees the original id and a clean `encrypted_content`
- * blob. A fresh random id is used when the carrier holds a genuine (unpacked)
- * upstream signature.
+ * blob. An unpacked signature has no Responses item ID, so input history
+ * leaves that identity absent.
  */
 export const anthropicMessagesReasoningBlockToOpenAIResponsesReasoning = (block: AnthropicMessagesReasoningBlock): OpenAIResponsesInputReasoning => {
   const carrier = block.type === 'thinking' ? block.signature : block.data;
@@ -76,7 +76,7 @@ export const anthropicMessagesReasoningBlockToOpenAIResponsesReasoning = (block:
 
   return {
     type: 'reasoning',
-    id: id ?? createRandomOpenAIResponsesItemId('reasoning'),
+    ...(id !== null ? { id } : {}),
     summary,
     ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
   };

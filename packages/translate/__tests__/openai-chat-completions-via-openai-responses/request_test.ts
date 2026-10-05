@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
@@ -20,7 +20,7 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+test('buildTargetRequest leaves synthesized reasoning input items id-less', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
@@ -36,7 +36,7 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
   const reasoning = result.input[0] as OpenAIResponsesInputReasoning;
   assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
+  assertEquals(reasoning.id, undefined);
 });
 
 test('buildTargetRequest preserves text-only scalar reasoning', () => {
@@ -54,7 +54,6 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
   if (!Array.isArray(result.input)) throw new Error('expected input array');
   assertEquals(result.input[0], {
     type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'visible trace' }],
   });
 });
