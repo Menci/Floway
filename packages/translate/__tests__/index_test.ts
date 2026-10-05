@@ -13,9 +13,14 @@ import {
 } from '../src/index.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPrivateContext, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
+
+const reasoning: OpenAIChatCompletionsPrivateContext = {
+  preference: { textFieldName: 'reasoning', reasoningEncapsulationFormat: 'openrouter-reasoning_details' },
+  codec: { encapsulate: async () => { throw new Error('Unexpected encapsulation'); }, unencapsulate: async () => undefined },
+};
 
 const schema = { type: 'object' as const, properties: { x: { type: 'string' } } };
 const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
@@ -73,7 +78,7 @@ const objectsIn = (value: unknown): Set<object> => {
 const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
   { name: 'Responses to Chat Completions', source: responses, translate: async () => (await translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm' })).target },
   { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await translateOpenAIResponsesViaAnthropicMessages(responses, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
-  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm' })).target },
+  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm', privateContext: reasoning })).target },
   { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
   { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIResponses(anthropic, { model: 'm' })).target },
   { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { model: 'm' })).target },

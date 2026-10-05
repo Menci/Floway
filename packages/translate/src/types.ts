@@ -1,4 +1,5 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsPrivateContext } from '@floway-dev/protocols/openai-chat-completions';
 
 export interface RemoteImageData {
   mediaType: string | null;
@@ -77,3 +78,7 @@ export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: stri
   src: SrcPayload,
   ctx: TranslationContext<TExtras>,
 ) => Promise<TranslateTripResult<TgtPayload, SrcEvent, TgtEvent>>;
+
+export interface OpenAIChatCompletionsPrivateTranslationContext {
+  readonly privateContext?: OpenAIChatCompletionsPrivateContext;
+}

@@ -1,9 +1,8 @@
-import { hasReadableSummary, toOpenAIChatCompletionsReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
-import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
+import { createOpenAIResponsesPrivateState, observeOpenAIResponsesPrivate, finalizeOpenAIResponsesPrivate, recordOpenAIResponsesChatProjection } from '../shared/via-openai-responses/assistant-message-private.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsStreamEvent, type OpenAIChatCompletionsResult, type OpenAIChatCompletionsAssistantDelta } from '@floway-dev/protocols/openai-chat-completions';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResultEx): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
   response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'
@@ -33,20 +32,9 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   created: number;
   toolCallIndex: number;
   functionCallIndices: Map<number, number>;
-  reasoningItems: OpenAIChatCompletionsReasoningItem[];
-  firstScalarReasoningOutputIndex?: number;
-  pendingReasoningSummaryTexts: Map<
-    string,
-    {
-      outputIndex: number;
-      summaryIndex: number;
-      text: string;
-    }
-  >;
-  emittedReasoningSummaryKeys: Set<string>;
+  privateState: ReturnType<typeof createOpenAIResponsesPrivateState>;
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
-  outputOrder: OpenAIResponsesOutputOrderState;
   serviceTier?: OpenAIChatCompletionsStreamEvent['service_tier'];
   done: boolean;
 }
@@ -57,102 +45,15 @@ export const createOpenAIResponsesToOpenAIChatCompletionsStreamState = (): OpenA
   created: Math.floor(Date.now() / 1000),
   toolCallIndex: -1,
   functionCallIndices: new Map(),
-  reasoningItems: [],
-  pendingReasoningSummaryTexts: new Map(),
-  emittedReasoningSummaryKeys: new Set(),
+  privateState: createOpenAIResponsesPrivateState(),
   emittedTextContentKeys: new Set(),
   emittedFunctionArgumentOutputIndexes: new Set(),
-  outputOrder: createOpenAIResponsesOutputOrderState(),
   done: false,
 });
 
-const trackReasoningOutputItem = (item: OpenAIResponsesOutputItemEx): boolean => item.type === 'reasoning';
-
-const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
-  if (state.reasoningItems.length === 0) return [];
-
-  const reasoningItems = state.reasoningItems;
-  state.reasoningItems = [];
-  return [makeChunk(state, { reasoning_items: reasoningItems })];
-};
-
-const isReasoningOutputDone = (event: OpenAIResponsesStreamEventEx): boolean => {
-  if (event.type !== 'response.output_item.done') return false;
-  return (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>).item.type === 'reasoning';
-};
-
-const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEventEx | undefined => {
-  const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(
-    event => !shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder) && (!onlyReasoningOutputDone || isReasoningOutputDone(event)),
-  );
-  if (nextReadyIndex === -1) return undefined;
-
-  const [event] = state.outputOrder.deferredEvents.splice(nextReadyIndex, 1);
-  return event;
-};
-
-const flushReadyDeferredChatChunks = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone = false): OpenAIChatCompletionsStreamEvent[] => {
-  const chunks: OpenAIChatCompletionsStreamEvent[] = [];
-  while (state.outputOrder.deferredEvents.length > 0) {
-    const event = takeNextReadyDeferredResponseEvent(state, onlyReasoningOutputDone);
-    if (!event) break;
-    chunks.push(...translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(event, state));
-  }
-  return chunks;
-};
-
-const shouldProjectScalarReasoning = (outputIndex: number, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): boolean => {
-  // OpenAI Chat Completions scalar reasoning is a compatibility projection, not an ordered
-  // reasoning IR; once the first OpenAI Responses reasoning output is chosen, later
-  // reasoning outputs only travel through `reasoning_items[]`.
-  state.firstScalarReasoningOutputIndex ??= outputIndex;
-  return state.firstScalarReasoningOutputIndex === outputIndex;
-};
-
-type ReasoningSummaryEmitMode = 'delta' | 'done-fallback';
-
-const emitReasoningSummaryText = (outputIndex: number, summaryIndex: number, text: string, state: OpenAIResponsesToOpenAIChatCompletionsStreamState, mode: ReasoningSummaryEmitMode): OpenAIChatCompletionsStreamEvent[] => {
-  if (!text || !shouldProjectScalarReasoning(outputIndex, state)) return [];
-
-  const key = openaiResponsesPartKey(outputIndex, summaryIndex);
-  if (mode === 'done-fallback' && state.emittedReasoningSummaryKeys.has(key)) {
-    return [];
-  }
-
-  state.emittedReasoningSummaryKeys.add(key);
-  state.pendingReasoningSummaryTexts.delete(key);
-  return [makeChunk(state, { reasoning_text: text })];
-};
-
-const queueReasoningSummaryDoneFallback = (outputIndex: number, summaryIndex: number, text: string, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): void => {
-  if (!text || !shouldProjectScalarReasoning(outputIndex, state)) return;
-
-  const key = openaiResponsesPartKey(outputIndex, summaryIndex);
-  if (state.emittedReasoningSummaryKeys.has(key)) return;
-
-  state.pendingReasoningSummaryTexts.set(key, {
-    outputIndex,
-    summaryIndex,
-    text,
-  });
-};
-
-const flushReasoningSummaryDoneFallbacks = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, outputIndex?: number): OpenAIChatCompletionsStreamEvent[] => {
-  const pending = [...state.pendingReasoningSummaryTexts.values()]
-    .filter(item => outputIndex === undefined || item.outputIndex === outputIndex)
-    .sort((a, b) => (a.outputIndex === b.outputIndex ? a.summaryIndex - b.summaryIndex : a.outputIndex - b.outputIndex));
-
-  return pending.flatMap(item => emitReasoningSummaryText(item.outputIndex, item.summaryIndex, item.text, state, 'done-fallback'));
-};
-
-export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+const translateOpenAIResponsesEvent = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
   if (state.done) return [];
-  if (shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder)) {
-    state.outputOrder.deferredEvents.push(event);
-    return [];
-  }
-  recordOpenAIResponsesOutputOrderEvent(event, state.outputOrder, trackReasoningOutputItem);
-
+  const reasoningChunks = observeOpenAIResponsesPrivate(event, state.privateState).map(reasoningText => makeChunk(state, { [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText } }));
   switch (event.type) {
   case 'response.created': {
     const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
@@ -164,6 +65,12 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   case 'response.output_item.added': {
     const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
+    if (item.type === 'reasoning') return reasoningChunks;
+    if (item.type === 'message') return item.content.flatMap((part, content_index) => {
+      if (part.type !== 'output_text' || !part.text) return [];
+      state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
+      return [makeChunk(state, { content: part.text })];
+    });
     if (item.type !== 'function_call') return [];
 
     state.toolCallIndex++;
@@ -187,31 +94,27 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_item.done': {
-    const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
-    if (item.type !== 'reasoning') return [];
-
-    const chunks: OpenAIChatCompletionsStreamEvent[] = [];
-    const reasoningItem = toOpenAIChatCompletionsReasoningItem(item);
-    if (hasReadableSummary(reasoningItem)) state.reasoningItems.push(reasoningItem);
-
-    for (const [summaryIndex, part] of item.summary.entries()) {
-      chunks.push(...emitReasoningSummaryText(output_index, summaryIndex, part.text, state, 'done-fallback'));
+    const { item, output_index } = event;
+    if (item.type === 'message') return item.content.flatMap((part, content_index) => {
+      if (part.type !== 'output_text' || state.emittedTextContentKeys.has(openaiResponsesPartKey(output_index, content_index))) return [];
+      state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
+      return [makeChunk(state, { content: part.text })];
+    });
+    if (item.type === 'function_call') {
+      if (state.emittedFunctionArgumentOutputIndexes.has(output_index)) return [];
+      const start = state.functionCallIndices.has(output_index) ? [] : translateOpenAIResponsesEvent({ type: 'response.output_item.added', output_index, item }, state);
+      const index = state.functionCallIndices.get(output_index)!;
+      state.emittedFunctionArgumentOutputIndexes.add(output_index);
+      return [...start, makeChunk(state, { tool_calls: [{ index, function: { arguments: item.arguments } }] })];
     }
-    chunks.push(...flushReasoningSummaryDoneFallbacks(state, output_index));
-
-    return [...chunks, ...flushReadyDeferredChatChunks(state, true), ...flushPendingReasoningChunks(state), ...flushReadyDeferredChatChunks(state)];
+    return reasoningChunks;
   }
-
-  case 'response.reasoning_summary_text.delta': {
-    const { delta, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }>;
-    return emitReasoningSummaryText(output_index, summary_index, delta, state, 'delta');
-  }
-
-  case 'response.reasoning_summary_text.done': {
-    const { text, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>;
-    queueReasoningSummaryDoneFallback(output_index, summary_index, text, state);
-    return [];
-  }
+  case 'response.reasoning_summary_text.delta':
+  case 'response.reasoning_summary_text.done':
+  case 'response.reasoning_summary_part.done':
+  case 'response.reasoning_text.delta':
+  case 'response.reasoning_text.done':
+    return reasoningChunks;
 
   case 'response.output_text.delta': {
     const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>;
@@ -247,8 +150,16 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
     return [makeChunk(state, { refusal })];
   }
 
+  case 'response.content_part.added':
   case 'response.content_part.done': {
     const { part, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>;
+    if (part.type === 'reasoning_text') return reasoningChunks;
+    if (part.type === 'output_text') {
+      const key = openaiResponsesPartKey(output_index, content_index);
+      if (!part.text || state.emittedTextContentKeys.has(key)) return [];
+      state.emittedTextContentKeys.add(key);
+      return [makeChunk(state, { content: part.text })];
+    }
     if (part.type !== 'refusal') return [];
 
     const key = openaiResponsesPartKey(output_index, content_index);
@@ -303,12 +214,19 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   case 'response.completed':
   case 'response.incomplete': {
     const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' }>;
-    const chunks: OpenAIChatCompletionsStreamEvent[] = [];
+    const chunks: OpenAIChatCompletionsStreamEvent[] = reasoningChunks;
+    response.output.forEach((item, output_index) => {
+      if (item.type === 'reasoning') return;
+      const done = { type: 'response.output_item.done' as const, item, output_index };
+      const projected = translateOpenAIResponsesEvent(done, state);
+      recordOpenAIResponsesChatProjection(done, projected, state.privateState);
+      chunks.push(...projected);
+    });
     if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
 
-    chunks.push(...flushReasoningSummaryDoneFallbacks(state));
-    chunks.push(...flushPendingReasoningChunks(state));
-    chunks.push(...flushReadyDeferredChatChunks(state));
+    recordOpenAIResponsesChatProjection(event, [], state.privateState);
+    const sidecar = finalizeOpenAIResponsesPrivate(state.privateState);
+    if (sidecar !== undefined) chunks.push(makeChunk(state, { [OpenAIChatCompletionsAssistantMessagePrivate]: { sidecar } }));
 
     const chunk = makeChunk(state, {}, mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason(response));
 
@@ -327,7 +245,13 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 };
 
-const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+  const chunks = translateOpenAIResponsesEvent(event, state);
+  if (event.type !== 'response.completed' && event.type !== 'response.incomplete') recordOpenAIResponsesChatProjection(event, chunks, state.privateState);
+  return chunks;
+};
+
+const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDelta, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,

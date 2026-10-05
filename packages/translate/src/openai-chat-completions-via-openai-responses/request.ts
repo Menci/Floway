@@ -1,10 +1,10 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
-import { openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { restoreOpenAIResponsesThinItems } from '../shared/via-openai-responses/assistant-message-private.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsAssistantMessage, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -85,14 +85,11 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
 
     if (message.role === 'assistant') {
       const assistantContent = translateAssistantContent(message);
-      const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
-      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
-      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(extensions));
-      if (reasoningItems) {
-        input.push(...reasoningItems);
-      } else if (scalarReasoning) {
-        input.push(scalarReasoning);
-      }
+      const restored = restoreOpenAIResponsesThinItems(message);
+      if (restored !== undefined) { input.push(...restored); continue; }
+      const privateState = message[OpenAIChatCompletionsAssistantMessagePrivate];
+      const reasoningText = privateState?.sidecar.upstreamProtocol === 'openaiResponses' ? privateState.reasoningText : undefined;
+      if (reasoningText) input.push({ type: 'reasoning', id: `rs_${crypto.randomUUID().replaceAll('-', '')}`, summary: [], content: [{ type: 'reasoning_text', text: reasoningText }] });
 
       if (message.tool_calls?.length) {
         if (assistantContent.length > 0) {

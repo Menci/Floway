@@ -15,7 +15,7 @@ files at the top level of either `shared/` tree.
 3. **Target-locked, `via-<Y>/`** — only `*-via-Y` pairs may import the helper.
    A helper does not need to serve every pair within that ceiling.
 4. **One-protocol-bidirectional, `<P>/`** — only pairs with `P` as either source
-   or target may import the helper. The `openai-chat-completions/` category owns the shared streamed item/block lifecycle.
+   or target may import the helper. The `openai-chat-completions/` category owns the shared streamed item/block lifecycle and authenticated history decoding.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
    `B-via-A` pairs may import the helper. For example,
    `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
@@ -23,7 +23,7 @@ files at the top level of either `shared/` tree.
 
 ## Current Production Subdirectories
 
-- `openai-chat-completions/` — available to every pair with Chat Completions as either source or target; owns the shared streamed item/block lifecycle.
+- `openai-chat-completions/` — available to every pair with Chat Completions as either source or target; owns the shared streamed item/block lifecycle and authenticated history decoding.
 - `openai-chat-completions-and-openai-responses/` — available only to
   `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
 - `openai-chat-completions-and-anthropic-messages/` — available only to

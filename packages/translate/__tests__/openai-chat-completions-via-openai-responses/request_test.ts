@@ -1,9 +1,8 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
 import { TranslatorInputError } from '../../src/translator-input-error.ts';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest preserves scalar and content-part assistant refusals', () => {
@@ -21,77 +20,14 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals', 
   ]);
 });
 
-test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+test('buildTargetRequest drops foreign reasoning fields without an owned sidecar', () => {
   const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'trace',
-        reasoning_opaque: 'enc',
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
+    model: 'm', messages: [{
+      role: 'assistant', content: 'answer', reasoning_text: 'trace', reasoning_opaque: 'cipher',
+      reasoning_items: [{ type: 'reasoning', id: 'rs_existing', summary: [] }],
+    } as OpenAIChatCompletionsAssistantMessageEx],
   });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as OpenAIResponsesInputReasoning;
-  assertEquals(reasoning.type, 'reasoning');
-  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
-});
-
-test('buildTargetRequest preserves text-only scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'visible trace',
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input[0], {
-    type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
-    summary: [{ type: 'summary_text', text: 'visible trace' }],
-  });
-});
-
-test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    messages: [
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_text: 'legacy trace',
-        reasoning_opaque: 'legacy_enc',
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_existing',
-            summary: [{ type: 'summary_text', text: 'first' }],
-          },
-          {
-            type: 'reasoning',
-            summary: [],
-          },
-        ],
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  if (!Array.isArray(result.input)) throw new Error('expected input array');
-  assertEquals(result.input.filter(item => item.type === 'reasoning'), [
-    {
-      type: 'reasoning',
-      id: 'rs_existing',
-      summary: [{ type: 'summary_text', text: 'first' }],
-    },
-  ]);
+  assertEquals(result.input, [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }]);
 });
 
 test('buildTargetRequest rejects tool messages without tool_call_id', () => {

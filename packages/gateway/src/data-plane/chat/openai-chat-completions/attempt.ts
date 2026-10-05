@@ -75,14 +75,15 @@ export const openaiChatCompletionsAttempt = {
         );
       }
       if (targetApi === 'openaiResponses') {
-        return await traverseTranslation(
+        const result = await traverseTranslation(
           invocation.payload,
-          p => translateOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id }),
+          p => translateOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id, privateContext: args.privateContext }),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
           captureFromDump(ctx.dump, targetApi),
         );
+        return result.type === 'events' && args.privateContext !== undefined ? { ...result, [OpenAIChatCompletionsPrivateResponse]: args.privateContext } : result;
       }
       throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
     });
