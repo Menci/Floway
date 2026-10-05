@@ -46,6 +46,14 @@ patchedDependencies:
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
+  # Preserve literal JSON keys and UTF-16 code units across published runtimes.
+  # Own-property writes protect __proto__; CESU-8 tag 272 retains unpaired surrogates.
+  # https://github.com/kriszyp/cbor-x/blob/ca48789717cf32f4d2f5d0301d71e1eb5d0a994f/decode.js#L551-L557
+  # https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml#table-tags
+  'cbor-x@1.6.6': patches/cbor-x@1.6.6.patch
+  # Recursive mapping must retain every own JSON field before CBOR encoding.
+  # https://github.com/sindresorhus/map-obj/blob/10b32031c6f31be38794bbe0c569e67a5f9182cd/index.js#L87-L90
+  'map-obj@6.0.0': patches/map-obj@6.0.0.patch
 
 # @react-router/dev pulls in a standalone HTTP server we never run — the SPA is
 # served by Workers Static Assets in production and by the Node target in the

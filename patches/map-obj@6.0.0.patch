@@ -1,0 +1,29 @@
+diff --git a/index.js b/index.js
+index 2754bbf420fa6e6b4f479d4ddf41fe3144e526e1..e1ab1ea5b6bbd6e61a809e31a9fefb5251aab40b 100644
+--- a/index.js
++++ b/index.js
+@@ -84,11 +84,6 @@ const _mapObject = (object, mapper, options, isSeen = new WeakMap()) => {
+ 
+ 		let [newKey, newValue, {shouldRecurse = true} = {}] = mapResult;
+ 
+-		// Drop `__proto__` keys.
+-		if (newKey === '__proto__') {
+-			continue;
+-		}
+-
+ 		if (processOptions.deep && shouldRecurse && isObjectCustom(newValue)) {
+ 			newValue = Array.isArray(newValue)
+ 				? mapArray(newValue)
+@@ -96,7 +91,11 @@ const _mapObject = (object, mapper, options, isSeen = new WeakMap()) => {
+ 		}
+ 
+ 		try {
+-			target[newKey] = newValue;
++			if (newKey === '__proto__') {
++				Object.defineProperty(target, newKey, {value: newValue, enumerable: true, writable: true, configurable: true});
++			} else {
++				target[newKey] = newValue;
++			}
+ 		} catch (error) {
+ 			if (error.name === 'TypeError' && error.message.includes('read only')) {
+ 				// Skip non-configurable properties
