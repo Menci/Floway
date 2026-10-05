@@ -1,3 +1,6 @@
+import { extractOpenAIChatCompletionsPrivate } from './assistant-message-private/extract.ts';
+import { cloneOpenAIChatCompletionsPayload, decodeOpenAIChatCompletionsPrivateHistory, restoreOpenAIChatCompletionsPrivateHistory } from './assistant-message-private/request.ts';
+import { OpenAIChatCompletionsPrivateResponse } from './assistant-message-private/response.ts';
 import { openaiChatCompletionsInterceptors } from './interceptors/index.ts';
 import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
@@ -12,7 +15,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPrivateContext } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
@@ -25,14 +28,17 @@ export interface OpenAIChatCompletionsAttemptArgs {
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
+  readonly privateContext?: OpenAIChatCompletionsPrivateContext;
 }
 
 export const openaiChatCompletionsAttempt = {
   generate: async (args: OpenAIChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...sourcePayload, model: candidate.model.id };
+    const payload = { ...cloneOpenAIChatCompletionsPayload(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const targetApi = openaiChatCompletionsTarget.pick(candidate.model.endpoints);
+    if (args.privateContext !== undefined) await decodeOpenAIChatCompletionsPrivateHistory(payload, args.privateContext);
+    if (targetApi === 'openaiChatCompletions') restoreOpenAIChatCompletionsPrivateHistory(payload);
     const invocation: OpenAIChatCompletionsInvocation = {
       payload,
       candidate,
@@ -49,7 +55,10 @@ export const openaiChatCompletionsAttempt = {
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+        const result = await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+        if (result.type !== 'events' || args.privateContext === undefined) return result;
+        const capture = captureFromDump(ctx.dump, targetApi);
+        return { ...result, [OpenAIChatCompletionsPrivateResponse]: args.privateContext, events: extractOpenAIChatCompletionsPrivate(result.events, capture?.upstreamFrame) };
       }
       if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(

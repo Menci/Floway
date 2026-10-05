@@ -1,115 +1,54 @@
+import { chatAffinityCarriers, OPENAI_CHAT_COMPLETIONS_AFFINITY_DOMAIN, replaceChatAffinityCarriers } from './carriers.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { createOpenAIChatCompletionsReasoningCarrierDelta, openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsReasoningPreference, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-interface ChoiceState {
-  opaque?: string;
-  finished: boolean;
-}
-
-type StreamingChoice = OpenAIChatCompletionsStreamEvent['choices'][number];
-const REQUIRED_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices']);
-
-const eventWithChoices = (
-  event: OpenAIChatCompletionsStreamEvent,
-  choices: StreamingChoice[],
-  includeOriginalFields: boolean,
-): OpenAIChatCompletionsStreamEvent => {
-  const { id, object, created, model, choices: _choices, ...optional } = event;
-  return {
-    id,
-    object,
-    created,
-    model,
-    choices,
-    ...(includeOriginalFields ? optional : {}),
-  };
-};
-
-const hasOptionalChunkFields = (event: OpenAIChatCompletionsStreamEvent): boolean =>
-  Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
+export interface ChatAffinityEgressOptions extends AffinityEgressOptions { preference: OpenAIChatCompletionsReasoningPreference }
 
 export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: AffinityEgressOptions,
+  options: ChatAffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-  // One choice is one logical assistant element, so its carrier frame before
-  // finish_reason (or DONE when finish_reason is absent) is both the turn
-  // prefix and final opaque snapshot.
-  const choices = new Map<number, ChoiceState>();
-  let lastEvent: OpenAIChatCompletionsStreamEvent | undefined;
+  const missing = new Set<number>();
+  const satisfied = new Set<number>();
+  let basis: OpenAIChatCompletionsStreamEvent | undefined;
   let failed = false;
-
+  const synthetic = async (indexes: number[]): Promise<OpenAIChatCompletionsStreamEvent> => {
+    if (basis === undefined) throw new Error('Affinity carrier has no source event');
+    const choices = await Promise.all(indexes.map(async index => {
+      missing.delete(index);
+      satisfied.add(index);
+      return { index, delta: createOpenAIChatCompletionsReasoningCarrierDelta(await options.codec.wrap(undefined, options.affinity, OPENAI_CHAT_COMPLETIONS_AFFINITY_DOMAIN), options.preference), finish_reason: null };
+    }));
+    const { id, object, model, created } = basis;
+    return { id, object, model, created, choices };
+  };
   for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      if (frame.type === 'done' && !failed) {
-        const unfinished = [...choices.entries()].filter(([, state]) => !state.finished);
-        if (unfinished.length > 0 && lastEvent !== undefined) {
-          const wrappedChoices = await Promise.all(unfinished.map(async ([index, state]) => {
-            state.finished = true;
-            return {
-              index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
-              finish_reason: null,
-            } satisfies StreamingChoice;
-          }));
-          yield eventFrame(eventWithChoices(lastEvent, wrappedChoices, false));
-        }
-      }
+    if (frame.type === 'done') {
+      if (!failed && missing.size > 0) yield eventFrame(await synthetic([...missing]));
       yield frame;
-      continue;
+      return;
     }
-
-    if (openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) {
-      failed = true;
-      yield frame;
-      continue;
-    }
-    lastEvent = frame.event;
-
-    const visibleChoices: StreamingChoice[] = [];
-    const finishingChoices: Array<{
-      index: number;
-      finishReason: NonNullable<StreamingChoice['finish_reason']>;
-      state: ChoiceState;
-    }> = [];
-
-    for (const choice of frame.event.choices) {
-      const { index, delta: sourceDelta, finish_reason: finishReason, ...choiceExtras } = choice;
-      const previous = choices.get(index);
-      const state = previous === undefined || previous.finished ? { finished: false } : previous;
-      choices.set(index, state);
-
-      const { reasoning_opaque: opaque, ...delta } = sourceDelta as OpenAIChatCompletionsAssistantDeltaEx;
-      if (typeof opaque === 'string') state.opaque = opaque;
-      const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
-
-      if (finishReason == null) {
-        if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
-        continue;
-      }
-
-      if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
-      finishingChoices.push({ index, finishReason, state });
-    }
-
-    if (visibleChoices.length > 0 || frame.event.choices.length === 0 || hasOptionalChunkFields(frame.event)) {
-      yield eventFrame(eventWithChoices(frame.event, visibleChoices, true));
-    }
-
-    if (finishingChoices.length === 0) continue;
-
-    const wrappedChoices = await Promise.all(finishingChoices.map(async ({ index, state }) => ({
-      index,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
-      finish_reason: null,
-    })));
-    yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));
-
-    const finishedChoices = finishingChoices.map(({ index, finishReason, state }) => {
-      state.finished = true;
-      return { index, delta: {}, finish_reason: finishReason };
-    });
-    yield eventFrame(eventWithChoices(frame.event, finishedChoices, false));
+    if (openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) { failed = true; yield frame; continue; }
+    basis = frame.event;
+    const choices = await Promise.all(frame.event.choices.map(async choice => {
+      if (!satisfied.has(choice.index)) missing.add(choice.index);
+      const carriers = chatAffinityCarriers(choice.delta as OpenAIChatCompletionsAssistantDeltaEx, options.preference);
+      if (carriers.length === 0) return choice;
+      const replacements = await Promise.all(carriers.map(async carrier => ({ carrier, value: await options.codec.wrap(carrier.value, options.affinity, OPENAI_CHAT_COMPLETIONS_AFFINITY_DOMAIN) })));
+      missing.delete(choice.index);
+      satisfied.add(choice.index);
+      return { ...choice, delta: replaceChatAffinityCarriers(choice.delta as OpenAIChatCompletionsAssistantDeltaEx, replacements) };
+    }));
+    const finishing = choices.filter(choice => choice.finish_reason != null && missing.has(choice.index));
+    if (finishing.length > 0) {
+      const pending = new Set(finishing.map(choice => choice.index));
+      const visible = choices.map(choice => pending.has(choice.index) ? { ...choice, finish_reason: null } : choice);
+      yield eventFrame({ ...frame.event, choices: visible });
+      yield eventFrame(await synthetic([...pending]));
+      const { id, object, model, created } = frame.event;
+      yield eventFrame({ id, object, model, created, choices: finishing.map(choice => ({ index: choice.index, delta: {}, finish_reason: choice.finish_reason })) });
+    } else yield choices.every((choice, index) => choice === frame.event.choices[index]) ? frame : eventFrame({ ...frame.event, choices });
   }
+  if (!failed && missing.size > 0) yield eventFrame(await synthetic([...missing]));
 };

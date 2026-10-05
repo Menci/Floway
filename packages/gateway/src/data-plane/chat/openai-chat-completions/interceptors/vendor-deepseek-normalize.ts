@@ -1,41 +1,9 @@
-// DeepSeek wire-dialect normalizer for OpenAI Chat Completions. Always-attached;
-// flag-gated by `vendor-deepseek`. Runs last among the gateway's interceptors
-// so it has the final say on the outbound wire body and the first say on the
-// inbound stream — the gateway's generic interceptors above it deal only in
-// OpenAI-canonical form.
-//
-// Outbound (request → upstream):
-//
-// - `reasoning_effort: 'none'` is the gateway's canonical "no reasoning"
-//   sentinel (produced when an Anthropic Messages source had `thinking: { type:
-//   'disabled' }`, when an OpenAI Chat Completions source sent it literally, etc.). DeepSeek
-//   doesn't accept 'none' in its `reasoning_effort` enum and instead uses
-//   a top-level `thinking: { type: 'disabled' }` field. We strip the
-//   sentinel and emit the DeepSeek form.
-// - Assistant messages: rewrite `reasoning_text` → `reasoning_content` (and
-//   synthesise `reasoning_content` from `reasoning_items.summary` when the
-//   newer OpenAI shape is the only thing present). DeepSeek documents only
-//   the scalar `reasoning_content` field and reports 400s when it is
-//   omitted from the assistant-message replay of a multi-turn tool-call loop.
-// - `response_format: { type: 'json_schema', … }` is downgraded to
-//   `response_format: { type: 'json_object' }`. DeepSeek's structured-output
-//   API supports only `json_object`; the schema body is dropped on the floor
-//   rather than rejected by the upstream.
-//
-// Inbound (stream → client):
-//
-// - Each delta: rewrite `reasoning_content` → `reasoning_text` so downstream
-//   gateway code sees the OpenAI shape.
-// - Each usage chunk: remap `prompt_cache_hit_tokens` /
-//   `prompt_cache_miss_tokens` into OpenAI's
-//   `prompt_tokens_details.cached_tokens`. The remap is computed from
-//   `prompt_cache_hit_tokens` alone (DeepSeek's "hit" count is the cached
-//   prefix length); the "miss" field is dropped.
-//
-// References:
-// - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-// - https://api-docs.deepseek.com/guides/kv_cache
-// - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
+// DeepSeek accepts reasoning_content in assistant tool-loop history and uses
+// thinking.type to disable reasoning. The configured dialect adapter converts
+// foreign scalar aliases and LiteLLM summaries before provider dispatch.
+// https://api-docs.deepseek.com/guides/thinking_mode
+// https://api-docs.deepseek.com/guides/kv_cache
+// https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
 
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
@@ -50,12 +18,12 @@ const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null 
 };
 
 const rewriteOutboundMessage = (message: OpenAIChatCompletionsMessage): OpenAIChatCompletionsMessage => {
-  // `reasoning_opaque` is the OpenAI-canonical signature for cross-turn
-  // reasoning replay; DeepSeek doesn't accept it, so it's dropped on the
-  // floor when we project assistant messages onto `reasoning_content`.
   if (message.role !== 'assistant') return message;
-  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message as OpenAIChatCompletionsAssistantMessageEx;
-  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
+  const { reasoning, reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message as OpenAIChatCompletionsAssistantMessageEx;
+  const text = typeof rest.reasoning_content === 'string' ? rest.reasoning_content
+    : typeof reasoning_text === 'string' ? reasoning_text
+      : typeof reasoning === 'string' ? reasoning
+        : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
   if (text === undefined) return rest as OpenAIChatCompletionsMessage;
   return { ...rest, reasoning_content: text } as OpenAIChatCompletionsMessage;
 };

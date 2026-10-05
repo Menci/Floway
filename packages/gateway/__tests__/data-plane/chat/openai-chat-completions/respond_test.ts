@@ -62,7 +62,8 @@ test('a stream that completes records only its own frames', async () => {
   })());
 
   expect(body).toContain('data: [DONE]');
-  assertEquals(frames.length, 2);
+  assertEquals(frames.length, 3);
+  expect(frames[1]).toMatchObject({ type: 'event', event: { choices: [{ delta: { reasoning_details: [{ type: 'reasoning.encrypted' }] } }] } });
 });
 
 test('natural EOF forwards useful content without a missing-DONE error', async () => {
@@ -70,5 +71,6 @@ test('natural EOF forwards useful content without a missing-DONE error', async (
   const body = await serve(dump, (async function* () { yield eventFrame(chunk('usable')); })());
   expect(body).toContain('usable');
   expect(body).not.toContain('event: error');
-  expect(frames).toHaveLength(1);
+  expect(frames).toHaveLength(2);
+  expect(frames[1]).toMatchObject({ type: 'event', event: { choices: [{ delta: { reasoning_details: [{ type: 'reasoning.encrypted' }] } }] } });
 });

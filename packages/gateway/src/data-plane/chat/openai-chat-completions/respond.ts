@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { encodeOpenAIChatCompletionsPrivate, OpenAIChatCompletionsPrivateResponse } from './assistant-message-private/response.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
@@ -43,8 +45,11 @@ export const respondOpenAIChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeOpenAIChatCompletionsFrames(result.events, state, ctx);
-  const frames = wrapOpenAIChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
+  const context = (result as Partial<OpenAIChatCompletionsPrivateResponse>)[OpenAIChatCompletionsPrivateResponse];
+  const frames = observeOpenAIChatCompletionsFrames(
+    wrapOpenAIChatCompletionsAffinityEgress(encodeOpenAIChatCompletionsPrivate(result.events, context), { ...affinityEgressOptions(ctx), preference: (ctx as ChatGatewayCtx).assistantMessagePrivate.preference }),
+    state, ctx,
+  );
 
   if (!wantsStream) {
     try {

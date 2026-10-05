@@ -200,9 +200,9 @@ test('client-carried opaque state restores the exact preferred candidate on the 
     headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
   });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_details: Array<{ type: string; data?: string }> } }> };
   const assistant = firstBody.choices[0].message;
-  assert(assistant.reasoning_opaque !== 'opaque-a');
+  assert(assistant.reasoning_details.some(detail => detail.type === 'reasoning.encrypted' && typeof detail.data === 'string' && detail.data !== 'opaque-a'));
 
   queueCandidates([candidateB, candidateA]);
   const second = await makeApp().request('/v1/chat/completions', {
@@ -247,9 +247,9 @@ test('synthetic affinity keeps first-available candidate order when no reasoning
     headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
   });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_details: Array<{ type: string; data?: string }> } }> };
   const assistant = firstBody.choices[0].message;
-  assert(typeof assistant.reasoning_opaque === 'string');
+  assert(assistant.reasoning_details.some(detail => detail.type === 'reasoning.encrypted' && typeof detail.data === 'string'));
 
   queueCandidates([candidateB, candidateA]);
   const second = await makeApp().request('/v1/chat/completions', {

@@ -46,7 +46,7 @@ export const openaiChatCompletionsServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await openaiChatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const result = await openaiChatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, privateContext: ctx.assistantMessagePrivate });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
