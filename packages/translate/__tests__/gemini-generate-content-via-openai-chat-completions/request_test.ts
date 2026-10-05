@@ -9,7 +9,7 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
-  }, 'gpt-test');
+  }, 'gpt-test', new Map());
 
   assertEquals(request.reasoning_effort, '');
 });
@@ -18,7 +18,7 @@ test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingL
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
-  }, 'gpt-test');
+  }, 'gpt-test', new Map());
 
   assertEquals(request.reasoning_effort, 'low');
 });
@@ -36,7 +36,7 @@ test('buildTargetRequest maps system instruction and multimodal user content', (
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     messages: [
@@ -76,12 +76,10 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()).messages, [
     {
       role: 'assistant',
       content: 'I will call a tool.',
-      reasoning_text: 'private trace',
-      reasoning_opaque: 'sig_1',
       tool_calls: [
         {
           id: 'gemini_call_0_2',
@@ -124,7 +122,7 @@ test('buildTargetRequest matches omitted functionResponse ids to same-name calls
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()).messages, [
     {
       role: 'assistant',
       content: null,
@@ -184,7 +182,7 @@ test('buildTargetRequest does not rematch a prior call already answered by expli
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').messages, [
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()).messages, [
     {
       role: 'assistant',
       content: null,
@@ -231,7 +229,7 @@ test('buildTargetRequest maps generation config and reasoning effort', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     messages: [],
@@ -266,6 +264,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
         },
       },
       'gpt-test',
+      new Map(),
     ),
     {
       model: 'gpt-test',
@@ -308,7 +307,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     messages: [],
@@ -336,6 +335,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
         toolConfig: { functionCallingConfig: { mode: 'NONE' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'none',
   );
@@ -347,6 +347,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
         toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'auto',
   );
@@ -358,6 +359,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
         toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'auto',
   );
@@ -369,10 +371,11 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
         toolConfig: { functionCallingConfig: { mode: 'ANY' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'required',
   );
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test', new Map()).tool_choice, undefined);
 });
 
 test('buildTargetRequest filters tools to allowed function names for ANY mode', () => {
@@ -398,6 +401,7 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
       },
     },
     'gpt-test',
+    new Map(),
   );
 
   assertEquals(result.tools, [
@@ -414,11 +418,11 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
 });
 
 test('buildTargetRequest maps thinking budget thresholds', () => {
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test').reasoning_effort, 'none');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test').reasoning_effort, undefined);
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning_effort, 'low');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning_effort, 'medium');
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning_effort, 'high');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test', new Map()).reasoning_effort, 'none');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test', new Map()).reasoning_effort, undefined);
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test', new Map()).reasoning_effort, 'low');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test', new Map()).reasoning_effort, 'medium');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test', new Map()).reasoning_effort, 'high');
 });
 
 test('buildTargetRequest rejects an unknown content role', () => {
@@ -429,6 +433,7 @@ test('buildTargetRequest rejects an unknown content role', () => {
           contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"system" is not a supported content role.',
@@ -443,6 +448,7 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
           contents: [{ role: 'user', parts: [{ executableCode: { language: 'PYTHON', code: 'print(1)' } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"executable_code" parts are not supported in user content.',
@@ -457,6 +463,7 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
           contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"function_call" parts are not supported in user content.',
@@ -471,6 +478,7 @@ test('buildTargetRequest rejects a function_response part in model content', () 
           contents: [{ role: 'model', parts: [{ functionResponse: { name: 'x', response: {} } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"function_response" parts are not supported in model content.',
@@ -485,6 +493,7 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
           contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     'sets conflicting content fields',
@@ -499,6 +508,7 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
           contents: [{ role: 'user', parts: [{}] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     'has no recognized content',
@@ -509,14 +519,17 @@ test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and ma
   const xhigh = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'xhigh' } } },
     'gpt-test',
+    new Map(),
   );
   const max = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'max' } } },
     'gpt-test',
+    new Map(),
   );
   const minimal = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } },
     'gpt-test',
+    new Map(),
   );
 
   assertEquals(xhigh.reasoning_effort, 'xhigh');
@@ -528,6 +541,7 @@ test('buildTargetRequest forwards a vendor-specific thinkingLevel verbatim (no e
   const turbo = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'turbo' } } },
     'gpt-test',
+    new Map(),
   );
   assertEquals(turbo.reasoning_effort, 'turbo');
 });

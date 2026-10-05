@@ -13,7 +13,7 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
-  }, 'claude-test', noOptions);
+  }, 'claude-test', noOptions, new Map());
 
   assertEquals(request.output_config, { effort: '' });
 });
@@ -22,7 +22,7 @@ test('buildTargetRequest preserves native thinkingBudget beside an empty thinkin
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
-  }, 'claude-test', noOptions);
+  }, 'claude-test', noOptions, new Map());
 
   assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
   assertEquals(request.output_config, { effort: '' });
@@ -40,7 +40,7 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()), {
     model: 'claude-test',
     stream: true,
     max_tokens: ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -66,7 +66,7 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
 });
 
 test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', () => {
-  const request = buildTargetRequest({ contents: [] }, 'claude-test', withMaxOutputTokens(6144));
+  const request = buildTargetRequest({ contents: [] }, 'claude-test', withMaxOutputTokens(6144), new Map());
   assertEquals(request.max_tokens, 6144);
 });
 
@@ -86,7 +86,7 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -99,10 +99,10 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
     output_config: { effort: 'high' },
   });
 
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions).thinking, { type: 'disabled' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions, new Map()).thinking, { type: 'disabled' });
 });
 
-test('buildTargetRequest maps assistant thinking signatures and tool calls', () => {
+test('buildTargetRequest discards foreign thought text and signatures while preserving tool calls', () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -127,11 +127,10 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions).messages, [
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()).messages, [
     {
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: 'private trace', signature: 'sig_1' },
         {
           type: 'tool_use',
           id: 'call_1',
@@ -143,7 +142,6 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
     {
       role: 'assistant',
       content: [
-        { type: 'redacted_thinking', data: 'sig_only' },
         {
           type: 'tool_use',
           id: 'gemini_call_1_0',
@@ -182,7 +180,7 @@ test('buildTargetRequest correlates omitted function response ids in call order'
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions).messages, [
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()).messages, [
     {
       role: 'assistant',
       content: [
@@ -252,7 +250,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -272,10 +270,10 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     tool_choice: { type: 'tool', name: 'lookup' },
   });
 
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions).tool_choice, { type: 'none' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions).tool_choice, { type: 'any' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions, new Map()).tool_choice, { type: 'none' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions, new Map()).tool_choice, { type: 'auto' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions, new Map()).tool_choice, { type: 'auto' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions, new Map()).tool_choice, { type: 'any' });
 });
 
 test('buildTargetRequest filters tools to multiple allowed names for ANY mode', () => {
@@ -294,7 +292,7 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions), {
+  assertEquals(buildTargetRequest(payload, 'claude-test', noOptions, new Map()), {
     model: 'claude-test',
     stream: true,
     messages: [],
@@ -317,12 +315,12 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
 });
 
 test('buildTargetRequest maps dynamic thinking budget to adaptive thinking', () => {
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions).thinking, { type: 'adaptive' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions, new Map()).thinking, { type: 'adaptive' });
 });
 
 test('buildTargetRequest wraps generationConfig.responseSchema as output_config.format', () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const request = buildTargetRequest({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
+  const request = buildTargetRequest({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions, new Map());
 
   assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
 });
@@ -333,6 +331,7 @@ test('buildTargetRequest merges thinking-level effort with responseSchema format
     { contents: [], generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
     'claude-test',
     noOptions,
+    new Map(),
   );
 
   assertEquals(request.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
@@ -347,6 +346,7 @@ test('buildTargetRequest rejects an unknown content role', () => {
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     '"system" is not a supported content role.',
@@ -362,6 +362,7 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     '"file_data" parts are not supported in user content.',
@@ -377,6 +378,7 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     '"function_call" parts are not supported in user content.',
@@ -392,6 +394,7 @@ test('buildTargetRequest rejects an inline_data part in model content', () => {
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     '"inline_data" parts are not supported in model content.',
@@ -407,6 +410,7 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     'sets conflicting content fields',
@@ -422,6 +426,7 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
         },
         'claude-test',
         noOptions,
+        new Map(),
       ),
     Error,
     'has no recognized content',

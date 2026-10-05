@@ -82,9 +82,9 @@ const translations: Array<{ name: string; source: unknown; translate: () => Prom
   { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', privateContext: reasoning, loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
   { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIResponses(anthropic, { model: 'm' })).target },
   { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { model: 'm', privateContext: reasoning })).target },
-  { name: 'Gemini to Responses', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIResponses(gemini, { model: 'm' })).target },
-  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { model: 'm' })).target },
-  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16 })).target },
+  { name: 'Gemini to Responses', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIResponses(gemini, { model: 'm', privateContext: reasoning })).target },
+  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { model: 'm', privateContext: reasoning })).target },
+  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16, privateContext: reasoning })).target },
 ];
 
 test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {

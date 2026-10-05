@@ -18,8 +18,8 @@ files at the top level of either `shared/` tree.
    or target may import the helper. The `openai-chat-completions/` category owns the shared streamed item/block lifecycle and authenticated history decoding.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
    `B-via-A` pairs may import the helper. For example,
-   `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
-   OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
+   `openai-chat-completions-and-openai-responses/content.ts` converts content in
+   both directions of the OpenAI Chat Completions ↔ OpenAI Responses pair.
 
 ## Current Production Subdirectories
 
@@ -30,9 +30,9 @@ files at the top level of either `shared/` tree.
   `openai-responses-via-anthropic-messages`.
 - `anthropic-messages-via/` — available only to `anthropic-messages-via-*` pairs.
 - `openai-responses-via/` — available only to `openai-responses-via-*` pairs.
-- `gemini-generate-content-via/` — available only to `gemini-generate-content-via-*` pairs.
-- `via-anthropic-messages/` — available only to `*-via-anthropic-messages` pairs.
-- `via-openai-responses/` — available only to `*-via-openai-responses` pairs.
+- `gemini-generate-content-via/` — available only to `gemini-generate-content-via-*` pairs; owns shared GenerateContent history and authenticated replay carriers.
+- `via-anthropic-messages/` — available only to `*-via-anthropic-messages` pairs; owns native assistant thin block collection, replay, and Messages target policies.
+- `via-openai-responses/` — available only to `*-via-openai-responses` pairs; owns native assistant thin item collection, replay, and Responses stream contracts.
 
 ## Rules
 

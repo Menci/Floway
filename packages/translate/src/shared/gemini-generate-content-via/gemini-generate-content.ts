@@ -65,8 +65,6 @@ export const geminiGenerateContentPartKind = (part: GeminiGenerateContentPart): 
 
 export const geminiGenerateContentPartText = (part: GeminiGenerateContentPart): string | null => (typeof part.text === 'string' ? part.text : null);
 
-export const geminiGenerateContentThoughtText = (part: GeminiGenerateContentPart): string | null => (part.thought === true && typeof part.text === 'string' ? part.text : null);
-
 export const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): string | null => (part.thought === true ? null : geminiGenerateContentPartText(part));
 
 export const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
@@ -180,27 +178,6 @@ export const geminiGenerateContentFunctionCallingIntent = (config?: GeminiGenera
     return undefined;
   }
 };
-
-export interface GeminiGenerateContentThoughtSignatureState {
-  pendingThoughtSignature?: string;
-}
-
-export const setGeminiGenerateContentThoughtSignature = (state: GeminiGenerateContentThoughtSignatureState, signature: string): void => {
-  state.pendingThoughtSignature = signature;
-};
-
-export const signGeminiGenerateContentPart = (state: GeminiGenerateContentThoughtSignatureState, part: GeminiGenerateContentPart): GeminiGenerateContentPart => {
-  if (state.pendingThoughtSignature === undefined) return part;
-
-  const signedPart = {
-    ...part,
-    thoughtSignature: state.pendingThoughtSignature,
-  };
-  state.pendingThoughtSignature = undefined;
-  return signedPart;
-};
-
-export const flushGeminiGenerateContentThoughtSignature = (state: GeminiGenerateContentThoughtSignatureState): GeminiGenerateContentPart[] => (state.pendingThoughtSignature === undefined ? [] : [signGeminiGenerateContentPart(state, { text: '' })]);
 
 export const parseStrictJsonObject = (json: string, subject: string): Record<string, unknown> => {
   if (!json) return {};

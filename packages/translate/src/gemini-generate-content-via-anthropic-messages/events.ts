@@ -1,4 +1,4 @@
-import { flushGeminiGenerateContentThoughtSignature, type GeminiGenerateContentThoughtSignatureState, geminiGenerateContentCandidateEvent, parseStrictJsonObject, setGeminiGenerateContentThoughtSignature, signGeminiGenerateContentPart } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+import { geminiGenerateContentCandidateEvent, parseStrictJsonObject } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { anthropicMessagesRefusalExplanation } from '../shared/via-anthropic-messages/refusal.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
 import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
@@ -42,9 +42,12 @@ interface AnthropicMessagesToolUseDraft {
   args?: Record<string, unknown>;
 }
 
-interface AnthropicMessagesToGeminiGenerateContentStreamState extends GeminiGenerateContentThoughtSignatureState {
+interface AnthropicMessagesToGeminiGenerateContentStreamState {
   usage: AnthropicMessagesUsageSnapshot;
   toolUses: Record<number, AnthropicMessagesToolUseDraft>;
+  stopReason: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }>['delta']['stop_reason'];
+  refusalExplanation?: string;
+  sawUsage: boolean;
 }
 
 // Gemini generateContent's `promptTokenCount` is an inclusive total that already contains the
@@ -77,7 +80,8 @@ const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEventE
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   const state: AnthropicMessagesToGeminiGenerateContentStreamState = {
     usage: anthropicMessagesUsageSnapshot(),
-    toolUses: {},
+    stopReason: null,
+    toolUses: {}, sawUsage: false,
   };
 
   for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {
@@ -99,11 +103,6 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         break;
       }
 
-      if (event.content_block.type === 'redacted_thinking') {
-        setGeminiGenerateContentThoughtSignature(state, event.content_block.data);
-        break;
-      }
-
       if (event.content_block.type === 'thinking' && event.content_block.thinking.length > 0) {
         yield eventFrame(
           geminiGenerateContentCandidateEvent([
@@ -117,7 +116,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       }
 
       if (event.content_block.type === 'text' && event.content_block.text.length > 0) {
-        yield eventFrame(geminiGenerateContentCandidateEvent([signGeminiGenerateContentPart(state, { text: event.content_block.text })]));
+        yield eventFrame(geminiGenerateContentCandidateEvent([{ text: event.content_block.text }]));
       }
       break;
 
@@ -129,11 +128,10 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         }
         break;
       case 'signature_delta':
-        setGeminiGenerateContentThoughtSignature(state, event.delta.signature);
         break;
       case 'text_delta':
         if (event.delta.text.length > 0) {
-          yield eventFrame(geminiGenerateContentCandidateEvent([signGeminiGenerateContentPart(state, { text: event.delta.text })]));
+          yield eventFrame(geminiGenerateContentCandidateEvent([{ text: event.delta.text }]));
         }
         break;
       case 'input_json_delta':
@@ -156,13 +154,13 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
         yield eventFrame(
           geminiGenerateContentCandidateEvent([
-            signGeminiGenerateContentPart(state, {
+            {
               functionCall: {
                 ...(toolUse.id !== undefined ? { id: toolUse.id } : {}),
                 name: toolUse.name,
                 args: toolUse.argsJson ? parseStrictJsonObject(toolUse.argsJson, 'Anthropic Messages tool use input') : toolUse.args ?? {},
               },
-            }),
+            },
           ]),
         );
       }
@@ -170,17 +168,20 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'message_delta': {
-      if (event.usage) state.usage = mergeAnthropicMessagesUsageSnapshot(state.usage, event.usage);
-      yield eventFrame(geminiGenerateContentCandidateEvent(
-        flushGeminiGenerateContentThoughtSignature(state),
-        anthropicMessagesStopReasonToGeminiGenerateContent(event.delta.stop_reason),
-        mapUsage(state, event.usage !== undefined),
-        event.delta.stop_reason === 'refusal' ? anthropicMessagesRefusalExplanation(event.delta.stop_details) : undefined,
-      ));
+      if (event.usage) {
+        state.usage = mergeAnthropicMessagesUsageSnapshot(state.usage, event.usage);
+        state.sawUsage = true;
+      }
+      if (event.delta.stop_reason != null) state.stopReason = event.delta.stop_reason;
+      if (event.delta.stop_reason === 'refusal') state.refusalExplanation = anthropicMessagesRefusalExplanation(event.delta.stop_details);
+      const usageMetadata = mapUsage(state, state.sawUsage);
+      if (usageMetadata !== undefined && event.delta.stop_reason == null) yield eventFrame({ usageMetadata });
       break;
     }
 
     case 'message_stop':
+      yield eventFrame(geminiGenerateContentCandidateEvent([], anthropicMessagesStopReasonToGeminiGenerateContent(state.stopReason), mapUsage(state, state.sawUsage), state.refusalExplanation));
+      break;
     case 'ping':
       break;
     }

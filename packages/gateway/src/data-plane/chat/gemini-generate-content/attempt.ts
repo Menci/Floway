@@ -48,6 +48,7 @@ export const geminiGenerateContentAttempt = {
       // interceptor chain and rewrite.
       const transCtx = {
         model: candidate.model.id,
+        privateContext: ctx.assistantMessagePrivate,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       if (targetApi === 'anthropicMessages') {
@@ -75,7 +76,7 @@ export const geminiGenerateContentAttempt = {
           invocation.payload,
           p => translateGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
           translated => openaiChatCompletionsAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers, privateContext: ctx.assistantMessagePrivate,
           }),
           captureFromDump(ctx.dump, targetApi),
         );
@@ -101,6 +102,7 @@ export const geminiGenerateContentAttempt = {
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
         model: candidate.model.id,
+        privateContext: ctx.assistantMessagePrivate,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       const cleaned = invocation.payload;

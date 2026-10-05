@@ -9,16 +9,15 @@ import {
   geminiGenerateContentPartText,
   geminiGenerateContentReasoningEffort,
   geminiGenerateContentText,
-  geminiGenerateContentThoughtText,
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
+import { restoreOpenAIResponsesThinItems } from '../shared/via-openai-responses/assistant-message-private.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+import { OpenAIChatCompletionsAssistantMessagePrivate } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-
-const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
 const flushPendingContent = (input: CanonicalOpenAIResponsesInputItem[], pending: OpenAIResponsesInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
@@ -75,9 +74,10 @@ const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: n
   return input;
 };
 
-const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): CanonicalOpenAIResponsesInputItem[] => {
+const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds, privateState?: OpenAIChatCompletionsAssistantMessagePrivate): CanonicalOpenAIResponsesInputItem[] => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
+  if (privateState !== undefined) input.push(...restoreOpenAIResponsesThinItems({ role: 'assistant', content: null, [OpenAIChatCompletionsAssistantMessagePrivate]: privateState }) ?? []);
 
   (content.parts ?? []).forEach((part, partIndex) => {
     const kind = geminiGenerateContentPartKind(part);
@@ -97,16 +97,6 @@ const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnInd
       return;
     }
     case 'text': {
-      const thoughtText = geminiGenerateContentThoughtText(part);
-      if (thoughtText !== null) {
-        flushPendingContent(input, pendingContent, 'assistant');
-        input.push({
-          type: 'reasoning',
-          id: geminiGenerateContentReasoningId(turnIndex, partIndex),
-          summary: [{ type: 'summary_text', text: thoughtText }],
-        });
-        return;
-      }
       const visible = geminiGenerateContentVisibleText(part);
       if (visible !== null) pendingContent.push({ type: 'output_text', text: visible });
       return;
@@ -168,7 +158,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): CanonicalOpenAIResponsesPayload => {
+export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string, decoded: ReadonlyMap<object, OpenAIChatCompletionsAssistantMessagePrivate>): CanonicalOpenAIResponsesPayload => {
   const request: CanonicalOpenAIResponsesPayload = {
     model,
     stream: true,
@@ -183,7 +173,7 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
   payload.contents?.forEach((content, turnIndex) => {
     switch (content.role) {
     case 'model':
-      input.push(...buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds));
+      input.push(...buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds, decoded.get(content)));
       return;
     case 'user':
     case undefined:

@@ -1,30 +1,31 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-openai-chat-completions/events.ts';
+import { privateContext } from '../test-utils/assistant-message-private.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const chunk = (
-  delta: OpenAIChatCompletionsAssistantDeltaEx,
+  delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'],
   finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
-  usage?: OpenAIChatCompletionsUsageEx,
+  usage?: NonNullable<OpenAIChatCompletionsStreamEvent['usage']>,
 ): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{  index: 0, delta, finish_reason: finishReason }],
+  choices: [{ index: 0, delta, finish_reason: finishReason }],
   ...(usage ? { usage } : {}),
 });
 
-const choiceChunk = (index: number, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const choiceChunk = (index: number, delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{  index, delta, finish_reason: finishReason }],
+  choices: [{ index, delta, finish_reason: finishReason }],
 });
 
 const collect = async (input: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
@@ -34,7 +35,7 @@ const collect = async (input: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[])
     yield* input;
   }
 
-  for await (const frame of translateToSourceEvents(frames())) {
+  for await (const frame of translateToSourceEvents(frames(), privateContext())) {
     output.push(frame);
   }
 
@@ -64,90 +65,10 @@ test('translateToSourceEvents maps text chunks and stop finish without emitting 
         {
           index: 0,
           content: { role: 'model', parts: [{ text: 'world' }] },
-          finishReason: 'STOP',
         },
       ],
     }),
-  ]);
-});
-
-test('translateToSourceEvents maps reasoning text and attaches opaque signature to next action', async () => {
-  const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx)),
-    eventFrame(chunk({ reasoning_opaque: 'sig_old' })),
-    eventFrame(chunk({ reasoning_opaque: 'sig_1' })),
-    eventFrame(chunk({ content: 'answer' })),
-    eventFrame(chunk({}, 'stop')),
-    doneFrame(),
-  ]);
-
-  assertEquals(frames, [
-    geminiGenerateContentFrame({
-      candidates: [
-        {
-          index: 0,
-          content: { role: 'model', parts: [{ text: 'trace', thought: true }] },
-        },
-      ],
-    }),
-    geminiGenerateContentFrame({
-      candidates: [
-        {
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ text: 'answer', thoughtSignature: 'sig_1' }],
-          },
-        },
-      ],
-    }),
-    geminiGenerateContentFrame({
-      candidates: [
-        {
-          index: 0,
-          content: { role: 'model', parts: [] },
-          finishReason: 'STOP',
-        },
-      ],
-    }),
-  ]);
-});
-
-test('translateToSourceEvents maps reasoning_content to a thought part', async () => {
-  const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_content: null } as OpenAIChatCompletionsAssistantDeltaEx)),
-    eventFrame(chunk({ reasoning_content: 'trace' })),
-    eventFrame(chunk({ content: 'answer' })),
-    eventFrame(chunk({}, 'stop')),
-    doneFrame(),
-  ]);
-
-  assertEquals(frames[0], geminiGenerateContentFrame({
-    candidates: [
-      {
-        index: 0,
-        content: { role: 'model', parts: [{ text: 'trace', thought: true }] },
-      },
-    ],
-  }));
-});
-
-test('translateToSourceEvents flushes unclaimed opaque signature in the finish chunk', async () => {
-  const frames = await collect([eventFrame(chunk({ role: 'assistant', reasoning_opaque: 'sig_only' } as OpenAIChatCompletionsAssistantDeltaEx)), eventFrame(chunk({}, 'stop')), doneFrame()]);
-
-  assertEquals(frames, [
-    geminiGenerateContentFrame({
-      candidates: [
-        {
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ text: '', thoughtSignature: 'sig_only' }],
-          },
-          finishReason: 'STOP',
-        },
-      ],
-    }),
+    geminiGenerateContentFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] }, finishReason: 'STOP' }] }),
   ]);
 });
 
@@ -197,10 +118,10 @@ test('translateToSourceEvents accumulates streamed tool calls and emits function
               },
             ],
           },
-          finishReason: 'STOP',
         },
       ],
     }),
+    geminiGenerateContentFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] }, finishReason: 'STOP' }] }),
   ]);
 });
 
@@ -223,7 +144,7 @@ test('translateToSourceEvents maps finish reasons and usage metadata', async () 
       candidates: [
         {
           index: 0,
-          content: { role: 'model', parts: [] },
+          content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] },
           finishReason: 'MAX_TOKENS',
         },
       ],
@@ -244,7 +165,7 @@ test('translateToSourceEvents maps finish reasons and usage metadata', async () 
       candidates: [
         {
           index: 0,
-          content: { role: 'model', parts: [] },
+          content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] },
           finishReason: 'SAFETY',
         },
       ],
@@ -256,18 +177,12 @@ test('translateToSourceEvents preserves multiple choices that finish in separate
   const frames = await collect([eventFrame(choiceChunk(0, { content: 'first' }, 'stop')), eventFrame(choiceChunk(1, { content: 'second' }, 'length')), doneFrame()]);
 
   assertEquals(frames, [
+    geminiGenerateContentFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'first' }] } }] }),
+    geminiGenerateContentFrame({ candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'second' }] } }] }),
     geminiGenerateContentFrame({
       candidates: [
-        {
-          index: 0,
-          content: { role: 'model', parts: [{ text: 'first' }] },
-          finishReason: 'STOP',
-        },
-        {
-          index: 1,
-          content: { role: 'model', parts: [{ text: 'second' }] },
-          finishReason: 'MAX_TOKENS',
-        },
+        { index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] }, finishReason: 'STOP' },
+        { index: 1, content: { role: 'model', parts: [{ thoughtSignature: 'test:1' }] }, finishReason: 'MAX_TOKENS' },
       ],
     }),
   ]);
@@ -302,7 +217,7 @@ test('translateToSourceEvents preserves OpenAI Chat Completions cache and tier b
       candidates: [
         {
           index: 0,
-          content: { role: 'model', parts: [] },
+          content: { role: 'model', parts: [{ thoughtSignature: 'test:0' }] },
           finishReason: 'STOP',
         },
       ],

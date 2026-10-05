@@ -109,7 +109,7 @@ test('translateToSourceEvents maps text chunks, finish reason, and usage without
   ]);
 });
 
-test('translateToSourceEvents maps thinking text and attaches signature to the next text action', async () => {
+test('translateToSourceEvents maps thinking text remains live without placing native signatures on visible Parts', async () => {
   const frames = await collect([
     eventFrame(messageStart()),
     eventFrame({
@@ -163,7 +163,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
           index: 0,
           content: {
             role: 'model',
-            parts: [{ text: 'answer', thoughtSignature: 'sig_1' }],
+            parts: [{ text: 'answer' }],
           },
         },
       ],
@@ -181,7 +181,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
   ]);
 });
 
-test('translateToSourceEvents accumulates tool call JSON and attaches pending signature', async () => {
+test('translateToSourceEvents accumulates tool call JSON without placing native signatures on function-call Parts', async () => {
   const frames = await collect([
     eventFrame(messageStart()),
     eventFrame({
@@ -234,7 +234,6 @@ test('translateToSourceEvents accumulates tool call JSON and attaches pending si
                   name: 'lookup',
                   args: { query: 'docs' },
                 },
-                thoughtSignature: 'sig_tool',
               },
             ],
           },

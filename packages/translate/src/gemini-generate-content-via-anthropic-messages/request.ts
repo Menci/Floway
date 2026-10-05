@@ -10,11 +10,11 @@ import {
   geminiGenerateContentPartText,
   geminiGenerateContentText,
   geminiGenerateContentThinkingLevelEffort,
-  geminiGenerateContentThoughtText,
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
+import { restoreAnthropicMessagesThinBlocks } from '../shared/via-anthropic-messages/assistant-message-private.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -28,6 +28,7 @@ import {
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
+import { OpenAIChatCompletionsAssistantMessagePrivate } from '@floway-dev/protocols/openai-chat-completions';
 
 const inlineDataToImageBlock = (part: GeminiGenerateContentPart): AnthropicMessagesImageBlock | null => {
   const inlineData = geminiGenerateContentInlineData(part);
@@ -78,46 +79,17 @@ const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: numb
   return blocks.length ? { role: 'user', content: blocks } : null;
 };
 
-const attachSignatureToThinking = (
-  blocks: AnthropicMessagesAssistantInputContentBlock[],
-  signature: string | undefined,
-  firstThinkingIndex: number | undefined,
-  firstSignedActionIndex: number | undefined,
-): void => {
-  if (signature === undefined) return;
-
-  if (firstThinkingIndex !== undefined) {
-    const block = blocks[firstThinkingIndex];
-    if (block?.type === 'thinking') block.signature = signature;
-    return;
-  }
-
-  if (firstSignedActionIndex !== undefined) {
-    blocks.splice(firstSignedActionIndex, 0, {
-      type: 'redacted_thinking',
-      data: signature,
-    });
-  }
-};
-
-const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): AnthropicMessagesPayload['messages'][number] | null => {
+const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds, privateState?: OpenAIChatCompletionsAssistantMessagePrivate): AnthropicMessagesPayload['messages'][number] | null => {
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  let firstThinkingIndex: number | undefined;
-  let firstActionSignature: string | undefined;
-  let firstSignedActionIndex: number | undefined;
+  if (privateState !== undefined) blocks.push(...restoreAnthropicMessagesThinBlocks({ role: 'assistant', content: null, [OpenAIChatCompletionsAssistantMessagePrivate]: privateState }) ?? []);
 
   (content.parts ?? []).forEach((part, partIndex) => {
-    if (part.thoughtSignature !== undefined && firstActionSignature === undefined) {
-      firstActionSignature = part.thoughtSignature;
-    }
-
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
       return;
     case 'function_call': {
       const { call, id } = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
-      if (part.thoughtSignature !== undefined) firstSignedActionIndex ??= blocks.length;
       blocks.push({
         type: 'tool_use',
         id,
@@ -127,15 +99,8 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
       return;
     }
     case 'text': {
-      const thoughtText = geminiGenerateContentThoughtText(part);
-      if (thoughtText !== null) {
-        firstThinkingIndex ??= blocks.length;
-        blocks.push({ signature: '', type: 'thinking', thinking: thoughtText });
-        return;
-      }
       const text = geminiGenerateContentVisibleText(part);
       if (text !== null) {
-        if (part.thoughtSignature !== undefined) firstSignedActionIndex ??= blocks.length;
         blocks.push({ type: 'text', text });
       }
       return;
@@ -144,8 +109,6 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
       throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
     }
   });
-
-  attachSignatureToThinking(blocks, firstActionSignature, firstThinkingIndex, firstSignedActionIndex);
 
   return blocks.length ? { role: 'assistant', content: blocks } : null;
 };
@@ -213,6 +176,7 @@ export const buildTargetRequest = (
   payload: GeminiGenerateContentPayload,
   model: string,
   options: { fallbackMaxOutputTokens?: number },
+  decoded: ReadonlyMap<object, OpenAIChatCompletionsAssistantMessagePrivate>,
 ): AnthropicMessagesPayload => {
   // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
@@ -238,7 +202,7 @@ export const buildTargetRequest = (
     let message: AnthropicMessagesPayload['messages'][number] | null;
     switch (content.role) {
     case 'model':
-      message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
+      message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds, decoded.get(content));
       break;
     case 'user':
     case undefined:

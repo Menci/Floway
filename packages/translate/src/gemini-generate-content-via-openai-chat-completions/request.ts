@@ -10,16 +10,13 @@ import {
   geminiGenerateContentPartText,
   geminiGenerateContentReasoningEffort,
   geminiGenerateContentText,
-  geminiGenerateContentThoughtText,
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-
-const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsAssistantMessage, type OpenAIChatCompletionsUserContentPart, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsMessage, type OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCompletionsUserContentPart | null => {
   const url = geminiGenerateContentInlineDataUrl(part);
@@ -52,59 +49,28 @@ const contentFromParts = (parts: GeminiGenerateContentPart[]): string | OpenAICh
   });
 };
 
-const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIChatCompletionsMessage | null => {
-  const visibleParts: GeminiGenerateContentPart[] = [];
-  const thoughtTexts: string[] = [];
-  const toolCalls: OpenAIChatCompletionsToolCall[] = [];
-  let reasoningOpaque: string | null = null;
+type AssistantDraft = OpenAIChatCompletionsAssistantMessage & { content: string | null };
 
-  (content.parts ?? []).forEach((part, partIndex) => {
-    reasoningOpaque = latestOpaque(reasoningOpaque, part.thoughtSignature);
-
-    const kind = geminiGenerateContentPartKind(part);
-    switch (kind) {
-    case null:
-      return;
-    case 'function_call': {
-      const { call, id } = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
-      toolCalls.push({
-        id,
-        type: 'function',
-        function: {
-          name: call.name,
-          arguments: JSON.stringify(call.args),
-        },
-      });
-      return;
-    }
-    case 'text': {
-      const thoughtText = geminiGenerateContentThoughtText(part);
-      if (thoughtText !== null) {
-        thoughtTexts.push(thoughtText);
-        return;
-      }
-      if (geminiGenerateContentVisibleText(part) !== null) visibleParts.push(part);
-      return;
-    }
-    case 'inline_data':
-      visibleParts.push(part);
-      return;
-    default:
-      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
-    }
-  });
-
-  if (visibleParts.some(part => part.inlineData !== undefined)) throw new TranslatorInputError('Cannot translate image content in a model turn to Chat assistant content.');
-  const message: OpenAIChatCompletionsAssistantMessageEx = {
-    role: 'assistant',
-    content: visibleParts.map(geminiGenerateContentPartText).filter((value): value is string => value !== null).join('\n\n') || null,
-  };
-
-  if (toolCalls.length) message.tool_calls = toolCalls;
-  if (thoughtTexts.length) message.reasoning_text = thoughtTexts.join('\n\n');
-  if (reasoningOpaque !== null) message.reasoning_opaque = reasoningOpaque;
-
-  return message.content !== null || message.tool_calls?.length || message.reasoning_text !== undefined || message.reasoning_opaque !== undefined ? message : null;
+const appendAssistantPart = (message: AssistantDraft, part: GeminiGenerateContentPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): void => {
+  const kind = geminiGenerateContentPartKind(part);
+  switch (kind) {
+  case null:
+    return;
+  case 'function_call': {
+    const { call, id } = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
+    (message.tool_calls ??= []).push({ id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } });
+    return;
+  }
+  case 'text': {
+    const text = geminiGenerateContentVisibleText(part);
+    if (text !== null) message.content = (message.content ?? '') + text;
+    return;
+  }
+  case 'inline_data':
+    throw new TranslatorInputError('Cannot translate image content in a model turn to Chat assistant content.');
+  default:
+    throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
+  }
 };
 
 const buildToolMessage = (part: GeminiGenerateContentPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIChatCompletionsMessage => {
@@ -212,7 +178,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIChatCompletion
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): OpenAIChatCompletionsPayload => {
+export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string, decoded: ReadonlyMap<GeminiGenerateContentPart, OpenAIChatCompletionsAssistantMessagePrivate>): OpenAIChatCompletionsPayload => {
   const request: OpenAIChatCompletionsPayload = {
     model,
     stream: true,
@@ -225,21 +191,51 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
     request.messages.push({ role: 'system', content: systemText });
   }
 
+  const pending: AssistantDraft[] = [];
+  const flushForeign = () => {
+    for (const message of pending) if (message.content !== null || message.tool_calls !== undefined) request.messages.push(message);
+    pending.length = 0;
+  };
+  const flushOwned = (privateState: OpenAIChatCompletionsAssistantMessagePrivate) => {
+    const message = pending[0];
+    for (let index = 1; index < pending.length; index++) {
+      const next = pending[index];
+      if (next.content !== null) message.content = (message.content ?? '') + next.content;
+      if (next.tool_calls !== undefined) (message.tool_calls ??= []).push(...next.tool_calls);
+    }
+    message[OpenAIChatCompletionsAssistantMessagePrivate] = privateState;
+    request.messages.push(message);
+    pending.length = 0;
+  };
+
   payload.contents?.forEach((content, turnIndex) => {
     switch (content.role) {
     case 'model': {
-      const message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
-      if (message) request.messages.push(message);
+      let message: AssistantDraft | undefined;
+      (content.parts ?? []).forEach((part, partIndex) => {
+        if (message === undefined) {
+          message = { role: 'assistant', content: null };
+          pending.push(message);
+        }
+        appendAssistantPart(message, part, turnIndex, partIndex, unmatchedToolCallIds);
+        const privateState = decoded.get(part);
+        if (privateState !== undefined) {
+          flushOwned(privateState);
+          message = undefined;
+        }
+      });
       return;
     }
     case 'user':
     case undefined:
+      flushForeign();
       request.messages.push(...buildUserMessages(content, turnIndex, unmatchedToolCallIds));
       return;
     default:
       throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
     }
   });
+  flushForeign();
 
   applyGenerationConfig(request, payload.generationConfig);
 

@@ -8,7 +8,7 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
-  }, 'gpt-test');
+  }, 'gpt-test', new Map());
 
   assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
 });
@@ -17,7 +17,7 @@ test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingL
   const request = buildTargetRequest({
     contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '', includeThoughts: true } },
-  }, 'gpt-test');
+  }, 'gpt-test', new Map());
 
   assertEquals(request.reasoning, { effort: 'low', summary: 'detailed' });
 });
@@ -34,7 +34,7 @@ test('buildTargetRequest maps instructions and multimodal user input without def
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     instructions: 'Be precise.\n\nUse markdown.',
@@ -54,7 +54,7 @@ test('buildTargetRequest maps instructions and multimodal user input without def
   });
 });
 
-test('buildTargetRequest maps assistant reasoning, function calls, and call-order outputs', () => {
+test('buildTargetRequest discards foreign thought text while preserving function calls and call-order outputs', () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [
       {
@@ -89,12 +89,7 @@ test('buildTargetRequest maps assistant reasoning, function calls, and call-orde
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').input, [
-    {
-      type: 'reasoning',
-      id: 'gemini_reasoning_0_0',
-      summary: [{ type: 'summary_text', text: 'private trace' }],
-    },
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()).input, [
     {
       type: 'message',
       role: 'assistant',
@@ -145,7 +140,7 @@ test('buildTargetRequest ignores thought signatures when translating to OpenAI R
     ],
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test').input, [
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()).input, [
     {
       type: 'message',
       role: 'assistant',
@@ -179,7 +174,7 @@ test('buildTargetRequest maps generation config, JSON schema, and reasoning cont
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     input: [],
@@ -195,7 +190,7 @@ test('buildTargetRequest maps generation config, JSON schema, and reasoning cont
     reasoning: { effort: 'medium', summary: 'detailed' },
   });
 
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test').text, { format: { type: 'json_object' } });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test', new Map()).text, { format: { type: 'json_object' } });
 });
 
 test('buildTargetRequest never invents reasoning.context from Gemini generateContent thinking controls', () => {
@@ -204,7 +199,7 @@ test('buildTargetRequest never invents reasoning.context from Gemini generateCon
     generationConfig: {
       thinkingConfig: { thinkingLevel: 'high', includeThoughts: true },
     },
-  }, 'gpt-test');
+  }, 'gpt-test', new Map());
 
   assertEquals(result.reasoning, { effort: 'high', summary: 'detailed' });
   assertEquals(result.reasoning?.context, undefined);
@@ -234,6 +229,7 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
       },
     },
     'gpt-test',
+    new Map(),
   );
 
   assertEquals(result.tools, [
@@ -254,9 +250,9 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
 });
 
 test('buildTargetRequest maps thinking budget thresholds and zero-budget disable', () => {
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning, { effort: 'low' });
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning, { effort: 'medium' });
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning, { effort: 'high' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test', new Map()).reasoning, { effort: 'low' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test', new Map()).reasoning, { effort: 'medium' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test', new Map()).reasoning, { effort: 'high' });
   assertEquals(
     buildTargetRequest(
       {
@@ -266,10 +262,11 @@ test('buildTargetRequest maps thinking budget thresholds and zero-budget disable
         },
       },
       'gpt-test',
+      new Map(),
     ).reasoning,
     { effort: 'none' },
   );
-  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test').reasoning, undefined);
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test', new Map()).reasoning, undefined);
 });
 
 test('buildTargetRequest maps tool declarations and tool choice modes only when tools exist', () => {
@@ -300,7 +297,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
     },
   };
 
-  assertEquals(buildTargetRequest(payload, 'gpt-test'), {
+  assertEquals(buildTargetRequest(payload, 'gpt-test', new Map()), {
     model: 'gpt-test',
     stream: true,
     input: [],
@@ -327,6 +324,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
         toolConfig: { functionCallingConfig: { mode: 'NONE' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'none',
   );
@@ -338,6 +336,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
         toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'auto',
   );
@@ -349,6 +348,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
         toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'auto',
   );
@@ -360,10 +360,11 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
         toolConfig: { functionCallingConfig: { mode: 'ANY' } },
       },
       'gpt-test',
+      new Map(),
     ).tool_choice,
     'required',
   );
-  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test', new Map()).tool_choice, undefined);
 });
 
 test('buildTargetRequest rejects an unknown content role', () => {
@@ -374,6 +375,7 @@ test('buildTargetRequest rejects an unknown content role', () => {
           contents: [{ role: 'tool', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"tool" is not a supported content role.',
@@ -388,6 +390,7 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
           contents: [{ role: 'user', parts: [{ codeExecutionResult: { outcome: 'OK' } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"code_execution_result" parts are not supported in user content.',
@@ -402,6 +405,7 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
           contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"function_call" parts are not supported in user content.',
@@ -416,6 +420,7 @@ test('buildTargetRequest rejects an inline_data part in model content', () => {
           contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     '"inline_data" parts are not supported in model content.',
@@ -430,6 +435,7 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
           contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     'sets conflicting content fields',
@@ -444,6 +450,7 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
           contents: [{ role: 'user', parts: [{}] }],
         },
         'gpt-test',
+        new Map(),
       ),
     Error,
     'has no recognized content',
