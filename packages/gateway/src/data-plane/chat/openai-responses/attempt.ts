@@ -1,5 +1,6 @@
 import { klona } from 'klona/json';
 
+import { applyTranslatedAnthropicImageLimits } from './anthropic-image-limits.ts';
 import { openaiResponsesInterceptors } from './interceptors/index.ts';
 import type { OpenAIResponsesAttemptResult, OpenAIResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -181,9 +182,12 @@ const dispatchOpenAIResponses = async (
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
-      translated => anthropicMessagesAttempt.generate({
-        payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
-      }),
+      async translated => {
+        await applyTranslatedAnthropicImageLimits(translated);
+        return await anthropicMessagesAttempt.generate({
+          payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
+        });
+      },
       captureFromDump(ctx.dump, targetApi),
     );
   case 'openaiChatCompletions':
