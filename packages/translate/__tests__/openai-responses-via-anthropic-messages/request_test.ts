@@ -503,7 +503,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
     parallel_tool_calls: true,
   });
 
-  assertEquals(result.customToolNames.has('apply_patch'), true);
+  assertEquals(result.projection.targetCallables.get('apply_patch'), { kind: 'custom-tool' });
   assertEquals(result.target.tools, [
     {
       name: 'apply_patch',
@@ -612,8 +612,8 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     tool_choice: { type: 'function', name: 'web.run' },
   });
 
-  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
+  assertEquals(result.projection.namespaces.sourceToTarget, new Map([['web.run', 'web_run_2']]));
+  assertEquals(result.projection.namespaces.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
@@ -640,6 +640,97 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     }],
   });
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
+});
+
+test('buildTargetRequest envelopes root combinators after namespace flattening and wraps replay history', async () => {
+  const updateSchema = {
+    type: 'object',
+    properties: {},
+    oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+    $defs: {
+      view: { type: 'object', properties: { mode: { const: 'view' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+      delete: { type: 'object', properties: { mode: { const: 'delete' }, id: { type: 'string' } }, required: ['mode', 'id'] },
+    },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'user', content: 'delete it' },
+      { type: 'function_call', call_id: 'call_update', namespace: 'mcp__codex_app', name: 'automation_update', arguments: '{"mode":"delete","id":"job-1"}', status: 'completed' },
+    ],
+    tools: [{
+      type: 'namespace', name: 'mcp__codex_app', description: 'Codex app tools.', tools: [{
+        type: 'function', name: 'automation_update', description: 'Update an automation.', parameters: updateSchema, strict: false,
+      }],
+    }],
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map([['function:mcp__codex_app_automation_update', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.projection.targetCallables, new Map([['mcp__codex_app_automation_update', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.target.tools?.[0], {
+    name: 'mcp__codex_app_automation_update',
+    description: 'Codex app tools.\n\nUpdate an automation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        arguments: {
+          type: 'object',
+          properties: {},
+          oneOf: [{ $ref: '#/properties/arguments/$defs/view' }, { $ref: '#/properties/arguments/$defs/delete' }],
+          $defs: updateSchema.$defs,
+        },
+      },
+      required: ['arguments'],
+      additionalProperties: false,
+    },
+    strict: false,
+    cache_control: { type: 'ephemeral' },
+  });
+  assertEquals(result.target.messages[1], {
+    role: 'assistant',
+    content: [{
+      type: 'tool_use', id: 'call_update', name: 'mcp__codex_app_automation_update',
+      input: { arguments: { mode: 'delete', id: 'job-1' } }, cache_control: { type: 'ephemeral' },
+    }],
+  });
+});
+
+test('buildTargetRequest leaves nested schema combinators unwrapped', async () => {
+  const parameters = {
+    type: 'object',
+    properties: { value: { oneOf: [{ type: 'string' }, { type: 'number' }] } },
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{ type: 'function', name: 'nested_union', parameters }],
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map());
+  assertEquals(result.projection.targetCallables, new Map());
+  assertEquals(result.target.tools?.[0], {
+    name: 'nested_union', input_schema: parameters, cache_control: { type: 'ephemeral' },
+  });
+});
+
+test('buildTargetRequest keeps excluded historical function projection separate from a selected same-name custom tool', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'function_call', call_id: 'call_shared', name: 'shared', arguments: '{"mode":"view"}', status: 'completed' }],
+    tools: [
+      { type: 'function', name: 'shared', parameters: { type: 'object', oneOf: [{ type: 'object', properties: { mode: { const: 'view' } } }] } },
+      { type: 'custom', name: 'shared' },
+    ],
+    tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'custom', name: 'shared' }] },
+  });
+
+  assertEquals(result.projection.sourceCallables, new Map([['function:shared', { kind: 'root-schema-envelope' }]]));
+  assertEquals(result.projection.targetCallables, new Map([['shared', { kind: 'custom-tool' }]]));
+  assertEquals(result.target.tools?.[0]?.name, 'shared');
+  const replay = result.target.messages[0];
+  assert(replay?.role === 'assistant' && Array.isArray(replay.content));
+  assertEquals(replay.content[0], {
+    type: 'tool_use', id: 'call_shared', name: 'shared', input: { arguments: { mode: 'view' } }, cache_control: { type: 'ephemeral' },
+  });
 });
 
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
@@ -682,6 +773,62 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
   const toolResult = userMessage.content[0];
   assert(toolResult.type === 'tool_result');
   assertEquals(toolResult.content, 'plain text body');
+});
+
+test('buildTargetRequest keeps parallel tool results contiguous across interleaved developer notices', async () => {
+  const notice = (index: number) => ({
+    type: 'message' as const,
+    role: 'developer' as const,
+    content: `<image_resize_notice>Image ${index} was resized.</image_resize_notice>`,
+  });
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'assistant', content: 'viewing images' },
+      { type: 'function_call', call_id: 'call_1', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_2', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_3', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_4', name: 'view_image', arguments: '{}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'image 1' },
+      notice(1),
+      { type: 'function_call_output', call_id: 'call_2', output: 'image 2' },
+      notice(2),
+      { type: 'function_call_output', call_id: 'call_3', output: 'image 3' },
+      notice(3),
+      { type: 'function_call_output', call_id: 'call_4', output: 'image 4' },
+      notice(4),
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'assistant', 'user', 'system', 'system', 'system', 'system']);
+  const toolResults = result.target.messages[2];
+  assert(toolResults?.role === 'user' && Array.isArray(toolResults.content));
+  assertEquals(toolResults.content.map(block => block.type === 'tool_result' ? block.tool_use_id : block.type), [
+    'call_1', 'call_2', 'call_3', 'call_4',
+  ]);
+  assertEquals(result.target.messages.slice(3).map(message => {
+    assert(message.role === 'system' && Array.isArray(message.content));
+    const block = message.content[0];
+    return block?.type === 'text' ? block.text : null;
+  }), [1, 2, 3, 4].map(index => `<image_resize_notice>Image ${index} was resized.</image_resize_notice>`));
+});
+
+test('buildTargetRequest does not regroup tool results across ordinary messages', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'function_call_output', call_id: 'call_1', output: 'first' },
+      { type: 'message', role: 'user', content: 'new turn' },
+      { type: 'function_call_output', call_id: 'call_2', output: 'second' },
+    ],
+  });
+  assertEquals(result.target.messages.map(message => message.role), ['user', 'user', 'user']);
+  const first = result.target.messages[0];
+  const last = result.target.messages[2];
+  assert(first?.role === 'user' && Array.isArray(first.content));
+  assert(last?.role === 'user' && Array.isArray(last.content));
+  assertEquals(first.content[0]?.type === 'tool_result' ? first.content[0].tool_use_id : null, 'call_1');
+  assertEquals(last.content[0]?.type === 'tool_result' ? last.content[0].tool_use_id : null, 'call_2');
 });
 
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest maps multimodal %s into tool_result image and text blocks', async type => {

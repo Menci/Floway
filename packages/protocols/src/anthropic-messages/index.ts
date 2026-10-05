@@ -254,6 +254,10 @@ export interface AnthropicMessagesAssistantMessage {
 export interface AnthropicMessagesSystemMessage {
   role: 'system';
   content: string | AnthropicMessagesTextBlock[];
+  // Per-message effort control. An empty-content message carrying this field
+  // is accepted at any position independently of ordinary system sections.
+  // https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages#limitations
+  output_config?: { effort?: string };
 }
 
 export type AnthropicMessagesMessage = AnthropicMessagesUserMessage | AnthropicMessagesAssistantMessage | AnthropicMessagesSystemMessage;

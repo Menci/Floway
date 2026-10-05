@@ -1,5 +1,8 @@
+import { createAnthropicMessagesToolProjection, type AnthropicMessagesToolProjection } from './tool-projection.ts';
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
+import { restoreNamespaceEvents } from '../shared/openai-responses-via/namespace-tools.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
+import { unwrapToolArguments } from '../shared/openai-responses-via/root-tool-schema-envelope.ts';
 import { anthropicMessagesRefusalOpenAIResponsesError } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
@@ -73,6 +76,14 @@ type OutputBlockInfo =
     toolCallId: string;
     toolName: string;
     wrappedArguments: string;
+  }
+  | {
+    type: 'enveloped_function_tool_use';
+    outputIndex: number;
+    itemId: string;
+    toolCallId: string;
+    toolName: string;
+    wrappedArguments: string;
   };
 
 interface AnthropicMessagesToOpenAIResponsesStreamState {
@@ -86,7 +97,7 @@ interface AnthropicMessagesToOpenAIResponsesStreamState {
   usage: AnthropicMessagesUsageSnapshot;
   stopReason?: AnthropicMessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: AnthropicMessagesRefusalStopDetails | null;
-  customToolNames: ReadonlySet<string>;
+  projection: AnthropicMessagesToolProjection;
 }
 
 const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => {
@@ -187,7 +198,8 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
   }
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
-    if (state.customToolNames.has(event.content_block.name)) {
+    const projection = state.projection.targetCallables.get(event.content_block.name);
+    if (projection?.kind === 'custom-tool') {
       const itemId = createRandomOpenAIResponsesItemId('custom_tool_call');
       state.blockMap.set(event.index, {
         type: 'custom_tool_use',
@@ -199,6 +211,19 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
       });
 
       return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
+    }
+
+    if (projection?.kind === 'root-schema-envelope') {
+      const itemId = createRandomOpenAIResponsesItemId('function_call');
+      state.blockMap.set(event.index, {
+        type: 'enveloped_function_tool_use',
+        outputIndex,
+        itemId,
+        toolCallId: event.content_block.id,
+        toolName: event.content_block.name,
+        wrappedArguments: '',
+      });
+      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(itemId, event.content_block.id, event.content_block.name, '', 'in_progress'));
     }
 
     const itemId = createRandomOpenAIResponsesItemId('function_call');
@@ -311,6 +336,7 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
     info.toolArguments += event.delta.partial_json;
     return openaiResponses.argumentsDelta(state, info.outputIndex, info.itemId, event.delta.partial_json);
   case 'custom_tool_use':
+  case 'enveloped_function_tool_use':
     // Buffer the wrapped JSON argument blob without emitting a delta; we need
     // the complete value to extract the freeform `input` field at stop time.
     if (event.delta.type === 'input_json_delta') {
@@ -354,6 +380,16 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
     return openaiResponses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
+  if (info.type === 'enveloped_function_tool_use') {
+    const argumentsJson = unwrapToolArguments(info.wrappedArguments);
+    const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, argumentsJson, 'completed');
+    state.completedItems.push(item);
+    return [
+      ...(argumentsJson.length > 0 ? openaiResponses.argumentsDelta(state, info.outputIndex, info.itemId, argumentsJson) : []),
+      ...openaiResponses.functionCallDone(state, info.outputIndex, info.itemId, argumentsJson, item),
+    ];
+  }
+
   const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
@@ -364,7 +400,7 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
 export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   responseId: string,
   model: string,
-  customToolNames: ReadonlySet<string> = new Set(),
+  projection: AnthropicMessagesToolProjection = createAnthropicMessagesToolProjection(),
 ): AnthropicMessagesToOpenAIResponsesStreamState => ({
   responseId,
   model,
@@ -374,7 +410,7 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   accumulatedText: '',
   completedItems: [],
   usage: anthropicMessagesUsageSnapshot(),
-  customToolNames,
+  projection,
 });
 
 export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
@@ -434,13 +470,15 @@ export const translateToSourceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
   responseId: string,
   model: string,
-  customToolNames: ReadonlySet<string> = new Set(),
+  projection: AnthropicMessagesToolProjection = createAnthropicMessagesToolProjection(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames);
-
-  for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {
-    for (const translated of translateAnthropicMessagesEventToOpenAIResponsesEvents(event, state)) {
-      yield eventFrame(translated);
+  const translated = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, projection);
+    for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {
+      for (const sourceEvent of translateAnthropicMessagesEventToOpenAIResponsesEvents(event, state)) {
+        yield eventFrame(sourceEvent);
+      }
     }
-  }
+  };
+  yield* restoreNamespaceEvents(translated(), projection.namespaces);
 };
