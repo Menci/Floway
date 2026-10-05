@@ -151,6 +151,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('openaiResponses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [publicModelId, setPublicModelId] = useState('');
+  const [unlistedModelId, setUnlistedModelId] = useState(false);
   // `null` shows the selection; a string is a live search term. Opening the list
   // clears the field so the first keystroke starts a query.
   const [modelQuery, setModelQuery] = useState<string | null>(null);
@@ -182,22 +183,26 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     () => reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat'),
     [cap, loaderData.models],
   );
-  const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
+  const selectedModel = models.find(model => model.id === publicModelId) ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
     const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
-  const sendTarget = selectedKey && selectedModel && (draft.trim() || imageUrl.trim())
-    ? { apiKey: selectedKey, model: selectedModel }
+  const modelIdInput = modelQuery?.trim() ?? '';
+  const customModelIdOption = modelIdInput !== '' && !models.some(model => model.id === modelIdInput)
+    ? modelIdInput
+    : null;
+  const sendTarget = selectedKey && publicModelId && (draft.trim() || imageUrl.trim())
+    ? { apiKey: selectedKey, model: selectedModel, modelId: publicModelId }
     : null;
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  // Reconciled during render so the picker's id and the catalog cannot disagree
-  // for a frame.
-  const resolvedPublicModelId = selectedModel?.id ?? '';
+  // Catalog selections fall back immediately when they disappear; manual IDs
+  // are explicit request targets and stay selected without catalog metadata.
+  const resolvedPublicModelId = unlistedModelId ? publicModelId : selectedModel?.id ?? models[0]?.id ?? '';
   if (resolvedPublicModelId !== publicModelId) setPublicModelId(resolvedPublicModelId);
 
   // Reconciled during render so the composer never paints a stale attachment.
@@ -277,7 +282,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       for await (const delta of streamPlaygroundText({
         api: playgroundApi,
         apiKey: sendTarget.apiKey.key,
-        model: sendTarget.model.id,
+        model: sendTarget.modelId,
         system: system.trim(),
         messages: context,
         options: generationOptions(playgroundApi, reasoningEffort || undefined, defaultMaxOutputTokens(sendTarget.model)),
@@ -360,15 +365,20 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.model')}>
-        <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
-          if (!data.optionValue) return;
+        <Combobox freeform value={modelQuery ?? selectedModel?.display_name ?? publicModelId} selectedOptions={publicModelId ? [publicModelId] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+          const selectedId = data.optionValue?.trim();
+          if (!selectedId) return;
           changeContext(() => {
-            setPublicModelId(data.optionValue!);
+            setPublicModelId(selectedId);
+            setUnlistedModelId(!models.some(model => model.id === selectedId));
             setModelQuery(null);
             setMessages([]);
             editDialog.close();
           });
         }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
+          {customModelIdOption !== null && <Option key={customModelIdOption} value={customModelIdOption} text={t('dashboard.playground.useModelId', { id: customModelIdOption })}>
+            <div className="min-w-0"><div>{t('dashboard.playground.useModelId', { id: customModelIdOption })}</div><div className="break-all font-mono text-fui-fg2">{customModelIdOption}</div></div>
+          </Option>}
           {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className="text-fui-fg2 truncate font-mono">{model.id}</div></div></Option>)}
         </Combobox>
       </Field>

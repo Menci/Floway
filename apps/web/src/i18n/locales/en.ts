@@ -126,6 +126,7 @@ const en = {
         api: 'Protocol',
         model: 'Model',
         modelPlaceholder: 'Search models',
+        useModelId: 'Use "{{id}}" as model ID',
         messagePlaceholder: 'Write a message',
         imagePlaceholder: 'https://example.com/image.png',
         empty: 'Send a message to start a conversation',
