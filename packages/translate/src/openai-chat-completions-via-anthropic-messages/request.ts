@@ -1,7 +1,6 @@
 import { klona } from 'klona/json';
 
-import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
-import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { restoreAnthropicMessagesThinBlocks } from '../shared/via-anthropic-messages/assistant-message-private.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthropic-messages/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
@@ -11,7 +10,7 @@ import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messag
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsAssistantMessage, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsMessage, type OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -25,11 +24,12 @@ interface BuildTargetRequestOptions {
 }
 
 const buildAssistantBlocks = (message: OpenAIChatCompletionsAssistantMessage): AnthropicMessagesAssistantInputContentBlock[] => {
+  const restored = restoreAnthropicMessagesThinBlocks(message);
+  if (restored !== undefined) return restored;
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
-  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(extensions), extensions.reasoning_opaque);
-
-  if (thinkingBlock) blocks.push(thinkingBlock);
+  const privateState = message[OpenAIChatCompletionsAssistantMessagePrivate];
+  const reasoningText = privateState?.sidecar.upstreamProtocol === 'anthropicMessages' ? privateState.reasoningText : undefined;
+  if (reasoningText) blocks.push({ type: 'thinking', thinking: reasoningText, signature: '' });
 
   if (typeof message.content === 'string') {
     if (message.content) blocks.push({ type: 'text', text: message.content });

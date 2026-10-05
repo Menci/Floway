@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createAnthropicMessagesToOpenAIChatCompletionsStreamState, translateAnthropicMessagesEventToOpenAIChatCompletionsChunks } from '../../src/openai-chat-completions-via-anthropic-messages/events.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsStreamEvent, type OpenAIChatCompletionsAssistantDelta } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 // ── Helpers ──
@@ -22,10 +22,10 @@ function processFlat(events: AnthropicMessagesStreamEventEx[]): OpenAIChatComple
   return chunks;
 }
 
-function deltas(events: AnthropicMessagesStreamEventEx[]): OpenAIChatCompletionsDelta[] {
+function deltas(events: AnthropicMessagesStreamEventEx[]): OpenAIChatCompletionsAssistantDelta[] {
   return processFlat(events)
     .filter(c => c.choices.length > 0)
-    .map(c => c.choices[0].delta);
+    .map(c => c.choices[0].delta as OpenAIChatCompletionsAssistantDelta);
 }
 
 const MSG_START: AnthropicMessagesStreamEventEx = {
@@ -136,24 +136,6 @@ test('thinking content_block_start → no output', () => {
 
 // ── content_block_start: redacted_thinking ──
 
-test('redacted_thinking content_block_start → reasoning_opaque chunk', () => {
-  const state = createAnthropicMessagesToOpenAIChatCompletionsStreamState();
-  translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(MSG_START, state);
-  const result = translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: 'opaque_xyz' },
-    },
-    state,
-  );
-  const chunks = result as OpenAIChatCompletionsStreamEvent[];
-  assertEquals(chunks.length, 1);
-  assertEquals((chunks[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'opaque_xyz');
-});
-
-// ── content_block_start: tool_use ──
-
 test('tool_use content_block_start → tool_calls init chunk', () => {
   const state = createAnthropicMessagesToOpenAIChatCompletionsStreamState();
   translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(MSG_START, state);
@@ -249,7 +231,7 @@ test('multiple text_deltas → multiple content chunks', () => {
 
 // ── content_block_delta: thinking_delta ──
 
-test('thinking_delta → reasoning_text delta', () => {
+test('thinking_delta contributes a live private text increment', () => {
   const d = deltas([
     MSG_START,
     {
@@ -263,34 +245,10 @@ test('thinking_delta → reasoning_text delta', () => {
       delta: { type: 'thinking_delta', thinking: 'Let me think...' },
     },
   ]);
-  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'Let me think...');
+  assertEquals(d[1][OpenAIChatCompletionsAssistantMessagePrivate]?.reasoningText, 'Let me think...');
 });
 
 // ── content_block_delta: signature_delta ──
-
-test('signature_delta → reasoning_opaque delta', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { signature: '', type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'thoughts' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'sig_abc' },
-    },
-  ]);
-  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig_abc');
-});
-
-// ── content_block_delta: input_json_delta ──
 
 test('input_json_delta → tool_calls arguments delta', () => {
   const d = deltas([
@@ -664,44 +622,6 @@ test('full text stream scenario', () => {
   assertEquals(d.length, 4); // role + 2 text + finish
 });
 
-test('full thinking + text stream scenario', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { signature: '', type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'Let me think' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'sig' },
-    },
-    { type: 'content_block_stop', index: 0 },
-    {
-      type: 'content_block_start',
-      index: 1,
-      content_block: { citations: null, type: 'text', text: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'text_delta', text: 'Answer' },
-    },
-    { type: 'content_block_stop', index: 1 },
-    { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } },
-  ]);
-  assertEquals(d[0].role, 'assistant');
-  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'Let me think');
-  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig');
-  assertEquals(d[3].content, 'Answer');
-});
-
 test('full tool_use stream scenario', () => {
   const d = deltas([
     MSG_START,
@@ -750,76 +670,7 @@ test('full tool_use stream scenario', () => {
   assertEquals(d[4].tool_calls![0].function!.arguments, '"test"}');
 });
 
-test('full redacted_thinking + text stream scenario', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: 'opaque_blob' },
-    },
-    { type: 'content_block_stop', index: 0 },
-    {
-      type: 'content_block_start',
-      index: 1,
-      content_block: { citations: null, type: 'text', text: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'text_delta', text: 'Response' },
-    },
-    { type: 'content_block_stop', index: 1 },
-    { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } },
-  ]);
-  assertEquals(d[0].role, 'assistant');
-  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'opaque_blob');
-  assertEquals(d[2].content, 'Response');
-});
-
-test('later reasoning blocks are ignored for OpenAI Chat Completions scalar streaming', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { signature: '', type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'first' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'sig_1' },
-    },
-    { type: 'content_block_stop', index: 0 },
-    {
-      type: 'content_block_start',
-      index: 1,
-      content_block: { signature: '', type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'thinking_delta', thinking: 'second' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'signature_delta', signature: 'sig_2' },
-    },
-    { type: 'content_block_stop', index: 1 },
-    { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } },
-  ]);
-
-  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(Boolean), ['first']);
-  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque).filter(Boolean), ['sig_1']);
-});
-
-test('first redacted_thinking block suppresses later readable thinking in OpenAI Chat Completions scalar streaming', () => {
+test('redacted_thinking does not suppress later readable thinking', () => {
   const d = deltas([
     MSG_START,
     {
@@ -842,47 +693,7 @@ test('first redacted_thinking block suppresses later readable thinking in OpenAI
     { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } },
   ]);
 
-  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque).filter(Boolean), ['opaque_first']);
-  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(Boolean), []);
-});
-
-test('thinking + tool_use stream (interleaved thinking)', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { signature: '', type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'I need a tool' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'sig_1' },
-    },
-    { type: 'content_block_stop', index: 0 },
-    {
-      type: 'content_block_start',
-      index: 1,
-      content_block: { type: 'tool_use', id: 'tu_1', name: 'calc', input: {} },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'input_json_delta', partial_json: '{"x":1}' },
-    },
-    { type: 'content_block_stop', index: 1 },
-    { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' } },
-  ]);
-  assertEquals(d[0].role, 'assistant');
-  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'I need a tool');
-  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig_1');
-  assertEquals(d[3].tool_calls![0].id, 'tu_1');
-  assertEquals(d[4].tool_calls![0].function!.arguments, '{"x":1}');
+  assertEquals(d.map(delta => delta[OpenAIChatCompletionsAssistantMessagePrivate]?.reasoningText).filter(Boolean), ['later']);
 });
 
 test('multiple tool_use blocks in stream', () => {

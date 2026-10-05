@@ -61,10 +61,10 @@ export const openaiChatCompletionsAttempt = {
         return { ...result, [OpenAIChatCompletionsPrivateResponse]: args.privateContext, events: extractOpenAIChatCompletionsPrivate(result.events, capture?.upstreamFrame) };
       }
       if (targetApi === 'anthropicMessages') {
-        return await traverseTranslation(
+        const result = await traverseTranslation(
           invocation.payload,
           p => translateOpenAIChatCompletionsViaAnthropicMessages(p, {
-            model: candidate.model.id,
+            model: candidate.model.id, privateContext: args.privateContext,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
             loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
@@ -73,6 +73,7 @@ export const openaiChatCompletionsAttempt = {
           }),
           captureFromDump(ctx.dump, targetApi),
         );
+        return result.type === 'events' && args.privateContext !== undefined ? { ...result, [OpenAIChatCompletionsPrivateResponse]: args.privateContext } : result;
       }
       if (targetApi === 'openaiResponses') {
         const result = await traverseTranslation(

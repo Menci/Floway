@@ -1,9 +1,10 @@
+import { createAnthropicMessagesPrivateState, observeAnthropicMessagesPrivate, finalizeAnthropicMessagesPrivate, recordAnthropicMessagesChatProjection } from '../shared/via-anthropic-messages/assistant-message-private.ts';
 import { anthropicMessagesRefusalExplanation } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
 import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsStreamEvent, type OpenAIChatCompletionsResult, type OpenAIChatCompletionsAssistantDelta } from '@floway-dev/protocols/openai-chat-completions';
 
 const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopReason: AnthropicMessagesResult['stop_reason']): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
@@ -43,7 +44,9 @@ interface AnthropicMessagesToOpenAIChatCompletionsStreamState {
   created: number;
   nextToolCallIndex: number;
   usage: AnthropicMessagesUsageSnapshot;
-  reasoningBlockIndex?: number;
+  privateState: ReturnType<typeof createAnthropicMessagesPrivateState>;
+  toolCallIndices: Map<number, number>;
+  toolArgumentsSeen: Set<number>;
 }
 
 export const createAnthropicMessagesToOpenAIChatCompletionsStreamState = (): AnthropicMessagesToOpenAIChatCompletionsStreamState => ({
@@ -51,15 +54,11 @@ export const createAnthropicMessagesToOpenAIChatCompletionsStreamState = (): Ant
   model: '',
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
+  privateState: createAnthropicMessagesPrivateState(), toolCallIndices: new Map(), toolArgumentsSeen: new Set(),
   usage: anthropicMessagesUsageSnapshot(),
 });
 
-const claimReasoningBlock = (state: AnthropicMessagesToOpenAIChatCompletionsStreamState, index: number): boolean => {
-  state.reasoningBlockIndex ??= index;
-  return state.reasoningBlockIndex === index;
-};
-
-const makeChunk = (state: AnthropicMessagesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const makeChunk = (state: AnthropicMessagesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDelta, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -105,7 +104,8 @@ const unexpectedAnthropicMessagesVariant = (value: never): never => {
   throw new Error(`Unexpected Anthropic Messages stream variant: ${JSON.stringify(value)}`);
 };
 
-export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (event: AnthropicMessagesStreamEventEx, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
+const translateAnthropicMessagesEvent = (event: AnthropicMessagesStreamEventEx, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
+  const reasoningText = observeAnthropicMessagesPrivate(event, state.privateState);
   switch (event.type) {
   case 'message_start': {
     state.messageId = event.message.id;
@@ -119,12 +119,14 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
 
     switch (block.type) {
     case 'thinking':
-      claimReasoningBlock(state, event.index);
-      return [];
+      return reasoningText !== undefined ? [makeChunk(state, { [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText } })] : [];
     case 'redacted_thinking':
-      return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
+      return [];
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
+      state.toolCallIndices.set(event.index, toolCallIndex);
+      const args = Object.keys(block.input as Record<string, unknown>).length > 0 ? JSON.stringify(block.input) : '';
+      if (args) state.toolArgumentsSeen.add(event.index);
       return [
         makeChunk(state, {
           tool_calls: [
@@ -132,13 +134,14 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
               index: toolCallIndex,
               id: block.id,
               type: 'function',
-              function: { name: block.name, arguments: '' },
+              function: { name: block.name, arguments: args },
             },
           ],
         }),
       ];
     }
     case 'text':
+      return block.text ? [makeChunk(state, { content: block.text })] : [];
     case 'server_tool_use':
     case 'web_search_tool_result':
       return [];
@@ -154,44 +157,43 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
     const { delta } = event;
     switch (delta.type) {
     case 'thinking_delta':
-      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_text: delta.thinking })] : [];
+      return [makeChunk(state, { [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText: delta.thinking } })];
     case 'signature_delta':
-      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
+      return [];
     case 'text_delta':
       return [makeChunk(state, { content: delta.text })];
-    case 'input_json_delta':
+    case 'input_json_delta': {
+      const index = state.toolCallIndices.get(event.index);
+      if (index === undefined) return [];
+      state.toolArgumentsSeen.add(event.index);
       return [
         makeChunk(state, {
           tool_calls: [
             {
-              index: state.nextToolCallIndex - 1,
+              index,
               function: { arguments: delta.partial_json },
             },
           ],
         }),
       ];
+    }
     case 'compaction_delta':
       return [];
     case 'citations_delta':
-      // OpenAI Chat Completions has no equivalent of Anthropic's structured citation
-      // annotations (no `output_text.annotation.added` event, no
-      // `url_citation` annotation type, no `tool_result.search_result` block
-      // shape). Blanket-drop every citation delta — the cited text already
-      // appears inline in earlier `text_delta` events that the model wrote,
-      // so the downstream OpenAI Chat Completions client still sees the substantive content,
-      // just without per-span source attribution. Permanent limitation; the
-      // OpenAI-Responses-shape translator at
-      // `openai-responses-via-anthropic-messages/events.ts:handleTextCitation` DOES translate
-      // these into `url_citation` annotations because OpenAI Responses has the
-      // annotation surface.
       return [];
     }
 
     return unexpectedAnthropicMessagesVariant(delta);
   }
 
-  case 'content_block_stop':
+  case 'content_block_stop': {
+    const index = state.toolCallIndices.get(event.index);
+    if (index !== undefined && !state.toolArgumentsSeen.has(event.index)) {
+      state.toolArgumentsSeen.add(event.index);
+      return [makeChunk(state, { tool_calls: [{ index, function: { arguments: '{}' } }] })];
+    }
     return [];
+  }
 
   case 'message_delta': {
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
@@ -217,6 +219,12 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
   }
 };
 
+export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (event: AnthropicMessagesStreamEventEx, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
+  const chunks = translateAnthropicMessagesEvent(event, state);
+  if (chunks !== 'DONE') recordAnthropicMessagesChatProjection(event, chunks, state.privateState);
+  return chunks;
+};
+
 const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEventEx): void => {
   if (event.type !== 'error') return;
 
@@ -232,6 +240,8 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     const translated = translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(event, state);
 
     if (translated === 'DONE') {
+      const sidecar = finalizeAnthropicMessagesPrivate(state.privateState);
+      if (sidecar !== undefined) yield eventFrame(makeChunk(state, { [OpenAIChatCompletionsAssistantMessagePrivate]: { sidecar } }));
       yield doneFrame();
       continue;
     }

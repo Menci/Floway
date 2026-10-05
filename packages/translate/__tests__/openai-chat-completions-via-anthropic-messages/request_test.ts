@@ -2,19 +2,18 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-anthropic-messages/request.ts';
 import type { RemoteImageLoader } from '../../src/types.ts';
+import { referencedTextHash } from '../test-utils/assistant-message-private.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesClientTool,
   type AnthropicMessagesPayload,
-  type AnthropicMessagesRedactedThinkingBlock,
   type AnthropicMessagesTextBlock,
-  type AnthropicMessagesThinkingBlock,
   type AnthropicMessagesToolResultBlock,
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsMessage, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 // ── Helpers ──
@@ -483,8 +482,7 @@ test('assistant blocks ordered: thinking → text → tool_use', async () => {
         {
           role: 'assistant',
           content: 'response text',
-          reasoning_text: 'I think...',
-          reasoning_opaque: 'sig123',
+          [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText: 'I think...', sidecar: { upstreamProtocol: 'anthropicMessages', thinBlocks: [{ type: 'thinking', __thinking: [[0, 10]], signature: 'sig123' }, { type: 'text', __text: [[0, 13]], citations: null }, { type: 'tool_use', __index: 0, id: 'tc1', name: 'search', caller: { type: 'direct' } }], referencedTextHash: referencedTextHash('I think...', 'response text', ['{"q":"x"}']) } },
           tool_calls: [
             {
               id: 'tc1',
@@ -588,56 +586,11 @@ test('assistant tool_calls with invalid JSON arguments → raw_arguments fallbac
 
 // ── Thinking / Redacted thinking ──
 
-test('reasoning_text + reasoning_opaque → thinking block with signature', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        {
-          role: 'assistant',
-          content: 'resp',
-          reasoning_text: 'My thoughts',
-          reasoning_opaque: 'sig',
-        } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
-  assertEquals(thinking.type, 'thinking');
-  assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, 'sig');
-});
-
-test('reasoning_text only → thinking block with the required empty signature field', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_text: 'My thoughts' } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
-  assertEquals(thinking.type, 'thinking');
-  assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, '');
-});
-
-test('reasoning_opaque only → redacted_thinking block', async () => {
-  const result = await buildTargetRequest(
-    mkPayload({
-      messages: [
-        { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_opaque: 'opaque_data' } as OpenAIChatCompletionsAssistantMessageEx,
-      ],
-    }),
-  );
-  const blocks = assistantBlocks(result, 1);
-  const redacted = blocks[0] as AnthropicMessagesRedactedThinkingBlock;
-  assertEquals(redacted.type, 'redacted_thinking');
-  assertEquals(redacted.data, 'opaque_data');
+test('foreign scalar reasoning fields do not create native thinking blocks', async () => {
+  for (const fields of [{ reasoning_text: 'trace', reasoning_opaque: 'sig' }, { reasoning_text: 'trace' }, { reasoning_opaque: 'cipher' }]) {
+    const result = await buildTargetRequest(mkPayload({ messages: [{ role: 'assistant', content: 'answer', ...fields } as OpenAIChatCompletionsAssistantMessageEx] }));
+    assertEquals(assistantBlocks(result, 0).map(block => block.type), ['text']);
+  }
 });
 
 test('no reasoning fields → no thinking block', async () => {
@@ -1194,8 +1147,7 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: null,
-          reasoning_text: 'thinking1',
-          reasoning_opaque: 'sig1',
+          [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText: 'thinking1', sidecar: { upstreamProtocol: 'anthropicMessages', thinBlocks: [{ type: 'thinking', __thinking: [[0, 9]], signature: 'sig1' }, { type: 'tool_use', __index: 0, id: 'tc1', name: 'calc', caller: { type: 'direct' } }], referencedTextHash: referencedTextHash('thinking1', null, ['{"x":1}']) } },
           tool_calls: [
             {
               id: 'tc1',
@@ -1208,8 +1160,7 @@ test('interleaved thinking round-trip', async () => {
         {
           role: 'assistant',
           content: 'The answer is 42.',
-          reasoning_text: 'thinking2',
-          reasoning_opaque: 'sig2',
+          [OpenAIChatCompletionsAssistantMessagePrivate]: { reasoningText: 'thinking2', sidecar: { upstreamProtocol: 'anthropicMessages', thinBlocks: [{ type: 'thinking', __thinking: [[0, 9]], signature: 'sig2' }, { type: 'text', __text: [[0, 17]], citations: null }], referencedTextHash: referencedTextHash('thinking2', 'The answer is 42.', []) } },
         } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
