@@ -194,6 +194,15 @@ const openaiResponsesReasoningEvents = (item: OpenAIResponsesOutputReasoning, ou
     });
   });
 
+  for (const [contentIndex, part] of (item.content ?? []).entries()) {
+    events.push(
+      { type: 'response.content_part.added', item_id: item.id, output_index: outputIndex, content_index: contentIndex, part: { type: 'reasoning_text', text: '' } },
+      { type: 'response.reasoning_text.delta', item_id: item.id, output_index: outputIndex, content_index: contentIndex, delta: part.text },
+      { type: 'response.reasoning_text.done', item_id: item.id, output_index: outputIndex, content_index: contentIndex, text: part.text },
+      { type: 'response.content_part.done', item_id: item.id, output_index: outputIndex, content_index: contentIndex, part },
+    );
+  }
+
   events.push({
     type: 'response.output_item.done',
     output_index: outputIndex,

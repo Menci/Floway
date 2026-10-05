@@ -11,6 +11,7 @@ import {
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
 import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
+import type { OpenAIChatCompletionsPrivateCodec } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -19,6 +20,7 @@ interface OpenAIResponsesBlobLocation {
   readonly slot: string;
   readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
+  readonly assistantBoundary?: string;
 }
 
 interface OpenAIResponsesBlobAnalysis extends OpenAIResponsesBlobLocation {
@@ -60,16 +62,20 @@ const blobRequiresOriginalTarget = (item: CanonicalOpenAIResponsesInputItem, dec
 const opaqueBlobLocations = async (
   items: readonly CanonicalOpenAIResponsesInputItem[],
   codec: AffinityCodec,
+  privateCodec?: OpenAIChatCompletionsPrivateCodec,
 ): Promise<OpenAIResponsesBlobLocation[]> => {
   const locations: OpenAIResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
     const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
     if (typeof topLevel === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
-      locations.push({
-        itemIndex,
-        slot: 'encrypted_content',
-        decoded: await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content')),
-      });
+      const decoded = await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content'));
+      const ownedAssistant = item.type === 'reasoning' && decoded.kind === 'owned' && privateCodec !== undefined
+        ? await privateCodec.unencapsulate(decoded.value)
+        : undefined;
+      const assistantBoundary = ownedAssistant !== undefined
+        ? await privateCodec!.encapsulate({ sidecar: { upstreamProtocol: 'openaiChatCompletions' } })
+        : undefined;
+      locations.push({ itemIndex, slot: 'encrypted_content', decoded, ...(assistantBoundary !== undefined ? { assistantBoundary } : {}) });
     }
     if (item.type === 'program' && typeof item.fingerprint === 'string') {
       locations.push({
@@ -194,7 +200,12 @@ const evaluateOpenAIResponsesCandidate = (
         continue;
       }
       if (!item.synthetic && projection.kind === 'remove') degrades ||= projection.degrades;
-      projections.push({ location: blob, projection });
+      // Discard incompatible provider replay state while retaining the authenticated assistant interval boundary.
+      projections.push({
+        location: blob, projection: projection.kind === 'remove' && blob.assistantBoundary !== undefined
+          ? { kind: 'preserve', value: blob.assistantBoundary, preferred: projection.preferred }
+          : projection,
+      });
     }
     if (item.synthetic) {
       projectionsByItem.set(item.itemIndex, null);
@@ -224,8 +235,9 @@ const evaluateOpenAIResponsesCandidate = (
 export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
   codec: AffinityCodec,
+  privateCodec?: OpenAIChatCompletionsPrivateCodec,
 ): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
-  const locations = await opaqueBlobLocations(payload.input, codec);
+  const locations = await opaqueBlobLocations(payload.input, codec, privateCodec);
   const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
   return defineAffinityRequest(
     analysis.requiredTargets,

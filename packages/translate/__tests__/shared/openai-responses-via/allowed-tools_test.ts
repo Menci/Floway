@@ -17,7 +17,7 @@ const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestP
 });
 
 for (const target of ['chat', 'messages'] as const) {
-  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? buildChat(payload) : await buildMessages(payload);
+  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? buildChat(payload, new Map()) : await buildMessages(payload);
   for (const mode of ['auto', 'required'] as const) {
     test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });

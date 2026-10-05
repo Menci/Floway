@@ -1,5 +1,6 @@
 import { klona } from 'klona/json';
 
+import { discardOpenAIResponsesChatReplay } from './assistant-message-private/request.ts';
 import { openaiResponsesInterceptors } from './interceptors/index.ts';
 import type { OpenAIResponsesAttemptResult, OpenAIResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -139,6 +140,7 @@ const dispatchOpenAIResponses = async (
   ctx: ChatGatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   const { candidate, targetApi } = invocation;
+  if (targetApi !== 'openaiChatCompletions') invocation.payload = await discardOpenAIResponsesChatReplay(invocation.payload, ctx.assistantMessagePrivate.codec);
   switch (targetApi) {
   case 'openaiResponses': {
     if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIResponses(invocation.payload, candidate.rules);
@@ -192,9 +194,9 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id }),
+      p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id, privateContext: ctx.assistantMessagePrivate }),
       translated => openaiChatCompletionsAttempt.generate({
-        payload: translated, ctx, candidate, headers: invocation.headers,
+        payload: translated, ctx, candidate, headers: invocation.headers, privateContext: ctx.assistantMessagePrivate,
       }),
       captureFromDump(ctx.dump, targetApi),
     );

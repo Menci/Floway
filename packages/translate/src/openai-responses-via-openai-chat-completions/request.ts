@@ -2,29 +2,25 @@ import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
-import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import { OpenAIChatCompletionsAssistantMessagePrivate, type OpenAIChatCompletionsAssistantMessage, type OpenAIChatCompletionsResponseFormat, type OpenAIChatCompletionsUserContentPart, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsMessage, type OpenAIChatCompletionsTool, type OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 interface AssistantAccumulator {
   message: OpenAIChatCompletionsAssistantMessage;
-  reasoning: OpenAIChatCompletionsReasoningProjection;
+  reasoningText?: string;
 }
 
 const ensureAssistant = (assistant: AssistantAccumulator | null): AssistantAccumulator =>
   assistant ?? {
     message: { role: 'assistant', content: null },
-    reasoning: createOpenAIChatCompletionsReasoningProjection(),
   };
 
 const appendAssistantText = (assistant: AssistantAccumulator | null, text: string): AssistantAccumulator | null => {
-  if (!text) return assistant;
-
   const next = ensureAssistant(assistant);
   next.message.content = typeof next.message.content === 'string' ? next.message.content + text : text;
   return next;
@@ -171,7 +167,7 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
 }
 
-export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): TargetRequestResult => {
+export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx, decoded: ReadonlyMap<object, OpenAIChatCompletionsAssistantMessagePrivate>): TargetRequestResult => {
   const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
@@ -182,10 +178,9 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
   let assistant: AssistantAccumulator | null = null;
   const flushAssistant = () => {
     if (!assistant) return;
-    messages.push({
-      ...assistant.message,
-      ...openaiChatCompletionsReasoningProjectionFields(assistant.reasoning),
-    });
+    const privateState = assistant.message[OpenAIChatCompletionsAssistantMessagePrivate];
+    if (privateState !== undefined) assistant.message[OpenAIChatCompletionsAssistantMessagePrivate] = { ...privateState, reasoningText: assistant.reasoningText };
+    if (privateState !== undefined || assistant.message.content !== null || assistant.message.tool_calls !== undefined) messages.push(assistant.message);
     assistant = null;
   };
 
@@ -200,7 +195,12 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
     rejectProgramCaller(item);
     if (item.type === 'reasoning') {
       assistant = ensureAssistant(assistant);
-      addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection(assistant.reasoning, item);
+      for (const part of item.content ?? []) assistant.reasoningText = (assistant.reasoningText ?? '') + part.text;
+      const privateState = decoded.get(item);
+      if (privateState !== undefined) {
+        assistant.message[OpenAIChatCompletionsAssistantMessagePrivate] = privateState;
+        flushAssistant();
+      }
       continue;
     }
 
@@ -290,8 +290,6 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
     ...(payload.reasoning?.effort != null ? { reasoning_effort: payload.reasoning.effort } : {}),
     ...(payload.text?.verbosity != null ? { verbosity: payload.text.verbosity } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
-    // OpenAI Chat Completions has no request-level counterpart for OpenAI Responses
-    // `reasoning`; only explicit reasoning items survive this translation.
     tools,
     tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };

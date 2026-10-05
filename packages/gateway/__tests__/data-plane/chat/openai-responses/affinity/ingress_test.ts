@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { createOpenAIChatCompletionsPrivateCodec } from '../../../../../src/data-plane/chat/shared/assistant-message-private/codec.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
@@ -410,4 +411,33 @@ test('reports incompatible required state discovered by the same item analysis',
     kind: 'routing-unavailable',
     message: expect.stringContaining('multiple incompatible targets'),
   });
+});
+
+test('an incompatible candidate discards replay payload but retains each authenticated Chat assistant boundary', async () => {
+  const privateCodec = createOpenAIChatCompletionsPrivateCodec({ serverSecret: '22'.repeat(32) });
+  const data = await privateCodec.encapsulate({ sidecar: { upstreamProtocol: 'openaiChatCompletions', extraFields: { reasoning_opaque: 'original-account-state' } } });
+  const wrapped = await codec.wrap(data, targetFor(candidateA), carrierDomain('reasoning', 'encrypted_content'));
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'model', input: [
+      { type: 'message', role: 'assistant', content: 'one' },
+      { type: 'reasoning', id: 'rs_one', summary: [], encrypted_content: wrapped },
+      { type: 'message', role: 'assistant', content: 'two' },
+      { type: 'reasoning', id: 'rs_two', summary: [], encrypted_content: wrapped },
+    ],
+  };
+  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec, privateCodec);
+  const evaluation = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(evaluation.degrades).toBe(true);
+  const materialized = evaluation.materialize();
+  expect(materialized.input).toHaveLength(4);
+  for (const index of [1, 3]) {
+    const item = materialized.input[index];
+    if (item.type !== 'reasoning') throw new Error('Expected assistant boundary');
+    expect(await privateCodec.unencapsulate(item.encrypted_content)).toEqual({ sidecar: { upstreamProtocol: 'openaiChatCompletions' } });
+    expect(item.encrypted_content).not.toBe(data);
+  }
+  const retained = acceptedAffinityEvaluation(prepared, candidateA).materialize();
+  const first = retained.input[1];
+  if (first.type !== 'reasoning') throw new Error('Expected native carrier');
+  expect(await privateCodec.unencapsulate(first.encrypted_content)).toEqual({ sidecar: { upstreamProtocol: 'openaiChatCompletions', extraFields: { reasoning_opaque: 'original-account-state' } } });
 });

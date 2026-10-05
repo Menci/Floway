@@ -9,7 +9,7 @@ test('buildTargetRequest accepts an implicit message discriminator', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ role: 'system', content: 'rules' }],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages, [
     { role: 'system', content: 'rules' },
@@ -26,7 +26,7 @@ test('buildTargetRequest rejects an agent_message that no interceptor lowered', 
         recipient: '/root',
         content: [{ type: 'input_text', text: 'done' }],
       }],
-    }),
+    }, new Map()),
     Error,
     "Invalid input item type 'agent_message'.",
   );
@@ -81,7 +81,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
     prompt_cache_key: 'cache-key',
     safety_identifier: 'safe-id',
     reasoning: { effort: 'medium' },
-  });
+  }, new Map());
 
   assertEquals(result.target.model, 'gpt-test');
   assertEquals(result.target.max_tokens, 256);
@@ -105,14 +105,6 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
     {
       role: 'assistant',
       content: 'Hello',
-      reasoning_text: 'trace',
-      reasoning_items: [
-        {
-          type: 'reasoning',
-          id: 'rs_1',
-          summary: [{ type: 'summary_text', text: 'trace' }],
-        },
-      ],
       tool_calls: [
         {
           id: 'call_1',
@@ -132,7 +124,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
   ]);
 });
 
-test('buildTargetRequest preserves all reasoning items and projects only the first scalar group', () => {
+test('buildTargetRequest drops unowned native reasoning instead of forwarding unauthenticated Chat extensions', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
@@ -157,27 +149,9 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
     stream: null,
     store: null,
     parallel_tool_calls: null,
-  });
+  }, new Map());
 
-  assertEquals(result.target.messages, [
-    {
-      role: 'assistant',
-      content: null,
-      reasoning_text: 'first',
-      reasoning_items: [
-        {
-          type: 'reasoning',
-          id: 'rs_1',
-          summary: [{ type: 'summary_text', text: 'first' }],
-        },
-        {
-          type: 'reasoning',
-          id: 'rs_2',
-          summary: [{ type: 'summary_text', text: 'second' }],
-        },
-      ],
-    } as OpenAIChatCompletionsAssistantMessageEx,
-  ]);
+  assertEquals(result.target.messages, []);
 });
 
 test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
@@ -186,7 +160,7 @@ test('buildTargetRequest preserves explicit null prompt cache and safety fields'
     input: 'hello',
     prompt_cache_key: null,
     safety_identifier: null,
-  });
+  }, new Map());
 
   assertEquals('prompt_cache_key' in result.target, true);
   assertEquals(result.target.prompt_cache_key, null);
@@ -199,7 +173,7 @@ test('buildTargetRequest omits response_format when OpenAI Responses text.format
     model: 'gpt-test',
     input: 'Hi',
     text: {},
-  });
+  }, new Map());
 
   assertEquals('response_format' in result.target, false);
 });
@@ -209,7 +183,7 @@ test('buildTargetRequest omits a null text format from the Chat response-format 
     model: 'gpt-test',
     input: 'Hi',
     text: null,
-  });
+  }, new Map());
 
   assertEquals(result.target.response_format, undefined);
 });
@@ -231,7 +205,7 @@ test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat 
         schema,
       },
     },
-  });
+  }, new Map());
 
   assertEquals(result.target.response_format, {
     type: 'json_schema',
@@ -248,7 +222,7 @@ test('buildTargetRequest passes through plain text format without wrapping', () 
     model: 'gpt-test',
     input: 'Hi',
     text: { format: { type: 'text' } },
-  });
+  }, new Map());
 
   assertEquals(result.target.response_format, { type: 'text' });
 });
@@ -263,7 +237,7 @@ test('buildTargetRequest does not double-wrap an already-wrapped json_schema', (
         json_schema: { name: 'already', strict: false, schema: {} },
       } as unknown as NonNullable<NonNullable<OpenAIResponsesRequestPayloadEx['text']>['format']>,
     },
-  });
+  }, new Map());
 
   assertEquals(result.target.response_format, {
     type: 'json_schema',
@@ -313,7 +287,7 @@ test('buildTargetRequest filters out builtin tools that have no OpenAI Chat Comp
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   // Only the two function tools should survive.
   assertEquals(result.target.tools?.length, 2);
@@ -330,7 +304,7 @@ test('buildTargetRequest omits parameters and strict for a schema-less function 
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     tools: [{ type: 'function', name: 'ping' }],
-  });
+  }, new Map());
 
   // `toEqual` treats an undefined-valued key as absent, so the keys are
   // compared directly: emitting `parameters: undefined` is the regression.
@@ -351,7 +325,7 @@ test('buildTargetRequest returns undefined tools when only builtin tools are pre
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   assertEquals(result.target.tools, undefined);
 });
@@ -375,7 +349,7 @@ test('buildTargetRequest drops forced builtin tool_choice but keeps function too
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   assertEquals(resultWithBuiltinChoice.target.tool_choice, undefined);
 
@@ -397,7 +371,7 @@ test('buildTargetRequest drops forced builtin tool_choice but keeps function too
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   assertEquals(resultWithFunctionChoice.target.tool_choice, {
     type: 'function',
@@ -420,7 +394,7 @@ test('buildTargetRequest returns undefined tool_choice for string auto/required/
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   assertEquals(result.target.tool_choice, 'auto');
 });
@@ -447,7 +421,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
@@ -506,7 +480,7 @@ test.each([
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
+  }, new Map());
 
   const assistant = result.target.messages.find(m => m.role === 'assistant');
   if (!assistant) throw new Error('expected assistant message');
@@ -536,7 +510,7 @@ test.each([
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', ({ name, input }) => {
   assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: [...input] }),
+    () => buildTargetRequest({ model: 'gpt-test', input: [...input] }, new Map()),
     Error,
     `Invalid input item type '${name}'`,
   );
@@ -547,19 +521,19 @@ test('buildTargetRequest wires OpenAI Responses tooling guards', () => {
     () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
-    }),
+    }, new Map()),
     Error,
     'program caller',
   );
   assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }),
+    () => buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }, new Map()),
     Error,
     'Programmatic',
   );
 });
 
 test('buildTargetRequest accepts null tool_choice', () => {
-  const result = buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null });
+  const result = buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null }, new Map());
   assertEquals(result.target.tool_choice, undefined);
 });
 
@@ -568,7 +542,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
     () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
+    }, new Map()),
     Error,
     'input_file tool output',
   );
@@ -579,7 +553,7 @@ test('buildTargetRequest rejects file assistant content', () => {
     () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
+    }, new Map()),
     Error,
     'input_file assistant content',
   );
@@ -590,7 +564,7 @@ test('buildTargetRequest rejects image assistant content', () => {
     () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
-    }),
+    }, new Map()),
     Error,
     'input_image assistant content',
   );
@@ -601,7 +575,7 @@ test('buildTargetRequest rejects file_id-only images', () => {
     () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
+    }, new Map()),
     Error,
     'file_id-only image content',
   );
@@ -618,7 +592,7 @@ test('buildTargetRequest forwards image details OpenAI Chat Completions does not
         { type: 'input_image', image_url: 'https://example.com/b.png', detail: 'ultra' },
       ],
     }],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages[0].content, [
     { type: 'image_url', image_url: { url: 'https://example.com/a.png', detail: 'original' } },
@@ -630,7 +604,7 @@ test('buildTargetRequest omits image detail when the client sends none', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages, [
     { role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }] },
@@ -641,7 +615,7 @@ test('buildTargetRequest omits image detail when the client sends null', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: null }] }],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages[0].content, [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }]);
 });
@@ -659,7 +633,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
         output: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }],
       },
     ],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages.at(-1)?.content, [
     { type: 'text', text: 'Image output from tool call call_1:' },
@@ -695,7 +669,7 @@ test('buildTargetRequest throws on a stray web_search_call input item (shim owns
       stream: null,
       store: false,
       parallel_tool_calls: true,
-    }),
+    }, new Map()),
     Error,
     "Invalid input item type 'web_search_call'",
   );
@@ -723,7 +697,7 @@ test('buildTargetRequest throws on a stray compaction_trigger input item (compac
       stream: null,
       store: false,
       parallel_tool_calls: true,
-    }),
+    }, new Map()),
     Error,
     "Invalid input item type 'compaction_trigger'",
   );
@@ -751,7 +725,7 @@ test('buildTargetRequest throws on a stray compaction input item (compact-shim o
       stream: null,
       store: false,
       parallel_tool_calls: true,
-    }),
+    }, new Map()),
     Error,
     "Invalid input item type 'compaction'",
   );
@@ -781,7 +755,7 @@ test('buildTargetRequest lifts tool-output images into a following user message'
     stream: false,
     store: false,
     parallel_tool_calls: true,
-  });
+  }, new Map());
 
   assertEquals(result.target.messages, [
     {
@@ -836,7 +810,7 @@ test('buildTargetRequest keeps grouped tool results contiguous before lifted ima
         ],
       },
     ],
-  });
+  }, new Map());
 
   assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'tool', 'tool', 'user']);
   assertEquals(result.target.messages.slice(1, 4).map(message => (message as OpenAIChatCompletionsToolMessage).tool_call_id), ['call_a', 'call_b', 'call_c']);
@@ -870,7 +844,7 @@ test('buildTargetRequest places lifted images before a later source message', ()
         },
         trailing,
       ],
-    });
+    }, new Map());
 
     assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
     assertEquals(result.target.messages.at(-1)?.content, trailing.content);
@@ -884,7 +858,7 @@ test('buildTargetRequest maps text.verbosity onto verbosity', () => {
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     text: { verbosity: 'low' },
-  });
+  }, new Map());
 
   assertEquals(result.target.verbosity, 'low');
 });
@@ -895,7 +869,7 @@ test('buildTargetRequest co-emits reasoning.effort onto reasoning_effort and ser
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'xhigh' },
     service_tier: 'priority',
-  });
+  }, new Map());
 
   assertEquals(result.target.reasoning_effort, 'xhigh');
   assertEquals(result.target.service_tier, 'priority');
@@ -906,7 +880,7 @@ test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'medium', summary: 'concise' },
-  });
+  }, new Map());
 
   assertEquals(result.target.reasoning_effort, 'medium');
   assertEquals('reasoning_summary' in result.target, false);

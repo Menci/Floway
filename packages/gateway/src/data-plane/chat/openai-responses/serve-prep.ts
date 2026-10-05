@@ -100,7 +100,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
   }
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec, ctx.assistantMessagePrivate.codec);
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the

@@ -487,3 +487,12 @@ test('openaiResponsesResultToEvents omits image_generation_call completed event 
 
   assertEquals(frames.map(frame => frame.event.type).includes('response.image_generation_call.completed'), false);
 });
+
+test('native reasoning content expands through standard content-part and raw reasoning-text events', () => {
+  const item: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_raw', summary: [], content: [{ type: 'reasoning_text', text: 'trace' }], encrypted_content: 'cipher' };
+  const events = Array.from(openaiResponsesResultToEvents({ ...completedResponse, output: [item] })).map(frame => frame.event);
+  assertEquals(events.filter(event => event.type === 'response.reasoning_text.delta').map(event => event.delta), ['trace']);
+  assertEquals(events.filter(event => event.type === 'response.content_part.done').map(event => event.part), [{ type: 'reasoning_text', text: 'trace' }]);
+  const done = events.find(event => event.type === 'response.output_item.done');
+  assertEquals(done?.item, item);
+});

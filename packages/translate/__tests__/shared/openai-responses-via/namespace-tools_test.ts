@@ -6,6 +6,7 @@ import { translateOpenAIResponsesViaAnthropicMessages } from '../../../src/opena
 import { buildTargetRequest as chatRequest } from '../../../src/openai-responses-via-openai-chat-completions/request.ts';
 import { translateOpenAIResponsesViaOpenAIChatCompletions } from '../../../src/openai-responses-via-openai-chat-completions/translate.ts';
 import { flattenNamespaceTools, restoreNamespaceEvents } from '../../../src/shared/openai-responses-via/namespace-tools.ts';
+import { privateContext } from '../../test-utils/assistant-message-private.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -29,7 +30,7 @@ const payload = (): OpenAIResponsesRequestPayloadEx => ({
 
 test('both targets preserve namespace subsets and excluded replay identities', async () => {
   const source = payload();
-  const chat = chatRequest(source);
+  const chat = chatRequest(source, new Map());
   const messages = await messagesRequest(source);
   expect(chat.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : '')).toEqual(['agents_spawn_2']);
   expect(messages.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['agents_spawn_2']);
@@ -44,7 +45,7 @@ test('expands namespace selectors and includes deferred declarations on both tar
   source.tool_choice = { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'namespace', name: 'agents' }] };
   source.input = [{ type: 'additional_tools', role: 'developer', tools: source.tools! }];
   source.tools = undefined;
-  expect(chatRequest(source).target.tools).toHaveLength(3);
+  expect(chatRequest(source, new Map()).target.tools).toHaveLength(3);
   expect((await messagesRequest(source)).target.tools).toHaveLength(3);
 });
 
@@ -52,7 +53,7 @@ test('history-only namespace calls reserve names without inventing declarations'
   const source = payload();
   source.tools = undefined;
   source.tool_choice = undefined;
-  const chat = chatRequest(source);
+  const chat = chatRequest(source, new Map());
   const messages = await messagesRequest(source);
   expect(chat.target.tools).toBeUndefined();
   expect(messages.target.tools).toBeUndefined();
@@ -63,7 +64,7 @@ test('history-only namespace calls reserve names without inventing declarations'
 test('forced namespace choices use the declaration mapping', async () => {
   const source = payload();
   source.tool_choice = { type: 'function', namespace: 'agents', name: 'spawn' };
-  expect(chatRequest(source).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
+  expect(chatRequest(source, new Map()).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
   expect((await messagesRequest(source)).target.tool_choice).toEqual({ type: 'tool', name: 'agents_spawn_2' });
 });
 
@@ -92,7 +93,7 @@ test('restores function and custom calls across item events and terminal snapsho
 test.each(['.', '__'])('lowers qualified forced selectors with %s', async separator => {
   const source = payload();
   source.tool_choice = { type: 'function', name: `agents${separator}spawn` };
-  expect(chatRequest(source).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
+  expect(chatRequest(source, new Map()).target.tool_choice).toEqual({ type: 'function', function: { name: 'agents_spawn_2' } });
   expect((await messagesRequest(source)).target.tool_choice).toEqual({ type: 'tool', name: 'agents_spawn_2' });
 });
 
@@ -101,12 +102,12 @@ test('rejects function/custom ambiguity and distinct tuples with the same qualif
     [{ type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] }],
     [{ type: 'namespace' as const, name: 'x.y', description: '', tools: [{ type: 'function' as const, name: 'f' }] }, { type: 'namespace' as const, name: 'x', description: '', tools: [{ type: 'function' as const, name: 'y.f' }] }],
   ]) {
-    expect(() => chatRequest({ model: 'm', input: [], tools })).toThrow('ambiguous');
+    expect(() => chatRequest({ model: 'm', input: [], tools }, new Map())).toThrow('ambiguous');
   }
 });
 
 test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {
-  const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(payload(), { model: 'm' });
+  const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(payload(), { model: 'm', privateContext: privateContext() });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
@@ -115,7 +116,7 @@ test('the complete Chat Completions trip restores the namespace after target too
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
-  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });
+  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' }), expect.objectContaining({ type: 'reasoning', summary: [], encrypted_content: expect.any(String) })] } });
 });
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {

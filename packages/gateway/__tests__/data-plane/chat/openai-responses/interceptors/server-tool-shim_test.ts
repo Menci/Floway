@@ -6716,7 +6716,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         ]]).run();
       }
       if (targetApi === 'openaiChatCompletions') {
-        const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm' });
+        const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', privateContext: makeGatewayCtx().assistantMessagePrivate });
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
@@ -6741,7 +6741,7 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
     });
     assertEquals(turns, 1);
     assertEquals(backend.calls, []);
-    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', SHIM_TOOL_NAME, 'functions']]);
+    assertEquals(findResponseCompleted(frames).response.output.map(item => item.type === 'function_call' ? [item.type, item.name, item.namespace] : [item.type]), [['function_call', SHIM_TOOL_NAME, 'functions'], ...(targetApi === 'openaiChatCompletions' ? [['reasoning']] : [])]);
   });
 }
 
@@ -6782,7 +6782,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         choices.push(structuredClone(inv.payload.tool_choice));
         const before = structuredClone(inv.payload);
         const trip = target === 'openaiChatCompletions'
-          ? await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm' })
+          ? await translateOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { model: 'm', privateContext: makeGatewayCtx().assistantMessagePrivate })
           : await translateOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
         const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
         assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the translated subset must declare the helper alias');

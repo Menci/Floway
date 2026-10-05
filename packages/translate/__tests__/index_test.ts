@@ -76,7 +76,7 @@ const objectsIn = (value: unknown): Set<object> => {
 };
 
 const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
-  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm' })).target },
+  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm', privateContext: reasoning })).target },
   { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await translateOpenAIResponsesViaAnthropicMessages(responses, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
   { name: 'Chat Completions to Responses', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm', privateContext: reasoning })).target },
   { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', privateContext: reasoning, loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },

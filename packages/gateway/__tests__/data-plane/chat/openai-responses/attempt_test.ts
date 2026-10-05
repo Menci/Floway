@@ -807,7 +807,10 @@ test('generate lowers agent_message to a framed user message across translation 
           observedBody = body;
           return {
             ok: true,
-            events: (async function* () { yield doneFrame(); })(),
+            events: (async function* () {
+              yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
+              yield doneFrame();
+            })(),
             modelKey: 'k',
             headers: new Headers(),
           };
