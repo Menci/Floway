@@ -32,13 +32,16 @@ to run Floway as a systemd service with Podman.
 ## Usage
 
 Add an upstream under **Providers → Upstreams**, then create a key under
-**Services → API Keys**. Use it as a bearer token or `x-api-key`, or configure
-Claude Code and Codex through **Agent Setup**.
+**Services → API Keys**. Use the API key in your client code or configure your
+agents to use Floway as provider through **Agent Setup**.
 
 ## Development
 
-Install dependencies with `pnpm install`, start locally with `pnpm run dev:node`,
-and run all checks with `pnpm run verify`.
+```bash
+pnpm install
+pnpm run dev:node
+pnpm run verify
+```
 
 ## License
 
