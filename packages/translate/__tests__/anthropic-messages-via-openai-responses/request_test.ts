@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/anthropic-messages-via-openai-responses/request.ts';
 import { packReasoningSignature } from '../../src/shared/anthropic-messages-and-openai-responses/reasoning.ts';
-import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
@@ -426,7 +426,7 @@ test('buildTargetRequest does not inject properties for non-object input_schema'
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
-    tools: [{ name: 'scalar', input_schema: { type: 'string' } }],
+    tools: [{ name: 'scalar', input_schema: { type: 'string' } }] as unknown as AnthropicMessagesPayload['tools'],
     messages: [{ role: 'user', content: 'hi' }],
   });
 

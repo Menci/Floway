@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/gemini-generate-content-via-anthropic-messages/request.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const noOptions = {};
@@ -398,7 +398,7 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
     () =>
       buildTargetRequest(
         {
-          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } }] }],
+          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
         'claude-test',
         noOptions,

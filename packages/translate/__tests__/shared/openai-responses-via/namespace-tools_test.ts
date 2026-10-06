@@ -6,12 +6,12 @@ import { translateOpenAIResponsesViaAnthropicMessages } from '../../../src/opena
 import { buildTargetRequest as chatRequest } from '../../../src/openai-responses-via-openai-chat-completions/request.ts';
 import { translateOpenAIResponsesViaOpenAIChatCompletions } from '../../../src/openai-responses-via-openai-chat-completions/translate.ts';
 import { flattenNamespaceTools, restoreNamespaceEvents } from '../../../src/shared/openai-responses-via/namespace-tools.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const payload = (): OpenAIResponsesRequestPayload => ({
+const payload = (): OpenAIResponsesRequestPayloadEx => ({
   model: 'm',
   tools: [
     { type: 'function', name: 'agents_spawn' },
@@ -73,11 +73,11 @@ test('restores function and custom calls across item events and terminal snapsho
     { type: 'function_call' as const, name: 'agents_spawn_2', call_id: 'spawn', arguments: '{"name":"agents_spawn_2"}', status: 'completed' },
     { type: 'custom_tool_call' as const, name: 'agents_audit', call_id: 'audit', input: 'agents_audit' },
   ];
-  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output[0] });
     yield eventFrame({ type: 'response.completed', response: { id: 'r', object: 'response', model: 'm', status: 'completed', error: null, incomplete_details: null, output } });
   })();
-  const events: OpenAIResponsesStreamEvent[] = [];
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of restoreNamespaceEvents(frames, prepared.names)) if (frame.type === 'event') events.push(frame.event);
   expect(events[0]).toMatchObject({ item: { namespace: 'agents', name: 'spawn', arguments: '{"name":"agents_spawn_2"}' } });
   expect(events[1]).toMatchObject({
@@ -112,7 +112,7 @@ test('the complete Chat Completions trip restores the namespace after target too
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
     yield doneFrame();
   })();
-  const events: OpenAIResponsesStreamEvent[] = [];
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
   expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });
@@ -128,7 +128,7 @@ test('the complete Anthropic Messages trip restores the namespace after target t
     yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } });
     yield eventFrame({ type: 'message_stop' });
   })();
-  const events: OpenAIResponsesStreamEvent[] = [];
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
   expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });

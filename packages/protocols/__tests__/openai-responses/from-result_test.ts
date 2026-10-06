@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { openaiResponsesResultToEvents } from '../../src/openai-responses/from-result.ts';
-import type { OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '../../src/openai-responses/index.ts';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
-const completedResponse: OpenAIResponsesResult = {
+const completedResponse: OpenAIResponsesResultEx = {
   id: 'resp_completed',
   object: 'response',
   model: 'gpt-test',
@@ -60,7 +60,7 @@ test('openaiResponsesResultToEvents starts JSON fallback streams with an empty i
   const created = frames[0].event as {
     type: 'response.created';
     sequence_number: number;
-    response: OpenAIResponsesResult;
+    response: OpenAIResponsesResultEx;
   };
   const completed = frames.at(-1)?.event;
 
@@ -96,11 +96,11 @@ test('openaiResponsesResultToEvents keeps incomplete details only on the termina
 
   const created = frames[0].event as {
     type: 'response.created';
-    response: OpenAIResponsesResult;
+    response: OpenAIResponsesResultEx;
   };
   const terminal = frames.at(-1)?.event as {
     type: 'response.incomplete';
-    response: OpenAIResponsesResult;
+    response: OpenAIResponsesResultEx;
   };
 
   // Snapshot strips terminal-only incomplete_details and defaults it
@@ -131,11 +131,11 @@ test('openaiResponsesResultToEvents keeps failure details only on the terminal e
 
   const created = frames[0].event as {
     type: 'response.created';
-    response: OpenAIResponsesResult;
+    response: OpenAIResponsesResultEx;
   };
   const terminal = frames.at(-1)?.event as {
     type: 'response.failed';
-    response: OpenAIResponsesResult;
+    response: OpenAIResponsesResultEx;
   };
 
   // Snapshot strips the terminal error and defaults to null so the
@@ -186,7 +186,7 @@ test('openaiResponsesResultToEvents expands refusal content with the native refu
     }],
   })).map(frame => frame.event);
 
-  const added = events.find(event => event.type === 'response.output_item.added') as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const added = events.find(event => event.type === 'response.output_item.added') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(added.item, {
     type: 'message',
     id: 'msg_refusal',
@@ -351,7 +351,7 @@ test('openaiResponsesResultToEvents preserves advanced tool item wire fields', (
       approval_request_id: 'mcpr_1',
       approve: true,
     },
-  ] satisfies OpenAIResponsesOutputItem[];
+  ] satisfies OpenAIResponsesOutputItemEx[];
 
   const frames = Array.from(openaiResponsesResultToEvents({
     ...completedResponse,

@@ -1,13 +1,13 @@
 import { expect, test } from 'vitest';
 
 import { createAnthropicMessagesToOpenAIResponsesStreamState, translateAnthropicMessagesEventToOpenAIResponsesEvents } from '../../src/openai-responses-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-type OpenAIResponsesOutputItemAddedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+type OpenAIResponsesOutputItemAddedEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
 
-type OpenAIResponsesOutputItemDoneEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>;
+type OpenAIResponsesOutputItemDoneEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
 
 // ── Helpers ──
 
@@ -29,7 +29,7 @@ const runToCompletion = (
     speed?: string;
     service_tier?: string;
   },
-): OpenAIResponsesResult => {
+): OpenAIResponsesResultEx => {
   const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_test', 'claude-sonnet-4-20250514');
 
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -52,7 +52,7 @@ const runToCompletion = (
           service_tier: usage.service_tier,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -69,20 +69,20 @@ const runToCompletion = (
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'Hello' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
-  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
     {
       type: 'message_delta',
       delta: { stop_reason: 'end_turn' },
       usage: { output_tokens: usage.output_tokens, ...deltaUsageExtras },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
-  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' } as AnthropicMessagesStreamEvent, state);
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' } as AnthropicMessagesStreamEventEx, state);
 
   const completed = stopEvents.find(e => e.type === 'response.completed');
   if (completed?.type !== 'response.completed') {
@@ -91,7 +91,7 @@ const runToCompletion = (
   return (
     completed as {
       type: 'response.completed';
-      response: OpenAIResponsesResult;
+      response: OpenAIResponsesResultEx;
     }
   ).response;
 };
@@ -171,11 +171,11 @@ test('redacted_thinking stream block round-trips its opaque data as encrypted_co
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'redacted_thinking', data: 'opaque_sig' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
-  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   assertEquals(state.completedItems, [
     {
@@ -203,7 +203,7 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -211,10 +211,10 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'signature_delta', signature: 'upstream-opaque-signature' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
-  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   assertEquals(state.completedItems, [
     {
@@ -265,10 +265,10 @@ test('thinking stream block stop emits a plain reasoning item', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
-  const events = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  const events = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   const done = events.find(event => event.type === 'response.output_item.done') as OpenAIResponsesOutputItemDoneEvent | undefined;
   if (done?.type !== 'response.output_item.done') {
@@ -301,7 +301,7 @@ test('max_tokens stream stop becomes response.incomplete', () => {
         stop_sequence: null,
         usage: { input_tokens: 3, output_tokens: 0 },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -313,13 +313,13 @@ test('max_tokens stream stop becomes response.incomplete', () => {
     state,
   );
 
-  const events = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' } as AnthropicMessagesStreamEvent, state);
+  const events = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' } as AnthropicMessagesStreamEventEx, state);
 
   assertEquals(
     events.map(event => event.type),
     ['response.incomplete'],
   );
-  const incomplete = events[0] as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const incomplete = events[0] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
   if (incomplete.type !== 'response.incomplete') {
     throw new Error('expected response.incomplete');
   }
@@ -346,7 +346,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
         stop_sequence: null,
         usage: { input_tokens: 1, output_tokens: 0 },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -355,7 +355,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'tool_use', id: 'call_ctc', name: 'apply_patch', input: {} },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -373,7 +373,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '{"input":"*** Begin Patch' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   const deltaB = translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -381,13 +381,13 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '\\n*** End Patch"}' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   assertEquals(deltaA, []);
   assertEquals(deltaB, []);
 
-  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   assertEquals(
     stopEvents.map(e => e.type),
@@ -398,8 +398,8 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
     ],
   );
 
-  const inputDelta = stopEvents[0] as Extract<OpenAIResponsesStreamEvent, { type: 'response.custom_tool_call_input.delta' }>;
-  const inputDone = stopEvents[1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.custom_tool_call_input.done' }>;
+  const inputDelta = stopEvents[0] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.custom_tool_call_input.delta' }>;
+  const inputDone = stopEvents[1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.custom_tool_call_input.done' }>;
   const itemDone = stopEvents[2] as OpenAIResponsesOutputItemDoneEvent;
 
   assertEquals(inputDelta.delta, '*** Begin Patch\n*** End Patch');
@@ -412,7 +412,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
 
 // ── citation_delta → response.output_text.annotation.added ──
 
-type AnnotationAddedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.annotation.added' }>;
+type AnnotationAddedEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.annotation.added' }>;
 
 const startTextBlockWithMessage = (state: ReturnType<typeof createAnthropicMessagesToOpenAIResponsesStreamState>): void => {
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -428,7 +428,7 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createAnthropicMessa
         stop_sequence: null,
         usage: { input_tokens: 1, output_tokens: 0 },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -447,7 +447,7 @@ const pushTextDelta = (state: ReturnType<typeof createAnthropicMessagesToOpenAIR
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 };
@@ -474,7 +474,7 @@ test('search_result_location citation_delta becomes one url_citation annotation'
           cited_text: 'cited inline',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -515,7 +515,7 @@ test('web_search_result_location citation_delta becomes one url_citation annotat
           cited_text: 'MDN',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -553,7 +553,7 @@ test('citation_delta without cited_text is skipped', () => {
           // cited_text intentionally omitted
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -613,7 +613,7 @@ test('multiple citations on the same text content part get monotonic annotation_
           cited_text: 'quote here',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -632,7 +632,7 @@ test('multiple citations on the same text content part get monotonic annotation_
           cited_text: 'second one',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -664,14 +664,14 @@ test('accumulated citations land on the completed content part and output item',
           cited_text: 'quote here',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
-  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   const annotations = [{ type: 'url_citation', url: 'https://example.com/a', title: 'A', start_index: 7, end_index: 17 }];
-  const partDone = stopEvents.find(event => event.type === 'response.content_part.done') as Extract<OpenAIResponsesStreamEvent, { type: 'response.content_part.done' }>;
+  const partDone = stopEvents.find(event => event.type === 'response.content_part.done') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>;
   assertEquals(partDone.part, { type: 'output_text', text: 'First quote here.', annotations });
   assertEquals(state.completedItems, [
     { type: 'message', id: partDone.item_id, status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'First quote here.', annotations }] },
@@ -701,7 +701,7 @@ test('citation offsets reflect running text length up to the citation_delta', ()
           cited_text: '"quoted text"',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -720,7 +720,7 @@ test('text_delta events on a text block with citations still emit text deltas un
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'Hello world.' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -745,7 +745,7 @@ test('text_delta events on a text block with citations still emit text deltas un
           cited_text: 'world',
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -754,7 +754,7 @@ test('text_delta events on a text block with citations still emit text deltas un
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: ' More.' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -765,7 +765,7 @@ test('text_delta events on a text block with citations still emit text deltas un
 
 // ── Synthesized output items carry stable, child-consistent ids ──
 
-const itemIdOf = (events: OpenAIResponsesStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
+const itemIdOf = (events: OpenAIResponsesStreamEventEx[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
   const event = events.find(candidate => candidate.type === type) as (OpenAIResponsesOutputItemAddedEvent | OpenAIResponsesOutputItemDoneEvent) | undefined;
   if (!event) throw new Error(`expected ${type}`);
   const id = (event.item as { id?: string }).id;
@@ -773,7 +773,7 @@ const itemIdOf = (events: OpenAIResponsesStreamEvent[], type: 'response.output_i
   return id;
 };
 
-const childItemIds = (events: OpenAIResponsesStreamEvent[]): string[] =>
+const childItemIds = (events: OpenAIResponsesStreamEventEx[]): string[] =>
   events
     .filter(event => event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done')
     .map(event => (event as { item_id?: string }).item_id)
@@ -787,10 +787,10 @@ test('synthesized message item carries a stable id consistent across added, chil
     state,
   );
   const deltaEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } } as AnthropicMessagesStreamEvent,
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } } as AnthropicMessagesStreamEventEx,
     state,
   );
-  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   const addedId = itemIdOf(startEvents, 'response.output_item.added');
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');
@@ -808,14 +808,14 @@ test('synthesized function_call item carries a stable id consistent across added
   const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_test', 'claude-test');
 
   const startEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } } as AnthropicMessagesStreamEvent,
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } } as AnthropicMessagesStreamEventEx,
     state,
   );
   const deltaEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } } as AnthropicMessagesStreamEvent,
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } } as AnthropicMessagesStreamEventEx,
     state,
   );
-  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent, state);
+  const stopEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx, state);
 
   const addedId = itemIdOf(startEvents, 'response.output_item.added');
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');
@@ -911,7 +911,7 @@ test.each([
   }, state);
 
   const result = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' }, state);
-  const failed = result.find((event): event is Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }> => event.type === 'response.failed');
+  const failed = result.find((event): event is Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }> => event.type === 'response.failed');
   assertEquals(failed?.response.status, 'failed');
   assertEquals(failed?.response.error, { code, message });
   assertEquals(failed?.response.output, []);
@@ -944,7 +944,7 @@ test('Anthropic Messages fallback block changes the OpenAI Responses serving mod
   }, state);
   translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }, state);
   const result = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' }, state);
-  const completed = result.find((event): event is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => event.type === 'response.completed');
+  const completed = result.find((event): event is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => event.type === 'response.completed');
 
   assertEquals(boundary, []);
   assertEquals(completed?.response.model, 'claude-opus-4-8');
@@ -965,14 +965,14 @@ test('an upstream ping is consumed without emitting an OpenAI Responses event or
   const lastBefore = before.at(-1)?.sequence_number;
   if (typeof lastBefore !== 'number') throw new Error('expected the preceding event to carry a sequence_number');
 
-  assertEquals(translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'ping' } as AnthropicMessagesStreamEvent, state), []);
+  assertEquals(translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'ping' } as AnthropicMessagesStreamEventEx, state), []);
 
   const after = translateAnthropicMessagesEventToOpenAIResponsesEvents(
     {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'hi' },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 

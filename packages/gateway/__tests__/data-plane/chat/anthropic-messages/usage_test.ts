@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { createAnthropicMessagesBillableUsageReader } from '../../../../src/data-plane/chat/anthropic-messages/usage.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
-const read = (events: AnthropicMessagesStreamEvent[]) => {
+const read = (events: AnthropicMessagesStreamEventEx[]) => {
   const reader = createAnthropicMessagesBillableUsageReader();
   let last = null;
   for (const event of events) {
@@ -13,7 +13,7 @@ const read = (events: AnthropicMessagesStreamEvent[]) => {
   return last;
 };
 
-const start = (usage: Record<string, unknown>): AnthropicMessagesStreamEvent => ({
+const start = (usage: Record<string, unknown>): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
   message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage },
 } as unknown as AnthropicMessagesStreamEvent);

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { type SseFrame } from '../../src/common/sse.ts';
-import type { OpenAIResponsesResult } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesResultEx } from '../../src/openai-responses/index.ts';
 import { parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -14,7 +14,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 
 const parse = (...frames: SseFrame[]) => parseOpenAIResponsesStream(sseFrameBody(...frames));
 
-const makeResponse = (status: OpenAIResponsesResult['status'], overrides: Partial<OpenAIResponsesResult> = {}): OpenAIResponsesResult => ({
+const makeResponse = (status: OpenAIResponsesResultEx['status'], overrides: Partial<OpenAIResponsesResultEx> = {}): OpenAIResponsesResultEx => ({
   id: 'resp_fast',
   object: 'response',
   model: 'gpt-test',
@@ -300,9 +300,9 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with error 
   // Error payload must only be a real value on the terminal response.failed;
   // the synthesized created/in_progress carry `error: null` per spec
   // (Response.error is required-nullable).
-  assertEquals((events[0] as { response: OpenAIResponsesResult }).response.error, null);
-  assertEquals((events[1] as { response: OpenAIResponsesResult }).response.error, null);
-  assertEquals((events[2] as { response: OpenAIResponsesResult }).response.error?.message, 'upstream failed');
+  assertEquals((events[0] as { response: OpenAIResponsesResultEx }).response.error, null);
+  assertEquals((events[1] as { response: OpenAIResponsesResultEx }).response.error, null);
+  assertEquals((events[2] as { response: OpenAIResponsesResultEx }).response.error?.message, 'upstream failed');
 });
 
 // Asserts that when `response.failed` carries partial output, the fast-path
@@ -336,7 +336,7 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with partia
 
 test('parseOpenAIResponsesStream fast-paths response.incomplete terminal', async () => {
   const incomplete = makeResponse('incomplete', {
-    incomplete_details: { reason: 'max_output_tokens' } as OpenAIResponsesResult['incomplete_details'],
+    incomplete_details: { reason: 'max_output_tokens' } as OpenAIResponsesResultEx['incomplete_details'],
   });
   const frames = await collect(parse(
     sseFrame(JSON.stringify({ response: { ...incomplete, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),

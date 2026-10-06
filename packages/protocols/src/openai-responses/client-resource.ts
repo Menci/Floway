@@ -1,4 +1,5 @@
-import type { OpenAIResponsesFunctionTool, OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool } from './index.ts';
+import type { OpenAIResponsesCompactionResultEx } from './compact.ts';
+import type { OpenAIResponsesFunctionTool, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from './index.ts';
 
 // The shape a client-facing OpenAI Responses body must have, derived from
 // `OpenAIResponsesResult` rather than restated beside it. `OpenAIResponsesResult` models
@@ -54,19 +55,19 @@ type ResponseResourceNullableKey =
 
 // `Usage` requires both breakdowns whenever it is an object.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2384-L2429
-type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResult['usage']>;
+type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 export type ClientOpenAIResponsesUsage =
   Omit<OpenAIResponsesUsage, 'input_tokens_details' | 'output_tokens_details'>
   & Required<Pick<OpenAIResponsesUsage, 'input_tokens_details' | 'output_tokens_details'>>;
 
 // `TextField` requires `format`.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2298-L2319
-type OpenAIResponsesTextField = NonNullable<OpenAIResponsesResult['text']>;
+type OpenAIResponsesTextField = NonNullable<OpenAIResponsesResultEx['text']>;
 export type ClientOpenAIResponsesTextField = OpenAIResponsesTextField & Required<Pick<OpenAIResponsesTextField, 'format'>>;
 
 // `Reasoning` requires `effort` and `summary`.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2320-L2359
-type OpenAIResponsesReasoning = NonNullable<OpenAIResponsesResult['reasoning']>;
+type OpenAIResponsesReasoning = NonNullable<OpenAIResponsesResultEx['reasoning']>;
 export type ClientOpenAIResponsesReasoning = OpenAIResponsesReasoning & Required<Pick<OpenAIResponsesReasoning, 'effort' | 'summary'>>;
 
 // `FunctionTool` requires `description`, `parameters` and `strict` on the
@@ -88,9 +89,9 @@ export type ClientOpenAIResponsesTool =
 // key unions draw: a stated key wrapped in `NonNullable` becomes present and
 // non-null, a nullable key becomes present and possibly null.
 export type ClientResponseResource =
-  Omit<OpenAIResponsesResult, ResponseResourceStatedKey | ResponseResourceNullableKey>
-  & { [K in ResponseResourceStatedKey]-?: NonNullable<OpenAIResponsesResult[K]> }
-  & { [K in ResponseResourceNullableKey]-?: OpenAIResponsesResult[K] | null }
+  Omit<OpenAIResponsesResultEx, ResponseResourceStatedKey | ResponseResourceNullableKey>
+  & { [K in ResponseResourceStatedKey]-?: NonNullable<OpenAIResponsesResultEx[K]> }
+  & { [K in ResponseResourceNullableKey]-?: OpenAIResponsesResultEx[K] | null }
   & {
     tools: ClientOpenAIResponsesTool[];
     text: ClientOpenAIResponsesTextField;
@@ -107,16 +108,15 @@ export type ClientResponseResource =
 // sent beyond these ride through.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L4008
 export type ClientOpenAIResponsesCompaction =
-  Omit<OpenAIResponsesResult, 'object' | 'created_at' | 'usage'>
-  & Required<Pick<OpenAIResponsesResult, 'created_at'>>
-  & { object: 'response.compaction'; usage: ClientOpenAIResponsesUsage };
+  Omit<OpenAIResponsesCompactionResultEx, 'object' | 'created_at' | 'usage'>
+  & { object: 'response.compaction'; created_at: number; usage: ClientOpenAIResponsesUsage; status?: OpenAIResponsesResultEx['status'] };
 
 // Every resource-bearing member of the stream union, re-declared with the
 // completed resource. Distributive so each member keeps its `type` literal.
 // A `response.*` event added to `OpenAIResponsesStreamEvent` is narrowed
 // automatically.
-type WithClientResource<Event> = Event extends { response: OpenAIResponsesResult }
+type WithClientResource<Event> = Event extends { response: OpenAIResponsesResultEx }
   ? Omit<Event, 'response'> & { response: ClientResponseResource }
   : Event;
 
-export type ClientOpenAIResponsesStreamEvent = WithClientResource<OpenAIResponsesStreamEvent>;
+export type ClientOpenAIResponsesStreamEvent = WithClientResource<OpenAIResponsesStreamEventEx>;

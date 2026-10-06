@@ -5,7 +5,7 @@ import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/ch
 import { billableUsageFromOpenAIResponsesResult } from '../../../../../src/data-plane/chat/openai-responses/usage.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -24,14 +24,14 @@ const invocation = (
 
 // Same accounting as the Charm Hyper OpenAI Chat Completions capture, in OpenAI Responses
 // field names: 479 + 13312 + 373 = 14164, so total_tokens witnesses it.
-const exclusiveUsage = (): NonNullable<OpenAIResponsesResult['usage']> => ({
+const exclusiveUsage = (): NonNullable<OpenAIResponsesResultEx['usage']> => ({
   input_tokens: 479,
   output_tokens: 373,
   total_tokens: 14164,
   input_tokens_details: { cached_tokens: 13312 },
 });
 
-const completedEvent = (usage: NonNullable<OpenAIResponsesResult['usage']>): OpenAIResponsesStreamEvent => ({
+const completedEvent = (usage: NonNullable<OpenAIResponsesResultEx['usage']>): OpenAIResponsesStreamEventEx => ({
   type: 'response.completed',
   sequence_number: 0,
   response: {
@@ -47,8 +47,8 @@ const completedEvent = (usage: NonNullable<OpenAIResponsesResult['usage']>): Ope
   },
 });
 
-const run = async (ctx: OpenAIResponsesInvocation, usage: NonNullable<OpenAIResponsesResult['usage']>): Promise<OpenAIResponsesResult> => {
-  const result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> = await withExclusiveCachedTokensNormalized(ctx, stubCtx, () =>
+const run = async (ctx: OpenAIResponsesInvocation, usage: NonNullable<OpenAIResponsesResultEx['usage']>): Promise<OpenAIResponsesResultEx> => {
+  const result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = await withExclusiveCachedTokensNormalized(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () {
         yield eventFrame(completedEvent(usage));
@@ -56,7 +56,7 @@ const run = async (ctx: OpenAIResponsesInvocation, usage: NonNullable<OpenAIResp
       testTelemetryModelIdentity,
     )));
   if (result.type !== 'events') throw new Error('expected events result');
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of result.events) frames.push(frame);
   assertEquals(frames.length, 1);
   const frame = frames[0];
@@ -65,12 +65,12 @@ const run = async (ctx: OpenAIResponsesInvocation, usage: NonNullable<OpenAIResp
   return frame.event.response;
 };
 
-const exclusiveUsageWithoutTotal = (): NonNullable<OpenAIResponsesResult['usage']> => {
+const exclusiveUsageWithoutTotal = (): NonNullable<OpenAIResponsesResultEx['usage']> => {
   const { total_tokens: _withheld, ...rest } = exclusiveUsage();
-  return rest as NonNullable<OpenAIResponsesResult['usage']>;
+  return rest as NonNullable<OpenAIResponsesResultEx['usage']>;
 };
 
-const inclusiveUsage = (): NonNullable<OpenAIResponsesResult['usage']> => ({
+const inclusiveUsage = (): NonNullable<OpenAIResponsesResultEx['usage']> => ({
   input_tokens: 1000,
   output_tokens: 50,
   total_tokens: 1050,
@@ -104,7 +104,7 @@ test('folds cache writes back as well', async () => {
     input_tokens: 100,
     output_tokens: 10,
     input_tokens_details: { cached_tokens: 120, cache_write_tokens: 80 },
-  } as unknown as NonNullable<OpenAIResponsesResult['usage']>);
+  } as unknown as NonNullable<OpenAIResponsesResultEx['usage']>);
   assertEquals(response.usage?.input_tokens, 300);
 });
 

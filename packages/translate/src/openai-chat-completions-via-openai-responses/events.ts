@@ -2,10 +2,10 @@ import { hasReadableSummary, toOpenAIChatCompletionsReasoningItem } from '../sha
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResult): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
+const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResultEx): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
   response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'
     ? 'length'
     : response.status === 'completed' && response.output.some(item => item.type === 'function_call')
@@ -14,7 +14,7 @@ const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (respo
 
 const UPSTREAM_OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'Upstream OpenAI Responses stream ended without a terminal event.';
 
-const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<OpenAIResponsesStreamEvent> {
+const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<OpenAIResponsesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -32,7 +32,7 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   model: string;
   created: number;
   toolCallIndex: number;
-  functionCallIndices: Map<number, number>;
+  toolCallIndices: Map<number, number>;
   reasoningItems: OpenAIChatCompletionsReasoningItem[];
   firstScalarReasoningOutputIndex?: number;
   pendingReasoningSummaryTexts: Map<
@@ -46,6 +46,7 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   emittedReasoningSummaryKeys: Set<string>;
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
+  customInputs: Map<number, string>;
   outputOrder: OpenAIResponsesOutputOrderState;
   serviceTier?: OpenAIChatCompletionsStreamEvent['service_tier'];
   done: boolean;
@@ -76,12 +77,12 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
   return [makeChunk(state, { reasoning_items: reasoningItems })];
 };
 
-const isReasoningOutputDone = (event: OpenAIResponsesStreamEvent): boolean => {
+const isReasoningOutputDone = (event: OpenAIResponsesStreamEventEx): boolean => {
   if (event.type !== 'response.output_item.done') return false;
-  return (event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>).item.type === 'reasoning';
+  return (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>).item.type === 'reasoning';
 };
 
-const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEvent | undefined => {
+const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEventEx | undefined => {
   const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(
     event => !shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder) && (!onlyReasoningOutputDone || isReasoningOutputDone(event)),
   );
@@ -145,7 +146,7 @@ const flushReasoningSummaryDoneFallbacks = (state: OpenAIResponsesToOpenAIChatCo
   return pending.flatMap(item => emitReasoningSummaryText(item.outputIndex, item.summaryIndex, item.text, state, 'done-fallback'));
 };
 
-export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
   if (state.done) return [];
   if (shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder)) {
     state.outputOrder.deferredEvents.push(event);
@@ -155,7 +156,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   switch (event.type) {
   case 'response.created': {
-    const { response } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+    const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
     state.messageId = response.id;
     state.model = response.model;
     if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
@@ -203,18 +204,18 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.reasoning_summary_text.delta': {
-    const { delta, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>;
+    const { delta, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }>;
     return emitReasoningSummaryText(output_index, summary_index, delta, state, 'delta');
   }
 
   case 'response.reasoning_summary_text.done': {
-    const { text, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>;
+    const { text, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>;
     queueReasoningSummaryDoneFallback(output_index, summary_index, text, state);
     return [];
   }
 
   case 'response.output_text.delta': {
-    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>;
+    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>;
     if (delta) {
       state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
     }
@@ -222,7 +223,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_text.done': {
-    const { text, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.done' }>;
+    const { text, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.done' }>;
     const key = openaiResponsesPartKey(output_index, content_index);
     if (!text || state.emittedTextContentKeys.has(key)) return [];
 
@@ -231,7 +232,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.refusal.delta': {
-    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.delta' }>;
+    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.delta' }>;
     if (!delta) return [];
 
     state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
@@ -239,7 +240,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.refusal.done': {
-    const { refusal, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.done' }>;
+    const { refusal, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.done' }>;
     const key = openaiResponsesPartKey(output_index, content_index);
     if (!refusal || state.emittedTextContentKeys.has(key)) return [];
 
@@ -248,7 +249,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.content_part.done': {
-    const { part, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.content_part.done' }>;
+    const { part, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>;
     if (part.type !== 'refusal') return [];
 
     const key = openaiResponsesPartKey(output_index, content_index);
@@ -302,7 +303,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   case 'response.completed':
   case 'response.incomplete': {
-    const { response } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' }>;
+    const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' }>;
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
     if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
 
@@ -327,7 +328,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 };
 
-const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsDelta, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -344,7 +345,7 @@ const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, del
 
 const makeUsageChunk = (
   state: OpenAIResponsesToOpenAIChatCompletionsStreamState,
-  usage: NonNullable<OpenAIResponsesResult['usage']>,
+  usage: NonNullable<OpenAIResponsesResultEx['usage']>,
 ): OpenAIChatCompletionsStreamEvent => {
   // Validated, not consumed: OpenAI Chat Completions names the same three input
   // buckets OpenAI Responses does, so the counts cross unchanged. The assertion is
@@ -384,10 +385,7 @@ interface OpenAIChatCompletionsErrorPayload {
     message: string;
     type: string;
     code?: string;
-    name?: string;
-    stack?: string;
-    cause?: unknown;
-    target_api?: string;
+    provider_specific_fields?: Record<string, unknown>;
   };
 }
 
@@ -428,21 +426,21 @@ const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIRespons
   };
 };
 
-const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
+const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
   if (event.type === 'error') {
     // OpenAI-compatible Chat Completions streams can carry top-level error payloads;
     // OpenAIChatCompletionsStreamEvent only models successful chunk payloads.
-    return eventFrame(chatErrorPayloadFromOpenAIResponsesError(event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>) as unknown as OpenAIChatCompletionsStreamEvent);
+    return eventFrame(chatErrorPayloadFromOpenAIResponsesError(event as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>) as unknown as OpenAIChatCompletionsStreamEvent);
   }
 
   if (event.type === 'response.failed') {
-    return eventFrame(chatErrorPayloadFromOpenAIResponsesFailure(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>) as unknown as OpenAIChatCompletionsStreamEvent);
+    return eventFrame(chatErrorPayloadFromOpenAIResponsesFailure(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>) as unknown as OpenAIChatCompletionsStreamEvent);
   }
 
   return undefined;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {

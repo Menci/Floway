@@ -3,7 +3,7 @@ import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-
 import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentFinishReason, GeminiGenerateContentResult, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 import { openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 
 type OpenAIChatCompletionsStreamChoice = OpenAIChatCompletionsStreamEvent['choices'][0];
 
@@ -32,9 +32,9 @@ const mapUsage = (
   const usage = chunk.usage;
   if (!usage) return undefined;
 
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
-  const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
-    ?? usage.prompt_tokens_details?.cache_write_tokens;
+  const cachedTokens = (usage as OpenAIChatCompletionsUsageEx).prompt_tokens_details?.cached_tokens;
+  const cacheWriteTokens = (usage as OpenAIChatCompletionsUsageEx).prompt_tokens_details?.cache_creation_input_tokens
+    ?? (usage as OpenAIChatCompletionsUsageEx).prompt_tokens_details?.cache_write_tokens;
   // Validated, not consumed: Gemini generateContent's `promptTokenCount` carries the same
   // inclusive total and `cachedContentTokenCount` the same subset of it, so
   // there is nothing to recompute. The assertion is this package's own, on the

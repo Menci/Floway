@@ -3,10 +3,10 @@ import { buildTargetRequest } from './request.ts';
 import { restoreNamespaceEvents } from '../shared/openai-responses-via/namespace-tools.ts';
 import type { TranslateTrip } from '../types.ts';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 export const translateOpenAIResponsesViaOpenAIChatCompletions: TranslateTrip<
-  OpenAIResponsesRequestPayload, OpenAIResponsesStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
+  OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
 > = async src => {
   // customToolNames is produced inside the request translator (it sees the
   // tools first) and read by the events translator so wrapped function calls

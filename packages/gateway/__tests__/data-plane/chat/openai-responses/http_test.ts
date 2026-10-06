@@ -7,10 +7,10 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -99,7 +99,7 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
   return app;
 };
 
-const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => ({
+const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
   id,
   object: 'response',
   model: 'test-model',
@@ -116,7 +116,7 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => (
   incomplete_details: null,
 });
 
-const makeProviderEvents = async function* (events: readonly OpenAIResponsesStreamEvent[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+const makeProviderEvents = async function* (events: readonly OpenAIResponsesStreamEventEx[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
@@ -156,7 +156,7 @@ const makeCandidate = (overrides: {
   };
 };
 
-const completedEvents = (id = 'resp_test'): OpenAIResponsesStreamEvent[] =>
+const completedEvents = (id = 'resp_test'): OpenAIResponsesStreamEventEx[] =>
   openaiResponsesResultToEvents(makeOpenAIResponsesResult(id)).map(frame => frame.event);
 
 const queueCompletedResponse = (id = 'resp_test') => {
@@ -185,7 +185,7 @@ test('Responses Lite input items keep their position and metadata across HTTP co
       return { action: 'generate', ok: true, events: makeProviderEvents(completedEvents(`resp_lite_${bodies.length}`)), modelKey: 'test-model-key' };
     },
   });
-  const send = async (body: Record<string, unknown>): Promise<OpenAIResponsesResult> => {
+  const send = async (body: Record<string, unknown>): Promise<OpenAIResponsesResultEx> => {
     queueResolution([candidate]);
     const response = await makeApp().request('/v1/responses', {
       method: 'POST',
@@ -193,7 +193,7 @@ test('Responses Lite input items keep their position and metadata across HTTP co
       body: JSON.stringify({ model: 'test-model', store: true, ...body }),
     });
     assertEquals(response.status, 200);
-    return await response.json() as OpenAIResponsesResult;
+    return await response.json() as OpenAIResponsesResultEx;
   };
 
   const first = await send({ input });
@@ -255,7 +255,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
       return {
         action: 'generate',
         ok: true,
-        events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+        events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
           yield eventFrame({ type: 'response.created', response: inProgress });
           yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: originalReasoning });
           yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: originalReasoning });
@@ -390,7 +390,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as OpenAIResponsesResult;
+  const body = await response.json() as OpenAIResponsesResultEx;
   assert(body.id.length > 0 && body.id !== 'resp_nonstream', 'expected the source boundary to replace the upstream response id');
   assertEquals(body.status, 'completed');
 });
@@ -482,14 +482,14 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 // compaction is a turn a model ran; a test that wants the reported-nothing
 // case passes `usage: null`.
 const compactTurn = async (
-  upstream: Partial<OpenAIResponsesResult> = {},
+  upstream: Partial<OpenAIResponsesResultEx> = {},
   requestFields: Record<string, unknown> = {},
-): Promise<{ upstream: OpenAIResponsesResult; response: Response }> => {
+): Promise<{ upstream: OpenAIResponsesResultEx; response: Response }> => {
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const compactionResult: OpenAIResponsesResult = {
+  const compactionResult: OpenAIResponsesResultEx = {
     ...makeOpenAIResponsesResult(),
     object: 'response.compaction',
-    output: [compactionItem] as unknown as OpenAIResponsesResult['output'],
+    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
     usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
     ...upstream,
   };
@@ -647,10 +647,10 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   lastSeenModel.value = null;
   const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const compactionResult: OpenAIResponsesResult = {
+  const compactionResult: OpenAIResponsesResultEx = {
     ...makeOpenAIResponsesResult(),
     object: 'response.compaction',
-    output: [compactionItem] as unknown as OpenAIResponsesResult['output'],
+    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
     usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
   };
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderOpenAIResponsesResult> => {
@@ -702,7 +702,7 @@ test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no
 
 test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
   installRepo();
-  const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResult['status'] });
+  const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResultEx['status'] });
 
   assertEquals(response.status, 200);
   const body = await response.json() as Record<string, unknown>;
@@ -715,7 +715,7 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   installRepo();
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
     action: 'generate', ok: true,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
       yield eventFrame(completedEvents()[0]!);
       throw new Error('upstream exploded mid-stream');
     })(),
@@ -804,7 +804,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       body: JSON.stringify({ model: 'test-model', store: true, tools, input: [{ role: 'user', content: 'inspect the request' }] }),
     });
     assertEquals(first.status, 200);
-    const previous = await first.json() as OpenAIResponsesResult;
+    const previous = await first.json() as OpenAIResponsesResultEx;
     const call = previous.output.find(item => item.type === 'custom_tool_call');
     assert(call?.type === 'custom_tool_call');
     assertEquals([call.name, call.namespace, call.input], ['exec', undefined, 'patch']);
@@ -822,7 +822,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       }),
     });
     assertEquals(second.status, 200);
-    const completed = await second.json() as OpenAIResponsesResult;
+    const completed = await second.json() as OpenAIResponsesResultEx;
     assertEquals(completed.status, 'completed');
     assertEquals(completed.output_text, 'done');
     assertEquals(bodies.length, 2);

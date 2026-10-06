@@ -17,10 +17,10 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -35,7 +35,7 @@ const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): 
   ...overrides,
 });
 
-const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => ({
+const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
   id,
   object: 'response',
   model: 'test-model',
@@ -52,7 +52,7 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => (
   incomplete_details: null,
 });
 
-const makeProviderEvents = async function* (events: readonly OpenAIResponsesStreamEvent[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+const makeProviderEvents = async function* (events: readonly OpenAIResponsesStreamEventEx[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
@@ -81,8 +81,8 @@ const makeCandidate = (
   };
 };
 
-const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesStreamEvent[]> => {
-  const out: OpenAIResponsesStreamEvent[] = [];
+const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesStreamEventEx[]> => {
+  const out: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of events) {
     if (frame.type === 'event') out.push(frame.event);
   }
@@ -117,7 +117,7 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredOpe
 test('generate native success leaves source-edge state ownership to the caller', async () => {
   installRepo();
 
-  const completedEvent: OpenAIResponsesStreamEvent = {
+  const completedEvent: OpenAIResponsesStreamEventEx = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeOpenAIResponsesResult(),
@@ -174,7 +174,7 @@ test('generate isolates provider mutations with JSON-safe container cloning', as
     headers: new Headers(),
   });
 
-  assertEquals((payload.metadata as { nested: { value: string } }).nested.value, 'source');
+  assertEquals((payload.metadata as unknown as { nested: { value: string } }).nested.value, 'source');
   assertEquals((sourceItem as { role: string }).role, 'user');
 });
 
@@ -233,10 +233,10 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
 
 test('generate applies role compatibility flags in target-chain order', async () => {
   installRepo();
-  let observedBody: Omit<OpenAIResponsesPayload, 'model'> | undefined;
+  let observedBody: Omit<OpenAIResponsesPayloadEx, 'model'> | undefined;
   const callOpenAIResponses = vi.fn(async (
     _model: ProviderModel,
-    body: Omit<OpenAIResponsesPayload, 'model'>,
+    body: Omit<OpenAIResponsesPayloadEx, 'model'>,
   ): Promise<ProviderOpenAIResponsesResult> => {
     observedBody = body;
     return {
@@ -407,12 +407,12 @@ test('compact returns the clean upstream result for source-edge affinity and sto
     id: 'cmp_1',
     encrypted_content: 'ENC',
   };
-  const compactionResult: OpenAIResponsesResult = {
+  const compactionResult: OpenAIResponsesResultEx = {
     ...makeOpenAIResponsesResult(),
     object: 'response.compaction',
     // Cast: `compaction` is an input-shaped item type the protocol's
     // OpenAIResponsesResult.output type does not include but the runtime accepts.
-    output: [compactionItem] as unknown as OpenAIResponsesResult['output'],
+    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
   };
 
   const callOpenAIResponses = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
@@ -453,14 +453,14 @@ test('generate strips disallowed headers and injects external image loading acro
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
   const upstreamModel = stubInternalModel({ endpoints: { anthropicMessages: {} } }, 'up_test');
   const anthropicMessagesProvider = stubProvider({
-    callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+    callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
       observedHeaders = opts.headers;
       observedAnthropicBeta = (opts as AnthropicMessagesUpstreamCallOptions).anthropicBeta;
       observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
       return {
         ok: true,
         events: (async function* () {
-          yield eventFrame<AnthropicMessagesStreamEvent>({
+          yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'message_start',
             message: {
               id: 'msg_1', type: 'message', role: 'assistant', content: [],
@@ -468,7 +468,7 @@ test('generate strips disallowed headers and injects external image loading acro
               usage: { input_tokens: 1, output_tokens: 0 },
             },
           });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
           yield doneFrame();
         })(),
         modelKey: 'k',
@@ -564,7 +564,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // The shim's multi-turn loop requires `response.created` (carrying a model
   // name) before any synthesized terminal envelope. Emit the canonical
   // created → in_progress → completed sequence so the shim can wrap.
-  const upstreamEvents: OpenAIResponsesStreamEvent[] = [
+  const upstreamEvents: OpenAIResponsesStreamEventEx[] = [
     { type: 'response.created', sequence_number: 0, response: upstreamResponse },
     { type: 'response.in_progress', sequence_number: 1, response: upstreamResponse },
     { type: 'response.completed', sequence_number: 2, response: upstreamResponse },
@@ -638,7 +638,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
   installRepo();
-  const completedEvent: OpenAIResponsesStreamEvent = {
+  const completedEvent: OpenAIResponsesStreamEventEx = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeOpenAIResponsesResult(),
@@ -738,7 +738,7 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
   }
 });
 
-const agentMessageInput: OpenAIResponsesPayload['input'] = [{
+const agentMessageInput: OpenAIResponsesPayloadEx['input'] = [{
   type: 'agent_message',
   author: '/root/reviewer',
   recipient: '/root',
@@ -761,12 +761,12 @@ test('generate lowers agent_message to a framed user message across translation 
       upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
       instance: stubProvider({
-        callAnthropicMessages: async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+        callAnthropicMessages: async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
           observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
           return {
             ok: true,
             events: (async function* () {
-              yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' });
+              yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
               yield doneFrame();
             })(),
             modelKey: 'k',

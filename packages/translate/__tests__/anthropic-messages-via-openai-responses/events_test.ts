@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import { createOpenAIResponsesToAnthropicMessagesStreamState, translateOpenAIResponsesStreamEventToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-responses/events.ts';
 import { packReasoningSignature } from '../../src/shared/anthropic-messages-and-openai-responses/reasoning.ts';
-import type { AnthropicMessagesMessageDeltaEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { AnthropicMessagesMessageDeltaEvent, AnthropicMessagesUsageDeltaEx } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-const failedResponse = (code: string, message: string): OpenAIResponsesResult => ({
+const failedResponse = (code: string, message: string): OpenAIResponsesResultEx => ({
   id: 'resp_failed',
   object: 'response',
   model: 'gpt-test',
@@ -580,7 +580,7 @@ test('reasoning stream with whitespace-only summary emits a redacted_thinking ca
   ]);
 });
 
-const terminalUsage = (response: OpenAIResponsesResult): NonNullable<AnthropicMessagesMessageDeltaEvent['usage']> => {
+const terminalUsage = (response: OpenAIResponsesResultEx): NonNullable<AnthropicMessagesMessageDeltaEvent['usage']> => {
   const events = translateOpenAIResponsesStreamEventToAnthropicMessagesEvents(
     { type: 'response.completed', response },
     createOpenAIResponsesToAnthropicMessagesStreamState(),

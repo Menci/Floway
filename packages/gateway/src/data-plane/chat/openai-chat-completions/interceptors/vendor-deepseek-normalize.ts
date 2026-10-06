@@ -40,7 +40,7 @@
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
 
 const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
@@ -83,7 +83,7 @@ const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayload): OpenAICh
 const rewriteInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   let changed = false;
   const choices = chunk.choices.map(choice => {
-    const delta = choice.delta as OpenAIChatCompletionsStreamEvent['choices'][number]['delta'];
+    const delta = choice.delta as OpenAIChatCompletionsAssistantDeltaEx;
     if (typeof delta.reasoning_content !== 'string') return choice;
 
     const { reasoning_content, ...rest } = delta;

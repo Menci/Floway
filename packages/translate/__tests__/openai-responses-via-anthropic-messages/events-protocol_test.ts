@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/openai-responses-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -18,7 +18,7 @@ const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
 };
 
 test('translateToSourceEvents stops after Anthropic Messages message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({ type: 'message_stop' });
     yield eventFrame({
       type: 'error',
@@ -38,7 +38,7 @@ test('translateToSourceEvents stops after Anthropic Messages message_stop', asyn
 });
 
 test('translateToSourceEvents translates Anthropic Messages error terminal and stops', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({
       type: 'error',
       error: {
@@ -64,7 +64,7 @@ test('translateToSourceEvents translates Anthropic Messages error terminal and s
 });
 
 test('translateToSourceEvents rejects truncated Anthropic Messages streams without message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({
       type: 'message_start',
       message: {

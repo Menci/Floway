@@ -67,7 +67,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
 import { sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
@@ -162,7 +162,7 @@ const EXACT_REPEAT_SUFFIX = 'Output only the exact summary text, with no preface
 // Structural validator: a shim payload is an array of input-item objects each
 // carrying a `type` field. Strict enough that a foreign opaque blob can't
 // accidentally decode + parse + validate.
-const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputItem[] =>
+const isShimCompactionPayload = (value: unknown): value is CanonicalOpenAIResponsesInputItem[] =>
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
 
@@ -178,10 +178,10 @@ const encodeShimCompactionPayload = (text: string): string =>
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text }],
-  } satisfies OpenAIResponsesInputItem]);
+  } satisfies CanonicalOpenAIResponsesInputItem]);
 
 export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
-  const rewritten: OpenAIResponsesInputItem[] = [];
+  const rewritten: CanonicalOpenAIResponsesInputItem[] = [];
   let changed = false;
   for (const item of payload.input) {
     if (!isOpenAIResponsesCompactionItem(item)) {
@@ -208,9 +208,9 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 
 // ── Outbound summarization ────────────────────────────────────────────────────
 
-type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
+type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
 
-type ResponseUsage = NonNullable<OpenAIResponsesResult['usage']>;
+type ResponseUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 
 const sumResponseUsage = (left: ResponseUsage | null | undefined, right: ResponseUsage | null | undefined): ResponseUsage | undefined => {
   if (left == null) return right ?? undefined;
@@ -243,14 +243,14 @@ const sumResponseUsage = (left: ResponseUsage | null | undefined, right: Respons
 };
 
 const resultMetadata = async (
-  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }>,
 ): Promise<EventResultMetadata> =>
   await (result.finalMetadata ?? {
     modelIdentity: result.modelIdentity,
     ...(result.performance !== undefined ? { performance: result.performance } : {}),
   });
 
-const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string => {
+const summaryTextFrom = (items: readonly OpenAIResponsesOutputItemEx[]): string => {
   const parts: string[] = [];
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -262,13 +262,13 @@ const summaryTextFrom = (items: readonly OpenAIResponsesOutputItem[]): string =>
 };
 
 const collectSummaryTurn = async (
-  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
-): Promise<{ response: OpenAIResponsesResult; text: string }> => {
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }>,
+): Promise<{ response: OpenAIResponsesResultEx; text: string }> => {
   const response = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   return { response, text: summaryTextFrom(response.output) };
 };
 
-const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {
+const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResultEx): OpenAIResponsesResultEx => {
   // The prefix lives inside the blob so it round-trips atomically with the
   // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
   // one message and reads it as "another LLM's handoff", not as the human
@@ -299,11 +299,11 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
         id: cmpId,
         encrypted_content: encryptedContent,
       },
-    ] as unknown as OpenAIResponsesResult['output'],
+    ] as unknown as OpenAIResponsesResultEx['output'],
   };
 };
 
-const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   const originalPayload = ctx.payload;
 
   // Strip compaction_trigger so the upstream sees a plain generate turn
@@ -327,7 +327,7 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
   // reminder; on non-Claude upstreams the wrapper is a benign opaque tag
   // they ignore. See https://github.com/anthropics/claude-code/issues/52018
   // (the report on system-reminder semantics) for the convention's reach.
-  const terminalUserMessage: OpenAIResponsesInputItem = {
+  const terminalUserMessage: CanonicalOpenAIResponsesInputItem = {
     type: 'message',
     role: 'user',
     content: [{ type: 'input_text', text: '<system-reminder>Produce the handoff summary now per the instructions above.</system-reminder>' }],
@@ -358,7 +358,7 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
   // layers onto a single top-level system slot. That's a strict native
   // capability gap, not a shim regression — nothing this layer can do
   // preserves the split once we cross into a protocol that lacks it.
-  const compactorSystemMessage: OpenAIResponsesInputItem = {
+  const compactorSystemMessage: CanonicalOpenAIResponsesInputItem = {
     type: 'message',
     role: 'system',
     content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }],
@@ -408,7 +408,7 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
 const decryptNativeCompaction = async (
   ctx: OpenAIResponsesInvocation,
   run: ChainRun,
-): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   const callerAction = ctx.action;
   const originalModel = ctx.payload.model;
   const nativeResult = await run();
@@ -418,7 +418,7 @@ const decryptNativeCompaction = async (
   let usage = nativeResponse.usage;
   let metadata = await resultMetadata(nativeResult);
   let sawCompaction = false;
-  const output: OpenAIResponsesOutputItem[] = [];
+  const output: OpenAIResponsesOutputItemEx[] = [];
 
   for (const item of nativeResponse.output) {
     if (!isOpenAIResponsesCompactionItem(item)) {
@@ -469,7 +469,7 @@ const decryptNativeCompaction = async (
     throw new Error('OpenAI Responses compact decryption: native compaction returned no compaction output item');
   }
 
-  const decryptedResponse: OpenAIResponsesResult = {
+  const decryptedResponse: OpenAIResponsesResultEx = {
     ...nativeResponse,
     output,
     ...(usage === undefined ? {} : { usage }),
@@ -483,7 +483,7 @@ const decryptNativeCompaction = async (
   };
 };
 
-export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
+export const containsCompactionTrigger = (input: readonly CanonicalOpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
 
 export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {

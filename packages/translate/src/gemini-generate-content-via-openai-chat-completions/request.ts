@@ -14,13 +14,14 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
 
-const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCompletionsContentPart | null => {
+const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCompletionsUserContentPart | null => {
   const url = geminiGenerateContentInlineDataUrl(part);
   if (url === null) return null;
 
@@ -30,14 +31,14 @@ const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCom
   };
 };
 
-const textToContentPart = (text: string): OpenAIChatCompletionsContentPart => ({
+const textToContentPart = (text: string): OpenAIChatCompletionsUserContentPart => ({
   type: 'text',
   text,
 });
 
-const contentFromParts = (parts: GeminiGenerateContentPart[]): string | OpenAIChatCompletionsContentPart[] | null => {
+const contentFromParts = (parts: GeminiGenerateContentPart[]): string | OpenAIChatCompletionsUserContentPart[] | null => {
   const textParts = parts.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
-  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is OpenAIChatCompletionsContentPart => part !== null);
+  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is OpenAIChatCompletionsUserContentPart => part !== null);
 
   if (!textParts.length && !mediaParts.length) return null;
   if (!mediaParts.length) return textParts.join('\n\n');

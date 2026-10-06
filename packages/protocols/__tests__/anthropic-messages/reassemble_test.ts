@@ -6,7 +6,7 @@ import type {
   AnthropicMessagesSearchResultBlock,
   AnthropicMessagesSearchResultLocationCitation,
   AnthropicMessagesServerToolUseBlock,
-  AnthropicMessagesStreamEvent,
+  AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextBlock,
   AnthropicMessagesTool,
   AnthropicMessagesToolResultContentBlock,
@@ -16,7 +16,7 @@ import type {
 import { reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-function makeEvents<T = AnthropicMessagesStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
+function makeEvents<T = AnthropicMessagesStreamEventEx>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
     for (const chunk of chunks) {
       if (typeof chunk.data === 'string') continue;
@@ -31,8 +31,8 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 type Expect<T extends true> = T;
 
 type _toolResultContentExcludesWebSearchResult = Expect<Equal<Extract<AnthropicMessagesToolResultContentBlock, AnthropicMessagesWebSearchResultBlock>, never>>;
-type _serverToolUseNameIsString = Expect<Equal<AnthropicMessagesServerToolUseBlock['name'], string>>;
-type _serverToolUseInputIsQueryObject = Expect<Equal<AnthropicMessagesServerToolUseBlock['input'], { query: string }>>;
+type _serverToolUseNameIncludesWebSearch = Expect<Equal<Extract<AnthropicMessagesServerToolUseBlock['name'], 'web_search'>, 'web_search'>>;
+type _serverToolUseInputIsUnknown = Expect<Equal<AnthropicMessagesServerToolUseBlock['input'], unknown>>;
 
 test('reassembleAnthropicMessagesEvents reassembles text response', async () => {
   const body = makeEvents([

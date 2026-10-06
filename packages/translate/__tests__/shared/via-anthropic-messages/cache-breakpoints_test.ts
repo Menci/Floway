@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../../src/shared/via-anthropic-messages/cache-breakpoints.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlock, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlockParam, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const cacheControlOf = (value: unknown): unknown => (value as { cache_control?: unknown }).cache_control;
@@ -63,13 +63,13 @@ test('applyLastMessageCacheBreakpoint falls back to an earlier message when the 
 
 test('applyLastSystemCacheBreakpoint is a no-op on undefined or empty input', () => {
   applyLastSystemCacheBreakpoint(undefined);
-  const empty: AnthropicMessagesTextBlock[] = [];
+  const empty: AnthropicMessagesTextBlockParam[] = [];
   applyLastSystemCacheBreakpoint(empty);
   assertEquals(empty, []);
 });
 
 test('applyLastSystemCacheBreakpoint marks only the last block when multiple are present', () => {
-  const system: AnthropicMessagesTextBlock[] = [
+  const system: AnthropicMessagesTextBlockParam[] = [
     { type: 'text', text: 'instructions' },
     { type: 'text', text: 'leading note' },
     { type: 'text', text: 'final block' },

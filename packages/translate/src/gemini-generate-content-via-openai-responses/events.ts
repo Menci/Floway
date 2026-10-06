@@ -1,13 +1,13 @@
 import { geminiGenerateContentCandidateEvent, parseStrictJsonObject } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFinishReason, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputFunctionCall, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputFunctionCallEx, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI Responses input_tokens already includes input_tokens_details.cached_tokens,
 // matching Gemini generateContent's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-generate-content-via-anthropic-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (response: OpenAIResponsesResult): GeminiGenerateContentUsageMetadata | undefined => {
+const mapUsage = (response: OpenAIResponsesResultEx): GeminiGenerateContentUsageMetadata | undefined => {
   const usage = response.usage;
   if (!usage) return undefined;
 
@@ -36,7 +36,7 @@ const mapUsage = (response: OpenAIResponsesResult): GeminiGenerateContentUsageMe
   };
 };
 
-const isSafetyFailure = (response: OpenAIResponsesResult): boolean => {
+const isSafetyFailure = (response: OpenAIResponsesResultEx): boolean => {
   const error = response.error;
   if (!error) return false;
 
@@ -44,7 +44,7 @@ const isSafetyFailure = (response: OpenAIResponsesResult): boolean => {
   return text.includes('safety') || text.includes('content_filter') || text.includes('policy');
 };
 
-const mapTerminalFinishReason = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>): GeminiGenerateContentFinishReason => {
+const mapTerminalFinishReason = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>): GeminiGenerateContentFinishReason => {
   if (event.type === 'response.completed') return 'STOP';
   if (event.type === 'response.failed') {
     return isSafetyFailure(event.response) ? 'SAFETY' : 'OTHER';
@@ -55,7 +55,7 @@ const mapTerminalFinishReason = (event: Extract<OpenAIResponsesStreamEvent, { ty
 
 const UPSTREAM_OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'Upstream OpenAI Responses stream ended without a terminal event.';
 
-const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<OpenAIResponsesStreamEvent> {
+const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<OpenAIResponsesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -78,7 +78,7 @@ interface OpenAIResponsesToGeminiGenerateContentStreamState {
   functionCalls: Map<number, OpenAIResponsesFunctionCallDraft>;
   emittedReasoningKeys: Set<string>;
   emittedTextKeys: Set<string>;
-  serviceTier?: OpenAIResponsesResult['service_tier'];
+  serviceTier?: OpenAIResponsesResultEx['service_tier'];
 }
 
 const openaiResponsesPartKey = (outputIndex: number, partIndex: number): string => `${outputIndex}:${partIndex}`;
@@ -95,7 +95,7 @@ const reasoningItemDoneFrames = function* (item: OpenAIResponsesOutputReasoning,
   }
 };
 
-const functionCallDoneFrame = (item: OpenAIResponsesOutputFunctionCall, outputIndex: number, state: OpenAIResponsesToGeminiGenerateContentStreamState): ProtocolFrame<GeminiGenerateContentStreamEvent> => {
+const functionCallDoneFrame = (item: OpenAIResponsesOutputFunctionCallEx, outputIndex: number, state: OpenAIResponsesToGeminiGenerateContentStreamState): ProtocolFrame<GeminiGenerateContentStreamEvent> => {
   const current = state.functionCalls.get(outputIndex);
   state.functionCalls.delete(outputIndex);
 
@@ -122,12 +122,12 @@ const functionCallDoneFrame = (item: OpenAIResponsesOutputFunctionCall, outputIn
   );
 };
 
-const handleTerminal = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state: OpenAIResponsesToGeminiGenerateContentStreamState): ProtocolFrame<GeminiGenerateContentStreamEvent> => {
+const handleTerminal = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state: OpenAIResponsesToGeminiGenerateContentStreamState): ProtocolFrame<GeminiGenerateContentStreamEvent> => {
   if (event.response.service_tier !== undefined) state.serviceTier = event.response.service_tier;
   return eventFrame(geminiGenerateContentCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response)));
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   const state: OpenAIResponsesToGeminiGenerateContentStreamState = {
     functionCalls: new Map(),
     emittedReasoningKeys: new Set(),
@@ -137,14 +137,14 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
   for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {
     switch (event.type) {
     case 'response.created': {
-      const response = (event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>).response;
+      const response = (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>).response;
       if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
       break;
     }
 
     case 'response.reasoning_summary_text.delta':
     case 'response.reasoning_summary_text.done': {
-      const textEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }> | Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>;
+      const textEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }> | Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>;
       const text = textEvent.type === 'response.reasoning_summary_text.delta' ? textEvent.delta : textEvent.text;
       if (!text) break;
 
@@ -158,7 +158,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
     case 'response.output_text.delta':
     case 'response.output_text.done': {
-      const textEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }> | Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.done' }>;
+      const textEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }> | Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.done' }>;
       const text = textEvent.type === 'response.output_text.delta' ? textEvent.delta : textEvent.text;
       if (!text) break;
 
@@ -171,7 +171,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'response.output_item.added': {
-      const addedEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+      const addedEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
       if (addedEvent.item.type === 'function_call') {
         state.functionCalls.set(addedEvent.output_index, {
           id: addedEvent.item.call_id,
@@ -183,21 +183,21 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'response.function_call_arguments.delta': {
-      const deltaEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>;
+      const deltaEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.delta' }>;
       const current = state.functionCalls.get(deltaEvent.output_index);
       if (current) current.argsJson += deltaEvent.delta;
       break;
     }
 
     case 'response.function_call_arguments.done': {
-      const doneEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>;
+      const doneEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.done' }>;
       const current = state.functionCalls.get(doneEvent.output_index);
       if (current) current.argsJson = doneEvent.arguments;
       break;
     }
 
     case 'response.output_item.done': {
-      const doneEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>;
+      const doneEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
       if (doneEvent.item.type === 'reasoning') {
         yield* reasoningItemDoneFrames(doneEvent.item, doneEvent.output_index, state);
       } else if (doneEvent.item.type === 'function_call') {
@@ -209,7 +209,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
-      yield handleTerminal(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state);
+      yield handleTerminal(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state);
       break;
 
     case 'error': {

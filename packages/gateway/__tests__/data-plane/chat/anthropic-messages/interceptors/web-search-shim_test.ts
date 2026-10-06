@@ -23,7 +23,7 @@ import type {
   AnthropicMessagesClientTool,
   AnthropicMessagesPayload,
   AnthropicMessagesResult,
-  AnthropicMessagesStreamEvent,
+  AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextBlock,
   AnthropicMessagesToolResultBlock,
   AnthropicMessagesToolResultContentBlock,
@@ -168,8 +168,8 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEvent>[] => {
-  const frames: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [
+const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => {
+  const frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [
     eventFrame({
       type: 'message_start',
       message: {
@@ -589,7 +589,7 @@ test('generation and count_tokens prepare identical web-search request payloads'
 
   await withAnthropicMessagesWebSearchShim(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
     type: 'events',
-    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>([]),
+    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>([]),
     modelIdentity: testTelemetryModelIdentity,
   }));
   const countResponse = await withAnthropicMessagesWebSearchRequestPrepared(
@@ -627,7 +627,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
   });
 });
 
-const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEvent>[]> => {
+const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {
   await initDisabledSearchRepo();
 
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
@@ -692,7 +692,7 @@ test('withAnthropicMessagesWebSearchShim allows replay-only history when the sea
   const collected = await runReplayOnlyShim('msg_replay_only');
 
   const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
-  const citationsDelta = events.find((event): event is Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
+  const citationsDelta = events.find((event): event is Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -732,7 +732,7 @@ test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for r
   });
 });
 
-const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEvent => ({
+const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
   message: {
     id,
@@ -746,7 +746,7 @@ const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEvent
   },
 });
 
-const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMessagesStreamEvent[]): AnthropicMessagesStreamEvent[] => [
+const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMessagesStreamEventEx[]): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -763,7 +763,7 @@ const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMes
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlock = (index: number, id: string, query: string): AnthropicMessagesStreamEvent[] => [
+const upstreamWebSearchBlock = (index: number, id: string, query: string): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -777,7 +777,7 @@ const upstreamWebSearchBlock = (index: number, id: string, query: string): Anthr
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): AnthropicMessagesStreamEvent[] => [
+const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -793,7 +793,7 @@ const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: strin
   { type: 'content_block_stop', index },
 ];
 
-const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): AnthropicMessagesStreamEvent[] => [
+const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'content_block_start',
     index,
@@ -807,7 +807,7 @@ const upstreamClientToolBlock = (index: number, id: string, name: string, input:
   { type: 'content_block_stop', index },
 ];
 
-const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'tool_use'): AnthropicMessagesStreamEvent[] => [
+const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'tool_use'): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_delta',
     delta: { stop_reason: stopReason, stop_sequence: null },
@@ -817,9 +817,9 @@ const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['sto
 ];
 
 const collectStreamEvents = async (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
-): Promise<AnthropicMessagesStreamEvent[]> => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+): Promise<AnthropicMessagesStreamEventEx[]> => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   for await (const frame of frames) {
     if (frame.type === 'event') events.push(frame.event);
   }
@@ -827,7 +827,7 @@ const collectStreamEvents = async (
 };
 
 const runStreamingShim = (
-  events: AnthropicMessagesStreamEvent[],
+  events: AnthropicMessagesStreamEventEx[],
   state: AnthropicMessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
 ) =>
@@ -902,7 +902,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across t
     })),
   );
 
-  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(blockIndexEvents.map(event => event.index), [0, 1, 2, 3, 4, 5, 6]);
   assertEquals(blockIndexEvents.map(event => event.content_block.type), [
     'text',
@@ -936,7 +936,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
     })),
   );
 
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   const secondResult = resultBlocks[1].content_block as { content: unknown };
   assertEquals(secondResult.content, { type: 'web_search_tool_result_error', error_code: 'unavailable' });
@@ -956,7 +956,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative maps provider error result
     activeProvider(fakeProviderError('too_many_requests')),
   );
 
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'too_many_requests' });
 });
 
@@ -977,7 +977,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded on
   );
 
   assertEquals(providerCalls, 1);
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   assertEquals((resultBlocks[1].content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' });
 
@@ -1019,7 +1019,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes blank query to inva
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1039,7 +1039,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes oversized query to 
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'query_too_long' });
 });
 
@@ -1059,7 +1059,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes malformed input jso
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1075,7 +1075,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and 
     activeProvider(fakeProviderOk),
   );
 
-  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>>;
+  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
   assertEquals(blockStarts.map(event => event.content_block.type), ['server_tool_use', 'web_search_tool_result', 'tool_use']);
   assertEquals(blockStarts.map(event => event.index), [0, 1, 2]);
 
@@ -1158,7 +1158,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -1194,7 +1194,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites pre-populated cit
     },
   );
 
-  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> | undefined;
+  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
   assertEquals(blockStart?.content_block.type === 'text' ? blockStart.content_block.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
@@ -1232,7 +1232,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'search_result_location');
 });
 

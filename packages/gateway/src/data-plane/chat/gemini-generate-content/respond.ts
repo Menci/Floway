@@ -87,12 +87,6 @@ export const respondGeminiGenerateContent = async (
 
 // --- error rendering: Google-RPC envelope ---
 
-type GeminiGenerateContentErrorDebugFields = Partial<Pick<InternalDebugError, 'type' | 'name' | 'stack' | 'cause'>> & { target_api?: string };
-
-type GeminiGenerateContentErrorStatusPayload = {
-  error: GeminiGenerateContentErrorResponse['error'] & GeminiGenerateContentErrorDebugFields;
-};
-
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
 const geminiGenerateContentRpcErrorPayload = (status: number, message: string, debug: GeminiGenerateContentErrorDebugFields = {}): GeminiGenerateContentErrorStatusPayload => {

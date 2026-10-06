@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import type { AnthropicMessagesStreamEvent } from '../../src/anthropic-messages/index.ts';
+import type { AnthropicMessagesStreamEventEx } from '../../src/anthropic-messages/index.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '../../src/anthropic-messages/to-sse.ts';
 import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning termination', () => {
-  const frames = [eventFrame({ type: 'message_stop' } satisfies AnthropicMessagesStreamEvent), eventFrame({ type: 'ping' } satisfies AnthropicMessagesStreamEvent)].map(anthropicMessagesProtocolFrameToSSEFrame);
+  const frames = [eventFrame({ type: 'message_stop' } satisfies AnthropicMessagesStreamEventEx), eventFrame({ type: 'ping' } satisfies AnthropicMessagesStreamEventEx)].map(anthropicMessagesProtocolFrameToSSEFrame);
 
   assertEquals(
     frames.map(frame => frame?.event),
@@ -30,7 +30,7 @@ test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url t
           end_block_index: 0,
         },
       },
-    } satisfies AnthropicMessagesStreamEvent),
+    } satisfies AnthropicMessagesStreamEventEx),
   );
 
   const payload = JSON.parse(frame!.data) as {

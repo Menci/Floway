@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -20,7 +20,7 @@ const messageStart = (usage: AnthropicMessagesResult['usage'] = { input_tokens: 
   },
 });
 
-const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
 
   async function* frames() {
@@ -36,7 +36,7 @@ const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Pr
 
 const geminiGenerateContentFrame = (event: GeminiGenerateContentStreamEvent): ProtocolFrame<GeminiGenerateContentStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): Promise<void> => {
   await collect(input);
 };
 

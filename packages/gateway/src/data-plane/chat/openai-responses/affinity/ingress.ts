@@ -11,7 +11,7 @@ import {
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
 import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 interface OpenAIResponsesBlobLocation {
@@ -48,7 +48,7 @@ const canonicalItemType = (itemType: string): string =>
 const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
-const itemInheritsRequiredTarget = (item: OpenAIResponsesInputItem): boolean =>
+const itemInheritsRequiredTarget = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   !isOpenAIResponsesCompactShimItem(item)
   && ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
@@ -58,7 +58,7 @@ const blobRequiresOriginalTarget = (item: OpenAIResponsesInputItem, decoded: Dec
     : itemInheritsRequiredTarget(item);
 
 const opaqueBlobLocations = async (
-  items: readonly OpenAIResponsesInputItem[],
+  items: readonly CanonicalOpenAIResponsesInputItem[],
   codec: AffinityCodec,
 ): Promise<OpenAIResponsesBlobLocation[]> => {
   const locations: OpenAIResponsesBlobLocation[] = [];
@@ -96,7 +96,7 @@ const opaqueBlobLocations = async (
 };
 
 const analyzeOpenAIResponsesRequest = (
-  items: readonly OpenAIResponsesInputItem[],
+  items: readonly CanonicalOpenAIResponsesInputItem[],
   locations: readonly OpenAIResponsesBlobLocation[],
 ): OpenAIResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
@@ -137,12 +137,12 @@ const materializeOpenAIResponsesPayload = (
   projectionsByItem: ReadonlyMap<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>,
 ): CanonicalOpenAIResponsesPayload => {
   if (projectionsByItem.size === 0) return payload;
-  const input = payload.input.flatMap((item, itemIndex): OpenAIResponsesInputItem[] => {
+  const input = payload.input.flatMap((item, itemIndex): CanonicalOpenAIResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
     if (projections === undefined) return [item];
     if (projections === null) return [];
 
-    const replacement = { ...item } as OpenAIResponsesInputItem & Record<string, unknown>;
+    const replacement = { ...item } as CanonicalOpenAIResponsesInputItem & Record<string, unknown>;
     for (const { location, projection } of projections) {
       if (location.contentIndex !== undefined) continue;
       if (projection.kind === 'preserve') replacement[location.slot] = projection.value;
@@ -153,7 +153,7 @@ const materializeOpenAIResponsesPayload = (
       const nested = new Map(projections.flatMap(projection =>
         projection.location.contentIndex === undefined ? [] : [[projection.location.contentIndex, projection] as const]));
       if (nested.size > 0) {
-        const agentMessage = replacement as Extract<OpenAIResponsesInputItem, { type: 'agent_message' }>;
+        const agentMessage = replacement as Extract<CanonicalOpenAIResponsesInputItem, { type: 'agent_message' }>;
         agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
           const projected = nested.get(contentIndex);
           if (projected === undefined) return [content];

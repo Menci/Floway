@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '../../src/anthropic-messages/index.ts';
+import type { AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '../../src/anthropic-messages/index.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '../../src/anthropic-messages/to-result.ts';
 import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -18,7 +18,7 @@ test('collectAnthropicMessagesProtocolEventsToResult reassembles synthetic Anthr
   };
 
   async function* events() {
-    const payloads: AnthropicMessagesStreamEvent[] = [
+    const payloads: AnthropicMessagesStreamEventEx[] = [
       {
         type: 'message_start',
         message: { ...expected, content: [], stop_reason: null, stop_sequence: null, usage: { ...expected.usage, output_tokens: 0 } },
@@ -37,7 +37,7 @@ test('collectAnthropicMessagesProtocolEventsToResult reassembles synthetic Anthr
 
 test('collectAnthropicMessagesProtocolEventsToResult preserves final message_delta input_tokens', async () => {
   async function* events() {
-    const payloads: AnthropicMessagesStreamEvent[] = [
+    const payloads: AnthropicMessagesStreamEventEx[] = [
       {
         type: 'message_start',
         message: {
@@ -85,7 +85,7 @@ test('collectAnthropicMessagesProtocolEventsToResult preserves final message_del
 
 test('collectAnthropicMessagesProtocolEventsToResult rejects streams without message_stop', async () => {
   async function* events() {
-    const payloads: AnthropicMessagesStreamEvent[] = [
+    const payloads: AnthropicMessagesStreamEventEx[] = [
       {
         type: 'message_start',
         message: {
@@ -134,7 +134,7 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects Anthropic Messages 
         type: 'overloaded_error',
         message: 'upstream overloaded',
       },
-    } satisfies AnthropicMessagesStreamEvent);
+    } satisfies AnthropicMessagesStreamEventEx);
   }
 
   await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error, 'Upstream SSE error: overloaded_error: upstream overloaded');

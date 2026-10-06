@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest';
 
 import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse } from '@floway-dev/test-utils';
 
-const chunk = (delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -12,7 +13,7 @@ const chunk = (delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], f
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 });
 
-type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['usage']>;
+type OpenAIChatCompletionsUsage = OpenAIChatCompletionsUsageEx;
 
 const usageChunk = (overrides: Partial<OpenAIChatCompletionsUsage> = {}): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
@@ -29,7 +30,7 @@ const usageChunk = (overrides: Partial<OpenAIChatCompletionsUsage> = {}): OpenAI
 });
 
 const chunkWithUsage = (
-  delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'],
+  delta: OpenAIChatCompletionsAssistantDeltaEx,
   usage: Partial<OpenAIChatCompletionsUsage>,
   finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
 ): OpenAIChatCompletionsStreamEvent => ({
@@ -72,7 +73,7 @@ test('OpenAI Chat Completions refusal deltas become Anthropic Messages refusal s
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-only reasoning as redacted_thinking at finish', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc_old' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc_old' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'enc_only' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
@@ -119,7 +120,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves opaque reasoning before later text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
@@ -148,7 +149,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves opa
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
@@ -176,7 +177,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text an
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoning_content in one thinking block', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_content: null }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_content: null } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_content: 'trace' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
@@ -205,7 +206,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoni
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early opaque after later thinking text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'old' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'old' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
@@ -234,7 +235,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early o
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late opaque with prior reasoning text', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
@@ -273,7 +274,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late op
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves later opaque-only reasoning after earlier thinking', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ content: 'answer' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig1' }), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ reasoning_opaque: 'sig2' }), state),
@@ -320,7 +321,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves lat
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits signature for text-only reasoning', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({}, 'stop'), state),
   ];
 
@@ -510,7 +511,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage maps OpenAI cached_t
     completion_tokens: 20,
     total_tokens: 120,
     prompt_tokens_details: { cached_tokens: 60 },
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 40);
   assertEquals(usage.output_tokens, 20);
   assertEquals(usage.cache_read_input_tokens, 60);
@@ -521,7 +522,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage omits cache_read_inp
     prompt_tokens: 100,
     completion_tokens: 20,
     total_tokens: 120,
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 100);
   assertEquals(usage.cache_read_input_tokens, undefined);
 });
@@ -543,7 +544,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage surfaces cache_creat
     completion_tokens: 20,
     total_tokens: 120,
     prompt_tokens_details: { cached_tokens: 30, cache_creation_input_tokens: 40 },
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 30);
   assertEquals(usage.output_tokens, 20);
   assertEquals(usage.cache_read_input_tokens, 30);
@@ -556,7 +557,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage surfaces cache_creat
     completion_tokens: 10,
     total_tokens: 90,
     prompt_tokens_details: { cache_creation_input_tokens: 50 },
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 30);
   assertEquals(usage.cache_read_input_tokens, undefined);
   assertEquals(usage.cache_creation_input_tokens, 50);
@@ -568,7 +569,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage accepts cache_write_
     completion_tokens: 10,
     total_tokens: 90,
     prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 30);
   assertEquals(usage.cache_read_input_tokens, 20);
   assertEquals(usage.cache_creation_input_tokens, 30);
@@ -580,7 +581,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage prefers canonical ca
     completion_tokens: 10,
     total_tokens: 90,
     prompt_tokens_details: { cache_creation_input_tokens: 30, cache_write_tokens: 20 },
-  });
+  } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 50);
   assertEquals(usage.cache_creation_input_tokens, 30);
 });
@@ -591,7 +592,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage rejects malformed in
     completion_tokens: 10,
     total_tokens: 50,
     prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
-  })).toThrowError(RangeError);
+  } as OpenAIChatCompletionsUsageEx)).toThrowError(RangeError);
 });
 
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents surfaces service_tier:fast as usage.speed:fast in message_delta', () => {

@@ -1,8 +1,8 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { GeminiGenerateContentStreamEvent, GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import type { ExecuteResult, PerformanceTelemetryContext, InternalDebugError } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere

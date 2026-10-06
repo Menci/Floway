@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withSpeedFast } from '../../../src/interceptors/anthropic-messages/handle-speed-fast.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -30,7 +30,7 @@ const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
 
 const stubRequest = {};
 
-const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMessagesStreamEvent> => eventFrame<AnthropicMessagesStreamEvent>({
+const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
   type: 'message_start',
   message: {
     id: 'msg_1',
@@ -44,17 +44,17 @@ const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMes
   },
 });
 
-const messageDelta = (output_tokens: number): ProtocolFrame<AnthropicMessagesStreamEvent> => eventFrame<AnthropicMessagesStreamEvent>({
+const messageDelta = (output_tokens: number): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
   type: 'message_delta',
   delta: { stop_reason: 'end_turn', stop_sequence: null },
   usage: { output_tokens },
 });
 
-const messageStop = (): ProtocolFrame<AnthropicMessagesStreamEvent> => eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' });
+const messageStop = (): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
 
-const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEvent>[]): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
+const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
   eventResult(
-    (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+    (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
       for (const frame of frames) yield frame;
     })(),
     testTelemetryModelIdentity,
@@ -115,7 +115,7 @@ test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usag
   const frames = await collect(result.events);
   assertEquals(frames, [
     messageStart({ ...baseUsage, speed: 'fast' }),
-    eventFrame<AnthropicMessagesStreamEvent>({
+    eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'message_delta',
       delta: { stop_reason: 'end_turn', stop_sequence: null },
       usage: { output_tokens: 7, speed: 'fast' },

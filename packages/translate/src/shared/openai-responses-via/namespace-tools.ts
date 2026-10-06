@@ -1,6 +1,6 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 export interface NamespaceToolNames {
   sourceToTarget: Map<string, string>;
@@ -96,7 +96,7 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
       }
     }
   }
-  const input = payload.input.flatMap<OpenAIResponsesInputItem>(item => {
+  const input = payload.input.flatMap<CanonicalOpenAIResponsesInputItem>(item => {
     if (item.type === 'additional_tools' || item.type === 'tool_search_output') return [];
     if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return [item];
     if (item.namespace === undefined) return [item];
@@ -148,11 +148,11 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
 };
 
 export const restoreNamespaceEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   names: NamespaceToolNames,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { targetToSource: identities, sourceTools, sourceToolChoice, toolsChanged, toolChoiceChanged } = names;
-  const restoreItem = (item: OpenAIResponsesOutputItem, status: 'in_progress' | 'completed'): OpenAIResponsesOutputItem => {
+  const restoreItem = (item: OpenAIResponsesOutputItemEx, status: 'in_progress' | 'completed'): OpenAIResponsesOutputItemEx => {
     if ((item.type !== 'function_call' && item.type !== 'custom_tool_call') || item.namespace !== undefined) return item;
     const identity = identities.get(item.name);
     if (identity === undefined) return item;
@@ -165,7 +165,7 @@ export const restoreNamespaceEvents = async function* (
       restored.input = item.arguments;
       delete restored.arguments;
     }
-    return restored as unknown as OpenAIResponsesOutputItem;
+    return restored as unknown as OpenAIResponsesOutputItemEx;
   };
   const items = new Map<string, Pick<CallableIdentity, 'name' | 'type'>>();
   for await (const frame of frames) {
@@ -183,7 +183,7 @@ export const restoreNamespaceEvents = async function* (
       // input.done has neither field; changing families must not leak a wire name.
       // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts
       if (identity.type === 'function_call') {
-        yield 'name' in event && event.name === identity.name ? frame : { ...frame, event: { ...event, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEvent>;
+        yield 'name' in event && event.name === identity.name ? frame : { ...frame, event: { ...event, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
       } else {
         const { arguments: input, name: _name, ...rest } = event as typeof event & { name?: string };
         yield { ...frame, event: { ...rest, type: 'response.custom_tool_call_input.done', input } };
@@ -192,7 +192,7 @@ export const restoreNamespaceEvents = async function* (
       yield { ...frame, event: { ...event, type: 'response.function_call_arguments.delta' } };
     } else if (event.type === 'response.custom_tool_call_input.done' && identity?.type === 'function_call') {
       const { input: args, ...rest } = event;
-      yield { ...frame, event: { ...rest, type: 'response.function_call_arguments.done', arguments: args, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEvent>;
+      yield { ...frame, event: { ...rest, type: 'response.function_call_arguments.done', arguments: args, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
     } else if ('response' in event && Array.isArray(event.response?.output)) {
       const output = event.response.output.map(item => restoreItem(item, isOpenAIResponsesTerminalEvent(event) ? 'completed' : 'in_progress'));
       const outputChanged = output.some((item, index) => item !== event.response.output[index]);
@@ -202,7 +202,7 @@ export const restoreNamespaceEvents = async function* (
         yield frame;
         continue;
       }
-      const response: OpenAIResponsesResult = {
+      const response: OpenAIResponsesResultEx = {
         ...event.response,
         output: outputChanged ? output : event.response.output,
         // Preserve absent echoes; only undo fields actually stated by the
@@ -213,7 +213,7 @@ export const restoreNamespaceEvents = async function* (
         if (sourceTools == null) delete response.tools;
         else response.tools = sourceTools;
       }
-      yield { ...frame, event: { ...event, response } } as ProtocolFrame<OpenAIResponsesStreamEvent>;
+      yield { ...frame, event: { ...event, response } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
     } else yield frame;
   }
 };

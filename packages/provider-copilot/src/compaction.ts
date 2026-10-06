@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResult, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type OpenAIResponsesInputItem, type OpenAIResponsesInputMessage, type OpenAIResponsesOutputItem, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import { createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -30,12 +30,12 @@ const encoder = new TextEncoder();
 // as `input_text` so the client can resend `output` verbatim as next-turn
 // `input`. Normalize unconditionally; non-text content passes through and costs
 // 0 tokens against the retained budget.
-const normalizeContent = (content: OpenAIResponsesInputMessage['content']): OpenAIResponsesInputContent[] => {
+const normalizeContent = (content: OpenAIResponsesInputMessageEx['content']): OpenAIResponsesInputContent[] => {
   if (typeof content === 'string') return [{ type: 'input_text', text: content }];
   return content.map(part => (part.type === 'output_text' ? { ...part, type: 'input_text' } : part));
 };
 
-const isRetainedMessage = (item: OpenAIResponsesInputItem): item is OpenAIResponsesInputMessage =>
+const isRetainedMessage = (item: CanonicalOpenAIResponsesInputItem): item is OpenAIResponsesInputMessageEx =>
   item.type === 'message' && RETAINED_ROLES.has(item.role);
 
 // The retained items are input-shaped messages with canonical input content,
@@ -47,8 +47,8 @@ const isRetainedMessage = (item: OpenAIResponsesInputItem): item is OpenAIRespon
 // Retained messages are newly synthesized output items, so their client-visible
 // producer IDs are assigned here instead of inherited from input. They are
 // resent as full content; the compaction blob carries next-turn state.
-export const compactionResponse = (input: OpenAIResponsesInputItem[], generated: OpenAIResponsesResult): OpenAIResponsesCompactionResult => {
-  const kept: OpenAIResponsesInputMessage[] = [];
+export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], generated: OpenAIResponsesResultEx): OpenAIResponsesCompactionResultEx => {
+  const kept: OpenAIResponsesInputMessageEx[] = [];
   let used = 0;
   for (let i = input.length - 1; i >= 0; i -= 1) {
     const item = input[i];
@@ -102,6 +102,6 @@ export const compactionResponse = (input: OpenAIResponsesInputItem[], generated:
   return {
     ...generated,
     object: 'response.compaction',
-    output: [...kept.reverse(), ...compactionItems] as unknown as OpenAIResponsesOutputItem[],
+    output: [...kept.reverse(), ...compactionItems] as unknown as OpenAIResponsesOutputItemEx[],
   };
 };

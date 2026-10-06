@@ -3,11 +3,11 @@ import { afterEach, test, vi } from 'vitest';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -80,7 +80,7 @@ const makeOpenAIChatCompletionsEvents = (text = 'hi'): readonly OpenAIChatComple
   },
 ];
 
-const makeAnthropicMessagesEvents = (id = 'msg_1'): readonly AnthropicMessagesStreamEvent[] => [
+const makeAnthropicMessagesEvents = (id = 'msg_1'): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
@@ -96,8 +96,8 @@ const makeAnthropicMessagesEvents = (id = 'msg_1'): readonly AnthropicMessagesSt
   { type: 'message_stop' },
 ];
 
-const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStreamEvent => {
-  const response: OpenAIResponsesResult = {
+const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStreamEventEx => {
+  const response: OpenAIResponsesResultEx = {
     id, object: 'response', model: 'test-model', status: 'completed',
     output: [{
       type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
@@ -113,7 +113,7 @@ const makeCandidate = (overrides: {
   targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
@@ -180,7 +180,7 @@ test('generate translates through native OpenAI Chat Completions target end to e
 
 test('generate translates through Anthropic Messages when only that endpoint is exposed', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);

@@ -3,13 +3,13 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-openai-chat-completions/events.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const chunk = (
-  delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'],
+  delta: OpenAIChatCompletionsAssistantDeltaEx,
   finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
-  usage?: NonNullable<OpenAIChatCompletionsStreamEvent['usage']>,
+  usage?: OpenAIChatCompletionsUsageEx,
 ): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
@@ -19,7 +19,7 @@ const chunk = (
   ...(usage ? { usage } : {}),
 });
 
-const choiceChunk = (index: number, delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const choiceChunk = (index: number, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -73,7 +73,7 @@ test('translateToSourceEvents maps text chunks and stop finish without emitting 
 
 test('translateToSourceEvents maps reasoning text and attaches opaque signature to next action', async () => {
   const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_text: 'trace' })),
+    eventFrame(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx)),
     eventFrame(chunk({ reasoning_opaque: 'sig_old' })),
     eventFrame(chunk({ reasoning_opaque: 'sig_1' })),
     eventFrame(chunk({ content: 'answer' })),
@@ -115,7 +115,7 @@ test('translateToSourceEvents maps reasoning text and attaches opaque signature 
 
 test('translateToSourceEvents maps reasoning_content to a thought part', async () => {
   const frames = await collect([
-    eventFrame(chunk({ role: 'assistant', reasoning_content: null })),
+    eventFrame(chunk({ role: 'assistant', reasoning_content: null } as OpenAIChatCompletionsAssistantDeltaEx)),
     eventFrame(chunk({ reasoning_content: 'trace' })),
     eventFrame(chunk({ content: 'answer' })),
     eventFrame(chunk({}, 'stop')),
@@ -133,7 +133,7 @@ test('translateToSourceEvents maps reasoning_content to a thought part', async (
 });
 
 test('translateToSourceEvents flushes unclaimed opaque signature in the finish chunk', async () => {
-  const frames = await collect([eventFrame(chunk({ role: 'assistant', reasoning_opaque: 'sig_only' })), eventFrame(chunk({}, 'stop')), doneFrame()]);
+  const frames = await collect([eventFrame(chunk({ role: 'assistant', reasoning_opaque: 'sig_only' } as OpenAIChatCompletionsAssistantDeltaEx)), eventFrame(chunk({}, 'stop')), doneFrame()]);
 
   assertEquals(frames, [
     geminiGenerateContentFrame({

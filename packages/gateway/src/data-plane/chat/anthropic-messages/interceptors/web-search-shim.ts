@@ -14,8 +14,8 @@ import type {
   AnthropicMessagesNativeWebSearchTool,
   AnthropicMessagesPayload,
   AnthropicMessagesSearchResultBlock,
-  AnthropicMessagesStreamEvent,
-  AnthropicMessagesTextCitation,
+  AnthropicMessagesStreamEventEx,
+  AnthropicMessagesTextCitation, AnthropicMessagesTextCitationParam,
   AnthropicMessagesTool,
   AnthropicMessagesToolResultBlock,
   AnthropicMessagesUserContentBlock,
@@ -178,7 +178,7 @@ const toUpstreamToolUseId = (toolUseId: string): string => (toolUseId.startsWith
 
 const toNativeServerToolUseId = (toolUseId: string): string => (toolUseId.startsWith('toolu_') ? `srvtoolu_${toolUseId.slice('toolu_'.length)}` : toolUseId);
 
-const buildUpstreamSearchResultBlock = (result: AnthropicMessagesWebSearchResultBlock, decoded: NonNullable<ReturnType<typeof decodeWebSearchResultPayload>>): AnthropicMessagesSearchResultBlock => ({
+const buildUpstreamSearchResultBlock = (result: Pick<AnthropicMessagesWebSearchResultBlock, 'url' | 'title' | 'encrypted_content'>, decoded: NonNullable<ReturnType<typeof decodeWebSearchResultPayload>>): AnthropicMessagesSearchResultBlock => ({
   type: 'search_result',
   source: result.url,
   title: result.title,
@@ -250,7 +250,7 @@ const messageHasOwnedReplayMarkers = (message: AnthropicMessagesMessage): boolea
   );
 };
 
-const decodeOwnedReplayCitation = (citation: AnthropicMessagesTextCitation): AnthropicMessagesTextCitation => {
+const decodeOwnedReplayCitation = (citation: AnthropicMessagesTextCitationParam): AnthropicMessagesTextCitationParam => {
   if (citation.type !== 'web_search_result_location') {
     return citation;
   }
@@ -585,9 +585,9 @@ interface ShimStreamingState {
 }
 
 const rewriteContentBlockStartCitations = (
-  event: Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>,
+  event: Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>,
   state: AnthropicMessagesWebSearchShimState,
-): Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }> => {
+): Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> => {
   if (event.content_block.type !== 'text' || !event.content_block.citations?.length) {
     return event;
   }
@@ -602,7 +602,7 @@ const rewriteContentBlockStartCitations = (
 };
 
 const rewriteContentBlockDeltaCitations = (
-  event: Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }>,
+  event: Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }>,
   state: AnthropicMessagesWebSearchShimState,
 ): Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> => {
   if (event.delta.type === 'text_delta' && event.delta.citations?.length) {
@@ -637,7 +637,7 @@ const runWebSearchStopHandler = async function* (
   shimState: ShimStreamingState,
   state: Extract<AnthropicMessagesWebSearchShimState, { mode: 'active' }>,
   provider: ActiveAnthropicMessagesWebSearchProvider,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
     try {
@@ -705,10 +705,10 @@ const runWebSearchStopHandler = async function* (
 };
 
 export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   state: AnthropicMessagesWebSearchShimState,
   provider?: ActiveAnthropicMessagesWebSearchProvider,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   if (state.mode === 'inactive') {
     yield* frames;
     return;

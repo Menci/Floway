@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, requestAppWithWarmModels as requestApp, setupAppTest, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 type TargetApi = 'openaiChatCompletions' | 'anthropicMessages';
@@ -64,7 +64,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
           return toolCallResponse(target, 'payments_read');
         }, async () => {
           const response = await requestApp('/v1/responses', { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-          const resource = await response.json() as OpenAIResponsesResult;
+          const resource = await response.json() as OpenAIResponsesResultEx;
           assertEquals(response.status, 200);
           assertEquals(resource.status, 'completed');
           assertEquals(resource.tool_choice, choice);

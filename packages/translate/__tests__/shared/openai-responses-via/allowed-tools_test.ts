@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { buildTargetRequest as buildMessages } from '../../../src/openai-responses-via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChat } from '../../../src/openai-responses-via-openai-chat-completions/request.ts';
 import { TranslatorInputError } from '../../../src/translator-input-error.ts';
-import type { OpenAIResponsesInputItem, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayload => ({
+const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestPayloadEx => ({
   model: 'model', input: 'Read only.',
   tools: [
     { type: 'function', name: 'read', parameters: { type: 'object', properties: {} } },
@@ -17,7 +17,7 @@ const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestP
 });
 
 for (const target of ['chat', 'messages'] as const) {
-  const build = async (payload: OpenAIResponsesRequestPayload) => target === 'chat' ? buildChat(payload) : await buildMessages(payload);
+  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? buildChat(payload) : await buildMessages(payload);
   for (const mode of ['auto', 'required'] as const) {
     test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
@@ -42,10 +42,10 @@ for (const target of ['chat', 'messages'] as const) {
   for (const history of ['additional_tools', 'tool_search_output'] as const) {
     test(`${target} request rejects flat function/custom collisions from ${history} before converting calls`, async () => {
       const custom: OpenAIResponsesTool = { type: 'custom', name: 'web_search' };
-      const item: OpenAIResponsesInputItem = history === 'additional_tools'
+      const item: CanonicalOpenAIResponsesInputItem = history === 'additional_tools'
         ? { type: 'additional_tools', role: 'developer', tools: [custom] }
         : { type: 'tool_search_output', execution: 'client', tools: [custom] };
-      const payload: OpenAIResponsesRequestPayload = {
+      const payload: OpenAIResponsesRequestPayloadEx = {
         model: 'model',
         tools: [{ type: 'function', name: 'web_search', parameters: { type: 'object' } }],
         input: [item],

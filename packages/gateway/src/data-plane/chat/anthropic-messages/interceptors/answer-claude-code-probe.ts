@@ -1,6 +1,6 @@
 import type { AnthropicMessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
-import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
@@ -90,7 +90,7 @@ const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: Headers):
 // usage block is load-bearing — the validation path dereferences
 // `usage.input_tokens` / `usage.output_tokens` unconditionally, and a missing
 // `usage` throws inside the CLI and reads as a failed probe.
-const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   yield eventFrame({
     type: 'message_start',
     message: {
@@ -113,7 +113,7 @@ const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFram
 // the turn contributes a latency sample, and a turn that never dialed the
 // upstream has no latency to report. The usage row still lands, at zero, so
 // the request itself stays visible in the dashboard.
-const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
+const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
   eventResult(probeFrames(model), telemetryModelIdentity(candidate, providerModelOf(candidate).id));
 
 export const answerClaudeCodeProbe: AnthropicMessagesInterceptor = async (ctx, _gatewayCtx, run) =>

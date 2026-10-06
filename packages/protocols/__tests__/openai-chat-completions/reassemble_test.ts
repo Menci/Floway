@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } from '../../src/openai-chat-completions/index.ts';
+import type { OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsFunctionToolCall, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsAssistantDeltaEx } from '../../src/openai-chat-completions/index.ts';
 import { reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -137,8 +137,8 @@ test('reassembleOpenAIChatCompletionsEvents reassembles tool calls', async () =>
   assertEquals(result.choices[0].finish_reason, 'tool_calls');
   assertEquals(result.choices[0].message.tool_calls?.length, 1);
   assertEquals(result.choices[0].message.tool_calls![0].id, 'call_1');
-  assertEquals(result.choices[0].message.tool_calls![0].function.name, 'lookup');
-  assertEquals(result.choices[0].message.tool_calls![0].function.arguments, '{"city":"Tokyo"}');
+  assertEquals((result.choices[0].message.tool_calls![0] as OpenAIChatCompletionsFunctionToolCall).function.name, 'lookup');
+  assertEquals((result.choices[0].message.tool_calls![0] as OpenAIChatCompletionsFunctionToolCall).function.arguments, '{"city":"Tokyo"}');
 });
 
 test('reassembleOpenAIChatCompletionsEvents concatenates reasoning text and keeps the latest opaque snapshot', async () => {
@@ -156,7 +156,7 @@ test('reassembleOpenAIChatCompletionsEvents concatenates reasoning text and keep
               role: 'assistant',
               reasoning_text: 'think',
               reasoning_opaque: 'enc_old',
-            },
+            } as OpenAIChatCompletionsAssistantDeltaEx,
             finish_reason: null,
           },
         ],
@@ -182,8 +182,8 @@ test('reassembleOpenAIChatCompletionsEvents concatenates reasoning text and keep
 
   const result = await reassembleOpenAIChatCompletionsEvents(body);
 
-  assertEquals(result.choices[0].message.reasoning_text, 'think more');
-  assertEquals(result.choices[0].message.reasoning_opaque, 'enc');
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_text, 'think more');
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'enc');
   assertEquals(result.choices[0].message.content, 'reply');
 });
 
@@ -204,7 +204,7 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
               reasoning_opaque: 'second-old',
               vendor_trace: 'b1',
               tool_calls: [{ index: 0, id: 'call_b', type: 'function', function: { name: 'beta', arguments: '{"b"' } }],
-            },
+            } as OpenAIChatCompletionsAssistantDeltaEx,
             finish_reason: null,
             content_filter_results: { hate: { filtered: false } },
           },
@@ -218,7 +218,7 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
               vendor_trace: 'a1',
               reasoning_items: [{ type: 'reasoning', id: 'rs_a', summary: [] }],
               tool_calls: [{ index: 1, id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a"' } }],
-            },
+            } as OpenAIChatCompletionsAssistantDeltaEx,
             finish_reason: null,
             content_filter_results: { sexual: { filtered: false } },
           },
@@ -268,15 +268,15 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
 
   assertEquals(result.choices.map(choice => choice.index), [0, 1]);
   assertEquals(result.choices[0].message.content, 'first answer');
-  assertEquals(result.choices[0].message.reasoning_text, 'think again');
-  assertEquals(result.choices[0].message.reasoning_opaque, 'first-final');
-  assertEquals(result.choices[0].message.reasoning_items, [{ type: 'reasoning', id: 'rs_a', summary: [] }]);
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_text, 'think again');
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'first-final');
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_items, [{ type: 'reasoning', id: 'rs_a', summary: [] }]);
   assertEquals(result.choices[0].message.tool_calls, [{ id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a":1}' } }]);
   assertEquals(result.choices[0].message.vendor_trace, 'a1a2');
   assertEquals(result.choices[0].content_filter_results, { sexual: { filtered: false } });
   assertEquals(result.choices[0].finish_reason, 'tool_calls');
   assertEquals(result.choices[1].message.content, 'second answer');
-  assertEquals(result.choices[1].message.reasoning_opaque, 'second-final');
+  assertEquals((result.choices[1].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'second-final');
   assertEquals(result.choices[1].message.tool_calls, [{ id: 'call_b', type: 'function', function: { name: 'beta', arguments: '{"b":2}' } }]);
   assertEquals(result.choices[1].message.vendor_trace, 'b1b2');
   assertEquals(result.choices[1].content_filter_results, { hate: { filtered: false } });
@@ -304,7 +304,7 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
                   summary: [{ type: 'summary_text', text: 'first' }],
                 },
               ],
-            },
+            } as OpenAIChatCompletionsAssistantDeltaEx,
             finish_reason: null,
           },
         ],
@@ -353,7 +353,7 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
 
   const result = await reassembleOpenAIChatCompletionsEvents(body);
 
-  assertEquals(result.choices[0].message.reasoning_items, [
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_items, [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -376,7 +376,7 @@ test('reassembleOpenAIChatCompletionsEvents preserves unknown delta fields by co
         object: 'chat.completion.chunk',
         created: 1000,
         model: 'deepseek-v4-pro',
-        choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: 'I will compute ' } }],
+        choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: 'I will compute ' } as OpenAIChatCompletionsAssistantDeltaEx }],
       },
     },
     {

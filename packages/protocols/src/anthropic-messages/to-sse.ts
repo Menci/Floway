@@ -1,4 +1,4 @@
-import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesStreamEvent, AnthropicMessagesTextCitation, AnthropicMessagesWebSearchResultLocation } from './index.ts';
+import type { AnthropicMessagesStreamEventEx } from './index.ts';
 import { type ProtocolFrame, type SseFrame, sseFrame } from '../common/index.ts';
 
 // Anthropic's Anthropic Messages SSE wire format renames `search_result_location` fields

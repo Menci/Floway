@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/gemini-generate-content-via-openai-chat-completions/request.ts';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
@@ -86,7 +87,7 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
           function: { name: 'lookup', arguments: '{"query":"docs"}' },
         },
       ],
-    },
+    } as OpenAIChatCompletionsAssistantMessageEx,
     {
       role: 'tool',
       tool_call_id: 'gemini_call_0_2',
@@ -471,7 +472,7 @@ test('buildTargetRequest rejects a part that sets conflicting content fields', (
     () =>
       buildTargetRequest(
         {
-          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } }] }],
+          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
         },
         'gpt-test',
       ),

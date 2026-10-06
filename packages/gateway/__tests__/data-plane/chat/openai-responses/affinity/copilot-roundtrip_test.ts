@@ -5,7 +5,7 @@ import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/ch
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
 import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
@@ -39,7 +39,7 @@ const upstream: UpstreamRecord = {
   },
 };
 
-const result = (output: OpenAIResponsesOutputItem[], status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const result = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_raw',
   object: 'response',
   model: 'gpt-test',
@@ -49,13 +49,13 @@ const result = (output: OpenAIResponsesOutputItem[], status: OpenAIResponsesResu
   incomplete_details: null,
 });
 
-const sseBody = (events: OpenAIResponsesStreamEvent[]): string =>
+const sseBody = (events: OpenAIResponsesStreamEventEx[]): string =>
   `${events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`;
 
 const collectEvents = async (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
-): Promise<OpenAIResponsesStreamEvent[]> => {
-  const events: OpenAIResponsesStreamEvent[] = [];
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+): Promise<OpenAIResponsesStreamEventEx[]> => {
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of frames) {
     if (frame.type === 'event') events.push(frame.event);
   }
@@ -90,7 +90,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
   });
-  const rawReasoning: OpenAIResponsesOutputItem = {
+  const rawReasoning: OpenAIResponsesOutputItemEx = {
     type: 'reasoning',
     id: 'rs_raw',
     summary: [],

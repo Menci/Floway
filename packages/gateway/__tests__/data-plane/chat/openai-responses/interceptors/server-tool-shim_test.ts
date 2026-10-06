@@ -33,19 +33,19 @@ import type {
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type {
   CanonicalOpenAIResponsesPayload,
-  OpenAIResponsesOutputItem,
-  OpenAIResponsesInputItem,
+  OpenAIResponsesOutputItemEx,
+  CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesInputWebSearchCall,
   OpenAIResponsesOutputWebSearchCall,
-  OpenAIResponsesPayload,
-  OpenAIResponsesResult,
-  OpenAIResponsesStreamEvent,
+  OpenAIResponsesPayloadEx,
+  OpenAIResponsesResultEx,
+  OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
@@ -56,7 +56,7 @@ import { translateOpenAIResponsesViaAnthropicMessages, translateOpenAIResponsesV
 
 const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
 
-const emptyResult = (id: string, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const emptyResult = (id: string, status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id,
   object: 'response',
   model: 'test-model',
@@ -67,25 +67,25 @@ const emptyResult = (id: string, status: OpenAIResponsesResult['status']): OpenA
   incomplete_details: null,
 });
 
-const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.created',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.queued',
     response: emptyResult(responseId, 'queued'),
   });
 
-const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.in_progress',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -98,7 +98,7 @@ const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string):
     },
   });
 
-const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.function_call_arguments.done',
     item_id: itemId,
@@ -106,7 +106,7 @@ const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_
     arguments: args,
   });
 
-const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -119,7 +119,7 @@ const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, a
     },
   });
 
-const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -131,7 +131,7 @@ const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string
     },
   });
 
-const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.custom_tool_call_input.done',
     item_id: itemId,
@@ -139,7 +139,7 @@ const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = 
     input,
   });
 
-const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -151,7 +151,7 @@ const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string,
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -163,7 +163,7 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStrea
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -175,14 +175,14 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIR
     },
   });
 
-const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: { type: 'reasoning', id: reasoningId, summary: [] },
   });
 
-const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -200,10 +200,10 @@ vi.mock('../../../../../src/data-plane/tools/web-search/provider.ts');
 vi.mock('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
-  usage?: OpenAIResponsesResult['usage'],
+  usage?: OpenAIResponsesResultEx['usage'],
   responseId = 'upstream_test',
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...emptyResult(responseId, 'completed'),
@@ -214,8 +214,8 @@ const mkResponseCompleted = (
 const mkResponseIncomplete = (
   incompleteDetails?: { reason: string },
   responseId = 'upstream_test',
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.incomplete',
     response: {
       ...emptyResult(responseId, 'incomplete'),
@@ -324,7 +324,7 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 interface InvocationOverrides {
   targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
-  payload?: Partial<OpenAIResponsesPayload>;
+  payload?: Partial<OpenAIResponsesPayloadEx>;
 }
 
 const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
@@ -366,13 +366,13 @@ const runShimAndDrain = async (
   shim: OpenAIResponsesInterceptor,
   inv: OpenAIResponsesInvocation,
   gatewayCtx: ChatGatewayCtx,
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>,
+  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>,
 ): Promise<{
-  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
-  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[];
+  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 }> => {
   const result = await shim(inv, gatewayCtx, run);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = result.type === 'events'
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = result.type === 'events'
     ? await collectFrames(result.events)
     : [];
   return { result, frames };
@@ -380,10 +380,10 @@ const runShimAndDrain = async (
 
 // Drive run() N times with one scripted event array per call. Reaches past
 // the scripted length crashes the test — invariant violations stay loud.
-type ScriptedTurn = ProtocolFrame<OpenAIResponsesStreamEvent>[];
+type ScriptedTurn = ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 
 interface ScriptedRun {
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
+  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
   callCount: () => number;
 }
 
@@ -393,10 +393,10 @@ const scriptedRun = (turns: ScriptedTurn[]): ScriptedRun => {
     run: async () => {
       if (i >= turns.length) throw new Error(`unexpected run() call ${i + 1}; only ${turns.length} turn(s) scripted`);
       const frames = turns[i++];
-      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of frames) yield f;
       })();
-      const result: EventResult<ProtocolFrame<OpenAIResponsesStreamEvent>> = {
+      const result: EventResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
         type: 'events',
         events: iterable,
         modelIdentity: testTelemetryModelIdentity,
@@ -440,12 +440,12 @@ const openCallTurn = (outputIndex: number, callId: string, url: string): Scripte
 const findCallTurn = (outputIndex: number, callId: string, url: string, pattern: string): ScriptedTurn =>
   fcTurn(outputIndex, callId, SHIM_TOOL_NAME, JSON.stringify({ find: [{ ref_id: url, pattern }] }));
 
-const eventPayloads = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): OpenAIResponsesStreamEvent[] =>
-  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: OpenAIResponsesStreamEvent }).event);
+const eventPayloads = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): OpenAIResponsesStreamEventEx[] =>
+  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: OpenAIResponsesStreamEventEx }).event);
 
-const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Array<Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>> =>
+const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Array<Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>> =>
   eventPayloads(frames)
-    .filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+    .filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
 
 // ── Activation gating ──────────────────────────────────────────────────
 
@@ -671,7 +671,7 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(script.callCount(), 2);
   assertEquals(backend.calls.length, 1);
   assertEquals(backend.calls[0].kind, 'search');
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const tail = input.slice(-2);
   assertEquals(tail[0].type, 'function_call');
   assertEquals(tail[1].type, 'function_call_output');
@@ -703,7 +703,7 @@ test('translated source with a no-backing store still replays private search sta
   assert(result.type === 'events');
   await collectFrames(result.events);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const tail = input.slice(-2);
   assert(tail[0].type === 'function_call');
   // The preserved `call_id` proves the private payload was found (replay
@@ -811,7 +811,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   // 30 backend search calls, NOT 31 — the 31st short-circuits via the cap.
   const searchCalls = backend.calls.filter(c => c.kind === 'search');
   assertEquals(searchCalls.length, 30);
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assert((lastOutput as { output: string }).output.includes('iteration limit (30)'));
@@ -821,7 +821,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   // call surfaces as the schema-error shape (action.type='search' with
   // the cap diagnostic in queries[0]) rather than the original query —
   // the shim call is rejected before backend dispatch.
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 31);
@@ -854,7 +854,7 @@ const assertAmbiguousShimRejection = async (args: string, backend: { calls: unkn
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   assertEquals(backend.calls.length, 0);
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 1);
@@ -922,7 +922,7 @@ test('multi-`search_query` entries collapse into one web_search_call with a mult
   const events = eventPayloads(await collectFrames(result.events));
 
   // Exactly one wsc on the wire.
-  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+  const wsCallDone = events.filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 1);
@@ -967,7 +967,7 @@ test('search returning zero results surfaces the "(no results)" template', async
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assertEquals(
@@ -995,7 +995,7 @@ test('backend search failure surfaces "Search failed: <message>"', async () => {
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1022,7 +1022,7 @@ test('fetchPage whole-batch failure surfaces the open-page error text', async ()
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1612,7 +1612,7 @@ test('open blocked by domain filter never calls backend', async () => {
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
   assertEquals(backend.calls.length, 0);
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1686,7 +1686,7 @@ test('find with no matches returns the no-matches text', async () => {
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1722,7 +1722,7 @@ test('find with matches returns bracketed context', async () => {
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1759,7 +1759,7 @@ test('truncated page contents append the truncation sentinel', async () => {
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1802,7 +1802,7 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
   assertEquals(seqs[0], 0);
 
   const addedIndices = events
-    .filter((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
+    .filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
     .map(e => e.output_index);
   // Contiguous from 0 — uniqueness alone would not catch a missing slot.
   const sorted = [...addedIndices].sort((a, b) => a - b);
@@ -1816,20 +1816,20 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
 // served model — distinct from the client's payload.model so we can
 // prove the shim quotes upstream's served identity rather than the
 // requested literal.
-const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.in_progress',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'completed', error: null, incomplete_details: null },
   });
@@ -1868,9 +1868,9 @@ test('synthesized response.created / completed quote the upstream-reported model
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assertEquals(created.response.model, SERVED_MODEL);
   assertEquals(inProgress.response.model, SERVED_MODEL);
   assertEquals(completed.response.model, SERVED_MODEL);
@@ -1883,10 +1883,10 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
+      const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
         mkResponseCreatedWithModel(SERVED_MODEL),
         mkResponseInProgressWithModel(SERVED_MODEL),
         mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME),
@@ -1894,7 +1894,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
         mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'hi' }] })),
         mkResponseCompletedWithModel(SERVED_MODEL),
       ];
-      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of frames) yield f;
       })();
       return { type: 'events', events: iterable, modelIdentity: testTelemetryModelIdentity };
@@ -1911,7 +1911,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.type, 'response.failed');
   assertEquals(failed.response.model, SERVED_MODEL);
 });
@@ -1927,7 +1927,7 @@ test('shim refuses to synthesize a response envelope when upstream response.crea
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const modelless = eventFrame<OpenAIResponsesStreamEvent>({
+  const modelless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: { id: 'upstream_x', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
   });
@@ -1956,7 +1956,7 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const idless = eventFrame<OpenAIResponsesStreamEvent>({
+  const idless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: { model: 'gpt-5', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
   });
@@ -1965,7 +1965,7 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   assert(created.response.id.startsWith('resp_shim_'));
 });
 
@@ -1993,9 +1993,9 @@ test('synthesized response.created / completed quote the once-per-request synthe
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_shim_'));
   assertEquals(inProgress.response.id, created.response.id);
   assertEquals(completed.response.id, created.response.id);
@@ -2035,8 +2035,8 @@ test('synthesized terminal id stays constant across multi-turn upstream id rotat
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_shim_'));
   // Same shim-synthesized id end-to-end; neither upstream turn id
   // leaks downstream.
@@ -2085,7 +2085,7 @@ test('usage accumulates across three iterations', async () => {
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 305);
   assertEquals(completed.response.usage?.output_tokens, 82);
@@ -2127,7 +2127,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
   const result = await shim(inv, makeGatewayCtx(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.output_tokens, 60);
@@ -2165,7 +2165,7 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   const result = await shim(inv, makeGatewayCtx(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.input_tokens_details, undefined);
@@ -2201,7 +2201,7 @@ test('next-turn function_call echo always carries the canonical re-stringified s
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   const fc = input.find(i => i.type === 'function_call') as
     | { type: 'function_call'; arguments: string }
     | undefined;
@@ -2224,7 +2224,7 @@ test('upstream sends bare `error` frame BEFORE any response.created: shim throws
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
   const errorOnlyTurn: ScriptedTurn = [
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'error',
       message: 'upstream dropped before response shell',
     }),
@@ -2250,7 +2250,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: {
       id: 'resp_captured_id_xyz',
@@ -2260,11 +2260,11 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
       status: 'in_progress',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
   const script = scriptedRun([[
     createdWith,
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'error',
       message: 'mid-stream upstream blew up',
       code: 'server_error',
@@ -2274,7 +2274,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.type, 'response.failed');
   assert(failed.response.id.startsWith('resp_shim_'));
   assertEquals(failed.response.model, 'gpt-5.4-2025-01-20');
@@ -2298,11 +2298,11 @@ test('upstream iterator rejects before yielding any frame: shim surfaces the thr
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  const failingIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const failingIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     throw new Error('malformed SSE JSON at byte 42');
     yield undefined as never;
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: failingIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2332,16 +2332,16 @@ test('pathological upstream emitting frames without response.created: shim event
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  const noisyIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const noisyIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     for (let i = 0; i < 5; i++) {
-      yield eventFrame<OpenAIResponsesStreamEvent>({
+      yield eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.unknown_future_call.in_progress',
         output_index: i,
         item_id: `unk_${i}`,
-      } as unknown as OpenAIResponsesStreamEvent);
+      } as unknown as OpenAIResponsesStreamEventEx);
     }
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: noisyIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2370,7 +2370,7 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
     yield mkResponseCreated('upstream_mid');
     throw new Error('connection reset by peer');
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: failingMidStream,
     modelIdentity: testTelemetryModelIdentity,
@@ -2381,7 +2381,7 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.status, 'failed');
   assert(failed.response.id.startsWith('resp_shim_'));
   assertEquals(failed.response.model, 'test-model');
@@ -2402,16 +2402,16 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const turn1 = searchCallTurn(0, 'call_1', 'q1');
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of turn1) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
-    const failingTurn2: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+    const failingTurn2: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       yield mkResponseCreated('upstream_test');
       throw new Error('upstream parser exploded');
     })();
@@ -2423,7 +2423,7 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('upstream parser exploded'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
@@ -2440,10 +2440,10 @@ test('consume-turn finishes without identity AND without bare-error-pre-shell: s
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  const malformed: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const malformed: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     yield mkResponseCompleted();
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: malformed,
     modelIdentity: testTelemetryModelIdentity,
@@ -2494,18 +2494,18 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const completedWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const completedWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       // Native upstreams typically add completed_at on the terminal frame.
       completed_at: 1735689700,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -2515,8 +2515,8 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
 
   // Every preserved field arrives on both the in-progress (response.created)
   // synthesized envelope and the final completed envelope.
@@ -2556,27 +2556,27 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield createdWith;
         yield mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
         yield mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, wsArgs);
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.completed',
-          response: { ...upstreamSnapshot, status: 'completed' } as OpenAIResponsesResult,
+          response: { ...upstreamSnapshot, status: 'completed' } as OpenAIResponsesResultEx,
         });
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -2593,7 +2593,7 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   assertEquals(r.tools, [{ type: 'web_search' }]);
@@ -2618,28 +2618,28 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: turn1Snapshot as OpenAIResponsesResult,
+    response: turn1Snapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...turn1Snapshot,
       status: 'completed',
       completed_at: 1735689700,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield turn1Created;
         yield mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
@@ -2660,7 +2660,7 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   // Pass-through contract: snapshot's completed_at flows through
@@ -2683,17 +2683,17 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       completed_at: 1735689700,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -2708,7 +2708,7 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   assertEquals(r.completed_at, 1735689700);
@@ -2730,17 +2730,17 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Created = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: upstreamSnapshot as OpenAIResponsesResult,
+    response: upstreamSnapshot as OpenAIResponsesResultEx,
   });
-  const turn1Completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const turn1Completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
       status: 'completed',
       incomplete_details: null,
-    } as unknown as OpenAIResponsesResult,
+    } as unknown as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -2755,7 +2755,7 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   // Field present and explicitly `null` — neither coerced to undefined
@@ -2787,7 +2787,7 @@ test('success-path synth envelopes carry spec-required `error: null` and `incomp
   // Every synthesized envelope (created, in_progress, completed) MUST
   // carry both fields as null.
   for (const frameType of ['response.created', 'response.in_progress', 'response.completed'] as const) {
-    const ev = events.find(e => e.type === frameType) as Extract<OpenAIResponsesStreamEvent, { type: typeof frameType }>;
+    const ev = events.find(e => e.type === frameType) as Extract<OpenAIResponsesStreamEventEx, { type: typeof frameType }>;
     assert(ev !== undefined, `expected ${frameType}`);
     const r = ev.response as unknown as Record<string, unknown>;
     assert('error' in r, `${frameType} missing 'error' key`);
@@ -2806,8 +2806,8 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
   // would desync from the cross-turn aggregated `output`. The shim
   // rebuilds the alias from `accumulatedOutput` and overrides the
   // snapshot's value on the terminal envelope.
-  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-    eventFrame<OpenAIResponsesStreamEvent>({
+  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.completed',
       response: {
         id: responseId,
@@ -2819,8 +2819,8 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
         incomplete_details: null,
       },
     });
-  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-    eventFrame<OpenAIResponsesStreamEvent>({
+  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.created',
       response: {
         id: responseId,
@@ -2846,7 +2846,7 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals((completed.response as unknown as { output_text: string }).output_text, 'hi there');
 });
@@ -2858,7 +2858,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   // value — terminal envelopes get a separately-rebuilt
   // `output_text` aggregated across turns (covered by the dedicated
   // rebuildOutputText test below).
-  const createdWithStaleText = eventFrame<OpenAIResponsesStreamEvent>({
+  const createdWithStaleText = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
     response: {
       id: 'resp_stale',
@@ -2869,9 +2869,9 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
-  const inProgressWithStaleText = eventFrame<OpenAIResponsesStreamEvent>({
+  const inProgressWithStaleText = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.in_progress',
     response: {
       id: 'resp_stale',
@@ -2882,9 +2882,9 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
-  const completedFrame = eventFrame<OpenAIResponsesStreamEvent>({
+  const completedFrame = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       id: 'resp_stale',
@@ -2896,7 +2896,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       status: 'completed',
       error: null,
       incomplete_details: null,
-    } as OpenAIResponsesResult,
+    } as OpenAIResponsesResultEx,
   });
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -2912,8 +2912,8 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }> => e.type === 'response.created');
-  const inProgress = events.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
+  const created = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }> => e.type === 'response.created');
+  const inProgress = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
   assert(created !== undefined);
   assert(inProgress !== undefined);
   // Snapshot's output_text flows through verbatim on in-progress
@@ -2936,12 +2936,12 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     const frames = runCalls === 1
       ? searchCallTurn(0, 'call_1', 'q1')
       : messageTurn('done', 0);
-    const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+    const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       for (const f of frames) yield f;
     })();
     return {
@@ -3011,12 +3011,12 @@ test('response.output_item.added for web_search_call omits action (mirrors nativ
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsAdded = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> =>
       e.type === 'response.output_item.added'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3055,7 +3055,7 @@ test('open with invalid ref_id: done frame carries action.type="search" with the
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3092,7 +3092,7 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
@@ -3229,12 +3229,12 @@ test('mixed-tool: shim call + client function_call exits to client after one tur
   ];
   const script = scriptedRun([mixedTurn]);
 
-  const originalInputLen = (inv.payload.input as OpenAIResponsesInputItem[]).length;
+  const originalInputLen = (inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length;
   const { frames } = await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
   assertEquals(backend.calls.length, 1);
   assertEquals(script.callCount(), 1);
-  assertEquals((inv.payload.input as OpenAIResponsesInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3290,12 +3290,12 @@ test('client-only tool turn (no shim call): pass-through function_call frames fl
   ];
   const script = scriptedRun([clientOnlyTurn]);
 
-  const originalInputLen = (inv.payload.input as OpenAIResponsesInputItem[]).length;
+  const originalInputLen = (inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length;
   const { frames } = await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
   // Loop closes after the single turn — the client drives the next round.
   assertEquals(script.callCount(), 1);
   assertEquals(backend.calls.length, 0);
-  assertEquals((inv.payload.input as OpenAIResponsesInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as CanonicalOpenAIResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3349,7 +3349,7 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // Original 2 messages + 2 expanded pairs (2 items each) = 6 items.
   assertEquals(input.length, 6);
   assertEquals(input.map(i => i.type), [
@@ -3396,7 +3396,7 @@ test('input preprocessor: replay-only activation leaves hosted tool_choice uncha
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
   assertEquals(inv.payload.tool_choice, { type: 'web_search_preview' });
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   assertEquals(input.map(i => i.type), ['message', 'function_call', 'function_call_output']);
 });
 
@@ -3426,7 +3426,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // user message + placeholder function_call + placeholder function_call_output.
   assertEquals(input.length, 3);
   assertEquals(input[0].type, 'message');
@@ -3464,7 +3464,7 @@ test('input preprocessor: web_search_call with empty id has its id synthesized a
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // user message + function_call + function_call_output (paired from the
   // echoed web_search_call with synthesized id).
   assertEquals(input.length, 3);
@@ -3494,7 +3494,7 @@ test('input preprocessor: web_search_call without results emits the not-preserve
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const input = inv.payload.input as OpenAIResponsesInputItem[];
+  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   assertEquals(input.length, 2);
   const fco = input[1] as { output: string };
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
@@ -3564,7 +3564,7 @@ for (const [source, item] of [
     const inv = makeInvocation({
       payload: {
         tools: [{ type: 'web_search' }],
-        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as OpenAIResponsesInputItem[],
+        input: [{ type: 'message', role: 'user', content: 'Search.' }, item] as CanonicalOpenAIResponsesInputItem[],
       },
     });
     const script = scriptedRun([messageTurn('done')]);
@@ -3689,10 +3689,10 @@ test('shim yields first turn frames BEFORE later turns resolve', async () => {
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return {
@@ -3703,7 +3703,7 @@ test('shim yields first turn frames BEFORE later turns resolve', async () => {
     }
     if (runCalls === 2) {
       await turn2Gate;
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of messageTurn('summary', 0)) yield f;
       })();
       return {
@@ -3763,12 +3763,12 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   const terminalGate = new Promise<void>(resolve => {
     releaseTerminal = resolve;
   });
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-    const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       yield mkResponseCreated();
       yield mkResponseInProgress();
       yield mkMessageAdded(0);
-      yield eventFrame<OpenAIResponsesStreamEvent>({
+      yield eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -3814,10 +3814,10 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return {
@@ -3841,7 +3841,7 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
 
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failedEv = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failedEv = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failedEv.response.status, 'failed');
   assert(failedEv.response.error !== undefined);
   // Pass-through code: the shim quotes upstream's HTTP status
@@ -3864,10 +3864,10 @@ test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-e
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3884,7 +3884,7 @@ test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-e
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'upstream_429');
 });
 
@@ -3898,10 +3898,10 @@ test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no sp
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3918,7 +3918,7 @@ test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no sp
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'upstream_400');
   // The HTTP status is preserved in the diagnostic message so clients
   // pattern-matching for 4xx see it.
@@ -3936,10 +3936,10 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3963,7 +3963,7 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'insufficient_quota');
   assertEquals(failed.response.error?.type, 'insufficient_quota');
   assertEquals(failed.response.error?.message, 'You exceeded your current quota.');
@@ -3993,7 +3993,7 @@ test('upstream response.incomplete forwards as response.incomplete with the same
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.status, 'incomplete');
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
@@ -4027,7 +4027,7 @@ test('upstream response.incomplete WITHOUT incomplete_details forwards as respon
 
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.incomplete');
-  const incomplete = terminal as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const incomplete = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
   assertEquals(incomplete.response.incomplete_details, null);
   assertEquals(incomplete.response.output.map(item => item.type), ['message']);
 });
@@ -4052,7 +4052,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events.at(-1) as Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events.at(-1) as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
 
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.output.map(item => item.type), ['message', 'web_search_call']);
@@ -4062,7 +4062,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
 
 // ── function_call_output is plain text on every target ───────────────
 
-const lastFunctionCallOutput = (input: OpenAIResponsesInputItem[]): string => {
+const lastFunctionCallOutput = (input: CanonicalOpenAIResponsesInputItem[]): string => {
   const last = input[input.length - 1];
   assert(last.type === 'function_call_output');
   return (last as { output: string }).output;
@@ -4082,7 +4082,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4126,7 +4126,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
 
   await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
 
-  assertEquals(lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]), 'alpha output');
+  assertEquals(lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]), 'alpha output');
   assertEquals(call.mock.calls[0]?.[0].commands, commands);
   assertEquals(call.mock.calls[0]?.[0].settings, {
     user_location: { type: 'approximate', country: 'SG' },
@@ -4173,7 +4173,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
       messageTurn('model repeated the tool error', 0),
     ]);
     await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
-    return lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+    return lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   };
 
   const localMessage = await runUnsupported();
@@ -4209,7 +4209,7 @@ test('openai-chat-completions target: function_call_output is plain-text formatt
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4224,7 +4224,7 @@ test('messages target: function_call_output is plain-text formatted search resul
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as OpenAIResponsesInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4434,10 +4434,10 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -4446,11 +4446,11 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
       // Emit message.added + first delta immediately, gate the rest. A
       // buffered implementation would hide the first delta until
       // response.completed.
-      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         yield mkResponseCreated();
         yield mkResponseInProgress();
         yield mkMessageAdded(0);
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4458,7 +4458,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
           delta: 'first',
         });
         await restOfTurn2Gate;
-        yield eventFrame<OpenAIResponsesStreamEvent>({
+        yield eventFrame<OpenAIResponsesStreamEventEx>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4483,7 +4483,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
     const next = await iter.next();
     if (next.done) break;
     if (next.value.type === 'event' && next.value.event.type === 'response.output_text.delta') {
-      const deltaEv = next.value.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>;
+      const deltaEv = next.value.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>;
       assertEquals(deltaEv.delta, 'first');
       sawFirstDelta = true;
       break;
@@ -4509,7 +4509,7 @@ test('mixed turn (reasoning + message_partial + function_call) preserves the mes
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkMessageAdded(1),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_text.delta',
       item_id: 'msg_upstream',
       output_index: 1,
@@ -4523,7 +4523,7 @@ test('mixed turn (reasoning + message_partial + function_call) preserves the mes
     mkResponseCompleted(),
   ];
   const script = scriptedRun([mixedTurn, messageTurn('final answer', 0)]);
-  const observedInputs: OpenAIResponsesPayload['input'][] = [];
+  const observedInputs: OpenAIResponsesPayloadEx['input'][] = [];
   const run = async () => {
     observedInputs.push(inv.payload.input);
     return await script.run();
@@ -4648,7 +4648,7 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
   // searching must arrive but completed / done must NOT.
   let sawSearching = false;
   let sawCompleted = false;
-  const drainedSoFar: OpenAIResponsesStreamEvent[] = [];
+  const drainedSoFar: OpenAIResponsesStreamEventEx[] = [];
   for (let i = 0; i < 64 && !sawSearching; i++) {
     const next = await iter.next();
     if (next.done) break;
@@ -4759,7 +4759,7 @@ test('shim call without output_item.done synthesizes response.failed (no backend
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>;
+  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
   assertEquals(terminal.type, 'response.failed');
   assertEquals(terminal.response.error?.code, 'server_error');
   assert(terminal.response.error?.message.includes('without closing shim call items'));
@@ -4860,7 +4860,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
 
 // ── consumeTurnStreaming: single-turn stream consumption mechanics ──
 
-const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.function_call_arguments.delta',
     item_id: itemId,
@@ -4868,7 +4868,7 @@ const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `f
     delta,
   });
 
-const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.custom_tool_call_input.delta',
     item_id: itemId,
@@ -4876,11 +4876,11 @@ const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId =
     delta,
   });
 
-const framesOf = (...frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> => (async function* () {
+const framesOf = (...frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   yield* frames;
 })();
 
-const eventTypesOf = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): string[] =>
+const eventTypesOf = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): string[] =>
   frames.flatMap(f => (f.type === 'event' ? [f.event.type] : []));
 
 interface DispatchRecord {
@@ -4895,16 +4895,16 @@ const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { i
 };
 
 type DrainResult = {
-  downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEvent>[];
+  downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
   summary: TurnSummary;
   records: DispatchRecord[];
 };
 
 const drain = async (
-  iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
+  iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary>,
   records: DispatchRecord[],
 ): Promise<DrainResult> => {
-  const downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const downstreamFrames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   let summary: TurnSummary | undefined;
   while (true) {
     const next = await iter.next();
@@ -4935,7 +4935,7 @@ test('parseServerToolArguments returns empty object for empty args', () => {
 });
 
 const consumeTurn = async (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   state: Parameters<typeof consumeTurnStreaming>[1],
   isFirstTurn: boolean,
 ): Promise<DrainResult> => {
@@ -4954,12 +4954,12 @@ test('consumeTurn forwards a namespaced client call sharing the hosted shim name
   };
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: { ...call, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDone(0, call.arguments, call.id),
-    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: call }),
+    eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: 0, item: call }),
     mkResponseCompleted(),
   ), createMergeState(), true);
 
@@ -4977,13 +4977,13 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
   };
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
     mkFunctionCallArgsDone(0, completed.arguments, completed.id),
-    eventFrame<OpenAIResponsesStreamEvent>({ type: 'response.output_item.done', output_index: 0, item: completed }),
+    eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: 0, item: completed }),
     mkResponseCompleted(),
   ), createMergeState(), true);
 
@@ -4999,14 +4999,14 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
 test('consumeTurn dispatches a hosted call whose added item carried a namespace', async () => {
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
       item: {
         type: 'function_call', id: 'fc_search', call_id: 'call_search', namespace: 'client',
         name: SHIM_TOOL_NAME, arguments: '', status: 'in_progress',
       },
     }),
-    eventFrame<OpenAIResponsesStreamEvent>({
+    eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.done', output_index: 0,
       item: {
         type: 'function_call', id: 'fc_search', call_id: 'call_search',
@@ -5053,7 +5053,7 @@ test('consumeTurn first turn synthesizes response.created with the once-per-requ
   assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.in_progress']);
   const created = result.downstreamFrames[0];
   assert(created.type === 'event');
-  const createdEv = created.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const createdEv = created.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   // Downstream id is the shim-synthesized value (stable cross-turn);
   // upstream's id is captured nowhere and never exposed downstream.
   assertEquals(createdEv.response.id, state.synthesizedResponseId);
@@ -5064,7 +5064,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], output_text: '', status: 'in_progress',
@@ -5078,7 +5078,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   );
   const created = result.downstreamFrames.find(f => f.type === 'event' && f.event.type === 'response.created');
   assert(created?.type === 'event');
-  const ev = created.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+  const ev = created.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
   assertEquals(ev.response.model, 'gpt-5.4-2025-01-20');
   assertEquals(state.lastSeenModel, 'gpt-5.4-2025-01-20');
 });
@@ -5087,7 +5087,7 @@ test('consumeTurn throws when upstream response.created has no model field (no c
   const state = createMergeState();
   const iter = consumeTurnStreaming(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', output: [], output_text: '', status: 'in_progress',
@@ -5117,7 +5117,7 @@ test('consumeTurn captures upstream-reported model and writes it into MergeState
   const state = createMergeState();
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], output_text: '', status: 'in_progress',
@@ -5140,7 +5140,7 @@ test('consumeTurn re-captures upstream-reported model when later turns change it
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], output_text: '', status: 'in_progress',
@@ -5165,7 +5165,7 @@ test('consumeTurn does NOT capture upstream response.id (downstream uses the shi
   state.lastSeenModel = 'gpt-5';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], output_text: '', status: 'in_progress',
@@ -5188,7 +5188,7 @@ test('consumeTurn keeps previous upstream-reported model when a later turn omits
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
           id: 'r2', object: 'response', output: [], output_text: '', status: 'in_progress',
@@ -5328,7 +5328,7 @@ test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCa
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5360,7 +5360,7 @@ test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCa
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const addedEv = added.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const addedEv = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(addedEv.output_index, 0);
   assertEquals(addedEv.item.type, 'function_call');
   const argsDone = result.downstreamFrames.find(f =>
@@ -5411,7 +5411,7 @@ test('consumeTurn forwards reasoning items with rewritten output_index', async (
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const ev = added.event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const ev = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(ev.output_index, 0);
   assertEquals(ev.item.type, 'reasoning');
   assertEquals(state.accumulatedOutput.size, 1);
@@ -5482,21 +5482,21 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
       mkResponseCreated(),
       mkResponseInProgress(),
       mkMessageAdded(0),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         part: { type: 'output_text', text: '', annotations: [] },
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         delta: 'hello ',
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.annotation.added',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5510,14 +5510,14 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
           end_index: 5,
         },
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.done',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         text: 'hello world',
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.done',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5565,12 +5565,12 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     framesOf(
       mkResponseCreated(),
       mkMessageAdded(0),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_child.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         delta: 'future',
-      } as unknown as OpenAIResponsesStreamEvent),
+      } as unknown as OpenAIResponsesStreamEventEx),
       mkMessageDone(0, 'future'),
       mkResponseCompleted(),
     ),
@@ -5596,12 +5596,12 @@ test('consumeTurn swallows future indexed events attached to an intercepted serv
     framesOf(
       mkResponseCreated(),
       mkFunctionCallAdded(0, 'cc_1', SHIM_TOOL_NAME),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_function_call_arguments.delta',
         item_id: 'fc_hidden',
         output_index: 0,
         delta: 'hidden',
-      } as unknown as OpenAIResponsesStreamEvent),
+      } as unknown as OpenAIResponsesStreamEventEx),
       mkFunctionCallDone(0, 'cc_1', SHIM_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkResponseCompleted(),
     ),
@@ -5624,7 +5624,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5635,7 +5635,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
           id: 'msg_xyz_real_id',
         } as never,
       }),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_xyz_real_id',
         output_index: 0,
@@ -5669,7 +5669,7 @@ test('consumeTurn forwards message text events live even when mixed with an inte
       mkFunctionCallAdded(0, 'cc_1', SHIM_TOOL_NAME),
       mkFunctionCallDone(0, 'cc_1', SHIM_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkMessageAdded(1),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 1,
@@ -5793,7 +5793,7 @@ test('consumeTurn sets terminalStatus.kind = completed when upstream response.co
 
 test('consumeTurn surfaces upstream response.failed as terminalStatus.failed with the upstream envelope', async () => {
   const state = createMergeState();
-  const failedResponse: OpenAIResponsesResult = {
+  const failedResponse: OpenAIResponsesResultEx = {
     id: 'upstream_x',
     object: 'response',
     model: 'test-model',
@@ -5806,7 +5806,7 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.failed',
         response: failedResponse,
       }),
@@ -5821,7 +5821,7 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
 
 test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomplete', async () => {
   const state = createMergeState();
-  const incompleteResponse: OpenAIResponsesResult = {
+  const incompleteResponse: OpenAIResponsesResultEx = {
     id: 'upstream_x',
     object: 'response',
     model: 'test-model',
@@ -5834,7 +5834,7 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.incomplete',
         response: incompleteResponse,
       }),
@@ -5850,7 +5850,7 @@ test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a sy
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'error',
         message: 'upstream blew up',
         code: 'server_error',
@@ -5882,7 +5882,7 @@ test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'error',
         message: 'upstream blew up without a code',
       }),
@@ -5909,7 +5909,7 @@ test('consumeTurn treats empty-string `error.code` as missing (same fallback as 
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'error',
         message: 'upstream blew up with empty code',
         code: '',
@@ -5936,7 +5936,7 @@ test('consumeTurn surfaces bare `error` event arriving BEFORE response.created a
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
-      eventFrame<OpenAIResponsesStreamEvent>({
+      eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'error',
         message: 'upstream dropped before response shell',
       }),
@@ -5957,13 +5957,13 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   const state = createMergeState();
 
   let upstreamPullCount = 0;
-  const upstream: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
+  const upstream: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
     mkResponseCreated(),
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkResponseCompleted(),
   ];
-  const countedFrames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const countedFrames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     for (const f of upstream) {
       upstreamPullCount += 1;
       yield f;
@@ -6046,11 +6046,11 @@ test('shim call output_index is reserved at output_item.added so interleaved ite
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
-  const interleaved = eventFrame<OpenAIResponsesStreamEvent>({
+  const interleaved = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.in_progress',
     output_index: 5,
     item_id: 'ig_x',
-  } as unknown as OpenAIResponsesStreamEvent);
+  } as unknown as OpenAIResponsesStreamEventEx);
 
   const records: DispatchRecord[] = [];
   const result = await drain(
@@ -6079,12 +6079,12 @@ test('shim call output_index is reserved at output_item.added so interleaved ite
 
 test('consumeTurn live-forwards indexed progress events without hardcoded event-type lists', async () => {
   const state = createMergeState();
-  const inProgress = eventFrame<OpenAIResponsesStreamEvent>({
+  const inProgress = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.in_progress',
     output_index: 0,
     item_id: 'ig_1',
   });
-  const completed = eventFrame<OpenAIResponsesStreamEvent>({
+  const completed = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.image_generation_call.completed',
     output_index: 0,
     item_id: 'ig_1',
@@ -6111,8 +6111,8 @@ test('consumeTurn swallows keepalive/ping filler frames', async () => {
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEvent>({ type: 'keepalive' } as unknown as OpenAIResponsesStreamEvent),
-      eventFrame<OpenAIResponsesStreamEvent>({ type: 'ping' } as unknown as OpenAIResponsesStreamEvent),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'keepalive' } as unknown as OpenAIResponsesStreamEventEx),
+      eventFrame<OpenAIResponsesStreamEventEx>({ type: 'ping' } as unknown as OpenAIResponsesStreamEventEx),
       mkResponseCompleted(),
     ),
     state,
@@ -6155,9 +6155,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
-  const itemB: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
-  const itemC: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
+  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6170,7 +6170,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: OpenAIResponsesOutputItem = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
@@ -6290,7 +6290,7 @@ test('ServerToolResultSlot run() yields nothing and returns the terminal', async
 const mkResponseCreatedWithTools = (
   tools: OpenAIResponsesTool[],
   toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.created',
     response: {
@@ -6303,8 +6303,8 @@ const mkResponseCreatedWithTools = (
 const mkResponseCompletedWithTools = (
   tools: OpenAIResponsesTool[],
   toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
-  eventFrame<OpenAIResponsesStreamEvent>({
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+  eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
     response: {
       ...emptyResult('upstream_test', 'completed'),
@@ -6314,8 +6314,8 @@ const mkResponseCompletedWithTools = (
   });
 
 const findResponseCompleted = (
-  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[],
-): Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }> => {
+  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
+): Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => {
   for (const f of frames) {
     if (f.type === 'event' && f.event.type === 'response.completed') {
       return f.event;
@@ -6607,7 +6607,7 @@ test('consumeTurn forwards an event carrying no output_index instead of dropping
   const unrecognized = eventFrame({
     type: 'response.some_future_event',
     detail: 'carried through',
-  } as unknown as OpenAIResponsesStreamEvent);
+  } as unknown as OpenAIResponsesStreamEventEx);
 
   const result = await consumeTurn(
     framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
@@ -6628,7 +6628,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'function', name: 'web_search_3' },
     { type: 'web_search', name: 'web_search_8' },
   ];
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call', namespace: 'history', name: 'web_search_4', call_id: 'old', arguments: '{}', status: 'completed' },
     { type: 'tool_search_output', tools: [{ type: 'namespace', name: 'loaded', description: '', tools: [{ type: 'function', name: 'web_search_5' }] }] },
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'custom', name: 'web_search_6' }] },
@@ -6814,7 +6814,7 @@ for (const owner of ['function history', 'custom history', 'additional_tools', '
         { type: 'web_search' },
         { type: 'namespace', name: 'client', description: '', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] },
       ];
-      const input: OpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'Continue.' }];
+      const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'Continue.' }];
       if (owner === 'function history') {
         input.push({ type: 'function_call', name: SHIM_TOOL_NAME, call_id: 'past', arguments: '{}', status: 'completed' });
       } else if (owner === 'custom history') {

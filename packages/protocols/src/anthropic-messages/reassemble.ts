@@ -1,17 +1,11 @@
 import type {
   AnthropicMessagesAssistantContentBlock,
-  AnthropicMessagesFallbackBlock,
-  AnthropicMessagesRedactedThinkingBlock,
   AnthropicMessagesRefusalStopDetails,
   AnthropicMessagesResult,
-  AnthropicMessagesServerToolUseBlock,
-  AnthropicMessagesStreamEvent,
+  AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextCitation,
-  AnthropicMessagesThinkingBlock,
-  AnthropicMessagesToolUseBlock,
   AnthropicMessagesUsage,
   AnthropicMessagesUsageDelta,
-  AnthropicMessagesWebSearchToolResultBlock,
 } from './index.ts';
 import { cloneAnthropicMessagesUsageIterations } from './usage.ts';
 import { isJsonObject } from '../common/json.ts';
@@ -73,11 +67,8 @@ type AnthropicMessagesTextBlockAccumulator = {
   citations: AnthropicMessagesTextCitation[];
 };
 
-type AnthropicMessagesToolUseBlockAccumulator = AnthropicMessagesToolUseBlock & {
-  inputJson: string;
-};
-
-type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | AnthropicMessagesServerToolUseBlock | AnthropicMessagesWebSearchToolResultBlock | AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock | AnthropicMessagesFallbackBlock) & { extras?: Record<string, unknown> };
+type AnthropicMessagesToolUseBlockAccumulator = Extract<AnthropicMessagesAssistantContentBlock, { type: 'tool_use' | 'server_tool_use' }> & { inputJson: string };
+type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | Exclude<AnthropicMessagesAssistantContentBlock, { type: 'text' | 'tool_use' | 'server_tool_use' }>) & { extras?: Record<string, unknown> };
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
 // emits on `message_start.message`, on a `content_block`, or on the assembled
@@ -120,7 +111,7 @@ const applyAnthropicMessagesUsage = (usage: AnthropicMessagesUsage, update: Anth
   }
 };
 
-const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>): AnthropicMessagesBlockAccumulator => {
+const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>): AnthropicMessagesBlockAccumulator => {
   const block = event.content_block;
   const rawBlock = block as unknown as Record<string, unknown>;
   const knownKeys = KNOWN_BLOCK_KEYS_BY_TYPE[block.type] ?? FALLBACK_BLOCK_KNOWN;
@@ -171,7 +162,7 @@ const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEvent, { t
   }
 };
 
-const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, event: Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }>): void => {
+const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, event: Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }>): void => {
   if (!block) return;
 
   switch (event.delta.type) {
@@ -237,7 +228,7 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
   }
 };
 
-export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEvent>): Promise<AnthropicMessagesResult> {
+export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
   let id = '';
   let model = '';
   const usage: AnthropicMessagesResult['usage'] = {

@@ -14,13 +14,14 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const geminiGenerateContentReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
-const flushPendingContent = (input: OpenAIResponsesInputItem[], pending: OpenAIResponsesInputContent[], role: 'user' | 'assistant'): void => {
+const flushPendingContent = (input: CanonicalOpenAIResponsesInputItem[], pending: OpenAIResponsesInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
   input.push({ type: 'message', role, content: [...pending] });
   pending.length = 0;
@@ -36,8 +37,8 @@ const inlineDataToInputImage = (part: GeminiGenerateContentPart): OpenAIResponse
   };
 };
 
-const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIResponsesInputItem[] => {
-  const input: OpenAIResponsesInputItem[] = [];
+const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): CanonicalOpenAIResponsesInputItem[] => {
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
@@ -75,8 +76,8 @@ const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: n
   return input;
 };
 
-const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): OpenAIResponsesInputItem[] => {
-  const input: OpenAIResponsesInputItem[] = [];
+const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): CanonicalOpenAIResponsesInputItem[] => {
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
@@ -180,7 +181,7 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
   const instructions = geminiGenerateContentText(payload.systemInstruction);
   if (instructions !== null) request.instructions = instructions;
 
-  const input = request.input as OpenAIResponsesInputItem[];
+  const input = request.input as CanonicalOpenAIResponsesInputItem[];
   payload.contents?.forEach((content, turnIndex) => {
     switch (content.role) {
     case 'model':

@@ -9,7 +9,7 @@ import { test } from 'vitest';
 import { applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
@@ -18,7 +18,7 @@ const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenA
   ...overrides,
 });
 
-const resPayload = (overrides: Partial<OpenAIResponsesPayload> = {}): OpenAIResponsesPayload => ({
+const resPayload = (overrides: Partial<OpenAIResponsesPayloadEx> = {}): OpenAIResponsesPayloadEx => ({
   model: 'gpt-5.4',
   input: 'hi',
   ...overrides,

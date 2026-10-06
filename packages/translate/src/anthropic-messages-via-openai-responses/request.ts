@@ -8,23 +8,10 @@ import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthr
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import {
-  type AnthropicMessagesAssistantMessage,
-  type AnthropicMessagesClientTool,
-  type AnthropicMessagesMessage,
-  type AnthropicMessagesPayload,
-  type AnthropicMessagesServerToolUseBlock,
-  type AnthropicMessagesSystemMessage,
-  type AnthropicMessagesTextBlock,
-  type AnthropicMessagesToolResultBlock,
-  type AnthropicMessagesToolUseBlock,
-  type AnthropicMessagesUserContentBlock,
-  type AnthropicMessagesUserMessage,
-  type AnthropicMessagesWebSearchToolResultBlock,
-} from '@floway-dev/protocols/anthropic-messages';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { type AnthropicMessagesAssistantMessage, type AnthropicMessagesClientTool, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesMetadataEx, type AnthropicMessagesServerToolUseBlockParam, type AnthropicMessagesSystemMessage, type AnthropicMessagesTextBlockParam, type AnthropicMessagesToolResultBlock, type AnthropicMessagesToolUseBlockParam, type AnthropicMessagesUserContentBlock, type AnthropicMessagesUserMessage, type AnthropicMessagesWebSearchToolResultBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
-const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: OpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
+const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: CanonicalOpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
   input.push({ type: 'message', role, content: [...pending] });
   pending.length = 0;
@@ -46,7 +33,7 @@ const translateUserContentBlock = (
   throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
-const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlock | AnthropicMessagesServerToolUseBlock): OpenAIResponsesInputItem => ({
+const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): CanonicalOpenAIResponsesInputItem => ({
   type: 'function_call',
   call_id: block.id,
   name: block.name,
@@ -54,19 +41,19 @@ const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlock | An
   status: 'completed',
 });
 
-const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearchToolResultBlock): Extract<OpenAIResponsesInputItem, { type: 'function_call_output' }> => ({
+const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearchToolResultBlockParam): Extract<CanonicalOpenAIResponsesInputItem, { type: 'function_call_output' }> => ({
   type: 'function_call_output',
   call_id: block.tool_use_id,
   output: JSON.stringify(block.content),
   status: Array.isArray(block.content) ? 'completed' : 'incomplete',
 });
 
-const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
+const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
   }
 
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   for (const [blockIdx, block] of message.content.entries()) {
@@ -91,12 +78,12 @@ const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx:
   return input;
 };
 
-const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
+const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
 
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   for (const [blockIdx, block] of message.content.entries()) {
@@ -131,8 +118,8 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
 };
 
 // Preserve per-block boundaries when the source carries a
-// AnthropicMessagesTextBlock[]; single-string source stays as string content.
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIResponsesInputItem[] => [
+// AnthropicMessagesTextBlockParam[]; single-string source stays as string content.
+const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): CanonicalOpenAIResponsesInputItem[] => [
   {
     type: 'message',
     role: 'system',
@@ -142,8 +129,8 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): OpenAIResponsesInputItem[] =>
-  messages.flatMap((message, messageIdx): OpenAIResponsesInputItem[] => {
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): CanonicalOpenAIResponsesInputItem[] =>
+  messages.flatMap((message, messageIdx): CanonicalOpenAIResponsesInputItem[] => {
     switch (message.role) {
     case 'user': return translateUserMessage(message, messageIdx);
     case 'assistant': return translateAssistantMessage(message, messageIdx);
@@ -163,10 +150,10 @@ const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): 
 // structure.
 interface SystemPlacement {
   readonly instructions: string | null;
-  readonly prependItems: readonly OpenAIResponsesInputItem[];
+  readonly prependItems: readonly CanonicalOpenAIResponsesInputItem[];
 }
 
-const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBlock[] | undefined): SystemPlacement => {
+const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBlockParam[] | undefined): SystemPlacement => {
   if (typeof system === 'string') return { instructions: system, prependItems: [] };
   if (!system || system.length === 0) return { instructions: null, prependItems: [] };
   if (system.length === 1) return { instructions: system[0].text, prependItems: [] };

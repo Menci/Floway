@@ -6,7 +6,7 @@ import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gate
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -33,7 +33,7 @@ const forwardedHeadersFixture = (): Headers => new Headers({
 
 const makeRespondCtx = (): ChatGatewayCtx => mockChatGatewayCtx({ apiKeyId: 'key_respond_test' });
 
-const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEvent[] => [
+const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
@@ -49,7 +49,7 @@ const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEv
   { type: 'message_stop' },
 ];
 
-const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for (const event of anthropicMessagesEventsForRespond()) yield eventFrame(event);
   yield doneFrame();
 };
@@ -59,7 +59,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
   const app = new Hono();
   let captured: Response | undefined;
   app.get('/', async c => {
-    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> = eventResult(
+    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> = eventResult(
       anthropicMessagesProtocolFrames(),
       testTelemetryModelIdentity,
       { headers: forwardedHeadersFixture() },

@@ -2,11 +2,11 @@ import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import { rewriteContextExceededToPromptTooLong } from '../shared/anthropic-messages-via/context-window-error.ts';
 import type { TranslateTrip } from '../types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 export const translateAnthropicMessagesViaOpenAIResponses: TranslateTrip<
-  AnthropicMessagesPayload, AnthropicMessagesStreamEvent, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent
+  AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
 > = async src => ({
   target: buildTargetRequest(src),
   events: translateToSourceEvents,

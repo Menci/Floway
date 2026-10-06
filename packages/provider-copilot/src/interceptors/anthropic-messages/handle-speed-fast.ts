@@ -1,5 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**
@@ -46,8 +46,8 @@ export const withSpeedFast: CopilotAnthropicMessagesBoundaryInterceptor = async 
 };
 
 const stampFastSpeedOntoUsage = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for await (const frame of frames) {
     if (frame.type === 'done') {
       yield frame;

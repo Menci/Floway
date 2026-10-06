@@ -1,3 +1,5 @@
+import type * as Official from './sdk.ts';
+
 // OpenAI Responses API type definitions
 // Used for translating Anthropic Messages ↔ OpenAI Responses APIs
 
@@ -9,13 +11,31 @@
 export interface OpenAIResponsesPromptCacheOptions {
   mode?: 'implicit' | 'explicit' | (string & {});
   ttl?: '30m' | (string & {});
+  prewarm?: boolean;
+  comparison_response_id?: string | null;
 }
 
 export type OpenAIResponsesPromptCacheRetention = 'in_memory' | '24h' | (string & {});
 
-export interface OpenAIResponsesPayload {
+export type OpenAIResponsesPayload = Official.ResponseCreateParamsBase & {
+  presence_penalty?: number | null;
+  frequency_penalty?: number | null;
+  // WebSocket response.create only: false warms request state without generation.
+  // https://developers.openai.com/api/docs/guides/websocket-mode
+  generate?: boolean | null;
+};
+
+// Floway accepts OpenResponses and documented provider request extensions at its boundary.
+export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, 'model' | 'input' | 'access_programs' | 'context_management' | 'conversation' | 'moderation' | 'prompt' | 'stream_options' | 'user' | 'previous_response_id' | 'instructions' | 'temperature' | 'top_p' | 'max_output_tokens' | 'max_tool_calls' | 'tools' | 'tool_choice' | 'metadata' | 'stream' | 'store' | 'parallel_tool_calls' | 'reasoning' | 'include' | 'text' | 'prompt_cache_key' | 'prompt_cache_options' | 'prompt_cache_retention' | 'safety_identifier' | 'service_tier' | 'truncation' | 'background' | 'top_logprobs' | 'presence_penalty' | 'frequency_penalty'> {
   model: string;
-  input: string | OpenAIResponsesInputItem[];
+  input: string | CanonicalOpenAIResponsesInputItem[];
+  access_programs?: { cyber?: string };
+  context_management?: { type: string; compact_threshold?: number | null }[] | null;
+  conversation?: string | { id: string } | null;
+  moderation?: { model: string; policy?: { input?: { mode: string } | null; output?: { mode: string } | null } | null } | null;
+  prompt?: { id: string; version?: string | null; variables?: Record<string, string | CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile> | null } | null;
+  stream_options?: { include_obfuscation?: boolean } | null;
+  user?: string;
   previous_response_id?: string | null;
   instructions?: string | null;
   temperature?: number | null;
@@ -30,18 +50,15 @@ export interface OpenAIResponsesPayload {
   max_tool_calls?: number | null;
   tools?: OpenAIResponsesTool[] | null;
   tool_choice?: OpenAIResponsesToolChoice | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: Record<string, string> | null;
   stream?: boolean | null;
   store?: boolean | null;
-  // `false` asks for a prewarm: a response that records this request's
-  // context without generating, which the next request continues from via
-  // `previous_response_id`. Codex sends it on its WebSocket transport.
-  // https://github.com/openai/codex/blob/6989c6548b3737f108e2bb5ae1171b1d2032e30c/codex-rs/codex-api/src/common.rs#L355
-  generate?: boolean | null;
   parallel_tool_calls?: boolean | null;
   reasoning?: {
-    effort?: string;
-    summary?: 'detailed' | 'auto' | 'concise' | (string & {});
+    effort?: string | null;
+    summary?: 'detailed' | 'auto' | 'concise' | (string & {}) | null;
+    generate_summary?: string | null;
+    mode?: string | null;
     // Controls which reasoning items are rendered back to the model on later
     // turns; echoed on the response as the effective mode. Canonical values are
     // `auto` / `current_turn` / `all_turns`, but the slot stays open-string so
@@ -51,15 +68,15 @@ export interface OpenAIResponsesPayload {
     // Reference (openai-node Reasoning.context):
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/shared.ts#L262-L269
     context?: 'auto' | 'current_turn' | 'all_turns' | (string & {}) | null;
-  };
-  include?: string[];
+  } | null;
+  include?: string[] | null;
   // `text.verbosity` is a native GPT-5-family OpenAI Responses field that controls
   // response length; `text.format` carries structured-output schemas. Both
   // ride on the same `text` object.
   // Reference: https://platform.openai.com/docs/api-reference/responses/create
-  text?: { format?: Record<string, unknown> | null; verbosity?: string | null } | null;
+  text?: { format?: Official.ResponseFormatTextConfig | null; verbosity?: string | null } | null;
   prompt_cache_key?: string | null;
-  prompt_cache_options?: OpenAIResponsesPromptCacheOptions | null;
+  prompt_cache_options?: OpenAIResponsesPromptCacheOptions;
   prompt_cache_retention?: OpenAIResponsesPromptCacheRetention | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
@@ -85,13 +102,15 @@ export interface OpenAIResponsesPayload {
   frequency_penalty?: number | null;
 }
 
-export type OpenAIResponsesInputItem =
-  | OpenAIResponsesInputMessage
-  | OpenAIResponsesFunctionToolCallItem
+// Canonical inputs include documented provider extensions and normalized message discriminators.
+export type CanonicalOpenAIResponsesInputItem =
+  | OpenAIResponsesInputMessageEx
+  | OpenAIResponsesFunctionToolCallItemEx
   | OpenAIResponsesFunctionCallOutputItem
   | OpenAIResponsesCustomToolCallItem
   | OpenAIResponsesCustomToolCallOutputItem
   | OpenAIResponsesInputReasoning
+  | OpenAIResponsesConfigurationUpdate
   | OpenAIResponsesItemReference
   | OpenAIResponsesInputWebSearchCall
   | OpenAIResponsesFileSearchCallItem
@@ -105,7 +124,6 @@ export type OpenAIResponsesInputItem =
   | OpenAIResponsesInputAgentMessageItem
   | OpenAIResponsesInputMultiAgentCallItem
   | OpenAIResponsesInputMultiAgentCallOutputItem
-  | OpenAIResponsesContextCompactionItem
   | OpenAIResponsesCompactionItem
   | OpenAIResponsesCompactionTriggerItem
   | OpenAIResponsesInputImageGenerationCall
@@ -123,7 +141,7 @@ export type OpenAIResponsesInputItem =
 
 export type OpenAIResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
 
-export interface OpenAIResponsesInputMessage {
+export interface OpenAIResponsesInputMessageEx {
   type: 'message';
   id?: string;
   status?: string;
@@ -140,7 +158,7 @@ export interface OpenAIResponsesInputMessage {
 // shorthand; gateway and translator boundaries normalize it before internal
 // item processing so the canonical union remains explicitly discriminated.
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L697-L721
-export interface OpenAIResponsesEasyInputMessage {
+export interface OpenAIResponsesEasyInputMessageEx {
   content: string | OpenAIResponsesInputContent[];
   role: 'user' | 'assistant' | 'system' | 'developer';
   phase?: OpenAIResponsesMessagePhase;
@@ -149,18 +167,19 @@ export interface OpenAIResponsesEasyInputMessage {
 }
 
 export type OpenAIResponsesRequestInputItem =
-  | OpenAIResponsesEasyInputMessage
-  | OpenAIResponsesInputItem;
+  | OpenAIResponsesEasyInputMessageEx
+  | CanonicalOpenAIResponsesInputItem;
 
-export type OpenAIResponsesRequestPayload = Omit<OpenAIResponsesPayload, 'input'> & {
-  input: string | OpenAIResponsesRequestInputItem[];
+export type OpenAIResponsesRequestPayloadEx = Omit<OpenAIResponsesPayloadEx, 'model' | 'input'> & {
+  model?: string;
+  input?: string | OpenAIResponsesRequestInputItem[];
 };
 
-export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayload, 'input'> & {
-  input: OpenAIResponsesInputItem[];
+export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'input'> & {
+  input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = OpenAIResponsesInputText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesOutputRefusal;
+export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesOutputRefusal;
 
 // Explicit content breakpoints inherit their lifetime from
 // `prompt_cache_options.ttl`. The mode stays open-string for forward
@@ -172,7 +191,7 @@ export interface OpenAIResponsesPromptCacheBreakpoint {
   mode: 'explicit' | (string & {});
 }
 
-export interface OpenAIResponsesInputText {
+export interface CanonicalOpenAIResponsesText {
   type: 'input_text' | 'output_text';
   text: string;
   prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
@@ -199,29 +218,36 @@ export interface OpenAIResponsesInputImage {
   prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
 }
 
-export type OpenAIResponsesToolOutputContent = OpenAIResponsesInputText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+export type OpenAIResponsesToolOutputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
 
 export interface OpenAIResponsesInputFile {
   type: 'input_file';
   detail?: 'auto' | 'low' | 'high';
-  file_data?: string;
+  file_data?: string | null;
   file_id?: string | null;
-  file_url?: string;
-  filename?: string;
+  file_url?: string | null;
+  filename?: string | null;
   prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
   [key: string]: unknown;
 }
 
+export interface OpenAIResponsesConfigurationUpdate { type: 'configuration_update'; id?: string | null; reasoning?: { effort?: string | null } }
+
+export interface OpenAIResponsesReasoningText { type: 'reasoning_text'; text: string }
+
 export interface OpenAIResponsesInputReasoning {
   type: 'reasoning';
-  id: string;
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#/components/schemas/ReasoningItemParam
+  id?: string | null;
   summary: { type: 'summary_text'; text: string }[];
+  content?: OpenAIResponsesReasoningText[];
+  status?: string;
   // Opaque reasoning blob the upstream signs against `(account, id)`. Never
   // auto-requested via `include: ['reasoning.encrypted_content']` (forcing it
   // breaks non-OpenAI reasoning models); present only when the upstream
   // volunteers it, and round-tripped verbatim so the next-turn signature
   // check passes.
-  encrypted_content?: string;
+  encrypted_content?: string | null;
 }
 
 // OpenAI Responses Programmatic Tool Calling caller shape.
@@ -230,7 +256,7 @@ export type OpenAIResponsesToolCaller =
   | { type: 'direct' }
   | { type: 'program'; caller_id: string };
 
-export interface OpenAIResponsesFunctionToolCallItem {
+export interface OpenAIResponsesFunctionToolCallItemEx {
   type: 'function_call';
   id?: string;
   call_id: string;
@@ -240,7 +266,8 @@ export interface OpenAIResponsesFunctionToolCallItem {
   // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
   encrypted_function_args?: string[] | null;
   arguments: string;
-  status: 'completed' | 'in_progress' | 'incomplete';
+  status?: string;
+  async?: boolean;
   caller?: OpenAIResponsesToolCaller | null;
 }
 
@@ -294,20 +321,10 @@ export interface OpenAIResponsesInputWebSearchCall {
   results?: OpenAIResponsesWebSearchResult[];
 }
 
-export interface OpenAIResponsesPermissiveItem<TType extends string> {
-  type: TType;
-  id?: string;
-  call_id?: string;
-  status?: string;
-  output?: unknown;
-  body?: unknown;
-  [key: string]: unknown;
-}
-
 export interface OpenAIResponsesFileSearchResult {
   attributes?: Record<string, string | number | boolean> | null;
   file_id?: string;
-  filename?: string;
+  filename?: string | null;
   score?: number;
   text?: string;
 }
@@ -430,7 +447,7 @@ export interface OpenAIResponsesProgramOutputItem {
 // OpenAI beta OpenAI Responses multi-agent item shapes.
 // https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6549-L6805
 export type OpenAIResponsesAgentMessageContent =
-  | OpenAIResponsesInputText
+  | CanonicalOpenAIResponsesText
   | OpenAIResponsesInputImage
   | OpenAIResponsesInputFile
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
@@ -475,23 +492,15 @@ export interface OpenAIResponsesInputMultiAgentCallOutputItem {
   agent?: { agent_name: string } | null;
 }
 
-// Legacy RemoteCompactionV2 history shape. Current OpenAI Responses uses
-// `compaction_trigger` input and `compaction` output; Codex still deserializes
-// this form when replaying older rollouts.
-// https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1135-L1148
-export interface OpenAIResponsesContextCompactionItem extends OpenAIResponsesPermissiveItem<'context_compaction'> {
-  encrypted_content?: string;
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-}
-
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
 export interface OpenAIResponsesCompactionItem {
-  // Codex accepts compaction_summary as the wire alias of compaction.
-  // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1233
-  type: 'compaction' | 'compaction_summary';
+  type: 'compaction' | 'compaction_summary' | 'context_compaction';
   id?: string | null;
-  encrypted_content: string;
+  encrypted_content?: string | null;
   created_by?: string;
+}
+
+export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompactionItem {
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
@@ -614,7 +623,7 @@ export interface OpenAIResponsesMcpCallItem {
   name: string;
   server_label: string;
   approval_request_id?: string | null;
-  error?: string | null;
+  error?: Official.McpToolCallError | string | null;
   output?: string | null;
   status?: string;
 }
@@ -895,38 +904,31 @@ export type OpenAIResponsesToolChoice =
 
 // ── Response types ──
 
-export interface OpenAIResponsesResult {
+export type OpenAIResponsesResult = Official.Response & { presence_penalty?: number; frequency_penalty?: number };
+export interface OpenAIResponsesErrorPayload { type: string; code: string | null; message: string; param: string | null; headers?: Record<string, string> }
+
+export interface OpenAIResponsesErrorEx extends Omit<Official.ResponseError, 'code'> {
+  code: string;
+  // CLIProxyAPI includes this classification on synthetic failed resources.
+  // https://github.com/router-for-me/CLIProxyAPI/blob/0f96f568e4dbf6f84ad7399a74b78344c5eac7e6/internal/translator/common/apply_patch_events.go#L53-L60
+  type?: string;
+  // LiteLLM-inspired namespace for Floway diagnostics in error events and failed resources.
+  // https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/proxy/common_request_processing.py#L943-L975
+  provider_specific_fields?: Record<string, unknown>;
+}
+
+// Sparse native responses and translator snapshots precede complete client resources.
+export interface OpenAIResponsesResultEx extends Omit<Partial<OpenAIResponsesResult>, 'id' | 'object' | 'model' | 'output' | 'status' | 'incomplete_details' | 'error' | 'service_tier' | 'tools' | 'tool_choice' | 'usage' | 'created_at' | 'completed_at' | 'previous_response_id' | 'instructions' | 'truncation' | 'parallel_tool_calls' | 'text' | 'top_p' | 'presence_penalty' | 'frequency_penalty' | 'top_logprobs' | 'temperature' | 'reasoning' | 'max_output_tokens' | 'max_tool_calls' | 'store' | 'background' | 'metadata' | 'safety_identifier' | 'prompt_cache_key'> {
   id: string;
   object: string;
   model: string;
-  output: OpenAIResponsesOutputItem[];
-  // SDK-only convenience alias for "all assistant text in this
-  // response". Optional on the wire because OpenAI's SDKs derive it
-  // from `output` rather than reading it from the JSON (see
-  // openai-python `Response.output_text` `@property`, openai-dotnet
-  // `[CodeGenSuppress("OutputText")]`, openai-go `func (r Response)
-  // OutputText() string`). The captured wire fixture at
-  // `openai-dotnet/tests/SessionRecords/ResponsesToolTests/WebSearchCallAsync.json`
-  // confirms the field is absent from the response body. Producers
-  // that happen to emit it (some OpenAPI implementations do) are
-  // preserved as-is on pass-through.
-  output_text?: string;
+  output: OpenAIResponsesOutputItemEx[];
   // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6866-L6870
   status: 'queued' | 'completed' | 'incomplete' | 'failed' | 'in_progress' | 'cancelled';
-  // `error` and `incomplete_details` are REQUIRED on the wire shape
-  // per the OpenAI Responses spec (both can be null). Reference:
-  // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
-  // `Response.required` lists both. Native upstreams emit them as
-  // `null` on success-path frames; downstream clients (typed SDKs)
-  // probe for the field's presence rather than its truthiness, so
-  // omitting them on synthesized envelopes breaks parse-time validation.
-  //
-  // `error.type` is NOT in the OpenAI spec (see ResponseError schema —
-  // only `code` and `message` are defined), but kept optional here to
-  // accommodate upstreams that publish it as an extension; the shim
-  // never synthesizes it.
-  incomplete_details: { reason: string } | null;
-  error: { message: string; code: string; type?: string } | null;
+  // ResponseResource requires error and incomplete_details; both permit null.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2520-L2555
+  incomplete_details: { reason?: string } | null;
+  error: OpenAIResponsesErrorEx | null;
   // https://developers.openai.com/api/reference/resources/responses/methods/create
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   // Request params echoed back on the response body. The `Response`
@@ -969,24 +971,16 @@ export interface OpenAIResponsesResult {
   // Null until the response reaches a terminal status.
   completed_at?: number | null;
   previous_response_id?: string | null;
-  instructions?: string | null;
+  instructions?: string | CanonicalOpenAIResponsesInputItem[] | null;
   truncation?: 'auto' | 'disabled' | (string & {}) | null;
   parallel_tool_calls?: boolean;
-  text?: { format?: Record<string, unknown> | null; verbosity?: string | null } | null;
+  text?: { format?: Official.ResponseFormatTextConfig | null; verbosity?: string | null } | null;
   top_p?: number | null;
   presence_penalty?: number | null;
   frequency_penalty?: number | null;
   top_logprobs?: number | null;
   temperature?: number | null;
-  // `effort` and `summary` are themselves required whenever `reasoning` is an
-  // object; other keys upstreams add (`context`, `mode`) ride along untouched.
-  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2320-L2359
-  reasoning?: {
-    effort?: string | null;
-    summary?: 'detailed' | 'auto' | 'concise' | (string & {}) | null;
-    context?: 'auto' | 'current_turn' | 'all_turns' | (string & {}) | null;
-    [key: string]: unknown;
-  } | null;
+  reasoning?: OpenAIResponsesPayloadEx['reasoning'];
   max_output_tokens?: number | null;
   max_tool_calls?: number | null;
   // Whether the response was stored so it can be retrieved later — the wording
@@ -994,7 +988,7 @@ export interface OpenAIResponsesResult {
   // its store rather than from the request's `store` flag.
   store?: boolean;
   background?: boolean;
-  metadata?: Record<string, unknown> | null;
+  metadata?: Record<string, string> | null;
   safety_identifier?: string | null;
   prompt_cache_key?: string | null;
 }
@@ -1034,9 +1028,9 @@ export type OpenAIResponsesOutputMultiAgentCallOutputItem = Omit<OpenAIResponses
   agent?: { agent_name: string };
 };
 
-export type OpenAIResponsesOutputItem =
-  | OpenAIResponsesOutputMessage
-  | OpenAIResponsesOutputFunctionCall
+export type OpenAIResponsesOutputItemEx =
+  | OpenAIResponsesOutputMessageEx
+  | OpenAIResponsesOutputFunctionCallEx
   | OpenAIResponsesFunctionCallOutputItem
   | OpenAIResponsesOutputCustomToolCall
   | OpenAIResponsesCustomToolCallOutputItem
@@ -1053,7 +1047,6 @@ export type OpenAIResponsesOutputItem =
   | OpenAIResponsesOutputAgentMessageItem
   | OpenAIResponsesOutputMultiAgentCallItem
   | OpenAIResponsesOutputMultiAgentCallOutputItem
-  | OpenAIResponsesContextCompactionItem
   | OpenAIResponsesCompactionItem
   | OpenAIResponsesCodeInterpreterCallItem
   | OpenAIResponsesLocalShellCallItem
@@ -1066,7 +1059,7 @@ export type OpenAIResponsesOutputItem =
   | OpenAIResponsesMcpListToolsItem
   | OpenAIResponsesMcpApprovalRequestItem
   | OpenAIResponsesMcpApprovalResponseItem
-  | OpenAIResponsesOutputImageGenerationCall;
+  | OpenAIResponsesOutputImageGenerationCallEx;
 
 // The OpenAI Responses item schema requires `status` on an output message and
 // `annotations` on every `output_text` part, even when the text carries no
@@ -1076,7 +1069,7 @@ export type OpenAIResponsesOutputItem =
 // https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
 // `id` is schema-required too but stays optional: an upstream item that omits
 // it is surfaced by `requireItemId` rather than given an invented value.
-export interface OpenAIResponsesOutputMessage {
+export interface OpenAIResponsesOutputMessageEx {
   type: 'message';
   id?: string;
   status: string;
@@ -1087,18 +1080,19 @@ export interface OpenAIResponsesOutputMessage {
 
 export type OpenAIResponsesOutputContentBlock = OpenAIResponsesOutputText | OpenAIResponsesOutputRefusal;
 
-export interface OpenAIResponsesAnnotation {
-  type: 'url_citation';
-  url: string;
-  title: string;
-  start_index: number;
-  end_index: number;
-}
+export type OpenAIResponsesAnnotation =
+  | { type: 'url_citation'; url: string; title: string; start_index: number; end_index: number }
+  | { type: 'file_citation'; file_id: string; filename: string; index: number }
+  | { type: 'container_file_citation'; container_id: string; file_id: string; filename: string; start_index: number; end_index: number }
+  | { type: 'file_path'; file_id: string; index: number };
+
+export interface OpenAIResponsesLogprob { token: string; logprob: number; bytes: number[]; top_logprobs: { token: string; logprob: number; bytes: number[] }[] }
 
 export interface OpenAIResponsesOutputText {
   type: 'output_text';
   text: string;
   annotations: OpenAIResponsesAnnotation[];
+  logprobs?: OpenAIResponsesLogprob[];
 }
 
 export interface OpenAIResponsesOutputRefusal {
@@ -1106,7 +1100,7 @@ export interface OpenAIResponsesOutputRefusal {
   refusal: string;
 }
 
-export interface OpenAIResponsesOutputFunctionCall {
+export interface OpenAIResponsesOutputFunctionCallEx {
   type: 'function_call';
   id?: string;
   call_id: string;
@@ -1126,8 +1120,10 @@ export interface OpenAIResponsesOutputReasoning {
   type: 'reasoning';
   id: string;
   summary: { type: 'summary_text'; text: string }[];
+  content?: OpenAIResponsesReasoningText[];
+  status?: string;
   // See `OpenAIResponsesInputReasoning.encrypted_content`.
-  encrypted_content?: string;
+  encrypted_content?: string | null;
 }
 
 // Web-search call types. `results` is opt-in on the wire (native gates
@@ -1166,54 +1162,51 @@ export interface OpenAIResponsesOutputWebSearchCall {
   results?: OpenAIResponsesWebSearchResult[];
 }
 
-export interface OpenAIResponsesOutputImageGenerationCall {
-  type: 'image_generation_call';
-  id: string;
-  status: 'in_progress' | 'generating' | 'completed' | 'failed';
-  result?: string;
-  revised_prompt?: string;
-  action?: 'generate' | 'edit';
-  background?: 'transparent' | 'opaque';
-  output_format?: 'png' | 'jpeg';
-  quality?: 'low' | 'medium' | 'high';
-  size?: string;
-  error?: { message: string; code: string; type?: string };
-}
+export type OpenAIResponsesOutputImageGenerationCall = Official.ResponseOutputItem.ImageGenerationCall;
+export type OpenAIResponsesOutputImageGenerationCallEx = OpenAIResponsesOutputImageGenerationCall & { error?: { message: string; code: string; type?: string } };
 
 // ── Stream event types ──
 
 // Spec marks sequence_number required, but some Copilot upstreams omit it
 // on the wire; the stream parser backfills a monotonic counter when missing.
-export type OpenAIResponsesStreamEvent = OpenAIResponsesStreamEventVariant & { sequence_number?: number };
+export type OpenAIResponsesStreamEventEx = OpenAIResponsesStreamEventVariant & { sequence_number?: number };
 
 type OpenAIResponsesStreamEventVariant =
+  | { type: 'response.audio.delta' | 'response.audio.transcript.delta'; delta: string }
+  | { type: 'response.audio.done' | 'response.audio.transcript.done' }
+  | { type: 'response.code_interpreter_call_code.delta' | 'response.mcp_call_arguments.delta'; delta: string; item_id: string; output_index: number }
+  | { type: 'response.code_interpreter_call_code.done'; code: string; item_id: string; output_index: number }
+  | { type: 'response.mcp_call_arguments.done'; arguments: string; item_id: string; output_index: number }
+  | { type: 'response.code_interpreter_call.in_progress' | 'response.code_interpreter_call.interpreting' | 'response.code_interpreter_call.completed' | 'response.file_search_call.in_progress' | 'response.file_search_call.searching' | 'response.file_search_call.completed' | 'response.mcp_call.in_progress' | 'response.mcp_call.completed' | 'response.mcp_call.failed' | 'response.mcp_list_tools.in_progress' | 'response.mcp_list_tools.completed' | 'response.mcp_list_tools.failed'; item_id: string; output_index: number }
+  | { type: 'response.shell_call_output_content.delta'; command_index: number; delta: { stdout?: string; stderr?: string }; item_id: string; output_index: number }
+  | { type: 'response.shell_call_output_content.done'; command_index: number; output: { stdout: string; stderr: string; outcome: { type: 'exit'; exit_code: number } | { type: 'timeout' } }[]; item_id: string; output_index: number }
   // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6456-L6471
-  | { type: 'response.queued'; response: OpenAIResponsesResult }
-  | { type: 'response.created'; response: OpenAIResponsesResult }
-  | { type: 'response.in_progress'; response: OpenAIResponsesResult }
+  | { type: 'response.queued'; response: OpenAIResponsesResultEx }
+  | { type: 'response.created'; response: OpenAIResponsesResultEx }
+  | { type: 'response.in_progress'; response: OpenAIResponsesResultEx }
   | {
     type: 'response.output_item.added';
     output_index: number;
-    item: OpenAIResponsesOutputItem;
+    item: OpenAIResponsesOutputItemEx;
   }
   | {
     type: 'response.output_item.done';
     output_index: number;
-    item: OpenAIResponsesOutputItem;
+    item: OpenAIResponsesOutputItemEx;
   }
   | {
     type: 'response.content_part.added';
     item_id: string;
     output_index: number;
     content_index: number;
-    part: OpenAIResponsesOutputContentBlock;
+    part: OpenAIResponsesOutputContentBlock | OpenAIResponsesReasoningText;
   }
   | {
     type: 'response.content_part.done';
     item_id: string;
     output_index: number;
     content_index: number;
-    part: OpenAIResponsesOutputContentBlock;
+    part: OpenAIResponsesOutputContentBlock | OpenAIResponsesReasoningText;
   }
   | {
     type: 'response.reasoning_summary_part.added';
@@ -1224,6 +1217,7 @@ type OpenAIResponsesStreamEventVariant =
   }
   | {
     type: 'response.reasoning_summary_part.done';
+    status?: string;
     item_id: string;
     output_index: number;
     summary_index: number;
@@ -1293,7 +1287,7 @@ type OpenAIResponsesStreamEventVariant =
     content_index: number;
     annotation_index: number;
     item_id: string;
-    annotation: OpenAIResponsesAnnotation;
+    annotation: OpenAIResponsesAnnotation | null;
   }
   | {
     type: 'response.web_search_call.in_progress';
@@ -1405,32 +1399,31 @@ type OpenAIResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
   }
-  | { type: 'response.completed'; response: OpenAIResponsesResult }
-  | { type: 'response.incomplete'; response: OpenAIResponsesResult }
-  | { type: 'response.failed'; response: OpenAIResponsesResult }
+  | { type: 'response.completed'; response: OpenAIResponsesResultEx }
+  | { type: 'response.incomplete'; response: OpenAIResponsesResultEx }
+  | { type: 'response.failed'; response: OpenAIResponsesResultEx }
   | {
     type: 'error';
     message: string;
-    code?: string;
-    name?: string;
-    stack?: string;
-    cause?: unknown;
-    target_api?: string;
-  };
+    code?: string | null;
+    param?: string | null;
+    provider_specific_fields?: OpenAIResponsesErrorEx['provider_specific_fields'];
+  }
+  | { type: 'error'; error: Partial<OpenAIResponsesErrorPayload> & { message: string; provider_specific_fields?: OpenAIResponsesErrorEx['provider_specific_fields'] } };
 
 // Either side of the OpenAI Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape
 // is identical aside from the type tag's role.
 export type OpenAIResponsesReasoningItem = OpenAIResponsesInputReasoning | OpenAIResponsesOutputReasoning;
 
-export const isOpenAIResponsesTerminalEvent = (event: Pick<OpenAIResponsesStreamEvent, 'type'>): boolean =>
+export const isOpenAIResponsesTerminalEvent = (event: Pick<OpenAIResponsesStreamEventEx, 'type'>): boolean =>
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
 // Typed accessor for the `response` payload carried on lifecycle envelopes
 // (`response.queued`, `response.created`, `response.in_progress`, `response.completed`,
 // `response.incomplete`, `response.failed`). Returns null on every other
 // event type so callers don't have to reproduce the variant check.
-export const openaiResponsesResultFromStreamEvent = (event: OpenAIResponsesStreamEvent): OpenAIResponsesResult | null =>
+export const openaiResponsesResultFromStreamEvent = (event: OpenAIResponsesStreamEventEx): OpenAIResponsesResultEx | null =>
   'response' in event ? event.response : null;
 
 export {

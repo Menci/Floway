@@ -1,5 +1,6 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
-import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall } from './index.ts';
+import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
+
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
@@ -13,12 +14,18 @@ interface ToolCallAccumulator {
   id: string;
   name: string;
   arguments: string;
+  type: 'function' | 'custom';
+  extras: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 interface ChoiceAccumulator {
   readonly index: number;
   content: string;
   reasoningText: string;
+  audio?: Partial<OpenAIChatCompletionsAudio>;
+  functionCall?: { name: string; arguments: string };
+  logprobs?: OpenAIChatCompletionsLogprobs;
   reasoningOpaque?: string;
   refusal?: string;
   readonly reasoningItems: OpenAIChatCompletionsReasoningItem[];
@@ -113,7 +120,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       choices.set(streamed.index, choice);
       captureExtras(streamed as unknown as Record<string, unknown>, KNOWN_CHOICE_KEYS, choice.choiceExtras);
 
-      const delta = streamed.delta;
+      const delta = streamed.delta as OpenAIChatCompletionsAssistantDeltaEx;
       captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
       if (typeof delta.content === 'string') choice.content += delta.content;
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withInlineImagesCompressed } from '../../../src/interceptors/anthropic-messages/compress-images.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
 import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -11,8 +11,8 @@ import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } f
 
 const stubRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 // Records the bytes and resolved target dimensions handed to the processor and
 // returns a fixed [1,2,3] WebP payload, which base64-encodes to "AQID".

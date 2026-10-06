@@ -1,18 +1,18 @@
 import { test } from 'vitest';
 
 import { createAnthropicMessagesToOpenAIChatCompletionsStreamState, translateAnthropicMessagesEventToOpenAIChatCompletionsChunks } from '../../src/openai-chat-completions-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 // ── Helpers ──
 
-function process(events: AnthropicMessagesStreamEvent[]): (OpenAIChatCompletionsStreamEvent[] | 'DONE')[] {
+function process(events: AnthropicMessagesStreamEventEx[]): (OpenAIChatCompletionsStreamEvent[] | 'DONE')[] {
   const state = createAnthropicMessagesToOpenAIChatCompletionsStreamState();
   return events.map(e => translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(e, state));
 }
 
-function processFlat(events: AnthropicMessagesStreamEvent[]): OpenAIChatCompletionsStreamEvent[] {
+function processFlat(events: AnthropicMessagesStreamEventEx[]): OpenAIChatCompletionsStreamEvent[] {
   const results = process(events);
   const chunks: OpenAIChatCompletionsStreamEvent[] = [];
   for (const r of results) {
@@ -22,13 +22,13 @@ function processFlat(events: AnthropicMessagesStreamEvent[]): OpenAIChatCompleti
   return chunks;
 }
 
-function deltas(events: AnthropicMessagesStreamEvent[]): OpenAIChatCompletionsDelta[] {
+function deltas(events: AnthropicMessagesStreamEventEx[]): OpenAIChatCompletionsDelta[] {
   return processFlat(events)
     .filter(c => c.choices.length > 0)
     .map(c => c.choices[0].delta);
 }
 
-const MSG_START: AnthropicMessagesStreamEvent = {
+const MSG_START: AnthropicMessagesStreamEventEx = {
   type: 'message_start',
   message: {
     id: 'msg_test',
@@ -93,7 +93,7 @@ test('message_start captures cache_read_input_tokens', () => {
           cache_read_input_tokens: 20,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   assertEquals(state.usage.input_tokens, 80);
@@ -147,7 +147,7 @@ test('redacted_thinking content_block_start → reasoning_opaque chunk', () => {
   );
   const chunks = result as OpenAIChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 1);
-  assertEquals(chunks[0].choices[0].delta.reasoning_opaque, 'opaque_xyz');
+  assertEquals((chunks[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'opaque_xyz');
 });
 
 // ── content_block_start: tool_use ──
@@ -261,7 +261,7 @@ test('thinking_delta → reasoning_text delta', () => {
       delta: { type: 'thinking_delta', thinking: 'Let me think...' },
     },
   ]);
-  assertEquals(d[1].reasoning_text, 'Let me think...');
+  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'Let me think...');
 });
 
 // ── content_block_delta: signature_delta ──
@@ -285,7 +285,7 @@ test('signature_delta → reasoning_opaque delta', () => {
       delta: { type: 'signature_delta', signature: 'sig_abc' },
     },
   ]);
-  assertEquals(d[2].reasoning_opaque, 'sig_abc');
+  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig_abc');
 });
 
 // ── content_block_delta: input_json_delta ──
@@ -494,7 +494,7 @@ test('message_delta usage includes cache_read_input_tokens from message_start', 
           cache_read_input_tokens: 20,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -534,7 +534,7 @@ test('null Messages usage counters translate to absent Chat Completions usage de
           speed: null,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -680,8 +680,8 @@ test('full thinking + text stream scenario', () => {
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
   assertEquals(d[0].role, 'assistant');
-  assertEquals(d[1].reasoning_text, 'Let me think');
-  assertEquals(d[2].reasoning_opaque, 'sig');
+  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'Let me think');
+  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig');
   assertEquals(d[3].content, 'Answer');
 });
 
@@ -756,7 +756,7 @@ test('full redacted_thinking + text stream scenario', () => {
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
   assertEquals(d[0].role, 'assistant');
-  assertEquals(d[1].reasoning_opaque, 'opaque_blob');
+  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'opaque_blob');
   assertEquals(d[2].content, 'Response');
 });
 
@@ -798,8 +798,8 @@ test('later reasoning blocks are ignored for OpenAI Chat Completions scalar stre
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
 
-  assertEquals(d.map(delta => delta.reasoning_text).filter(Boolean), ['first']);
-  assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['sig_1']);
+  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(Boolean), ['first']);
+  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque).filter(Boolean), ['sig_1']);
 });
 
 test('first redacted_thinking block suppresses later readable thinking in OpenAI Chat Completions scalar streaming', () => {
@@ -825,8 +825,8 @@ test('first redacted_thinking block suppresses later readable thinking in OpenAI
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
   ]);
 
-  assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['opaque_first']);
-  assertEquals(d.map(delta => delta.reasoning_text).filter(Boolean), []);
+  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque).filter(Boolean), ['opaque_first']);
+  assertEquals(d.map(delta => (delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(Boolean), []);
 });
 
 test('thinking + tool_use stream (interleaved thinking)', () => {
@@ -862,8 +862,8 @@ test('thinking + tool_use stream (interleaved thinking)', () => {
     { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
   ]);
   assertEquals(d[0].role, 'assistant');
-  assertEquals(d[1].reasoning_text, 'I need a tool');
-  assertEquals(d[2].reasoning_opaque, 'sig_1');
+  assertEquals((d[1] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'I need a tool');
+  assertEquals((d[2] as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque, 'sig_1');
   assertEquals(d[3].tool_calls![0].id, 'tu_1');
   assertEquals(d[4].tool_calls![0].function!.arguments, '{"x":1}');
 });
@@ -965,7 +965,7 @@ test('message_start captures cache_creation_input_tokens', () => {
           cache_creation_input_tokens: 30,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   assertEquals(state.usage.input_tokens, 80);
@@ -992,7 +992,7 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
           cache_creation_input_tokens: 30,
         },
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -1111,7 +1111,7 @@ test('message_delta atomically replaces tier and merges late cache accounting', 
         cache_creation: { ephemeral_1h_input_tokens: 5 },
         service_tier: 'priority',
       },
-    } as AnthropicMessagesStreamEvent,
+    } as AnthropicMessagesStreamEventEx,
     state,
   ) as OpenAIChatCompletionsStreamEvent[];
   assertEquals(result[1].service_tier, 'priority');

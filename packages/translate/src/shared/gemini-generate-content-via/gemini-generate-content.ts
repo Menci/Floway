@@ -1,4 +1,4 @@
-import type { GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentThinkingConfig, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPartData, GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentThinkingConfig, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -25,9 +25,9 @@ export type GeminiGenerateContentSupportedImageMimeType = (typeof GEMINI_GENERAT
 
 export const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
-export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result';
+export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result' | 'tool_call' | 'tool_response';
 
-type GeminiGenerateContentPartDataField = keyof Omit<GeminiGenerateContentPart, 'thought' | 'thoughtSignature'>;
+type GeminiGenerateContentPartDataField = keyof GeminiGenerateContentPartData;
 
 // Source of truth for "what counts as a content-bearing field on a part".
 // Record<GeminiGenerateContentPartDataField, _> forces a matching entry whenever a new field

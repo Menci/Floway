@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
-import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
@@ -29,7 +30,7 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
         content: 'answer',
         reasoning_text: 'trace',
         reasoning_opaque: 'enc',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -47,7 +48,7 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
         role: 'assistant',
         content: 'answer',
         reasoning_text: 'visible trace',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -79,7 +80,7 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
             summary: [],
           },
         ],
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -98,7 +99,7 @@ test('buildTargetRequest rejects tool messages without tool_call_id', () => {
     () =>
       buildTargetRequest({
         model: 'gpt-test',
-        messages: [{ role: 'tool', content: 'result' }],
+        messages: [{ role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
     'tool_call_id',

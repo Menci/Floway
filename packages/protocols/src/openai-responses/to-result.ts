@@ -1,5 +1,5 @@
 import type { ClientResponseResource, ClientOpenAIResponsesStreamEvent } from './client-resource.ts';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from './index.ts';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from './index.ts';
 import { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 import { type ProtocolFrame } from '../common/index.ts';
 
@@ -12,9 +12,9 @@ export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses strea
 // assignable to `OpenAIResponsesStreamEvent`, so the wide signature would otherwise
 // swallow both calls and widen the completed result back to `OpenAIResponsesResult`.
 export function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): Promise<ClientResponseResource>;
-export function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesResult>;
-export async function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesResult> {
-  const events = async function* (): AsyncGenerator<OpenAIResponsesStreamEvent> {
+export function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesResultEx>;
+export async function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesResultEx> {
+  const events = async function* (): AsyncGenerator<OpenAIResponsesStreamEventEx> {
     for await (const frame of frames) {
       if (frame.type === 'done') continue;
 

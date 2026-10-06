@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { answerClaudeCodeProbe } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/answer-claude-code-probe.ts';
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -36,8 +36,8 @@ const invocation = (payload: AnthropicMessagesPayload, userAgent: string | null 
   headers: new Headers(userAgent === null ? {} : { 'user-agent': userAgent }),
 });
 
-const passthrough = async (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity);
+const passthrough = async (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity);
 
 const runProbe = async (input: AnthropicMessagesInvocation) => {
   const run = vi.fn(passthrough);

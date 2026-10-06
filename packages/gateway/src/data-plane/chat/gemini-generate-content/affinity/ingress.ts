@@ -40,7 +40,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
           const content = candidatePayload.contents[contentIndex];
           const replacements = new Map<number, GeminiGenerateContentPart | null>();
           for (const { location, projection } of contentProjections) {
-            const part = content.parts[location.partIndex];
+            const part = content.parts![location.partIndex];
             if (location.decoded.kind === 'foreign') continue;
             if (projection.kind === 'preserve') {
               replacements.set(location.partIndex, { ...part, thoughtSignature: projection.value });
@@ -50,7 +50,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
               replacements.set(location.partIndex, hasPartContent(replacement) ? replacement : null);
             }
           }
-          content.parts = content.parts.flatMap((part, partIndex) => {
+          content.parts = content.parts!.flatMap((part, partIndex) => {
             const replacement = replacements.get(partIndex);
             return replacement === undefined ? [part] : replacement === null ? [] : [replacement];
           });

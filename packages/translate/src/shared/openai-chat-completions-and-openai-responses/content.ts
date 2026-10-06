@@ -12,9 +12,9 @@ const contentPartsToText = (parts: readonly (OpenAIChatCompletionsContentPart | 
     .filter((text): text is string => text !== null)
     .join('');
 
-export const openaiChatCompletionsContentToText = (content: string | OpenAIChatCompletionsContentPart[] | null): string => (typeof content === 'string' ? content : Array.isArray(content) ? contentPartsToText(content) : '');
+export const openaiChatCompletionsContentToText = (content: string | OpenAIChatCompletionsContentPart[] | null | undefined): string => (typeof content === 'string' ? content : Array.isArray(content) ? contentPartsToText(content) : '');
 
-export const openaiChatCompletionsContentToOpenAIResponsesInputContent = (content: string | OpenAIChatCompletionsContentPart[] | null): string | OpenAIResponsesInputContent[] => {
+export const openaiChatCompletionsContentToOpenAIResponsesInputContent = (content: string | OpenAIChatCompletionsContentPart[] | null | undefined): string | OpenAIResponsesInputContent[] => {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content) || content.length === 0) return '';
 

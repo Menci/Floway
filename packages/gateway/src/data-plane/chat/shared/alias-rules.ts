@@ -11,7 +11,7 @@
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
@@ -27,7 +27,7 @@ export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatComple
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayloadEx, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort, summary } = rules.reasoning;
     if (effort !== undefined || summary !== undefined) {

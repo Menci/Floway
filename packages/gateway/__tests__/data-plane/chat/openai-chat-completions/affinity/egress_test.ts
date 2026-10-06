@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsAssistantDeltaEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const affinity: AffinityIdentity = {
   upstreamId: 'up-a',
@@ -14,7 +14,7 @@ const affinity: AffinityIdentity = {
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const chunk = (
-  choices: OpenAIChatCompletionsStreamEvent['choices'],
+  choices: Array<Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx }>,
 ): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_1',
   object: 'chat.completion.chunk',

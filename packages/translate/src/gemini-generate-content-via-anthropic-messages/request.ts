@@ -14,14 +14,16 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
+
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-  type AnthropicMessagesAssistantContentBlock,
+  type AnthropicMessagesAssistantInputContentBlock,
   type AnthropicMessagesImageBlock,
   type AnthropicMessagesPayload,
-  type AnthropicMessagesTextBlock,
+  type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesTool,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
@@ -77,7 +79,7 @@ const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: numb
 };
 
 const attachSignatureToThinking = (
-  blocks: AnthropicMessagesAssistantContentBlock[],
+  blocks: AnthropicMessagesAssistantInputContentBlock[],
   signature: string | undefined,
   firstThinkingIndex: number | undefined,
   firstSignedActionIndex: number | undefined,
@@ -99,7 +101,7 @@ const attachSignatureToThinking = (
 };
 
 const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): AnthropicMessagesPayload['messages'][number] | null => {
-  const blocks: AnthropicMessagesAssistantContentBlock[] = [];
+  const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
   let firstThinkingIndex: number | undefined;
   let firstActionSignature: string | undefined;
   let firstSignedActionIndex: number | undefined;
@@ -238,7 +240,7 @@ export const buildTargetRequest = (
 
   const system = geminiGenerateContentText(payload.systemInstruction);
   if (system !== null) {
-    const systemBlocks: AnthropicMessagesTextBlock[] = [{ type: 'text', text: system }];
+    const systemBlocks: AnthropicMessagesTextBlockParam[] = [{ type: 'text', text: system }];
     applyLastSystemCacheBreakpoint(systemBlocks);
     request.system = systemBlocks;
   }

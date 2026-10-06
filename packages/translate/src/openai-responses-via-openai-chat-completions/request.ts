@@ -8,11 +8,11 @@ import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custo
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, OpenAIResponsesInputText, OpenAIResponsesPayload, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 interface AssistantAccumulator {
-  message: OpenAIChatCompletionsMessage;
+  message: OpenAIChatCompletionsAssistantMessage;
   reasoning: OpenAIChatCompletionsReasoningProjection;
 }
 
@@ -51,7 +51,7 @@ const appendAssistantToolCall = (
 
 interface ToolCallOutputProjection {
   toolContent: string;
-  liftedImageContent: OpenAIChatCompletionsContentPart[];
+  liftedImageContent: OpenAIChatCompletionsUserContentPart[];
 }
 
 // OpenAI Chat Completions tool messages admit only strings or text parts, while OpenAI Responses tool
@@ -67,7 +67,7 @@ const projectToolCallOutput = (item: OpenAIResponsesFunctionCallOutputItem | Ope
   }
 
   const images = item.output.filter((part): part is OpenAIResponsesInputImage => part.type === 'input_image');
-  const textParts = item.output.filter((part): part is OpenAIResponsesInputText =>
+  const textParts = item.output.filter((part): part is CanonicalOpenAIResponsesText =>
     part.type === 'input_text' || part.type === 'output_text');
   if (images.length === 0) {
     return { toolContent: openaiResponsesContentToText(textParts), liftedImageContent: [] };
@@ -80,7 +80,7 @@ const projectToolCallOutput = (item: OpenAIResponsesFunctionCallOutputItem | Ope
   if (typeof lifted === 'string') throw new Error('Image tool output projection lost its image content');
   return {
     toolContent: openaiResponsesContentToText(textParts) || 'Image output is attached in the following user message.',
-    liftedImageContent: lifted,
+    liftedImageContent: lifted as OpenAIChatCompletionsUserContentPart[],
   };
 };
 
@@ -134,7 +134,7 @@ const translateOpenAIResponsesToolChoice = (choice?: OpenAIResponsesToolChoice |
   return { type: 'function', function: { name: choice.name } };
 };
 
-const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['text']): OpenAIChatCompletionsPayload['response_format'] | undefined => {
+const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayloadEx['text']): OpenAIChatCompletionsPayload['response_format'] | undefined => {
   if (text === undefined) return undefined;
   if (text === null) return null;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
@@ -154,9 +154,9 @@ const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['
   //   https://platform.openai.com/docs/api-reference/chat/create#chat-create-response_format
   if (format.type === 'json_schema' && !('json_schema' in format)) {
     const { type: _type, ...rest } = format;
-    return { type: 'json_schema', json_schema: rest };
+    return { type: 'json_schema', json_schema: rest as Extract<OpenAIChatCompletionsResponseFormat, { type: 'json_schema' }>['json_schema'] };
   }
-  return format;
+  return format as OpenAIChatCompletionsResponseFormat;
 };
 
 export interface TargetRequestResult {
@@ -171,13 +171,13 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
 }
 
-export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): TargetRequestResult => {
+export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): TargetRequestResult => {
   const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
   const messages: OpenAIChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
-  const pendingToolOutputImages: OpenAIChatCompletionsContentPart[] = [];
+  const pendingToolOutputImages: OpenAIChatCompletionsUserContentPart[] = [];
 
   let assistant: AssistantAccumulator | null = null;
   const flushAssistant = () => {

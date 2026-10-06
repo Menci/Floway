@@ -1,14 +1,6 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import {
-  type CanonicalOpenAIResponsesPayload,
-  type OpenAIResponsesInputItem,
-  type OpenAIResponsesOutputItem,
-  type OpenAIResponsesResult,
-  type OpenAIResponsesStreamEvent,
-  type OpenAIResponsesTool,
-  type OpenAIResponsesToolChoice,
-} from '@floway-dev/protocols/openai-responses';
+import { type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 const CLIENT_NAMESPACE = 'collaboration';
@@ -139,7 +131,7 @@ const rewriteToolChoice = (
     : rewritten) as OpenAIResponsesToolChoice;
 };
 
-const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, names: ReadonlySet<string>, flatNames: ReadonlySet<string>): OpenAIResponsesInputItem => {
+const requestItem = (item: CanonicalOpenAIResponsesInputItem, upstreamNamespace: string, names: ReadonlySet<string>, flatNames: ReadonlySet<string>): CanonicalOpenAIResponsesInputItem => {
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
@@ -166,7 +158,7 @@ const requestItem = (item: OpenAIResponsesInputItem, upstreamNamespace: string, 
   return { ...rest, namespace: upstreamNamespace };
 };
 
-const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesOutputItem => {
+const clientItem = (item: OpenAIResponsesOutputItemEx, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesOutputItemEx => {
   if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
     return {
       ...item,
@@ -192,8 +184,8 @@ const clientItem = (item: OpenAIResponsesOutputItem, upstreamNamespace: string, 
   };
 };
 
-const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesResult => {
-  const record = response as OpenAIResponsesResult & { tools?: OpenAIResponsesTool[] | null };
+const clientResponse = (response: OpenAIResponsesResultEx, upstreamNamespace: string, names: ReadonlySet<string>): OpenAIResponsesResultEx => {
+  const record = response as OpenAIResponsesResultEx & { tools?: OpenAIResponsesTool[] | null };
   return {
     ...response,
     output: response.output.map(item => clientItem(item, upstreamNamespace, names)),
@@ -203,7 +195,7 @@ const clientResponse = (response: OpenAIResponsesResult, upstreamNamespace: stri
     ...(response.tool_choice !== undefined
       ? { tool_choice: rewriteToolChoice(response.tool_choice, upstreamNamespace, CLIENT_NAMESPACE, names, new Set()) }
       : {}),
-  } as OpenAIResponsesResult;
+  } as OpenAIResponsesResultEx;
 };
 
 // Sparse events identify a call through any of these coordinates. Binding all
@@ -282,10 +274,10 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
       ...(value.type === 'function_call' ? { namespace: upstreamNamespace, name: binding.name } : {}),
     };
   };
-  return (event: OpenAIResponsesStreamEvent): OpenAIResponsesStreamEvent => {
+  return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
       const item = event.item.type === 'function_call'
-        ? bind(event.item as unknown as Record<string, unknown>, event.output_index) as unknown as OpenAIResponsesOutputItem
+        ? bind(event.item as unknown as Record<string, unknown>, event.output_index) as unknown as OpenAIResponsesOutputItemEx
         : event.item;
       return { ...event, item: clientItem(item, upstreamNamespace, names) };
     }
@@ -299,14 +291,14 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
         ...(bound.namespace !== undefined ? { namespace: CLIENT_NAMESPACE } : {}),
         ...(event.type === 'response.function_call_arguments.done' && identity.name !== undefined && MESSAGE_ACTIONS.has(identity.name)
           ? { encrypted_function_args: [] } : {}),
-      } as unknown as OpenAIResponsesStreamEvent;
+      } as unknown as OpenAIResponsesStreamEventEx;
     }
     if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
       || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
       const response = {
         ...event.response,
         output: event.response.output.map((item, index) => item.type === 'function_call'
-          ? bind(item as unknown as Record<string, unknown>, index) as unknown as OpenAIResponsesOutputItem : item),
+          ? bind(item as unknown as Record<string, unknown>, index) as unknown as OpenAIResponsesOutputItemEx : item),
       };
       return { ...event, response: clientResponse(response, upstreamNamespace, names) };
     }

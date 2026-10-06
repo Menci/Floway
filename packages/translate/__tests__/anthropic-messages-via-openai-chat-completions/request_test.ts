@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/anthropic-messages-via-openai-chat-completions/request.ts';
-import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest maps thinking.disabled to reasoning_effort none', () => {
@@ -237,7 +238,7 @@ test('buildTargetRequest preserves redacted_thinking as reasoning_opaque', () =>
       content: null,
       reasoning_text: null,
       reasoning_opaque: 'opaque_sig',
-    },
+    } as OpenAIChatCompletionsAssistantMessageEx,
   ]);
 });
 
@@ -262,7 +263,7 @@ test('buildTargetRequest projects only the first scalar reasoning group', () => 
     content: 'answer',
     reasoning_text: 'first',
     reasoning_opaque: 'sig_1',
-  });
+  } as OpenAIChatCompletionsAssistantMessageEx);
 });
 
 test('buildTargetRequest does not pair readable thinking with later redacted opaque data', () => {
@@ -285,7 +286,7 @@ test('buildTargetRequest does not pair readable thinking with later redacted opa
     content: null,
     reasoning_text: 'first',
     reasoning_opaque: null,
-  });
+  } as OpenAIChatCompletionsAssistantMessageEx);
 });
 
 // OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
@@ -342,9 +343,7 @@ test('buildTargetRequest does not inject properties for non-object input_schema'
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
-    // Non-object root schemas are unusual but legal upstream; we should not
-    // synthesize properties on shapes where it is meaningless.
-    tools: [{ name: 'scalar', input_schema: { type: 'string' } }],
+    tools: [{ name: 'scalar', input_schema: { type: 'string' } }] as unknown as AnthropicMessagesPayload['tools'],
     messages: [{ role: 'user', content: 'hi' }],
   });
 

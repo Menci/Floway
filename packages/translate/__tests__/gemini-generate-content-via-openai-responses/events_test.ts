@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-openai-responses/events.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const response = (status: OpenAIResponsesResult['status'], extra: Partial<OpenAIResponsesResult> = {}): OpenAIResponsesResult => ({
+const response = (status: OpenAIResponsesResultEx['status'], extra: Partial<OpenAIResponsesResultEx> = {}): OpenAIResponsesResultEx => ({
   id: 'resp_1',
   object: 'response',
   model: 'gpt-test',
@@ -18,7 +18,7 @@ const response = (status: OpenAIResponsesResult['status'], extra: Partial<OpenAI
   ...extra,
 });
 
-const collect = async (input: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
 
   async function* frames() {
@@ -34,7 +34,7 @@ const collect = async (input: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Prom
 
 const geminiGenerateContentFrame = (event: GeminiGenerateContentStreamEvent): ProtocolFrame<GeminiGenerateContentStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<void> => {
   await collect(input);
 };
 

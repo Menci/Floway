@@ -101,7 +101,7 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
   expect(anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: null })).toEqual({ output_tokens: 0, iterations: null });
 
   const source = [{
-    type: 'compaction',
+    type: 'compaction' as const,
     input_tokens: 7,
     cache_creation: { ephemeral_5m_input_tokens: 3 },
     provider_metadata: {
@@ -113,7 +113,7 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
   source[0].provider_metadata.attempts[0].regions.push('eu-west');
 
   expect(snapshot.iterations).toEqual([{
-    type: 'compaction',
+    type: 'compaction' as const,
     input_tokens: 7,
     cache_creation: { ephemeral_5m_input_tokens: 3 },
     provider_metadata: {

@@ -14,16 +14,16 @@ import type {
   AnthropicMessagesMessageDeltaEvent,
   AnthropicMessagesMessageStartEvent,
   AnthropicMessagesRefusalStopDetails,
-  AnthropicMessagesStreamEvent,
+  AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextCitation,
   AnthropicMessagesUsageSnapshot,
 } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesAnnotation, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { createRandomOpenAIResponsesItemId, type OpenAIResponsesAnnotation, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const UPSTREAM_ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Anthropic Messages stream ended without a message_stop event.';
 
-const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<AnthropicMessagesStreamEvent> {
+const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<AnthropicMessagesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -81,15 +81,14 @@ interface AnthropicMessagesToOpenAIResponsesStreamState {
   outputIndex: number;
   sequenceNumber: number;
   blockMap: Map<number, OutputBlockInfo>;
-  accumulatedText: string;
-  completedItems: OpenAIResponsesOutputItem[];
+  completedItems: OpenAIResponsesOutputItemEx[];
   usage: AnthropicMessagesUsageSnapshot;
   stopReason?: AnthropicMessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: AnthropicMessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
 }
 
-const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => {
+const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => {
   const { cacheWrite, cacheWrite1h, inclusiveInput: inputTokens } = inclusiveAnthropicMessagesInputUsage(state.usage);
   const cacheCreation = cacheWrite + cacheWrite1h;
   const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
@@ -133,7 +132,7 @@ const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, statu
   });
 };
 
-const handleMessageStart = (event: AnthropicMessagesMessageStartEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
+const handleMessageStart = (event: AnthropicMessagesMessageStartEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   state.model = event.message.model;
   state.usage = anthropicMessagesUsageSnapshot(event.message.usage);
 
@@ -142,7 +141,7 @@ const handleMessageStart = (event: AnthropicMessagesMessageStartEvent, state: An
   return openaiResponses.started(state, response);
 };
 
-const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
+const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   switch (event.content_block.type) {
   case 'thinking': {
     const outputIndex = state.outputIndex++;
@@ -239,11 +238,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
 // anchor them. The openai-chat-completions-via-anthropic-messages translator
 // blanket-drops every `citations_delta` because OpenAI Chat Completions has no
 // url_citation equivalent.
-const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, citation: AnthropicMessagesTextCitation, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
-  // Future citation variants (`char_location`, `page_location`,
-  // `content_block_location` from Anthropic native long-document
-  // citations) are not in the current `AnthropicMessagesTextCitation` union; if
-  // they're added, this branch needs to either skip or map them.
+const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, citation: AnthropicMessagesTextCitation, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   if (citation.type !== 'search_result_location' && citation.type !== 'web_search_result_location') {
     return [];
   }
@@ -281,7 +276,7 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
   ]);
 };
 
-const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
+const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   const info = state.blockMap.get(event.index);
   if (!info) return [];
 
@@ -320,7 +315,7 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
   }
 };
 
-const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
+const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   const info = state.blockMap.get(event.index);
   if (!info) return [];
 
@@ -377,7 +372,7 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   customToolNames,
 });
 
-export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
+export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: AnthropicMessagesStreamEventEx, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEventEx[] => {
   switch (event.type) {
   case 'message_start':
     return handleMessageStart(event, state);
@@ -400,7 +395,7 @@ export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: An
     return [];
   }
   case 'message_stop': {
-    const status: OpenAIResponsesResult['status'] = state.stopReason === 'refusal'
+    const status: OpenAIResponsesResultEx['status'] = state.stopReason === 'refusal'
       ? 'failed'
       : state.stopReason === 'max_tokens' ? 'incomplete' : 'completed';
     const response = buildResult(state, status);
@@ -431,11 +426,11 @@ export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: An
 };
 
 export const translateToSourceEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames);
 
   for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {

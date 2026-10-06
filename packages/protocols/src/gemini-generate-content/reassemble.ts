@@ -1,5 +1,5 @@
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
+import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean =>
@@ -22,9 +22,10 @@ const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateCont
 
   parts.push({ ...part });
 };
-
-interface GeminiGenerateContentCandidateWithExtras extends GeminiGenerateContentCandidate {
-  __extras?: Record<string, unknown>;
+interface CandidateAccumulator {
+  candidate: GeminiGenerateContentCandidate;
+  content?: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] };
+  extras: Record<string, unknown>;
 }
 
 const mergeCandidate = (candidates: Map<number, GeminiGenerateContentCandidateWithExtras>, incoming: GeminiGenerateContentCandidate): void => {
@@ -72,7 +73,7 @@ const finalizeCandidate = (candidate: GeminiGenerateContentCandidateWithExtras):
 };
 
 export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
-  const candidates = new Map<number, GeminiGenerateContentCandidateWithExtras>();
+  const candidates = new Map<number, CandidateAccumulator>();
   const result: GeminiGenerateContentResult = {};
   const resultExtras: Record<string, unknown> = {};
 

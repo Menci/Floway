@@ -8,7 +8,7 @@ import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -119,28 +119,28 @@ const rateLimitResponse = (retryAfterMs: number | null): Response => {
 
 // One scripted upstream turn: the orchestrator calls image_generation with the
 // given prompt, then the upstream completes.
-const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<OpenAIResponsesStreamEvent>[] => {
+const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
   const args = JSON.stringify({ prompt });
   return [
     eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
     eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: '', status: 'in_progress' } }),
     eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: args, status: 'completed' } }),
     eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
-  ] as ProtocolFrame<OpenAIResponsesStreamEvent>[];
+  ] as ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 };
 
-const messageTurn = (text: string): ProtocolFrame<OpenAIResponsesStreamEvent>[] => [
+const messageTurn = (text: string): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => [
   eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
   eventFrame({ type: 'response.output_item.added', output_index: 0, item: { type: 'message', role: 'assistant', content: [], status: 'in_progress' } }),
   eventFrame({ type: 'response.output_item.done', output_index: 0, item: { type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] } }),
   eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
-] as ProtocolFrame<OpenAIResponsesStreamEvent>[];
+] as ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 
 const withResponseEcho = (
-  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[],
+  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
   tools: OpenAIResponsesTool[],
   toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEvent>[] => frames.map(frame => {
+): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => frames.map(frame => {
   if (frame.type !== 'event' || (frame.event.type !== 'response.created' && frame.event.type !== 'response.completed')) return frame;
   return eventFrame({
     ...frame.event,
@@ -149,16 +149,16 @@ const withResponseEcho = (
       tools,
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
     },
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 });
 
-const scriptedRun = (turns: ProtocolFrame<OpenAIResponsesStreamEvent>[][]) => {
+const scriptedRun = (turns: ProtocolFrame<OpenAIResponsesStreamEventEx>[][]) => {
   let i = 0;
-  return async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  return async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     if (i >= turns.length) throw new Error(`unexpected run() call ${i + 1}; only ${turns.length} scripted`);
     const frames = turns[i++];
-    const events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () { for (const f of frames) yield f; })();
-    return { type: 'events', events, modelIdentity: MODEL_IDENTITY } as EventResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+    const events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () { for (const f of frames) yield f; })();
+    return { type: 'events', events, modelIdentity: MODEL_IDENTITY } as EventResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
   };
 };
 
@@ -184,9 +184,9 @@ const makeCtx = (
 });
 const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
 
-const drain = async (result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesStreamEvent[]> => {
+const drain = async (result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesStreamEventEx[]> => {
   if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);
-  const out: OpenAIResponsesStreamEvent[] = [];
+  const out: OpenAIResponsesStreamEventEx[] = [];
   for await (const f of result.events) if (f.type === 'event') out.push(f.event);
   return out;
 };

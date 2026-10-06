@@ -11,7 +11,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame, ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -22,7 +22,7 @@ import { apiErrorToResponse } from '@floway-dev/provider';
 // frame (streaming).
 export const respondAnthropicMessages = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> | PlainResult,
+  result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<Response> => {
@@ -99,10 +99,10 @@ const internalAnthropicMessagesErrorPayload = (error: InternalDebugError) => ({
 
 const internalAnthropicMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalAnthropicMessagesErrorPayload(error), { status });
 
-const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
+const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 const observeAnthropicMessagesFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   state: SourceStreamState,
   ctx: GatewayCtx,
 ) {
@@ -117,7 +117,7 @@ const observeAnthropicMessagesFrames = async function* (
   throw new Error(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE);
 };
 
-const anthropicMessagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
+const anthropicMessagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
       const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
@@ -125,7 +125,7 @@ const anthropicMessagesSseFrames = async function* (frames: AsyncIterable<Protoc
     }
   } catch (error) {
     state.failed = true;
-    const event = internalAnthropicMessagesErrorPayload(toInternalDebugError(error)) as unknown as AnthropicMessagesStreamEvent;
+    const event = internalAnthropicMessagesErrorPayload(toInternalDebugError(error)) as unknown as AnthropicMessagesStreamEventEx;
     ctx.dump?.frame(eventFrame(event));
     yield sseFrame(JSON.stringify(event), 'error');
   }

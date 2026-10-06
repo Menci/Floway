@@ -1,9 +1,10 @@
 import { test } from 'vitest';
 
 import { createOpenAIResponsesToOpenAIChatCompletionsStreamState, translateOpenAIResponsesEventToOpenAIChatCompletionsChunks, translateToSourceEvents } from '../../src/openai-chat-completions-via-openai-responses/events.ts';
+
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Local stand-in for `openaiChatCompletionsProtocolFrameToSSEFrame`: the behavior
@@ -18,7 +19,7 @@ const openaiChatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<OpenA
   return sseFrame(JSON.stringify(frame.event));
 };
 
-const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_123',
   object: 'response',
   model: 'gpt-test',
@@ -42,18 +43,18 @@ const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesR
   },
 });
 
-const toProtocolFrame = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
+const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: 0 });
 
 const includeUsageChunk = { includeUsageChunk: true };
 
-const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>) {
+const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) {
   for await (const frame of translateToSourceEvents(frames)) {
     const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk);
     if (sse) yield sse;
   }
 };
 
-const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<number> => {
+const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<number> => {
   let doneCount = 0;
 
   async function* stream() {
@@ -67,7 +68,7 @@ const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEve
   return doneCount;
 };
 
-const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
+const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
   let assistantStartCount = 0;
   let doneCount = 0;
 
@@ -695,8 +696,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'done trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals((reasoning[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'done trace');
+  assertEquals((reasoning[1].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_items, [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -755,8 +756,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'output trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals((reasoning[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'output trace');
+  assertEquals((reasoning[1].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_items, [
     {
       type: 'reasoning',
       id: 'rs_1',

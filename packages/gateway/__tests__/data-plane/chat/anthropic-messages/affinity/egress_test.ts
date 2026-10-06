@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const affinity: AffinityIdentity = {
@@ -13,7 +13,7 @@ const affinity: AffinityIdentity = {
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
-const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEvent>[]) {
+const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;
 };
 
@@ -68,8 +68,8 @@ describe('Anthropic Messages affinity egress', () => {
       index: 0,
       delta: { type: 'signature_delta', signature: 'natural', vendor_delta: 'delta-extra' },
       vendor_event: 'event-extra',
-    } as unknown as AnthropicMessagesStreamEvent;
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    } as unknown as AnthropicMessagesStreamEventEx;
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
       eventFrame(signature),
@@ -92,7 +92,7 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('wraps redacted data inline and does not inject another carrier', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'redacted_thinking', data: 'opaque' } }),
       eventFrame({ type: 'content_block_stop', index: 2 }),
@@ -109,7 +109,7 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('prefixes a synthetic redacted block before a first text block and shifts its index', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } }),
@@ -132,7 +132,7 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('adds an originless signature to a first thinking block without a natural signature', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
@@ -150,7 +150,7 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('emits one prefix for an empty message with both terminal events', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),

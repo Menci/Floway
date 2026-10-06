@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import type { OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '../../src/openai-responses/index.ts';
 import { reassembleOpenAIResponsesEvents } from '../../src/openai-responses/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 type OpenAIResponsesReassembleEvent =
-  | OpenAIResponsesStreamEvent
+  | OpenAIResponsesStreamEventEx
   | {
     type: 'error';
     message?: string;
@@ -23,7 +23,7 @@ function makeEvents<T = OpenAIResponsesReassembleEvent>(chunks: Array<{ event?: 
 }
 
 test('reassembleOpenAIResponsesEvents extracts response from completed event', async () => {
-  const expected: OpenAIResponsesResult = {
+  const expected: OpenAIResponsesResultEx = {
     id: 'resp_1',
     object: 'response',
     model: 'gpt-test',
@@ -75,7 +75,7 @@ test('reassembleOpenAIResponsesEvents extracts response from completed event', a
 });
 
 test('reassembleOpenAIResponsesEvents handles incomplete event', async () => {
-  const incomplete: OpenAIResponsesResult = {
+  const incomplete: OpenAIResponsesResultEx = {
     id: 'resp_2',
     object: 'response',
     model: 'gpt-test',
@@ -119,13 +119,13 @@ test.each([
   ['response.incomplete', 'incomplete'],
   ['response.failed', 'failed'],
 ] as const)('reassembleOpenAIResponsesEvents preserves the %s snapshot despite different closed items', async (type, status) => {
-  const closed: OpenAIResponsesOutputItem = { type: 'reasoning', id: 'rs_closed', summary: [] };
-  const snapshotOnly: OpenAIResponsesOutputItem = {
+  const closed: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_closed', summary: [] };
+  const snapshotOnly: OpenAIResponsesOutputItemEx = {
     type: 'message', id: 'msg_snapshot', status: status === 'completed' ? 'completed' : 'incomplete', role: 'assistant',
     content: [{ type: 'output_text', text: 'Snapshot content', annotations: [] }],
   };
   for (const output of [[], [closed, snapshotOnly]]) {
-    const terminal: OpenAIResponsesResult = {
+    const terminal: OpenAIResponsesResultEx = {
       id: 'resp_snapshot', object: 'response', model: 'test-model', status,
       output, error: null, incomplete_details: null,
     };
@@ -139,7 +139,7 @@ test.each([
 });
 
 test('reassembleOpenAIResponsesEvents preserves terminal snapshot when no closed items observed', async () => {
-  const fallbackItem: OpenAIResponsesOutputItem = {
+  const fallbackItem: OpenAIResponsesOutputItemEx = {
     type: 'message',
     id: 'msg_snap',
     status: 'completed',

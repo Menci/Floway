@@ -4,7 +4,7 @@ import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-pla
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import { reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -26,14 +26,14 @@ const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
-const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEvent>[]) {
+const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;
 };
 
 // The client's next turn replays the assistant blocks it reassembled from the
 // stream, so reassembly is what carries egress output back to ingress.
 const assistantContent = async (
-  source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
+  source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
 ): Promise<AnthropicMessagesAssistantContentBlock[]> => {
   const events = async function* () {
     for await (const frame of source) if (frame.type === 'event') yield frame.event;

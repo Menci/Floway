@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { doneFrame, eventFrame } from '../../src/common/index.ts';
-import type { OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesStreamEventEx } from '../../src/openai-responses/index.ts';
 import { openaiResponsesProtocolFrameToSSEFrame } from '../../src/openai-responses/to-sse.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -20,7 +20,7 @@ test('openaiResponsesProtocolFrameToSSEFrame names each event and renders the te
         error: null,
         incomplete_details: null,
       },
-    } satisfies OpenAIResponsesStreamEvent),
+    } satisfies OpenAIResponsesStreamEventEx),
     eventFrame({
       type: 'response.output_text.delta',
       sequence_number: 1,
@@ -28,7 +28,7 @@ test('openaiResponsesProtocolFrameToSSEFrame names each event and renders the te
       output_index: 0,
       content_index: 0,
       delta: 'still serialized',
-    } satisfies OpenAIResponsesStreamEvent),
+    } satisfies OpenAIResponsesStreamEventEx),
     doneFrame(),
   ].map(openaiResponsesProtocolFrameToSSEFrame);
 
