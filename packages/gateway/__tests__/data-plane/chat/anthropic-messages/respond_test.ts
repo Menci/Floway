@@ -6,7 +6,7 @@ import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gate
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -33,23 +33,24 @@ const forwardedHeadersFixture = (): Headers => new Headers({
 
 const makeRespondCtx = (): ChatGatewayCtx => mockChatGatewayCtx({ apiKeyId: 'key_respond_test' });
 
-const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEvent[] => [
+const anthropicMessagesEventsForRespond = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_1', type: 'message', role: 'assistant', content: [], model: 'claude-test',
       stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 3, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
-const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+const anthropicMessagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for (const event of anthropicMessagesEventsForRespond()) yield eventFrame(event);
   yield doneFrame();
 };
@@ -59,7 +60,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
   const app = new Hono();
   let captured: Response | undefined;
   app.get('/', async c => {
-    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> = eventResult(
+    const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> = eventResult(
       anthropicMessagesProtocolFrames(),
       testTelemetryModelIdentity,
       { headers: forwardedHeadersFixture() },

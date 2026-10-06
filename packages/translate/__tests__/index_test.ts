@@ -13,11 +13,11 @@ import {
 } from '../src/index.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const schema = { type: 'object', properties: { x: { type: 'string' } } };
+const schema = { type: 'object' as const, properties: { x: { type: 'string' } } };
 const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
 
 const responses: CanonicalOpenAIResponsesPayload = {
@@ -28,17 +28,17 @@ const responses: CanonicalOpenAIResponsesPayload = {
   ],
   tools: [{ type: 'function', name: 'f', parameters: schema }],
   text: { format: { type: 'json_schema', name: 'f', schema: formatSchema } },
-  metadata: { nested: { value: 'x' } },
+  metadata: { nested: 'x' },
 };
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
   messages: [
-    { role: 'assistant', content: 'hello', reasoning_items: [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }] },
+    { role: 'assistant', content: 'hello', reasoning_items: [{ type: 'reasoning', id: 'rs2', summary: [{ type: 'summary_text', text: 'thought' }] }] } as OpenAIChatCompletionsAssistantMessageEx,
     { role: 'user', content: 'hi' },
   ],
   tools: [{ type: 'function', function: { name: 'f', parameters: schema } }],
   response_format: { type: 'json_schema', json_schema: { name: 'f', schema: formatSchema } },
-  metadata: { nested: { value: 'x' } },
+  metadata: { nested: 'x' },
   stop: ['END'],
   tool_choice: 'auto',
 };

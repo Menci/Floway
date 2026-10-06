@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/openai-chat-completions-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertRejects } from '@floway-dev/test-utils';
 
@@ -12,7 +12,7 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
 };
 
 test('translateToSourceEvents rejects Anthropic Messages error events', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({
       type: 'error',
       error: {
@@ -26,10 +26,11 @@ test('translateToSourceEvents rejects Anthropic Messages error events', async ()
 });
 
 test('translateToSourceEvents rejects truncated Anthropic Messages streams without message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_truncated',
         type: 'message',
         role: 'assistant',
@@ -37,7 +38,7 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
         model: 'claude-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
       },
     });
   }

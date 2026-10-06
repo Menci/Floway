@@ -220,7 +220,7 @@ describe('Gemini generateContent affinity egress', () => {
     })]), { codec: immediateCodec, affinity })) output.push(frame);
 
     const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
-    expect(event?.candidates?.[0].content.parts).toEqual([
+    expect(event?.candidates?.[0].content?.parts).toEqual([
       { text: 'answer', thoughtSignature: 'wrapped:synthetic' },
       { functionCall: { id: 'call', name: 'tool', args: { a: 1 } }, thoughtSignature: 'wrapped:function-latest' },
       { functionCall: { id: 'call', name: 'tool', args: { b: 2 } } },
@@ -245,7 +245,7 @@ describe('Gemini generateContent affinity egress', () => {
     })]), { codec: immediateCodec, affinity })) output.push(frame);
 
     const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
-    const parts = event?.candidates?.[0].content.parts;
+    const parts = event?.candidates?.[0].content?.parts;
     expect(parts?.[0]).toMatchObject({ thoughtSignature: 'wrapped:latest' });
     expect(parts?.[1]).not.toHaveProperty('thoughtSignature');
   });

@@ -2,12 +2,12 @@ import { expect, test, vi } from 'vitest';
 
 import { flattenNamespaceTools, restoreNamespaceEvents } from '../../../src/shared/openai-responses-via/namespace-tools.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const functionTool = (name: string): Extract<OpenAIResponsesTool, { type: 'function' }> => ({ type: 'function', name, parameters: { type: 'object' } });
-const emptyResult = (): OpenAIResponsesResult => ({ id: 'resp', object: 'response', model: 'model', status: 'completed', output: [], output_text: '', error: null, incomplete_details: null });
-const framesOf = async function* (events: OpenAIResponsesStreamEvent[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+const emptyResult = (): OpenAIResponsesResultEx => ({ id: 'resp', object: 'response', model: 'model', status: 'completed', output: [], error: null, incomplete_details: null });
+const framesOf = async function* (events: OpenAIResponsesStreamEventEx[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
@@ -25,15 +25,15 @@ test('callable projection restores item lifecycle, function/custom types, and re
     { type: 'response.output_item.done', output_index: 0, item: output[0]! },
     { type: 'response.completed', response: upstream },
   ]), call.names);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of response) frames.push(frame);
   const expected = [
     { type: 'custom_tool_call', name: 'edit', namespace: 'files', id: 'fc1', call_id: 'a', input: 'patch', status: 'completed' },
     { type: 'function_call', name: 'read', namespace: 'files', id: 'fc2', call_id: 'b', arguments: '{}', status: 'completed' },
   ];
-  assertEquals(frames[0], eventFrame({ type: 'response.output_item.added', output_index: 0, item: expected[0] } as OpenAIResponsesStreamEvent));
-  assertEquals(frames[1], eventFrame({ type: 'response.output_item.done', output_index: 0, item: expected[0] } as OpenAIResponsesStreamEvent));
-  assertEquals(frames[2], eventFrame({ type: 'response.completed', response: { ...upstream, output: expected, tools: request.tools, tool_choice: request.tool_choice } } as OpenAIResponsesStreamEvent));
+  assertEquals(frames[0], eventFrame({ type: 'response.output_item.added', output_index: 0, item: expected[0] } as OpenAIResponsesStreamEventEx));
+  assertEquals(frames[1], eventFrame({ type: 'response.output_item.done', output_index: 0, item: expected[0] } as OpenAIResponsesStreamEventEx));
+  assertEquals(frames[2], eventFrame({ type: 'response.completed', response: { ...upstream, output: expected, tools: request.tools, tool_choice: request.tool_choice } } as OpenAIResponsesStreamEventEx));
   assertEquals(frames[3], doneFrame());
   assertEquals(upstream.output, output);
 });
@@ -45,16 +45,16 @@ for (const type of ['function', 'custom'] as const) {
     const item = sourceIsFunction
       ? { type: 'custom_tool_call' as const, id: 'item', name: 'files_read', call_id: 'call', input: '{}' }
       : { type: 'function_call' as const, id: 'item', name: 'files_read', call_id: 'call', arguments: '{}', status: 'completed' as const };
-    const unknown = { type: 'future.event', opaque: { retained: true } } as unknown as OpenAIResponsesStreamEvent;
+    const unknown = { type: 'future.event', opaque: { retained: true } } as unknown as OpenAIResponsesStreamEventEx;
     const response = restoreNamespaceEvents(framesOf([
       { type: 'response.output_item.added', output_index: 0, item },
       { type: sourceIsFunction ? 'response.custom_tool_call_input.delta' : 'response.function_call_arguments.delta', item_id: 'item', output_index: 0, delta: '{}' },
       sourceIsFunction
         ? { type: 'response.custom_tool_call_input.done', item_id: 'item', output_index: 0, input: '{}' }
-        : { type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, arguments: '{}', name: 'files_read' } as OpenAIResponsesStreamEvent,
+        : { type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, arguments: '{}', name: 'files_read' } as OpenAIResponsesStreamEventEx,
       unknown,
     ]), call.names);
-    const events: OpenAIResponsesStreamEvent[] = [];
+    const events: OpenAIResponsesStreamEventEx[] = [];
     for await (const frame of response) if (frame.type === 'event') events.push(frame.event);
     assertEquals(events[1], { type: sourceIsFunction ? 'response.function_call_arguments.delta' : 'response.custom_tool_call_input.delta', item_id: 'item', output_index: 0, delta: '{}' });
     assertEquals(events[2], { type: sourceIsFunction ? 'response.function_call_arguments.done' : 'response.custom_tool_call_input.done', item_id: 'item', output_index: 0, [sourceIsFunction ? 'arguments' : 'input']: '{}', ...(sourceIsFunction ? { name: 'read' } : {}) });
@@ -66,9 +66,9 @@ test('callable projection restores function arguments.done names without adding 
   const call = flattenNamespaceTools({ model: 'm', input: [], tools: [{ type: 'namespace', name: 'files', description: '', tools: [functionTool('read')] }] });
   const response = restoreNamespaceEvents(framesOf([
     { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'item', call_id: 'call', name: 'files_read', arguments: '', status: 'in_progress' } },
-    { type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, name: 'files_read', arguments: '{}' } as OpenAIResponsesStreamEvent,
+    { type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, name: 'files_read', arguments: '{}' } as OpenAIResponsesStreamEventEx,
   ]), call.names);
-  const events: OpenAIResponsesStreamEvent[] = [];
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of response) if (frame.type === 'event') events.push(frame.event);
   assertEquals(events[1], { type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, name: 'read', arguments: '{}' });
 });
@@ -116,7 +116,7 @@ test('callable projection projects Standard carriers before namespace allocation
   assert(call.payload.input[0] === developer);
   assertEquals(call.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'files_edit_2' }] });
   assertEquals(request, original);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of response) frames.push(frame);
   const frame = frames[0];
   assert(frame.type === 'event' && frame.event.type === 'response.completed');
@@ -172,9 +172,9 @@ test.each(['forced', 'allowed_tools'] as const)('unchanged flat %s choices retai
   expect(names.sourceTools).toBeUndefined();
   expect(names.sourceToolChoice).toBeUndefined();
   const item = { type: 'function_call' as const, id: 'item', call_id: 'call', name: 'read', arguments: '{}', status: 'completed' as const };
-  const source: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [
+  const source: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
     eventFrame({ type: 'response.output_item.added', output_index: 0, item }),
-    eventFrame({ type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, name: 'read', arguments: '{}' } as OpenAIResponsesStreamEvent),
+    eventFrame({ type: 'response.function_call_arguments.done', item_id: 'item', output_index: 0, name: 'read', arguments: '{}' } as OpenAIResponsesStreamEventEx),
     eventFrame({ type: 'response.output_item.done', output_index: 0, item }),
     eventFrame({ type: 'response.completed', response: { ...emptyResult(), output: [item], tools: request.tools ?? undefined, tool_choice: request.tool_choice } }),
     doneFrame(),

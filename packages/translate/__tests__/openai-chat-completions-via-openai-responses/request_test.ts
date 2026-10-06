@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
-import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { TranslatorInputError } from '../../src/translator-input-error.ts';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
@@ -29,7 +30,7 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
         content: 'answer',
         reasoning_text: 'trace',
         reasoning_opaque: 'enc',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -47,7 +48,7 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
         role: 'assistant',
         content: 'answer',
         reasoning_text: 'visible trace',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -79,7 +80,7 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
             summary: [],
           },
         ],
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -98,11 +99,29 @@ test('buildTargetRequest rejects tool messages without tool_call_id', () => {
     () =>
       buildTargetRequest({
         model: 'gpt-test',
-        messages: [{ role: 'tool', content: 'result' }],
+        messages: [{ role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
     'tool_call_id',
   );
+});
+
+test('buildTargetRequest rejects unsupported custom tool declarations', () => {
+  assertThrows(() => buildTargetRequest({
+    model: 'gpt-test',
+    messages: [{ role: 'user', content: 'hello' }],
+    tools: [{ type: 'custom', custom: { name: 'apply_patch' } }],
+  }), TranslatorInputError, 'custom');
+});
+
+test('buildTargetRequest rejects unsupported custom tool history', () => {
+  assertThrows(() => buildTargetRequest({
+    model: 'gpt-test',
+    messages: [
+      { role: 'assistant', tool_calls: [{ id: 'call_patch', type: 'custom', custom: { name: 'apply_patch', input: 'patch text' } }] },
+      { role: 'tool', tool_call_id: 'call_patch', content: 'applied' },
+    ],
+  }), TranslatorInputError, 'custom');
 });
 
 test('buildTargetRequest preserves translated OpenAI request fields', () => {
@@ -119,7 +138,7 @@ test('buildTargetRequest preserves translated OpenAI request fields', () => {
   });
 
   assertEquals(result.text, {
-    format: { type: 'json_schema', json_schema: { name: 'shape' } },
+    format: { type: 'json_schema', name: 'shape', schema: {} },
   });
   assertEquals(result.metadata, { trace_id: 'abc' });
   assertEquals(result.store, true);
@@ -167,7 +186,7 @@ test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries 
       model: 'gpt-test',
       messages: [{ role: 'user', content: 'hello' }],
       tool_choice: 'required',
-      tools,
+      tools: tools as OpenAIChatCompletionsPayload['tools'],
     });
 
     assertFalse('tool_choice' in result);

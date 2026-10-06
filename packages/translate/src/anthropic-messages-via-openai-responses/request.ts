@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
@@ -13,18 +12,18 @@ import {
   type AnthropicMessagesClientTool,
   type AnthropicMessagesMessage,
   type AnthropicMessagesPayload,
-  type AnthropicMessagesServerToolUseBlock,
+  type AnthropicMessagesServerToolUseBlockParam,
   type AnthropicMessagesSystemMessage,
-  type AnthropicMessagesTextBlock,
+  type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesToolResultBlock,
-  type AnthropicMessagesToolUseBlock,
+  type AnthropicMessagesToolUseBlockParam,
   type AnthropicMessagesUserContentBlock,
   type AnthropicMessagesUserMessage,
-  type AnthropicMessagesWebSearchToolResultBlock,
+  type AnthropicMessagesWebSearchToolResultBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
-const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: OpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
+const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: CanonicalOpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
   input.push({ type: 'message', role, content: [...pending] });
   pending.length = 0;
@@ -37,6 +36,8 @@ const translateUserContentBlock = (
 ): OpenAIResponsesInputContent => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
   if (block.type === 'image') {
+    if (block.source.type === 'file') return { type: 'input_image', file_id: block.source.file_id };
+    if (block.source.type === 'url') return { type: 'input_image', image_url: block.source.url };
     return {
       type: 'input_image',
       image_url: `data:${block.source.media_type};base64,${block.source.data}`,
@@ -46,7 +47,7 @@ const translateUserContentBlock = (
   throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
-const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlock | AnthropicMessagesServerToolUseBlock): OpenAIResponsesInputItem => ({
+const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): CanonicalOpenAIResponsesInputItem => ({
   type: 'function_call',
   call_id: block.id,
   name: block.name,
@@ -54,19 +55,19 @@ const toOpenAIResponsesFunctionCall = (block: AnthropicMessagesToolUseBlock | An
   status: 'completed',
 });
 
-const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearchToolResultBlock): Extract<OpenAIResponsesInputItem, { type: 'function_call_output' }> => ({
+const toOpenAIResponsesStructuredToolOutput = (block: AnthropicMessagesWebSearchToolResultBlockParam): Extract<CanonicalOpenAIResponsesInputItem, { type: 'function_call_output' }> => ({
   type: 'function_call_output',
   call_id: block.tool_use_id,
   output: JSON.stringify(block.content),
   status: Array.isArray(block.content) ? 'completed' : 'incomplete',
 });
 
-const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
+const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
   }
 
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   for (const [blockIdx, block] of message.content.entries()) {
@@ -91,12 +92,12 @@ const translateUserMessage = (message: AnthropicMessagesUserMessage, messageIdx:
   return input;
 };
 
-const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIResponsesInputItem[] => {
+const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, messageIdx: number): CanonicalOpenAIResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
 
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
   for (const [blockIdx, block] of message.content.entries()) {
@@ -131,19 +132,22 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
 };
 
 // Preserve per-block boundaries when the source carries a
-// AnthropicMessagesTextBlock[]; single-string source stays as string content.
-const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIResponsesInputItem[] => [
+// AnthropicMessagesTextBlockParam[]; single-string source stays as string content.
+const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): CanonicalOpenAIResponsesInputItem[] => [
   {
     type: 'message',
     role: 'system',
     content: typeof message.content === 'string'
       ? message.content
-      : message.content.map(block => ({ type: 'input_text', text: block.text })),
+      : message.content.map(block => {
+          if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported by this Responses translation.');
+          return { type: 'input_text', text: block.text };
+        }),
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): OpenAIResponsesInputItem[] =>
-  messages.flatMap((message, messageIdx): OpenAIResponsesInputItem[] => {
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): CanonicalOpenAIResponsesInputItem[] =>
+  messages.flatMap((message, messageIdx): CanonicalOpenAIResponsesInputItem[] => {
     switch (message.role) {
     case 'user': return translateUserMessage(message, messageIdx);
     case 'assistant': return translateAssistantMessage(message, messageIdx);
@@ -163,10 +167,10 @@ const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): 
 // structure.
 interface SystemPlacement {
   readonly instructions: string | null;
-  readonly prependItems: readonly OpenAIResponsesInputItem[];
+  readonly prependItems: readonly CanonicalOpenAIResponsesInputItem[];
 }
 
-const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBlock[] | undefined): SystemPlacement => {
+const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBlockParam[] | undefined): SystemPlacement => {
   if (typeof system === 'string') return { instructions: system, prependItems: [] };
   if (!system || system.length === 0) return { instructions: null, prependItems: [] };
   if (system.length === 1) return { instructions: system[0].text, prependItems: [] };
@@ -180,8 +184,8 @@ const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBloc
   };
 };
 
-const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenAIResponsesTool[] | null => {
-  if (!tools || tools.length === 0) return null;
+const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenAIResponsesTool[] => {
+  if (!tools || tools.length === 0) return [];
 
   return tools.map(tool => ({
     type: 'function',
@@ -246,7 +250,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
     max_output_tokens: payload.max_tokens,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-    ...(payload.metadata ? { metadata: klona(payload.metadata) } : {}),
+    ...(payload.metadata ? { metadata: payload.metadata.user_id == null ? {} : { user_id: payload.metadata.user_id } } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
     ...(text ? { text } : {}),

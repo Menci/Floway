@@ -1,7 +1,7 @@
 import { klona } from 'klona/json';
 
 import type { OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
+import { createRandomOpenAIResponsesItemId, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesReasoningItem } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI's Chat Completions spec has no reasoning-text field; upstreams expose
 // the same quantity as `reasoning_content` or `reasoning`. Treat both as
@@ -24,7 +24,7 @@ export const openAIChatCompletionsScalarReasoningText = (delta: OpenAIChatComple
   return undefined;
 };
 
-export type OpenAIChatCompletionsReasoningSourceItem = Extract<OpenAIResponsesInputItem, { type: 'reasoning' }> | OpenAIResponsesOutputReasoning;
+export type OpenAIChatCompletionsReasoningSourceItem = Extract<CanonicalOpenAIResponsesInputItem, { type: 'reasoning' }> | OpenAIResponsesOutputReasoning;
 
 export interface OpenAIChatCompletionsReasoningProjection {
   items: OpenAIChatCompletionsReasoningItem[];

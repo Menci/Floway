@@ -36,8 +36,8 @@ describe('playground wire requests', () => {
       path: '/v1/chat/completions',
       custom: { seed: 9 },
       events: [
-        { id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }] },
-        { id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+        { id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{  index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }] },
+        { id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{  index: 0, delta: {}, finish_reason: 'stop' }] },
         '[DONE]',
       ],
     },
@@ -47,7 +47,7 @@ describe('playground wire requests', () => {
       path: '/v1/messages',
       custom: { metadata: { test: true } },
       events: [
-        { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: {} } },
+        { type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_1', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null } } },
         { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
         { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
         { type: 'content_block_stop', index: 0 },

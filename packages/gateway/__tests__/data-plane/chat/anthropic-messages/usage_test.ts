@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { createAnthropicMessagesBillableUsageReader } from '../../../../src/data-plane/chat/anthropic-messages/usage.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
-const read = (events: AnthropicMessagesStreamEvent[]) => {
+const read = (events: AnthropicMessagesStreamEventEx[]) => {
   const reader = createAnthropicMessagesBillableUsageReader();
   let last = null;
   for (const event of events) {
@@ -13,14 +13,14 @@ const read = (events: AnthropicMessagesStreamEvent[]) => {
   return last;
 };
 
-const start = (usage: Record<string, unknown>): AnthropicMessagesStreamEvent => ({
+const start = (usage: Record<string, unknown>): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
-  message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage },
-} as unknown as AnthropicMessagesStreamEvent);
+  message: { container: null, diagnostics: null, stop_details: null, id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage },
+} as unknown as AnthropicMessagesStreamEventEx);
 
-const delta = (usage: Record<string, unknown>): AnthropicMessagesStreamEvent => ({
-  type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage,
-} as unknown as AnthropicMessagesStreamEvent);
+const delta = (usage: Record<string, unknown>): AnthropicMessagesStreamEventEx => ({
+  type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' }, usage,
+} as unknown as AnthropicMessagesStreamEventEx);
 
 test('Anthropic Messages billable usage merges input from message_start with output from message_delta', () => {
   expect(read([start({ input_tokens: 10, output_tokens: 0 }), delta({ output_tokens: 7 })]))
@@ -35,7 +35,7 @@ test('Anthropic Messages billable usage keeps the per-TTL cache-creation split t
 });
 
 test('Anthropic Messages billable usage reports the served speed as the tier', () => {
-  expect(read([start({ input_tokens: 1, output_tokens: 1, speed: 'fast' })])?.tier).toBe('fast');
+  expect(read([start({ input_tokens: 1, output_tokens: 1, speed: 'fast' }), delta({ output_tokens: 2, speed: 'standard', service_tier: 'standard' })])?.tier).toBe('fast');
 });
 
 // Anthropic states a bucket that does not apply to the request as `null` on

@@ -1,7 +1,10 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
+
+interface GeminiGenerateContentCandidate extends WireCandidate { index: number; content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] } }
+interface GeminiGenerateContentResult extends Omit<WireResult, 'candidates'> { candidates?: GeminiGenerateContentCandidate[] }
 
 // Gemini generateContent pays one upstream event of TTFT/inter-event latency. Within one event
 // repeated snapshots collapse to one signature on the element's first
@@ -123,7 +126,18 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
   }
 };
 
-const cloneGeminiGenerateContentEvent = (event: GeminiGenerateContentResult): GeminiGenerateContentResult => structuredClone(event);
+const cloneGeminiGenerateContentEvent = (event: WireResult): GeminiGenerateContentResult => {
+  const { candidates, ...rest } = event;
+  return {
+    ...rest,
+    ...(candidates === undefined ? {} : {
+      candidates: candidates.map(candidate => ({
+        ...candidate, index: candidate.index ?? 0,
+        content: { ...candidate.content, parts: (candidate.content?.parts ?? []).map(part => ({ ...part })) },
+      })),
+    }),
+  };
+};
 
 const wrapGeminiGenerateContentEventAffinity = async (
   current: GeminiGenerateContentResult,

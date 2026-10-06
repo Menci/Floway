@@ -1,23 +1,16 @@
 import type {
   CanonicalOpenAIResponsesPayload,
-  OpenAIResponsesInputItem,
-  OpenAIResponsesOutputItem,
+  CanonicalOpenAIResponsesInputItem,
+  OpenAIResponsesOutputItemEx,
+  OpenAIResponsesRequestInputItem,
   OpenAIResponsesPromptCacheOptions,
   OpenAIResponsesPromptCacheRetention,
-  OpenAIResponsesResult,
+  OpenAIResponsesResultEx,
 } from './index.ts';
 
-// Narrower payload for `/responses/compact`. The official endpoint accepts a
-// strict subset of `/responses` fields — model/input/instructions/
-// previous_response_id/prompt_cache_*/service_tier — plus we honour `store`
-// as a gateway-policy hint for snapshot persistence. Anything from
-// `OpenAIResponsesPayload` not listed here (tools, temperature, max_output_tokens,
-// reasoning, stream, etc.) is create-only and would be rejected or silently
-// ignored by the upstream compact endpoint.
-// Reference: https://developers.openai.com/api/reference/resources/responses/methods/compact
-export interface OpenAIResponsesCompactPayload {
+export interface OpenAIResponsesCompactPayloadEx {
   model: string;
-  input: string | OpenAIResponsesInputItem[];
+  input?: string | OpenAIResponsesRequestInputItem[] | null;
   instructions?: string | null;
   previous_response_id?: string | null;
   prompt_cache_key?: string | null;
@@ -30,8 +23,8 @@ export interface OpenAIResponsesCompactPayload {
   store?: boolean | null;
 }
 
-export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompactPayload, 'input'> & {
-  input: OpenAIResponsesInputItem[];
+export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompactPayloadEx, 'input'> & {
+  input: CanonicalOpenAIResponsesInputItem[];
 };
 
 // Project a (possibly-wider) ResponsesPayload-shaped object into the strict
@@ -51,6 +44,8 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayl
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
 });
 
+export type OpenAIResponsesStoredItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
+
 // The `/responses/compact` wire body: `CompactResource` states none of the
 // response-only fields a `ResponseResource` requires — no `status`, `model`,
 // `error` or `incomplete_details`.
@@ -59,10 +54,10 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayl
 // This models what an upstream sends, so `created_at` and `usage` stay optional
 // even though the schema requires them; presence on the client-facing body is
 // `ClientOpenAIResponsesCompaction`'s guarantee.
-export interface OpenAIResponsesCompactionResult {
+export interface OpenAIResponsesCompactionResultEx {
   id: string;
   object: string;
-  output: OpenAIResponsesOutputItem[];
+  output: OpenAIResponsesStoredItem[];
   created_at?: number;
-  usage?: OpenAIResponsesResult['usage'];
+  usage?: OpenAIResponsesResultEx['usage'];
 }

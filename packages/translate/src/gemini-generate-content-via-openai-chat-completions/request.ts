@@ -14,13 +14,14 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
+import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
 
-const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCompletionsContentPart | null => {
+const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCompletionsUserContentPart | null => {
   const url = geminiGenerateContentInlineDataUrl(part);
   if (url === null) return null;
 
@@ -30,14 +31,14 @@ const inlineDataToContentPart = (part: GeminiGenerateContentPart): OpenAIChatCom
   };
 };
 
-const textToContentPart = (text: string): OpenAIChatCompletionsContentPart => ({
+const textToContentPart = (text: string): OpenAIChatCompletionsUserContentPart => ({
   type: 'text',
   text,
 });
 
-const contentFromParts = (parts: GeminiGenerateContentPart[]): string | OpenAIChatCompletionsContentPart[] | null => {
+const contentFromParts = (parts: GeminiGenerateContentPart[]): string | OpenAIChatCompletionsUserContentPart[] | null => {
   const textParts = parts.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
-  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is OpenAIChatCompletionsContentPart => part !== null);
+  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is OpenAIChatCompletionsUserContentPart => part !== null);
 
   if (!textParts.length && !mediaParts.length) return null;
   if (!mediaParts.length) return textParts.join('\n\n');
@@ -57,7 +58,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
   const toolCalls: OpenAIChatCompletionsToolCall[] = [];
   let reasoningOpaque: string | null = null;
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     reasoningOpaque = latestOpaque(reasoningOpaque, part.thoughtSignature);
 
     const kind = geminiGenerateContentPartKind(part);
@@ -93,9 +94,10 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
     }
   });
 
-  const message: OpenAIChatCompletionsMessage = {
+  if (visibleParts.some(part => part.inlineData !== undefined)) throw new TranslatorInputError('Cannot translate image content in a model turn to Chat assistant content.');
+  const message: OpenAIChatCompletionsAssistantMessageEx = {
     role: 'assistant',
-    content: contentFromParts(visibleParts),
+    content: visibleParts.map(geminiGenerateContentPartText).filter((value): value is string => value !== null).join('\n\n') || null,
   };
 
   if (toolCalls.length) message.tool_calls = toolCalls;
@@ -127,7 +129,7 @@ const buildUserMessages = (content: GeminiGenerateContentContent, turnIndex: num
     messages.push({ role: 'user', content: chatContent });
   };
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
@@ -177,12 +179,13 @@ const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, generation
     request.seed = generationConfig.seed;
   }
 
-  if (generationConfig.responseSchema !== undefined) {
+  const schema = geminiResponseSchema(generationConfig);
+  if (schema !== undefined) {
     request.response_format = {
       type: 'json_schema',
       json_schema: {
         name: 'gemini_response',
-        schema: klona(generationConfig.responseSchema),
+        schema,
       },
     };
   } else if (generationConfig.responseMimeType === 'application/json') {
@@ -194,14 +197,17 @@ const applyGenerationConfig = (request: OpenAIChatCompletionsPayload, generation
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): OpenAIChatCompletionsTool[] | undefined => {
-  const tools = geminiGenerateContentFunctionDeclarations(payload, 'any').map(declaration => ({
-    type: 'function' as const,
-    function: {
-      name: declaration.name,
-      ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-      ...(declaration.parameters !== undefined ? { parameters: klona(declaration.parameters) } : {}),
-    },
-  }));
+  const tools = geminiGenerateContentFunctionDeclarations(payload, 'any').map(declaration => {
+    const parameters = geminiFunctionParameters(declaration);
+    return {
+      type: 'function' as const,
+      function: {
+        name: declaration.name,
+        ...(declaration.description !== undefined ? { description: declaration.description } : {}),
+        ...(parameters !== undefined ? { parameters } : {}),
+      },
+    };
+  });
 
   return tools.length ? tools : undefined;
 };

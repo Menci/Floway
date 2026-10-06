@@ -23,7 +23,7 @@ const recordingDump = () => {
 
 const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
   id: 'x', object: 'chat.completion.chunk', created: 0, model: 'm',
-  choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+  choices: [{  index: 0, delta: { content: text }, finish_reason: null }],
 });
 
 const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): Promise<string> => {

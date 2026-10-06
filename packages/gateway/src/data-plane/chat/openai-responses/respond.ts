@@ -11,7 +11,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -19,7 +19,7 @@ import { apiErrorToResponse } from '@floway-dev/provider';
 // because a request that fails before its payload parses has no payload to
 // answer with, and the events path below requires one.
 export const respondOpenAIResponsesFailure = (
-  result: Exclude<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }> | PlainResult,
+  result: Exclude<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }> | PlainResult,
   ctx: GatewayCtx,
 ): Response => {
   if (result.type === 'api-error') {
@@ -45,7 +45,7 @@ export const respondOpenAIResponsesFailure = (
 // frame (streaming); anything else is a pre-stream failure.
 export const respondOpenAIResponses = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> | PlainResult,
+  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
   request: CanonicalOpenAIResponsesPayload,
@@ -131,9 +131,9 @@ const internalOpenAIResponsesStreamErrorEvent = (error: unknown): ClientOpenAIRe
 
 // --- frame observation ---
 
-const isOpenAIResponsesTerminalFrame = (frame: ProtocolFrame<OpenAIResponsesStreamEvent>) => frame.type === 'event' && isOpenAIResponsesTerminalEvent(frame.event);
+const isOpenAIResponsesTerminalFrame = (frame: ProtocolFrame<OpenAIResponsesStreamEventEx>) => frame.type === 'event' && isOpenAIResponsesTerminalEvent(frame.event);
 
-const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
+const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');

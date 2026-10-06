@@ -31,12 +31,12 @@ import { restoreCodexResponsesOutput } from './responses-output.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
-  | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
+  | { ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
 // Hooks for repo-side state transitions. Refresh-token rotations and
@@ -87,7 +87,7 @@ export interface CallCodexOpenAIImagesEditsOptions extends CodexBackendCallBase 
 
 type CodexOpenAIResponsesBody = CodexResponsesBody;
 
-export const callCodexOpenAIResponses = async (opts: CallCodexOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
+export const callCodexOpenAIResponses = async (opts: CallCodexOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
   const prepared = prepareCodexResponsesRequest(opts, 'generate');
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
@@ -317,8 +317,8 @@ const deriveSessionIdFromInput = (body: CodexOpenAIResponsesBody): string | null
   return sha256JsonUuid(seed, `${instructions}`);
 };
 
-const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): readonly OpenAIResponsesInputItem[] | null => {
-  const collected: OpenAIResponsesInputItem[] = [];
+const seedUpToFirstUserMessage = (input: readonly CanonicalOpenAIResponsesInputItem[]): readonly CanonicalOpenAIResponsesInputItem[] | null => {
+  const collected: CanonicalOpenAIResponsesInputItem[] = [];
   for (const item of input) {
     collected.push(item);
     if (isUserMessageItem(item)) return collected;
@@ -326,7 +326,7 @@ const seedUpToFirstUserMessage = (input: readonly OpenAIResponsesInputItem[]): r
   return null;
 };
 
-const isUserMessageItem = (item: OpenAIResponsesInputItem): boolean =>
+const isUserMessageItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   item.type === 'message' && item.role === 'user';
 
 const buildCodexTurnMetadata = (
@@ -696,7 +696,7 @@ const performStreamingOpenAIResponsesCall = async (
   prepared: PreparedCodexResponsesRequest,
   accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
-): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
+): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
   const upstreamFetch = dispatchCodexHttpCall(opts, {
     accessToken: accessToken.token,
     path: CODEX_OPENAI_RESPONSES_PATH,
@@ -764,7 +764,7 @@ const performUnaryCompactCall = async (
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
-  const result = await response.json() as OpenAIResponsesCompactionResult;
+  const result = await response.json() as OpenAIResponsesCompactionResultEx;
   return {
     ok: true,
     modelKey: opts.model.id,

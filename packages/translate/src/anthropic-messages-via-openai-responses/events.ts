@@ -2,11 +2,11 @@ import { packReasoningSignature } from '../shared/anthropic-messages-and-openai-
 import { isContextExceededError } from '../shared/anthropic-messages-via/context-window-error.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
-import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const mapOpenAIResponsesStopReason = (response: OpenAIResponsesResult): AnthropicMessagesResult['stop_reason'] => {
+const mapOpenAIResponsesStopReason = (response: OpenAIResponsesResultEx): AnthropicMessagesResult['stop_reason'] => {
   if (response.status === 'completed') {
     return response.output.some(item => item.type === 'function_call') ? 'tool_use' : 'end_turn';
   }
@@ -18,15 +18,14 @@ const mapOpenAIResponsesStopReason = (response: OpenAIResponsesResult): Anthropi
   return null;
 };
 
-const openaiResponsesUsageToAnthropicMessagesUsage = (response: OpenAIResponsesResult, outputTokens: number): AnthropicMessagesUsage => {
+const openaiResponsesUsageToAnthropicMessagesUsage = (response: OpenAIResponsesResultEx, outputTokens: number): AnthropicMessagesUsage => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
   const writes = splitCacheWriteTokens(cacheWriteTokens, 0);
   const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {
-    input_tokens: uncachedInputTokens,
-    output_tokens: outputTokens,
+    ...createAnthropicMessagesUsage(uncachedInputTokens, outputTokens),
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
     ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
     ...(writes.cacheWrite1h > 0
@@ -45,7 +44,7 @@ const openaiResponsesUsageToAnthropicMessagesUsage = (response: OpenAIResponsesR
 
 const UPSTREAM_OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'Upstream OpenAI Responses stream ended without a terminal event.';
 
-const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<OpenAIResponsesStreamEvent> {
+const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<OpenAIResponsesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -87,9 +86,9 @@ interface OpenAIResponsesToAnthropicMessagesStreamState {
   >;
 }
 
-type ContentBlockInit = { type: 'text'; text: '' } | { type: 'thinking'; thinking: '' } | { type: 'redacted_thinking'; data: string };
+type ContentBlockInit = { type: 'text'; text: ''; citations: null } | { type: 'thinking'; thinking: ''; signature: '' } | { type: 'redacted_thinking'; data: string };
 
-const openBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, key: string, contentBlock: ContentBlockInit, events: AnthropicMessagesStreamEvent[]): number => {
+const openBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, key: string, contentBlock: ContentBlockInit, events: AnthropicMessagesStreamEventEx[]): number => {
   let blockIndex = state.blockIndexByKey.get(key);
 
   if (blockIndex === undefined) {
@@ -110,16 +109,16 @@ const openBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, key: st
   return blockIndex;
 };
 
-const openTextBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, contentIndex: number, events: AnthropicMessagesStreamEvent[]): number =>
-  openBlock(state, `${outputIndex}:${contentIndex}`, { type: 'text', text: '' }, events);
+const openTextBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, contentIndex: number, events: AnthropicMessagesStreamEventEx[]): number =>
+  openBlock(state, `${outputIndex}:${contentIndex}`, { citations: null, type: 'text', text: '' }, events);
 
-const openThinkingBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, events: AnthropicMessagesStreamEvent[]): number =>
-  openBlock(state, `${outputIndex}:0`, { type: 'thinking', thinking: '' }, events);
+const openThinkingBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, events: AnthropicMessagesStreamEventEx[]): number =>
+  openBlock(state, `${outputIndex}:0`, { signature: '', type: 'thinking', thinking: '' }, events);
 
-const openRedactedThinkingBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, data: string, events: AnthropicMessagesStreamEvent[]): number =>
+const openRedactedThinkingBlock = (state: OpenAIResponsesToAnthropicMessagesStreamState, outputIndex: number, data: string, events: AnthropicMessagesStreamEventEx[]): number =>
   openBlock(state, `${outputIndex}:0`, { type: 'redacted_thinking', data }, events);
 
-const closeOpenBlocks = (state: OpenAIResponsesToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const closeOpenBlocks = (state: OpenAIResponsesToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   for (const blockIndex of state.openBlocks) {
     events.push({ type: 'content_block_stop', index: blockIndex });
   }
@@ -127,12 +126,12 @@ const closeOpenBlocks = (state: OpenAIResponsesToAnthropicMessagesStreamState, e
   state.openBlocks.clear();
 };
 
-const closeAllBlocks = (state: OpenAIResponsesToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const closeAllBlocks = (state: OpenAIResponsesToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   closeOpenBlocks(state, events);
   state.functionCallState.clear();
 };
 
-const handleResponseCreated = (response: OpenAIResponsesResult): AnthropicMessagesStreamEvent[] => [
+const handleResponseCreated = (response: OpenAIResponsesResultEx): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
@@ -142,13 +141,16 @@ const handleResponseCreated = (response: OpenAIResponsesResult): AnthropicMessag
       content: [],
       model: response.model,
       stop_reason: null,
+      stop_details: null,
+      container: null,
+      diagnostics: null,
       stop_sequence: null,
       usage: openaiResponsesUsageToAnthropicMessagesUsage(response, 0),
     },
   },
 ];
 
-const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (event.item.type !== 'function_call') return [];
 
   const blockIndex = state.nextBlockIndex++;
@@ -161,7 +163,7 @@ const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEvent, { type
     name,
   });
 
-  const events: AnthropicMessagesStreamEvent[] = [];
+  const events: AnthropicMessagesStreamEventEx[] = [];
   closeOpenBlocks(state, events);
   events.push({
     type: 'content_block_start',
@@ -182,7 +184,7 @@ const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEvent, { type
   return events;
 };
 
-const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (event.item.type !== 'reasoning') return [];
 
   const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
@@ -197,13 +199,13 @@ const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEvent, { type:
   // still round-trips to a downstream Anthropic Messages client. Copilot rejects a
   // `thinking` block with empty text, hence the redacted shape here.
   if (!hasEmittedSummary && trimmedSummary === '') {
-    const events: AnthropicMessagesStreamEvent[] = [];
+    const events: AnthropicMessagesStreamEventEx[] = [];
     openRedactedThinkingBlock(state, event.output_index, packed, events);
     state.emittedReasoningSignatureOutputIndexes.add(event.output_index);
     return events;
   }
 
-  const events: AnthropicMessagesStreamEvent[] = [];
+  const events: AnthropicMessagesStreamEventEx[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
 
   for (const [summaryIndex, part] of event.item.summary.entries()) {
@@ -235,8 +237,8 @@ const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEvent, { type:
   return events;
 };
 
-const handleThinkingDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+const handleThinkingDelta = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   events.push({
     type: 'content_block_delta',
@@ -247,8 +249,8 @@ const handleThinkingDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 
   return events;
 };
 
-const handleThinkingDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+const handleThinkingDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   const key = openaiResponsesPartKey(event.output_index, event.summary_index);
 
@@ -264,10 +266,10 @@ const handleThinkingDone = (event: Extract<OpenAIResponsesStreamEvent, { type: '
   return events;
 };
 
-const handleTextDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleTextDelta = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (!event.delta) return [];
 
-  const events: AnthropicMessagesStreamEvent[] = [];
+  const events: AnthropicMessagesStreamEventEx[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
   events.push({
     type: 'content_block_delta',
@@ -278,8 +280,8 @@ const handleTextDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 'res
   return events;
 };
 
-const handleTextDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+const handleTextDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
 
   const key = openaiResponsesPartKey(event.output_index, event.content_index);
@@ -295,7 +297,7 @@ const handleTextDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'resp
   return events;
 };
 
-const handleContentPartDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.content_part.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleContentPartDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (event.part.type !== 'refusal') return [];
 
   const key = openaiResponsesPartKey(event.output_index, event.content_index);
@@ -308,7 +310,7 @@ const handleContentPartDone = (event: Extract<OpenAIResponsesStreamEvent, { type
   return [];
 };
 
-const handleRefusalDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleRefusalDelta = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
   parts.set(event.content_index, (parts.get(event.content_index) ?? '') + event.delta);
   state.refusalTexts.set(event.output_index, parts);
@@ -316,7 +318,7 @@ const handleRefusalDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: '
   return [];
 };
 
-const handleRefusalDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleRefusalDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
   parts.set(event.content_index, event.refusal);
   state.refusalTexts.set(event.output_index, parts);
@@ -324,7 +326,7 @@ const handleRefusalDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'r
   return [];
 };
 
-const handleFunctionArgumentsDelta = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleFunctionArgumentsDelta = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.delta' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (!event.delta) return [];
 
   const functionCallState = state.functionCallState.get(event.output_index);
@@ -341,7 +343,7 @@ const handleFunctionArgumentsDelta = (event: Extract<OpenAIResponsesStreamEvent,
   ];
 };
 
-const handleFunctionArgumentsDone = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleFunctionArgumentsDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   const functionCallState = state.functionCallState.get(event.output_index);
   if (!functionCallState) return [];
 
@@ -362,8 +364,8 @@ const handleFunctionArgumentsDone = (event: Extract<OpenAIResponsesStreamEvent, 
   ];
 };
 
-const handleCompleted = (response: OpenAIResponsesResult, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+const handleCompleted = (response: OpenAIResponsesResultEx, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   closeAllBlocks(state, events);
 
   const refusalText = [...state.refusalTexts.entries()]
@@ -376,19 +378,12 @@ const handleCompleted = (response: OpenAIResponsesResult, state: OpenAIResponses
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: refused ? 'refusal' : mapOpenAIResponsesStopReason(response),
-        ...(refused
-          ? {
-              stop_details: {
-                type: 'refusal' as const,
-                category: null,
-                explanation: refusalText,
-              },
-            }
-          : {}),
+        stop_details: refused ? { type: 'refusal', category: null, explanation: refusalText } : null,
         stop_sequence: null,
       },
-      usage: openaiResponsesUsageToAnthropicMessagesUsage(response, response.usage?.output_tokens ?? 0),
+      usage: toAnthropicMessagesUsageDelta(openaiResponsesUsageToAnthropicMessagesUsage(response, response.usage?.output_tokens ?? 0)),
     },
     { type: 'message_stop' },
   );
@@ -408,8 +403,8 @@ const handleStreamError = (
   state: OpenAIResponsesToAnthropicMessagesStreamState,
   error: { code?: string; message?: string } | undefined,
   fallbackMessage: string,
-): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   closeAllBlocks(state, events);
   state.messageCompleted = true;
   events.push({
@@ -421,7 +416,7 @@ const handleStreamError = (
   return events;
 };
 
-const handleFailed = (response: OpenAIResponsesResult, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const handleFailed = (response: OpenAIResponsesResultEx, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   const category = response.error?.code === 'cyber_policy'
     ? 'cyber' as const
     : response.error?.code === 'bio_policy' ? 'bio' as const : undefined;
@@ -429,12 +424,13 @@ const handleFailed = (response: OpenAIResponsesResult, state: OpenAIResponsesToA
     return handleStreamError(state, response.error ?? undefined, 'Response failed due to unknown error.');
   }
 
-  const events: AnthropicMessagesStreamEvent[] = [];
+  const events: AnthropicMessagesStreamEventEx[] = [];
   closeAllBlocks(state, events);
   events.push(
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: 'refusal',
         stop_details: {
           type: 'refusal',
@@ -443,7 +439,7 @@ const handleFailed = (response: OpenAIResponsesResult, state: OpenAIResponsesToA
         },
         stop_sequence: null,
       },
-      usage: openaiResponsesUsageToAnthropicMessagesUsage(response, response.usage?.output_tokens ?? 0),
+      usage: toAnthropicMessagesUsageDelta(openaiResponsesUsageToAnthropicMessagesUsage(response, response.usage?.output_tokens ?? 0)),
     },
     { type: 'message_stop' },
   );
@@ -451,8 +447,10 @@ const handleFailed = (response: OpenAIResponsesResult, state: OpenAIResponsesToA
   return events;
 };
 
-const handleError = (event: Extract<OpenAIResponsesStreamEvent, { type: 'error' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] =>
-  handleStreamError(state, { code: event.code, message: event.message }, 'An unexpected error occurred during streaming.');
+const handleError = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const error = 'error' in event ? event.error : event;
+  return handleStreamError(state, { code: error.code ?? undefined, message: error.message }, 'An unexpected error occurred during streaming.');
+};
 
 export const createOpenAIResponsesToAnthropicMessagesStreamState = (): OpenAIResponsesToAnthropicMessagesStreamState => ({
   messageCompleted: false,
@@ -468,47 +466,47 @@ export const createOpenAIResponsesToAnthropicMessagesStreamState = (): OpenAIRes
   functionCallState: new Map(),
 });
 
-const translateReadyOpenAIResponsesEvent = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+const translateReadyOpenAIResponsesEvent = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   recordOpenAIResponsesOutputOrderEvent(event, state.outputOrder, () => true);
 
   switch (event.type) {
   case 'response.created':
-    return handleResponseCreated((event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>).response);
+    return handleResponseCreated((event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>).response);
   case 'response.output_item.added':
-    return handleOutputItemAdded(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>, state);
+    return handleOutputItemAdded(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>, state);
   case 'response.output_item.done':
-    return handleOutputItemDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>, state);
+    return handleOutputItemDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>, state);
   case 'response.reasoning_summary_text.delta':
-    return handleThinkingDelta(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>, state);
+    return handleThinkingDelta(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }>, state);
   case 'response.reasoning_summary_text.done':
-    return handleThinkingDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>, state);
+    return handleThinkingDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>, state);
   case 'response.output_text.delta':
-    return handleTextDelta(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>, state);
+    return handleTextDelta(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>, state);
   case 'response.output_text.done':
-    return handleTextDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.done' }>, state);
+    return handleTextDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.done' }>, state);
   case 'response.refusal.delta':
-    return handleRefusalDelta(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.delta' }>, state);
+    return handleRefusalDelta(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.delta' }>, state);
   case 'response.refusal.done':
-    return handleRefusalDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.done' }>, state);
+    return handleRefusalDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.done' }>, state);
   case 'response.content_part.done':
-    return handleContentPartDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.content_part.done' }>, state);
+    return handleContentPartDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>, state);
   case 'response.function_call_arguments.delta':
-    return handleFunctionArgumentsDelta(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>, state);
+    return handleFunctionArgumentsDelta(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.delta' }>, state);
   case 'response.function_call_arguments.done':
-    return handleFunctionArgumentsDone(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state);
+    return handleFunctionArgumentsDone(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.done' }>, state);
   case 'response.completed':
   case 'response.incomplete':
-    return handleCompleted((event as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' }>).response, state);
+    return handleCompleted((event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' }>).response, state);
   case 'response.failed':
-    return handleFailed((event as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>).response, state);
+    return handleFailed((event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>).response, state);
   case 'error':
-    return handleError(event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>, state);
+    return handleError(event as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>, state);
   default:
     return [];
   }
 };
 
-const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToAnthropicMessagesStreamState): OpenAIResponsesStreamEvent | undefined => {
+const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToAnthropicMessagesStreamState): OpenAIResponsesStreamEventEx | undefined => {
   const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(event => !shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder));
   if (nextReadyIndex === -1) return undefined;
 
@@ -516,8 +514,8 @@ const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToAnthropicMes
   return event;
 };
 
-const flushReadyDeferredAnthropicMessagesEvents = (state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+const flushReadyDeferredAnthropicMessagesEvents = (state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   while (!state.messageCompleted && state.outputOrder.deferredEvents.length > 0) {
     const event = takeNextReadyDeferredResponseEvent(state);
     if (!event) break;
@@ -526,7 +524,7 @@ const flushReadyDeferredAnthropicMessagesEvents = (state: OpenAIResponsesToAnthr
   return events;
 };
 
-export const translateOpenAIResponsesStreamEventToAnthropicMessagesEvents = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
+export const translateOpenAIResponsesStreamEventToAnthropicMessagesEvents = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
   if (state.messageCompleted) return [];
   if (shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder)) {
     state.outputOrder.deferredEvents.push(event);
@@ -540,7 +538,7 @@ export const translateOpenAIResponsesStreamEventToAnthropicMessagesEvents = (eve
   return events;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const state = createOpenAIResponsesToAnthropicMessagesStreamState();
 
   for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {

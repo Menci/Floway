@@ -972,6 +972,7 @@ const anthropicMessagesSseBody = (): string =>
   sseEvent('message_start', {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_1',
       type: 'message',
       role: 'assistant',
@@ -979,13 +980,13 @@ const anthropicMessagesSseBody = (): string =>
       model: 'claude-opus-4.6-fast',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 5, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 5, output_tokens: 0 },
     },
   })
   + sseEvent('message_delta', {
     type: 'message_delta',
-    delta: { stop_reason: 'end_turn', stop_sequence: null },
-    usage: { output_tokens: 7 },
+    delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
   })
   + sseEvent('message_stop', { type: 'message_stop' })
   + sseDone();
@@ -1133,7 +1134,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       if (messageDelta?.type !== 'event' || messageDelta.event.type !== 'message_delta') {
         throw new Error('expected message_delta frame');
       }
-      assertEquals(messageDelta.event.usage?.speed, 'fast');
+      assertEquals('speed' in messageDelta.event.usage!, false);
 
       assertEquals(result.modelKey, 'claude-opus-4.6-fast');
     },

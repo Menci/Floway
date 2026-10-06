@@ -2,12 +2,12 @@ import type * as OpenAIResponses from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesOutputContentBlock = OpenAIResponses.OpenAIResponsesOutputContentBlock;
 type OpenAIResponsesOutputCustomToolCall = OpenAIResponses.OpenAIResponsesOutputCustomToolCall;
-type OpenAIResponsesOutputFunctionCall = OpenAIResponses.OpenAIResponsesOutputFunctionCall;
-type OpenAIResponsesOutputItem = OpenAIResponses.OpenAIResponsesOutputItem;
-type OpenAIResponsesOutputMessage = OpenAIResponses.OpenAIResponsesOutputMessage;
+type OpenAIResponsesOutputFunctionCallEx = OpenAIResponses.OpenAIResponsesOutputFunctionCallEx;
+type OpenAIResponsesOutputItemEx = OpenAIResponses.OpenAIResponsesOutputItemEx;
+type OpenAIResponsesOutputMessageEx = OpenAIResponses.OpenAIResponsesOutputMessageEx;
 type OpenAIResponsesOutputReasoning = OpenAIResponses.OpenAIResponsesOutputReasoning;
-type OpenAIResponsesResult = OpenAIResponses.OpenAIResponsesResult;
-type OpenAIResponsesStreamEvent = OpenAIResponses.OpenAIResponsesStreamEvent;
+type OpenAIResponsesResultEx = OpenAIResponses.OpenAIResponsesResultEx;
+type OpenAIResponsesStreamEventEx = OpenAIResponses.OpenAIResponsesStreamEventEx;
 
 export interface OpenAIResponsesSequenceState {
   sequenceNumber: number;
@@ -15,7 +15,7 @@ export interface OpenAIResponsesSequenceState {
 
 type OutputTextPart = Extract<OpenAIResponsesOutputContentBlock, { type: 'output_text' }>;
 type RefusalPart = Extract<OpenAIResponsesOutputContentBlock, { type: 'refusal' }>;
-type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResult['usage']>;
+type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 
 export const textPart = (text: string, annotations: OpenAIResponses.OpenAIResponsesAnnotation[]): OutputTextPart => ({
   type: 'output_text',
@@ -30,47 +30,47 @@ export const refusalPart = (refusal: string): RefusalPart => ({
 
 const summaryPart = (text: string) => ({ type: 'summary_text' as const, text });
 
-const outputItemEvent = (state: 'added' | 'done', outputIndex: number, item: OpenAIResponsesOutputItem): OpenAIResponsesStreamEvent => ({
+const outputItemEvent = (state: 'added' | 'done', outputIndex: number, item: OpenAIResponsesOutputItemEx): OpenAIResponsesStreamEventEx => ({
   type: `response.output_item.${state}`,
   output_index: outputIndex,
   item,
 });
 
-const outputTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEvent =>
+const outputTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEventEx =>
   ({
     type: `response.output_text.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     content_index: 0,
     [state === 'delta' ? 'delta' : 'text']: text,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-const refusalEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, refusal: string): OpenAIResponsesStreamEvent =>
+const refusalEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, refusal: string): OpenAIResponsesStreamEventEx =>
   ({
     type: `response.refusal.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     content_index: 0,
     [state === 'delta' ? 'delta' : 'refusal']: refusal,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-const functionCallArgumentsEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEvent =>
+const functionCallArgumentsEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEventEx =>
   ({
     type: `response.function_call_arguments.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     [state === 'delta' ? 'delta' : 'arguments']: text,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-const customToolCallInputEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEvent =>
+const customToolCallInputEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): OpenAIResponsesStreamEventEx =>
   ({
     type: `response.custom_tool_call_input.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     [state === 'delta' ? 'delta' : 'input']: text,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): OpenAIResponsesStreamEvent => ({
+const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): OpenAIResponsesStreamEventEx => ({
   type: `response.reasoning_summary_part.${state}`,
   item_id: itemId,
   output_index: outputIndex,
@@ -78,16 +78,16 @@ const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number,
   part: summaryPart(text),
 });
 
-const reasoningSummaryTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): OpenAIResponsesStreamEvent =>
+const reasoningSummaryTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): OpenAIResponsesStreamEventEx =>
   ({
     type: `response.reasoning_summary_text.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     summary_index: summaryIndex,
     [state === 'delta' ? 'delta' : 'text']: text,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-export const seq = (state: OpenAIResponsesSequenceState, events: OpenAIResponsesStreamEvent[]): OpenAIResponsesStreamEvent[] =>
+export const seq = (state: OpenAIResponsesSequenceState, events: OpenAIResponsesStreamEventEx[]): OpenAIResponsesStreamEventEx[] =>
   events.map(event => ({
     ...event,
     sequence_number: state.sequenceNumber++,
@@ -102,19 +102,17 @@ export const seq = (state: OpenAIResponsesSequenceState, events: OpenAIResponses
 export const result = (input: {
   id: string;
   model: string;
-  output: OpenAIResponsesOutputItem[];
-  outputText: string;
-  status: OpenAIResponsesResult['status'];
+  output: OpenAIResponsesOutputItemEx[];
+  status: OpenAIResponsesResultEx['status'];
   usage?: OpenAIResponsesUsage;
-  incompleteDetails?: OpenAIResponsesResult['incomplete_details'];
-  error?: OpenAIResponsesResult['error'];
-  serviceTier?: OpenAIResponsesResult['service_tier'];
-}): OpenAIResponsesResult => ({
+  incompleteDetails?: OpenAIResponsesResultEx['incomplete_details'];
+  error?: OpenAIResponsesResultEx['error'];
+  serviceTier?: OpenAIResponsesResultEx['service_tier'];
+}): OpenAIResponsesResultEx => ({
   id: input.id,
   object: 'response',
   model: input.model,
   output: input.output,
-  output_text: input.outputText,
   status: input.status,
   // `error` and `incomplete_details` are spec-required on every
   // Response (both nullable). Default both to null; callers pass a
@@ -129,7 +127,7 @@ export const result = (input: {
 // reuses it across added, child, done, and terminal frames. Taking the built
 // content part rather than its text keeps the item and the `content_part`
 // frames carrying one identical part.
-export const messageItem = (id: string, status: 'in_progress' | 'completed', part: OpenAIResponsesOutputContentBlock): OpenAIResponsesOutputMessage => ({
+export const messageItem = (id: string, status: 'in_progress' | 'completed', part: OpenAIResponsesOutputContentBlock): OpenAIResponsesOutputMessageEx => ({
   type: 'message',
   id,
   status,
@@ -149,9 +147,9 @@ export const functionCallItem = (
   callId: string,
   name: string,
   args: string,
-  status: OpenAIResponsesOutputFunctionCall['status'],
+  status: OpenAIResponsesOutputFunctionCallEx['status'],
   namespace?: string,
-): OpenAIResponsesOutputFunctionCall => ({
+): OpenAIResponsesOutputFunctionCallEx => ({
   type: 'function_call',
   id,
   call_id: callId,
@@ -169,7 +167,7 @@ export const customToolCallItem = (id: string, callId: string, name: string, inp
   input,
 });
 
-export const started = (state: OpenAIResponsesSequenceState, response: OpenAIResponsesResult) =>
+export const started = (state: OpenAIResponsesSequenceState, response: OpenAIResponsesResultEx) =>
   seq(state, [
     { type: 'response.created', response },
     {
@@ -178,7 +176,7 @@ export const started = (state: OpenAIResponsesSequenceState, response: OpenAIRes
     },
   ]);
 
-export const terminal = (state: OpenAIResponsesSequenceState, response: OpenAIResponsesResult) => {
+export const terminal = (state: OpenAIResponsesSequenceState, response: OpenAIResponsesResultEx) => {
   let type: 'response.completed' | 'response.incomplete' | 'response.failed';
   switch (response.status) {
   case 'completed': type = 'response.completed'; break;
@@ -197,7 +195,7 @@ export const terminal = (state: OpenAIResponsesSequenceState, response: OpenAIRe
   ]);
 };
 
-export const itemAdded = (state: OpenAIResponsesSequenceState, outputIndex: number, item: OpenAIResponsesOutputItem) =>
+export const itemAdded = (state: OpenAIResponsesSequenceState, outputIndex: number, item: OpenAIResponsesOutputItemEx) =>
   seq(state, [outputItemEvent('added', outputIndex, item)]);
 
 export const textStart = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string) => {
@@ -217,7 +215,7 @@ export const textStart = (state: OpenAIResponsesSequenceState, outputIndex: numb
 export const textDelta = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [outputTextEvent('delta', outputIndex, itemId, delta)]);
 
-export const textDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, part: OutputTextPart, item: OpenAIResponsesOutputMessage) =>
+export const textDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, part: OutputTextPart, item: OpenAIResponsesOutputMessageEx) =>
   seq(state, [
     outputTextEvent('done', outputIndex, itemId, part.text),
     {
@@ -247,7 +245,7 @@ export const refusalStart = (state: OpenAIResponsesSequenceState, outputIndex: n
 export const refusalDelta = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [refusalEvent('delta', outputIndex, itemId, delta)]);
 
-export const refusalDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, part: RefusalPart, item: OpenAIResponsesOutputMessage) =>
+export const refusalDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, part: RefusalPart, item: OpenAIResponsesOutputMessageEx) =>
   seq(state, [
     refusalEvent('done', outputIndex, itemId, part.refusal),
     {
@@ -263,7 +261,7 @@ export const refusalDone = (state: OpenAIResponsesSequenceState, outputIndex: nu
 export const argumentsDelta = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [functionCallArgumentsEvent('delta', outputIndex, itemId, delta)]);
 
-export const functionCallDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, args: string, item: OpenAIResponsesOutputFunctionCall) =>
+export const functionCallDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, args: string, item: OpenAIResponsesOutputFunctionCallEx) =>
   seq(state, [functionCallArgumentsEvent('done', outputIndex, itemId, args), outputItemEvent('done', outputIndex, item)]);
 
 export const customToolCallDone = (state: OpenAIResponsesSequenceState, outputIndex: number, itemId: string, input: string, item: OpenAIResponsesOutputCustomToolCall) =>

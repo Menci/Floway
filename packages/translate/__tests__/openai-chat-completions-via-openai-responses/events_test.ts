@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { createOpenAIResponsesToOpenAIChatCompletionsStreamState, translateOpenAIResponsesEventToOpenAIChatCompletionsChunks, translateToSourceEvents } from '../../src/openai-chat-completions-via-openai-responses/events.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Local stand-in for `openaiChatCompletionsProtocolFrameToSSEFrame`: the behavior
@@ -18,12 +18,11 @@ const openaiChatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<OpenA
   return sseFrame(JSON.stringify(frame.event));
 };
 
-const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_123',
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -42,18 +41,18 @@ const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesR
   },
 });
 
-const toProtocolFrame = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
+const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: 0 });
 
 const includeUsageChunk = { includeUsageChunk: true };
 
-const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>) {
+const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) {
   for await (const frame of translateToSourceEvents(frames)) {
     const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk);
     if (sse) yield sse;
   }
 };
 
-const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<number> => {
+const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<number> => {
   let doneCount = 0;
 
   async function* stream() {
@@ -67,7 +66,7 @@ const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEve
   return doneCount;
 };
 
-const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
+const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
   let assistantStartCount = 0;
   let doneCount = 0;
 
@@ -206,7 +205,6 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'message',
@@ -244,7 +242,6 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
         response: {
           ...makeResponse('in_progress'),
           id: 'resp_deferred_reasoning',
-          output_text: '',
           output: [],
         },
       }),
@@ -274,7 +271,6 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
         response: {
           ...makeResponse('completed'),
           id: 'resp_deferred_reasoning',
-          output_text: 'answer',
           output: [],
           service_tier: 'priority',
           usage: {
@@ -368,7 +364,6 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
       type: 'response.failed',
       response: {
         ...makeResponse('failed'),
-        output_text: '',
         output: [],
         error: {
           type: 'server_error',
@@ -417,7 +412,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -450,7 +444,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -487,7 +480,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -541,7 +533,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -550,7 +541,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
   );
 
   assertEquals(
-    [...chunks, ...completed].some(chunk => chunk.choices[0]?.delta.reasoning_opaque !== undefined),
+    [...chunks, ...completed].some(chunk => (chunk.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque !== undefined),
     false,
   );
   assertEquals(completed[0].usage, undefined);
@@ -568,7 +559,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -610,7 +600,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -648,7 +637,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -687,7 +675,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -695,8 +682,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'done trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals((reasoning[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'done trace');
+  assertEquals((reasoning[1].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_items, [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -718,7 +705,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -747,7 +733,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -755,8 +740,8 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
     state,
   );
 
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'output trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+  assertEquals((reasoning[0].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text, 'output trace');
+  assertEquals((reasoning[1].choices[0].delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_items, [
     {
       type: 'reasoning',
       id: 'rs_1',
@@ -778,7 +763,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits stream us
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -795,7 +779,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits stream us
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -833,7 +816,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -891,7 +873,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
               content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
-          output_text: 'answer',
           error: null,
           incomplete_details: null,
         },
@@ -922,7 +903,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -980,7 +960,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
               content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
-          output_text: 'answer',
           error: null,
           incomplete_details: null,
         },
@@ -1011,7 +990,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits output_te
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1048,7 +1026,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits function_
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1118,7 +1095,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits all done-
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1171,7 +1147,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits all done-
   ].flatMap(result => result);
 
   assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
+    chunks.map(chunk => (chunk.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(text => text !== undefined),
     ['first', 'second'],
   );
 });
@@ -1188,7 +1164,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks flushes pending
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -1214,7 +1189,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks flushes pending
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -1240,7 +1214,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps first sca
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },

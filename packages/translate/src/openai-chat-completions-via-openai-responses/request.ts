@@ -3,26 +3,38 @@ import { klona } from 'klona/json';
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
-const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] | null =>
+const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
-    ? tools.map(tool => ({
-        type: 'function',
-        name: tool.function.name,
-        parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
-        // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
-        // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
-        strict: tool.function.strict ?? false,
-        ...(tool.function.description ? { description: tool.function.description } : {}),
-      }))
-    : null;
+    ? tools.map(tool => {
+        if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to OpenAI Responses.');
+        return {
+          type: 'function',
+          name: tool.function.name,
+          parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
+          // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
+          // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
+          strict: tool.function.strict ?? false,
+          ...(tool.function.description ? { description: tool.function.description } : {}),
+        };
+      })
+    : [];
 
-const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): OpenAIResponsesToolChoice =>
-  typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
+const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): OpenAIResponsesToolChoice => {
+  if (typeof choice === 'string') return choice;
+  if (choice.type === 'function') return { type: 'function', name: choice.function.name };
+  if (choice.type === 'custom') throw new TranslatorInputError('Cannot translate custom Chat tool choice to OpenAI Responses.');
+  return {
+    type: 'allowed_tools', mode: choice.allowed_tools.mode, tools: choice.allowed_tools.tools.map(tool => {
+      if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tool choice to OpenAI Responses.');
+      return { type: 'function', name: tool.function.name };
+    }),
+  };
+};
 
-const translateAssistantContent = (message: OpenAIChatCompletionsMessage): OpenAIResponsesInputContent[] => {
+const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
   const content: OpenAIResponsesInputContent[] = [];
   let hasRefusalPart = false;
 
@@ -47,7 +59,7 @@ const translateAssistantContent = (message: OpenAIChatCompletionsMessage): OpenA
 
 export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => {
   const instructions: string[] = [];
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   let hoistSystemPrefix = true;
 
   for (const message of payload.messages) {
@@ -73,8 +85,9 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
 
     if (message.role === 'assistant') {
       const assistantContent = translateAssistantContent(message);
-      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(message.reasoning_items);
-      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(message));
+      const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
+      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
+      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(extensions));
       if (reasoningItems) {
         input.push(...reasoningItems);
       } else if (scalarReasoning) {
@@ -91,6 +104,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
         }
 
         for (const toolCall of message.tool_calls) {
+          if (toolCall.type !== 'function') throw new TranslatorInputError('Cannot translate a custom Chat tool call to OpenAI Responses.');
           input.push({
             type: 'function_call',
             call_id: toolCall.id,
@@ -135,7 +149,12 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     });
   }
 
-  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: klona(payload.response_format) };
+  const format = klona(payload.response_format);
+  const responseTextConfig = format == null ? undefined : {
+    format: format.type === 'json_schema'
+      ? { type: 'json_schema' as const, ...format.json_schema, schema: format.json_schema.schema ?? {} }
+      : format,
+  };
 
   // OpenAI Chat Completions' `reasoning_effort: 'none'` disables reasoning without an OpenAI Responses
   // equivalent (OpenAI Responses `reasoning.effort` has no 'none' member); drop the

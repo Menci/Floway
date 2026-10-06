@@ -1,15 +1,17 @@
 import { anthropicMessagesRefusalExplanation } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
-import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
+import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
 
 const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopReason: AnthropicMessagesResult['stop_reason']): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
   case null:
   case 'end_turn':
   case 'stop_sequence':
+  case 'model_context_window_exceeded':
+  case 'compaction':
   case 'pause_turn':
   case 'refusal':
     return 'stop';
@@ -22,7 +24,7 @@ const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopR
 
 const UPSTREAM_ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Anthropic Messages stream ended without a message_stop event.';
 
-const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<AnthropicMessagesStreamEvent> {
+const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<AnthropicMessagesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -57,7 +59,7 @@ const claimReasoningBlock = (state: AnthropicMessagesToOpenAIChatCompletionsStre
   return state.reasoningBlockIndex === index;
 };
 
-const makeChunk = (state: AnthropicMessagesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsDelta, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const makeChunk = (state: AnthropicMessagesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -103,7 +105,7 @@ const unexpectedAnthropicMessagesVariant = (value: never): never => {
   throw new Error(`Unexpected Anthropic Messages stream variant: ${JSON.stringify(value)}`);
 };
 
-export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (event: AnthropicMessagesStreamEvent, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
+export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (event: AnthropicMessagesStreamEventEx, state: AnthropicMessagesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] | 'DONE' => {
   switch (event.type) {
   case 'message_start': {
     state.messageId = event.message.id;
@@ -145,7 +147,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       return [];
     }
 
-    return unexpectedAnthropicMessagesVariant(block);
+    return [];
   }
 
   case 'content_block_delta': {
@@ -168,6 +170,8 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
           ],
         }),
       ];
+    case 'compaction_delta':
+      return [];
     case 'citations_delta':
       // OpenAI Chat Completions has no equivalent of Anthropic's structured citation
       // annotations (no `output_text.annotation.added` event, no
@@ -213,13 +217,13 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
   }
 };
 
-const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEvent): void => {
+const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEventEx): void => {
   if (event.type !== 'error') return;
 
   throw new Error(`Upstream Anthropic Messages stream error: ${event.error.type}: ${event.error.message}`, { cause: event });
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   const state = createAnthropicMessagesToOpenAIChatCompletionsStreamState();
 
   for await (const event of upstreamAnthropicMessagesEventsUntilTerminal(frames)) {

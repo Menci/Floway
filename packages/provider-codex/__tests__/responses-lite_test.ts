@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { encodeCodexResponsesLiteRequest, type CodexResponsesBody } from '../src/responses-lite.ts';
-import type { OpenAIResponsesInputAdditionalToolsItem, OpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputAdditionalToolsItem, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const requestBody = (overrides: Partial<CodexResponsesBody> = {}): CodexResponsesBody => ({
   input: [{ type: 'message', role: 'user', content: 'hello' }],
@@ -14,7 +14,7 @@ const customTool = (name: string): Extract<OpenAIResponsesTool, { type: 'custom'
 const additionalTools = (id: string, tools: OpenAIResponsesTool[]): OpenAIResponsesInputAdditionalToolsItem => ({
   type: 'additional_tools', role: 'developer', id, tools,
 });
-const itemId = (item: OpenAIResponsesInputItem | undefined): string | null | undefined =>
+const itemId = (item: CanonicalOpenAIResponsesInputItem | undefined): string | null | undefined =>
   item !== undefined && 'id' in item ? item.id : undefined;
 
 describe('Codex Responses Lite request encoding', () => {

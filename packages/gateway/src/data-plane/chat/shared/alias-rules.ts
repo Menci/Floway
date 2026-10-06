@@ -11,7 +11,7 @@
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
@@ -27,7 +27,7 @@ export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatComple
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayloadEx, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort, summary } = rules.reasoning;
     if (effort !== undefined || summary !== undefined) {
@@ -63,14 +63,14 @@ export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPay
       // Adaptive auto-determines the budget; strip any client-set
       // `budget_tokens` so the alias rule's mode isn't accompanied by a
       // sibling budget the operator didn't ask for.
-      const { budget_tokens: _drop, ...priorThinking } = body.thinking ?? {};
+      const priorThinking = body.thinking?.type === 'enabled' ? { display: body.thinking.display } : body.thinking;
       body.thinking = { ...priorThinking, type: 'adaptive', ...displayPart };
     } else if (budget_tokens !== undefined) {
       body.thinking = { ...body.thinking, type: 'enabled', budget_tokens, ...displayPart };
     } else if (display !== undefined) {
-      // Anthropic discards `thinking.display` unless a mode is set; default
-      // to the enabled variant so the summary hint reaches the wire.
-      body.thinking = { ...body.thinking, type: 'enabled', ...displayPart };
+      body.thinking = body.thinking?.type === 'enabled'
+        ? { ...body.thinking, ...displayPart }
+        : { type: 'adaptive', ...displayPart };
     }
   }
   // `verbosity` has no native Anthropic Messages slot; drop silently.

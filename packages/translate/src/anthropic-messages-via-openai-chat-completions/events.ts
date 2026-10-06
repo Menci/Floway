@@ -1,11 +1,11 @@
 import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
-import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, type  AnthropicMessagesContentBlockDeltaEvent, type AnthropicMessagesContentBlockStartEvent, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const toAnthropicMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
 
-const mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason = (finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null): AnthropicMessagesResult['stop_reason'] => {
+const mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason = (finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | null): AnthropicMessagesResult['stop_reason'] => {
   if (finishReason === null) return null;
 
   switch (finishReason) {
@@ -13,6 +13,7 @@ const mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason = (finis
     return 'end_turn';
   case 'length':
     return 'max_tokens';
+  case 'function_call':
   case 'tool_calls':
     return 'tool_use';
   case 'content_filter':
@@ -32,10 +33,10 @@ type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['
 // translateAnthropicMessagesEventToOpenAIChatCompletionsChunks) already folds both buckets back
 // into prompt_tokens, so this closes a real asymmetry. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/a99c23551b0f3198d78dd51142dd0096cc6da049
-export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: OpenAIChatCompletionsUsage): AnthropicMessagesResult['usage'] => {
-  const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
-  const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens
-    ?? usage?.prompt_tokens_details?.cache_write_tokens;
+export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: OpenAIChatCompletionsUsage | null): AnthropicMessagesResult['usage'] => {
+  const cachedTokens = (usage as OpenAIChatCompletionsUsageEx | null | undefined)?.prompt_tokens_details?.cached_tokens;
+  const cacheCreationTokens = (usage as OpenAIChatCompletionsUsageEx | null | undefined)?.prompt_tokens_details?.cache_creation_input_tokens
+    ?? (usage as OpenAIChatCompletionsUsageEx | null | undefined)?.prompt_tokens_details?.cache_write_tokens;
   const writes = splitCacheWriteTokens(cacheCreationTokens, 0);
   const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
     usage?.prompt_tokens ?? 0,
@@ -48,8 +49,7 @@ export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: Op
     // `prompt_tokens`, so the subtraction cannot go negative under any
     // standards-conforming upstream. Do NOT clamp with Math.max(0, ...) — that
     // would mask a real upstream contract violation rather than fix anything.
-    input_tokens: input,
-    output_tokens: usage?.completion_tokens ?? 0,
+    ...createAnthropicMessagesUsage(input, usage?.completion_tokens ?? 0),
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
     ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
     ...(writes.cacheWrite1h > 0
@@ -75,7 +75,7 @@ const anthropicMessagesUsageWithTier = (
 
 const ensureMessageStart = (
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
-  events: AnthropicMessagesStreamEvent[],
+  events: AnthropicMessagesStreamEventEx[],
 ): void => {
   if (state.messageStartSent) return;
   if (state.upstreamId === undefined || state.upstreamModel === undefined) {
@@ -91,6 +91,9 @@ const ensureMessageStart = (
       content: [],
       model: state.upstreamModel,
       stop_reason: null,
+      stop_details: null,
+      container: null,
+      diagnostics: null,
       stop_sequence: null,
       usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
     },
@@ -104,9 +107,9 @@ const ensureMessageStart = (
 // whole-message counters.
 const emitUsageProgress = (
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
-  events: AnthropicMessagesStreamEvent[],
+  events: AnthropicMessagesStreamEventEx[],
 ): void => {
-  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage === undefined) return;
+  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage == null) return;
 
   const outputTokens = state.pendingUsage.completion_tokens;
   const advanced = state.lastReportedUsageOutputTokens === undefined || outputTokens > state.lastReportedUsageOutputTokens;
@@ -115,15 +118,15 @@ const emitUsageProgress = (
   state.lastReportedUsageOutputTokens = outputTokens;
   events.push({
     type: 'message_delta',
-    delta: { stop_reason: null, stop_sequence: null },
-    usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+    delta: { container: null, stop_reason: null, stop_details: null, stop_sequence: null },
+    usage: toAnthropicMessagesUsageDelta(anthropicMessagesUsageWithTier(state, state.pendingUsage)),
   });
 };
 
 const chunkOpensMessage = (chunk: OpenAIChatCompletionsStreamEvent): boolean => {
   const choice = chunk.choices[0]!;
   if (choice.finish_reason !== null && choice.finish_reason !== undefined) return true;
-  const delta = choice.delta;
+  const delta = choice.delta as OpenAIChatCompletionsAssistantDeltaEx;
   return Boolean(delta.content)
     || openAIChatCompletionsScalarReasoningText(delta) !== undefined
     || delta.reasoning_opaque != null
@@ -188,7 +191,7 @@ interface OpenAIChatCompletionsToAnthropicMessagesStreamState {
 
 const hasPendingReasoning = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState): boolean => state.openBlock === 'thinking' || state.pendingReasoningOpaque !== undefined;
 
-const startContentBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[], openBlock: OpenContentBlock, contentBlock: AnthropicMessagesContentBlock): void => {
+const startContentBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[], openBlock: OpenContentBlock, contentBlock: AnthropicMessagesContentBlock): void => {
   events.push({
     type: 'content_block_start',
     index: state.contentBlockIndex,
@@ -197,11 +200,11 @@ const startContentBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStream
   state.openBlock = openBlock;
 };
 
-const emitContentBlockDelta = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[], delta: AnthropicMessagesContentDelta, index = state.contentBlockIndex): void => {
+const emitContentBlockDelta = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[], delta: AnthropicMessagesContentDelta, index = state.contentBlockIndex): void => {
   events.push({ type: 'content_block_delta', index, delta });
 };
 
-const closeCurrentBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const closeCurrentBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   if (state.openBlock === undefined) return;
 
   events.push({ type: 'content_block_stop', index: state.contentBlockIndex });
@@ -219,7 +222,7 @@ const attachOpaqueToOpenThinkingBlock = (state: OpenAIChatCompletionsToAnthropic
   return true;
 };
 
-const emitPendingOpaqueReasoningBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const emitPendingOpaqueReasoningBlock = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   if (state.pendingReasoningOpaque === undefined) return;
 
   // Opaque data is attachable only to the currently open thinking block. Once a
@@ -243,7 +246,7 @@ const emitPendingOpaqueReasoningBlock = (state: OpenAIChatCompletionsToAnthropic
   state.pendingReasoningOpaque = undefined;
 };
 
-const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   // Two distinct defer cases collapse to one buffer:
   //   1. A tool_use block is already open and we are mid-arguments. Closing
   //      the tool_use block on this content would orphan the trailing
@@ -261,7 +264,7 @@ const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: Ope
   }
 
   if (state.openBlock === undefined) {
-    startContentBlock(state, events, 'text', { type: 'text', text: '' });
+    startContentBlock(state, events, 'text', { citations: null, type: 'text', text: '' });
   }
 
   emitContentBlockDelta(state, events, {
@@ -270,23 +273,25 @@ const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: Ope
   });
 };
 
-const flushDeferredContent = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const flushDeferredContent = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   if (state.deferredContent === undefined) return;
   if (state.openBlock !== undefined) return;
 
   const text = state.deferredContent;
   state.deferredContent = undefined;
-  startContentBlock(state, events, 'text', { type: 'text', text: '' });
+  startContentBlock(state, events, 'text', { citations: null, type: 'text', text: '' });
   emitContentBlockDelta(state, events, { type: 'text_delta', text });
   closeCurrentBlock(state, events);
 };
 
-const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const handleReasoningDelta = (source: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
+  const delta = source as OpenAIChatCompletionsAssistantDeltaEx;
   const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
   if (reasoningText) {
     if (state.openBlock !== 'thinking') {
       closeCurrentBlock(state, events);
       startContentBlock(state, events, 'thinking', {
+        signature: '',
         type: 'thinking',
         thinking: '',
       });
@@ -312,7 +317,7 @@ const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: Op
   state.pendingReasoningOpaque = delta.reasoning_opaque;
 };
 
-const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   for (const toolCall of toolCalls) {
     if (toolCall.id && toolCall.function?.name) {
       closeCurrentBlock(state, events);
@@ -352,7 +357,7 @@ const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, sta
   }
 };
 
-const emitPendingReasoningAndDeferred = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const emitPendingReasoningAndDeferred = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   // Opaque-only reasoning still owns source order: it may later become a
   // thinking signature, so content/tool deltas wait behind the reasoning gate.
   emitPendingOpaqueReasoningBlock(state, events);
@@ -384,7 +389,7 @@ const handleFinishReason = (
   finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'],
   chunk: OpenAIChatCompletionsStreamEvent,
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
-  events: AnthropicMessagesStreamEvent[],
+  events: AnthropicMessagesStreamEventEx[],
 ): void => {
   emitPendingReasoningAndDeferred(state, events);
 
@@ -395,10 +400,10 @@ const handleFinishReason = (
   if (chunk.usage) emitFinalMessageIfReady(state, events);
 };
 
-const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   if (state.pendingFinishReason === undefined || state.finalMessageSent === true) return;
 
-  const usage = anthropicMessagesUsageWithTier(state, state.pendingUsage);
+  const usage = toAnthropicMessagesUsageDelta(anthropicMessagesUsageWithTier(state, state.pendingUsage));
 
   const refused = state.sawRefusal || state.pendingFinishReason === 'content_filter';
 
@@ -406,16 +411,9 @@ const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessages
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: refused ? 'refusal' : mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason(state.pendingFinishReason),
-        ...(refused
-          ? {
-              stop_details: {
-                type: 'refusal' as const,
-                category: null,
-                explanation: state.refusalText || null,
-              },
-            }
-          : {}),
+        stop_details: refused ? { type: 'refusal', category: null, explanation: state.refusalText || null } : null,
         stop_sequence: null,
       },
       usage,
@@ -436,8 +434,8 @@ export const createOpenAIChatCompletionsToAnthropicMessagesStreamState = (): Ope
   sawRefusal: false,
 });
 
-export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chunk: OpenAIChatCompletionsStreamEvent, state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chunk: OpenAIChatCompletionsStreamEvent, state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
 
   state.upstreamId ??= chunk.id;
   state.upstreamModel ??= chunk.model;
@@ -508,8 +506,8 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
 // Call once after the upstream OpenAI Chat Completions stream is exhausted. Some final Anthropic Messages SSE
 // events are intentionally buffered until end-of-stream so late usage and
 // opaque-only reasoning can be emitted in valid block/message order.
-export const flushOpenAIChatCompletionsToAnthropicMessagesEvents = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {
-  const events: AnthropicMessagesStreamEvent[] = [];
+export const flushOpenAIChatCompletionsToAnthropicMessagesEvents = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
+  const events: AnthropicMessagesStreamEventEx[] = [];
   emitPendingReasoningAndDeferred(state, events);
   closeCurrentBlock(state, events);
   flushDeferredContent(state, events);
@@ -517,7 +515,7 @@ export const flushOpenAIChatCompletionsToAnthropicMessagesEvents = (state: OpenA
   return events;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {

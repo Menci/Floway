@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { canonicalizeOpenAIResponsesPayload } from '../src/canonicalize-openai-responses-payload.ts';
 import { TranslatorInputError } from '../src/translator-input-error.ts';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('canonicalizes string and implicit-message wire inputs', () => {
@@ -87,7 +87,7 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
     const error = assertThrows(
       () => canonicalizeOpenAIResponsesPayload({
         model: 'gpt-test',
-        input: [malformed] as unknown as OpenAIResponsesPayload['input'],
+        input: [malformed] as unknown as OpenAIResponsesPayloadEx['input'],
       }),
       TranslatorInputError,
       'valid role and content',

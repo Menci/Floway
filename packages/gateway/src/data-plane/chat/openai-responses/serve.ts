@@ -7,7 +7,7 @@ import { prepareOpenAIResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 interface OpenAIResponsesServeArgs {
@@ -17,7 +17,7 @@ interface OpenAIResponsesServeArgs {
 }
 
 export const openaiResponsesServe = {
-  generate: async (args: OpenAIResponsesServeArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  generate: async (args: OpenAIResponsesServeArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     const { payload, ctx, headers } = args;
     const plan = await prepareOpenAIResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;

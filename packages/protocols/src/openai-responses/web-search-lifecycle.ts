@@ -1,4 +1,4 @@
-import type { OpenAIResponsesOutputWebSearchCall, OpenAIResponsesStreamEvent } from './index.ts';
+import type { OpenAIResponsesOutputWebSearchCall, OpenAIResponsesStreamEventEx } from './index.ts';
 
 // Hosted `web_search` lifecycle on OpenAI Responses: 5 events at one output_index.
 //
@@ -26,8 +26,8 @@ export const webSearchCallLifecycleEvents = (
   item: OpenAIResponsesOutputWebSearchCall,
   outputIndex: number,
 ): {
-  startFrames: OpenAIResponsesStreamEvent[];
-  endFrames: OpenAIResponsesStreamEvent[];
+  startFrames: OpenAIResponsesStreamEventEx[];
+  endFrames: OpenAIResponsesStreamEventEx[];
 } => {
   const itemId = item.id;
   const inProgressItem: OpenAIResponsesOutputWebSearchCall = {

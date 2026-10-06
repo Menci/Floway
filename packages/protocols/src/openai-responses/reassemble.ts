@@ -1,13 +1,13 @@
-import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent } from './index.ts';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 
 type OpenAIResponsesReassembleEvent =
-  | OpenAIResponsesStreamEvent
+  | OpenAIResponsesStreamEventEx
   | {
     type: 'error';
     message?: string;
   };
 
-export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<OpenAIResponsesReassembleEvent>): Promise<OpenAIResponsesResult> {
+export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<OpenAIResponsesReassembleEvent>): Promise<OpenAIResponsesResultEx> {
   for await (const event of events) {
     const rawEvent = event as unknown as Record<string, unknown>;
     const type = rawEvent.type as string;
@@ -18,7 +18,7 @@ export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<Open
     }
 
     if (type === 'response.completed' || type === 'response.incomplete' || type === 'response.failed') {
-      return rawEvent.response as OpenAIResponsesResult;
+      return rawEvent.response as OpenAIResponsesResultEx;
     }
   }
 

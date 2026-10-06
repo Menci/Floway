@@ -11,11 +11,11 @@ import {
   type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
-  type OpenAIResponsesInputItem,
-  type OpenAIResponsesOutputFunctionCall,
-  type OpenAIResponsesOutputItem,
-  type OpenAIResponsesResult,
-  type OpenAIResponsesStreamEvent,
+  type CanonicalOpenAIResponsesInputItem,
+  type OpenAIResponsesOutputFunctionCallEx,
+  type OpenAIResponsesOutputItemEx,
+  type OpenAIResponsesResultEx,
+  type OpenAIResponsesStreamEventEx,
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
@@ -32,11 +32,11 @@ export interface MergeUsage {
 export interface MergeState {
   sequenceNumber: number;
   outputIndex: number;
-  accumulatedOutput: Map<number, OpenAIResponsesOutputItem>;
+  accumulatedOutput: Map<number, OpenAIResponsesOutputItemEx>;
   accumulatedUsage: MergeUsage;
   lastSeenModel: string | null;
   synthesizedResponseId: string;
-  upstreamResponseSnapshot: OpenAIResponsesResult | undefined;
+  upstreamResponseSnapshot: OpenAIResponsesResultEx | undefined;
 }
 
 export interface InterceptedFunctionCall {
@@ -121,7 +121,7 @@ export type ServerToolPrepareResult =
     // turn so items echoed from a previous turn's output become
     // upstream-readable even on a request that no longer declares the
     // hosted tool.
-    transformItems?: (items: OpenAIResponsesInputItem[], toolName: string) => OpenAIResponsesInputItem[];
+    transformItems?: (items: CanonicalOpenAIResponsesInputItem[], toolName: string) => CanonicalOpenAIResponsesInputItem[];
     // Present only when the request declares this hosted tool; absent for
     // replay-only activation.
     hosted?: ServerToolHostedDispatch;
@@ -146,8 +146,8 @@ type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
 // `SynthesizedTerminal`, which is the shim's own outgoing terminal.
 export type UpstreamTerminal =
   | { kind: 'completed' }
-  | { kind: 'failed'; response: OpenAIResponsesResult }
-  | { kind: 'incomplete'; response: OpenAIResponsesResult }
+  | { kind: 'failed'; response: OpenAIResponsesResultEx }
+  | { kind: 'incomplete'; response: OpenAIResponsesResultEx }
   | { kind: 'bare-error-pre-shell'; error: { message: string; code: string } };
 
 export interface TurnSummary {
@@ -169,7 +169,7 @@ export const createMergeState = (): MergeState => ({
   upstreamResponseSnapshot: undefined,
 });
 
-export const materializeAccumulatedOutput = (state: MergeState): OpenAIResponsesOutputItem[] => {
+export const materializeAccumulatedOutput = (state: MergeState): OpenAIResponsesOutputItemEx[] => {
   const sorted = [...state.accumulatedOutput.keys()].sort((a, b) => a - b);
   return sorted.map(k => state.accumulatedOutput.get(k)!);
 };
@@ -195,7 +195,7 @@ export const sumUsage = (a: MergeUsage, b: MergeUsage): MergeUsage => {
   return out;
 };
 
-const usageForWire = (state: MergeState): NonNullable<OpenAIResponsesResult['usage']> | undefined => {
+const usageForWire = (state: MergeState): NonNullable<OpenAIResponsesResultEx['usage']> | undefined => {
   const u = state.accumulatedUsage;
   if (
     u.input_tokens === undefined
@@ -215,7 +215,7 @@ const usageForWire = (state: MergeState): NonNullable<OpenAIResponsesResult['usa
   };
 };
 
-const usageOf = (usage: OpenAIResponsesResult['usage']): MergeUsage => {
+const usageOf = (usage: OpenAIResponsesResultEx['usage']): MergeUsage => {
   if (usage == null) return {};
   const out: MergeUsage = {};
   if (usage.input_tokens !== undefined) out.input_tokens = usage.input_tokens;
@@ -310,7 +310,7 @@ const restoreEchoedTools = (
 export const resolveServerToolName = (
   baseName: string,
   tools: readonly OpenAIResponsesTool[],
-  input: readonly OpenAIResponsesInputItem[] = [],
+  input: readonly CanonicalOpenAIResponsesInputItem[] = [],
   choice?: OpenAIResponsesToolChoice | null,
 ): string => {
   const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
@@ -354,7 +354,7 @@ export const resolveServerToolName = (
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
-const historicalClientCallableUsesName = (name: string, input: readonly OpenAIResponsesInputItem[]): boolean =>
+const historicalClientCallableUsesName = (name: string, input: readonly CanonicalOpenAIResponsesInputItem[]): boolean =>
   input.some(item => {
     if (item.type === 'additional_tools' || item.type === 'tool_search_output') {
       return Array.isArray(item.tools) && item.tools.some(tool =>
@@ -443,7 +443,7 @@ const syntheticPrologueResponse = (
   model: string,
   active: readonly ActiveServerTool[],
   status: 'queued' | 'in_progress',
-): OpenAIResponsesResult => {
+): OpenAIResponsesResultEx => {
   if (state.upstreamResponseSnapshot === undefined) {
     throw new Error('Server-tool shim cannot synthesize an OpenAI Responses prologue envelope before an upstream response snapshot is captured.');
   }
@@ -465,12 +465,12 @@ const syntheticPrologueResponse = (
 };
 
 const rewriteOutputIndex = (
-  event: OpenAIResponsesStreamEvent,
+  event: OpenAIResponsesStreamEventEx,
   openItems: Map<number, number>,
   openItemIds: Map<number, string>,
   merge: MergeState,
-): OpenAIResponsesStreamEvent | null => {
-  const indexed = event as OpenAIResponsesStreamEvent & { output_index?: unknown; item_id?: unknown };
+): OpenAIResponsesStreamEventEx | null => {
+  const indexed = event as OpenAIResponsesStreamEventEx & { output_index?: unknown; item_id?: unknown };
   if (typeof indexed.output_index !== 'number') return null;
   let downstreamIndex = openItems.get(indexed.output_index);
   if (downstreamIndex === undefined) {
@@ -482,11 +482,11 @@ const rewriteOutputIndex = (
     ...event,
     output_index: downstreamIndex,
     ...(typeof indexed.item_id === 'string' && downstreamItemId !== undefined ? { item_id: downstreamItemId } : {}),
-  } as OpenAIResponsesStreamEvent;
+  } as OpenAIResponsesStreamEventEx;
 };
 
 const captureTerminalEvent = (
-  event: OpenAIResponsesStreamEvent,
+  event: OpenAIResponsesStreamEventEx,
   merge: MergeState,
 ): { status: UpstreamTerminal; usage: MergeUsage } | null => {
   if (event.type === 'response.completed') {
@@ -511,27 +511,27 @@ const stampServerToolEvent = (
   outputIndex: number,
   itemId: string,
   event: ServerToolLifecycleEvent,
-): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     ...event,
     output_index: outputIndex,
     item_id: itemId,
     sequence_number: merge.sequenceNumber++,
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 
-const attachServerToolItemId = (item: ServerToolOutputItem, id: string): OpenAIResponsesOutputItem => ({ ...item, id } as OpenAIResponsesOutputItem);
+const attachServerToolItemId = (item: ServerToolOutputItem, id: string): OpenAIResponsesOutputItemEx => ({ ...item, id } as OpenAIResponsesOutputItemEx);
 
 const serverToolStartFrames = (
   merge: MergeState,
   outputIndex: number,
   slot: ServerToolResultSlot,
-): ProtocolFrame<OpenAIResponsesStreamEvent>[] => [
+): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => [
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: attachServerToolItemId(slot.startItem, slot.id),
     sequence_number: merge.sequenceNumber++,
-  } as OpenAIResponsesStreamEvent),
+  } as OpenAIResponsesStreamEventEx),
   ...slot.startEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
 ];
 
@@ -540,7 +540,7 @@ const serverToolEndFrames = (
   outputIndex: number,
   slot: ServerToolResultSlot,
   result: ServerToolTerminal,
-): ProtocolFrame<OpenAIResponsesStreamEvent>[] => {
+): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
   const frames = [
     ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
     eventFrame({
@@ -548,16 +548,16 @@ const serverToolEndFrames = (
       output_index: outputIndex,
       item: attachServerToolItemId(result.item, slot.id),
       sequence_number: merge.sequenceNumber++,
-    } as OpenAIResponsesStreamEvent),
+    } as OpenAIResponsesStreamEventEx),
   ];
   merge.accumulatedOutput.set(outputIndex, attachServerToolItemId(result.item, slot.id));
   return frames;
 };
 
 const transformServerToolItems = (
-  items: OpenAIResponsesInputItem[],
+  items: CanonicalOpenAIResponsesInputItem[],
   active: readonly ActiveServerTool[],
-): OpenAIResponsesInputItem[] => {
+): CanonicalOpenAIResponsesInputItem[] => {
   let next = items;
   for (const entry of active) {
     if (entry.transformItems !== undefined) next = entry.transformItems(next, entry.toolName);
@@ -566,13 +566,13 @@ const transformServerToolItems = (
 };
 
 export const consumeTurnStreaming = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   merge: MergeState,
   isFirstTurn: boolean,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
   loopState: ServerToolLoopState,
   active: readonly ActiveServerTool[],
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary> {
   const dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }> = [];
   let sawClientToolCall = false;
   let turnUsage: MergeUsage = {};
@@ -586,10 +586,10 @@ export const consumeTurnStreaming = async function* (
   // streaming state, not part of the dispatcher's input.
   const interceptedByUpstreamIndex = new Map<number, {
     intercepted: InterceptedFunctionCall;
-    addedItem: OpenAIResponsesOutputFunctionCall;
+    addedItem: OpenAIResponsesOutputFunctionCallEx;
     reservedOutputIndex: number;
     argumentsJson: string;
-    bufferedEvents: OpenAIResponsesStreamEvent[];
+    bufferedEvents: OpenAIResponsesStreamEventEx[];
   }>();
 
   const ensureModel = (): string => {
@@ -599,11 +599,11 @@ export const consumeTurnStreaming = async function* (
     return merge.lastSeenModel;
   };
 
-  const stamp = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIResponsesStreamEvent> =>
+  const stamp = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
     eventFrame({
       ...event,
       sequence_number: merge.sequenceNumber++,
-    } as OpenAIResponsesStreamEvent);
+    } as OpenAIResponsesStreamEventEx);
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
@@ -622,7 +622,7 @@ export const consumeTurnStreaming = async function* (
         yield stamp({
           type: event.type,
           response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, status),
-        } as OpenAIResponsesStreamEvent);
+        } as OpenAIResponsesStreamEventEx);
       }
       continue;
     }
@@ -638,7 +638,7 @@ export const consumeTurnStreaming = async function* (
     }
 
     if (event.type === 'error') {
-      const e = event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>;
+      const e = 'error' in event ? event.error : event;
       const code = typeof e.code === 'string' && e.code.length > 0 ? e.code : 'server_error';
       if (merge.lastSeenModel === null) {
         terminalStatus = { kind: 'bare-error-pre-shell', error: { message: e.message, code } };
@@ -710,7 +710,7 @@ export const consumeTurnStreaming = async function* (
       yield stamp({
         type: 'response.output_item.added',
         output_index: downstreamIndex,
-        item: itemId !== undefined && wireItemId !== itemId ? { ...item, id: itemId } as OpenAIResponsesOutputItem : item,
+        item: itemId !== undefined && wireItemId !== itemId ? { ...item, id: itemId } as OpenAIResponsesOutputItemEx : item,
       });
       continue;
     }
@@ -763,8 +763,8 @@ export const consumeTurnStreaming = async function* (
       if (downstreamIndex === undefined) continue;
       const itemId = openItemIds.get(upstreamIndex);
       const upstreamDoneItemId = (event.item as { id?: unknown }).id;
-      const doneItem: OpenAIResponsesOutputItem = itemId !== undefined && upstreamDoneItemId !== itemId
-        ? { ...event.item, id: itemId } as OpenAIResponsesOutputItem
+      const doneItem: OpenAIResponsesOutputItemEx = itemId !== undefined && upstreamDoneItemId !== itemId
+        ? { ...event.item, id: itemId } as OpenAIResponsesOutputItemEx
         : event.item;
       yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
       merge.accumulatedOutput.set(downstreamIndex, doneItem);
@@ -795,7 +795,7 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    const maybeIndexedForIntercepted = event as OpenAIResponsesStreamEvent & { output_index?: unknown };
+    const maybeIndexedForIntercepted = event as OpenAIResponsesStreamEventEx & { output_index?: unknown };
     const pending = typeof maybeIndexedForIntercepted.output_index === 'number'
       ? interceptedByUpstreamIndex.get(maybeIndexedForIntercepted.output_index) : undefined;
     if (pending !== undefined) {
@@ -811,7 +811,7 @@ export const consumeTurnStreaming = async function* (
 
     const rewriteResult = rewriteOutputIndex(event, openItems, openItemIds, merge);
     if (rewriteResult !== null) {
-      const maybeItemEvent = rewriteResult as OpenAIResponsesStreamEvent & { output_index?: number; item?: unknown };
+      const maybeItemEvent = rewriteResult as OpenAIResponsesStreamEventEx & { output_index?: number; item?: unknown };
       if (maybeItemEvent.item !== undefined && typeof maybeItemEvent.output_index === 'number' && (rewriteResult.type.endsWith('.added') || rewriteResult.type.endsWith('.done'))) {
         merge.accumulatedOutput.set(maybeItemEvent.output_index, maybeItemEvent.item as Parameters<MergeState['accumulatedOutput']['set']>[1]);
       }
@@ -819,10 +819,8 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    // No event of the current protocol reaches here; every positionless type is
-    // answered above. This line is for what the protocol grows:
-    // `parseOpenAIResponsesStream` classifies by deny-list so an unrecognized type
-    // survives as structured, and dropping it here would spend that guarantee.
+    // Preserve positionless events and unknown types admitted by
+    // parseOpenAIResponsesStream so the shim retains the parser's pass-through contract.
     yield stamp(event);
   }
 
@@ -879,7 +877,7 @@ const MAX_BODY_EXCERPT_CHARS = 512;
 
 const buildErrorFromResult = (
   result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
-): NonNullable<OpenAIResponsesResult['error']> => {
+): NonNullable<OpenAIResponsesResultEx['error']> => {
   if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error' };
   const decoded = new TextDecoder('utf-8', { fatal: false }).decode(result.body);
   let parsed: unknown = undefined;
@@ -891,7 +889,7 @@ const buildErrorFromResult = (
   const err = typeof parsed === 'object' && parsed !== null ? (parsed as { error?: unknown }).error : undefined;
   if (typeof err === 'object' && err !== null) {
     const e = err as Record<string, unknown>;
-    const out: NonNullable<OpenAIResponsesResult['error']> = {
+    const out: NonNullable<OpenAIResponsesResultEx['error']> = {
       message: typeof e.message === 'string' ? e.message : `Upstream returned HTTP ${result.status}`,
       code: typeof e.code === 'string' ? e.code : `upstream_${result.status}`,
     };
@@ -911,7 +909,7 @@ const invalidRequestEnvelope = (
   param: string | null,
   code: string | null | undefined,
   errorType = 'invalid_request_error',
-): ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> => {
+): ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
   const body = JSON.stringify({
     error: {
       message,
@@ -936,10 +934,10 @@ const invalidRequestEnvelope = (
 // here — synthesis always runs after a model is known.
 type SynthesizedTerminal =
   | { kind: 'completed' }
-  | { kind: 'failed'; error: OpenAIResponsesResult['error'] }
-  | { kind: 'incomplete'; incompleteDetails: OpenAIResponsesResult['incomplete_details'] };
+  | { kind: 'failed'; error: OpenAIResponsesResultEx['error'] }
+  | { kind: 'incomplete'; incompleteDetails: OpenAIResponsesResultEx['incomplete_details'] };
 
-const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'response.completed' | 'response.failed' | 'response.incomplete'; status: OpenAIResponsesResult['status'] }> = {
+const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'response.completed' | 'response.failed' | 'response.incomplete'; status: OpenAIResponsesResultEx['status'] }> = {
   completed: { type: 'response.completed', status: 'completed' },
   failed: { type: 'response.failed', status: 'failed' },
   incomplete: { type: 'response.incomplete', status: 'incomplete' },
@@ -949,7 +947,7 @@ const synthesizeTerminalEnvelope = (
   state: MergeState,
   kind: SynthesizedTerminal,
   active: readonly ActiveServerTool[],
-): ProtocolFrame<OpenAIResponsesStreamEvent> => {
+): ProtocolFrame<OpenAIResponsesStreamEventEx> => {
   if (state.lastSeenModel === null) {
     throw new Error('Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` reports a model.');
   }
@@ -959,13 +957,6 @@ const synthesizeTerminalEnvelope = (
   const output = materializeAccumulatedOutput(state);
   const usage = usageForWire(state);
   const frame = SYNTHESIZED_TERMINAL_FRAME[kind.kind];
-  let outputText = '';
-  for (const item of output) {
-    if (item.type !== 'message') continue;
-    for (const block of item.content) {
-      if (block.type === 'output_text') outputText += block.text;
-    }
-  }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
   const restoredToolChoice = restoreEchoedToolChoice(snapshot.tool_choice, active);
@@ -979,21 +970,20 @@ const synthesizeTerminalEnvelope = (
       model: state.lastSeenModel,
       status: frame.status,
       output,
-      output_text: outputText,
       ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
       ...(restoredToolChoice !== undefined ? { tool_choice: restoredToolChoice } : {}),
       ...(usage !== undefined ? { usage } : {}),
       ...(kind.kind === 'failed' ? { error: kind.error } : {}),
       ...(kind.kind === 'incomplete' ? { incomplete_details: kind.incompleteDetails } : {}),
     },
-  } as OpenAIResponsesStreamEvent);
+  } as OpenAIResponsesStreamEventEx);
 };
 
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
   store: OpenAIResponsesStatefulStore,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, void> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
       const lifecycle = slot.run();
@@ -1013,7 +1003,7 @@ async function* materializeServerToolItems(
 
 const accumulateBillableUsage = async (
   metadata: LatestUpstreamMetadata,
-  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }>,
 ): Promise<void> => {
   const turn = result.finalMetadata === undefined ? undefined : (await result.finalMetadata).billableUsage;
   metadata.billableUsage = sumBillableUsage(metadata.billableUsage, turn);
@@ -1022,10 +1012,10 @@ const accumulateBillableUsage = async (
 // Stream-backed billing metadata can depend on draining the events. Await it
 // in finally to retain costs observed before a stream failure.
 async function* consumeBilledTurn(
-  events: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>,
-  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
+  events: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary>,
+  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }>,
   metadata: LatestUpstreamMetadata,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary> {
   try {
     return yield* events;
   } finally {
@@ -1035,19 +1025,19 @@ async function* consumeBilledTurn(
 
 async function* runMultiTurnLoop(args: {
   ctx: OpenAIResponsesInvocation;
-  run: InterceptorRun<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
+  run: InterceptorRun<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
   merge: MergeState;
   loopState: ServerToolLoopState;
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
-  turn1Iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>;
-  firstResult: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>;
+  turn1Iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary>;
+  firstResult: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'events' }>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
   store: OpenAIResponsesStatefulStore;
-  canonicalInput: OpenAIResponsesInputItem[];
+  canonicalInput: CanonicalOpenAIResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestUpstreamMetadata;
   resolveFinalMetadata: (m: EventResultMetadata) => void;
-}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { ctx, run, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, turn1Iter, dispatchers, store, active, metadata, resolveFinalMetadata } = args;
   const baseInput = args.canonicalInput;
   let midStreamError: unknown = undefined;
@@ -1094,7 +1084,7 @@ async function* runMultiTurnLoop(args: {
       // bridges the output/input naming.
       const nextCanonicalInput = [
         ...baseInput,
-        ...materializeAccumulatedOutput(merge).map(item => item as OpenAIResponsesInputItem),
+        ...materializeAccumulatedOutput(merge).map(item => item as CanonicalOpenAIResponsesInputItem),
       ];
       const nextPayload: CanonicalOpenAIResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
       if (loopState.remainingToolCalls !== undefined) {

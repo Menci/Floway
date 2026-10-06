@@ -1,14 +1,15 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-anthropic-messages/events.ts';
-import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const messageStart = (usage: AnthropicMessagesResult['usage'] = { input_tokens: 0, output_tokens: 0 }): AnthropicMessagesStreamEvent => ({
+const messageStart = (usage: AnthropicMessagesResult['usage'] = { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 0, output_tokens: 0 }): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
   message: {
+    container: null, diagnostics: null, stop_details: null,
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
@@ -20,7 +21,7 @@ const messageStart = (usage: AnthropicMessagesResult['usage'] = { input_tokens: 
   },
 });
 
-const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
 
   async function* frames() {
@@ -36,17 +37,17 @@ const collect = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Pr
 
 const geminiGenerateContentFrame = (event: GeminiGenerateContentStreamEvent): ProtocolFrame<GeminiGenerateContentStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): Promise<void> => {
   await collect(input);
 };
 
 test('translateToSourceEvents maps text chunks, finish reason, and usage without DONE', async () => {
   const frames = await collect([
-    eventFrame(messageStart({ input_tokens: 10, output_tokens: 0 })),
+    eventFrame(messageStart({ cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 })),
     eventFrame({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     }),
     eventFrame({
       type: 'content_block_delta',
@@ -57,7 +58,7 @@ test('translateToSourceEvents maps text chunks, finish reason, and usage without
     eventFrame({
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     }),
     eventFrame({
       type: 'content_block_delta',
@@ -67,8 +68,8 @@ test('translateToSourceEvents maps text chunks, finish reason, and usage without
     eventFrame({ type: 'content_block_stop', index: 1 }),
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn' },
-      usage: { output_tokens: 5 },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 5 },
     }),
     eventFrame({ type: 'message_stop' }),
     doneFrame(),
@@ -114,7 +115,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
     eventFrame({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     }),
     eventFrame({
       type: 'content_block_delta',
@@ -135,7 +136,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
     eventFrame({
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     }),
     eventFrame({
       type: 'content_block_delta',
@@ -143,7 +144,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
       delta: { type: 'text_delta', text: 'answer' },
     }),
     eventFrame({ type: 'content_block_stop', index: 1 }),
-    eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
     eventFrame({ type: 'message_stop' }),
   ]);
 
@@ -175,6 +176,7 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
           finishReason: 'STOP',
         },
       ],
+      usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 },
     }),
   ]);
 });
@@ -185,7 +187,7 @@ test('translateToSourceEvents accumulates tool call JSON and attaches pending si
     eventFrame({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     }),
     eventFrame({
       type: 'content_block_delta',
@@ -214,7 +216,7 @@ test('translateToSourceEvents accumulates tool call JSON and attaches pending si
       delta: { type: 'input_json_delta', partial_json: ':"docs"}' },
     }),
     eventFrame({ type: 'content_block_stop', index: 1 }),
-    eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use' } }),
+    eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' } }),
     eventFrame({ type: 'message_stop' }),
   ]);
 
@@ -247,17 +249,18 @@ test('translateToSourceEvents accumulates tool call JSON and attaches pending si
           finishReason: 'STOP',
         },
       ],
+      usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 },
     }),
   ]);
 });
 
 test('translateToSourceEvents maps max token and refusal finish reasons', async () => {
   const maxTokenFrames = await collect([
-    eventFrame(messageStart({ input_tokens: 8, output_tokens: 0 })),
+    eventFrame(messageStart({ cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 8, output_tokens: 0 })),
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: 'max_tokens' },
-      usage: { output_tokens: 3 },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'max_tokens' },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 3 },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -280,8 +283,11 @@ test('translateToSourceEvents maps max token and refusal finish reasons', async 
   ]);
 
   const refusalFrames = await collect([eventFrame(messageStart()), eventFrame({
+    usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null },
     type: 'message_delta',
     delta: {
+      container: null,
+      stop_sequence: null,
       stop_reason: 'refusal',
       stop_details: {
         type: 'refusal',
@@ -301,6 +307,7 @@ test('translateToSourceEvents maps max token and refusal finish reasons', async 
           finishMessage: 'This request could enable biological harm.',
         },
       ],
+      usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 },
     }),
   ]);
 });
@@ -323,18 +330,19 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini generateC
   const frames = await collect([
     eventFrame(
       messageStart({
+        inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null,
         input_tokens: 10,
         output_tokens: 0,
         cache_read_input_tokens: 30,
         cache_creation_input_tokens: 5,
-        cache_creation: { ephemeral_1h_input_tokens: 3 },
+        cache_creation: { ephemeral_1h_input_tokens: 3, ephemeral_5m_input_tokens: 2 },
         speed: 'fast',
       }),
     ),
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn' },
-      usage: { output_tokens: 7, service_tier: 'priority' },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7, service_tier: 'priority' },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -361,6 +369,7 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini generateC
 test('translateToSourceEvents counts null Anthropic cache fields as no cache activity', async () => {
   const frames = await collect([
     eventFrame(messageStart({
+      inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null,
       input_tokens: 10,
       output_tokens: 0,
       cache_read_input_tokens: null,
@@ -369,8 +378,8 @@ test('translateToSourceEvents counts null Anthropic cache fields as no cache act
     })),
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn' },
-      usage: { input_tokens: null, output_tokens: 7, cache_read_input_tokens: null, cache_creation_input_tokens: null },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
+      usage: { output_tokens_details: null, server_tool_use: null, input_tokens: null, output_tokens: 7, cache_read_input_tokens: null, cache_creation_input_tokens: null },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -387,8 +396,9 @@ test('translateToSourceEvents accepts late input accounting from message_delta',
     eventFrame(messageStart()),
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn' },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
       usage: {
+        output_tokens_details: null, server_tool_use: null,
         input_tokens: 10,
         output_tokens: 7,
         cache_read_input_tokens: 30,
@@ -404,8 +414,8 @@ test('translateToSourceEvents accepts late input accounting from message_delta',
 
 test('translateToSourceEvents emits known input usage when terminal usage is absent', async () => {
   const frames = await collect([
-    eventFrame(messageStart({ input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 2 })),
-    eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    eventFrame(messageStart({ cache_creation: null, cache_creation_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 2 })),
+    eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
     eventFrame({ type: 'message_stop' }),
   ]);
   const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;

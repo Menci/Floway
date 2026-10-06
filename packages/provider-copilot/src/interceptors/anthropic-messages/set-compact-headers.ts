@@ -1,5 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
-import type { AnthropicMessagesMessage, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Claude Code (and OpenCode) periodically asks the model to summarize the
@@ -60,7 +60,7 @@ const lastMessageText = (message: AnthropicMessagesMessage): string => {
   if (message.role !== 'user') return '';
   if (typeof message.content === 'string') return message.content;
   return message.content
-    .filter((block): block is AnthropicMessagesTextBlock => block.type === 'text')
+    .filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text')
     .map(block => (block.text.startsWith('<system-reminder>') ? '' : block.text))
     .filter(text => text.length > 0)
     .join('\n\n');
@@ -84,7 +84,7 @@ const isAutoContinueLastMessage = (message: AnthropicMessagesMessage | undefined
 
 const startsWithCompactSystemPrompt = (text: string): boolean => COMPACT_SYSTEM_PROMPT_STARTS.some(prefix => text.startsWith(prefix));
 
-const isCompactSystemPrompt = (system: string | AnthropicMessagesTextBlock[] | undefined): boolean => {
+const isCompactSystemPrompt = (system: string | AnthropicMessagesTextBlockParam[] | undefined): boolean => {
   if (typeof system === 'string') return startsWithCompactSystemPrompt(system);
   if (Array.isArray(system)) return system.some(block => startsWithCompactSystemPrompt(block.text));
   return false;
@@ -97,7 +97,7 @@ type CompactClass = 'compact-request' | 'auto-continue' | null;
 // compact-summary. This ordering matters because a single payload could in
 // principle match more than one shape, and the COMPACT_REQUEST tagging is
 // strictly stronger than the auto-continue tagging.
-const classifyCompact = (payload: { messages: AnthropicMessagesMessage[]; system?: string | AnthropicMessagesTextBlock[] }): CompactClass => {
+const classifyCompact = (payload: { messages: AnthropicMessagesMessage[]; system?: string | AnthropicMessagesTextBlockParam[] }): CompactClass => {
   const last = payload.messages.at(-1);
   if (isCompactLastMessage(last)) return 'compact-request';
   if (isAutoContinueLastMessage(last)) return 'auto-continue';

@@ -23,25 +23,24 @@ test('Anthropic Messages cache creation rejects inconsistent totals', () => {
   })).toThrowError('exceed');
 });
 
-test('Anthropic Messages usage snapshots merge late counters and atomically replace the tier pair', () => {
+test('Anthropic Messages usage snapshots merge cumulative counters while preserving initial metadata', () => {
   const start = anthropicMessagesUsageSnapshot({
     input_tokens: 0,
     output_tokens: 0,
     cache_creation_input_tokens: 9,
     speed: 'fast',
+    cache_creation: { ephemeral_1h_input_tokens: 5 },
   });
   expect(mergeAnthropicMessagesUsageSnapshot(start, {
     input_tokens: 11,
     output_tokens: 2,
-    cache_creation: { ephemeral_1h_input_tokens: 5 },
-    service_tier: 'priority',
+    cache_creation_input_tokens: 10,
   })).toEqual({
     input_tokens: 11,
     output_tokens: 2,
-    cache_creation_input_tokens: 9,
+    cache_creation_input_tokens: 10,
     cache_creation: { ephemeral_1h_input_tokens: 5 },
-    speed: undefined,
-    service_tier: 'priority',
+    speed: 'fast',
   });
 });
 
@@ -89,21 +88,22 @@ test('Anthropic Messages usage snapshots keep counters a later null does not res
   });
 });
 
-test('Anthropic Messages usage snapshots keep the served tier a later null does not restate', () => {
-  const start = anthropicMessagesUsageSnapshot({ output_tokens: 0, speed: 'fast' });
-  expect(mergeAnthropicMessagesUsageSnapshot(start, { output_tokens: 2, speed: null, service_tier: null }))
-    .toEqual({ output_tokens: 2, speed: 'fast' });
-  expect(mergeAnthropicMessagesUsageSnapshot(start, { output_tokens: 2, speed: null, service_tier: 'standard' }))
-    .toEqual({ output_tokens: 2, speed: undefined, service_tier: 'standard' });
+test('Anthropic Messages usage snapshots ignore delta metadata outside the official field set', () => {
+  const start = anthropicMessagesUsageSnapshot({ output_tokens: 0, speed: 'fast', service_tier: 'priority', cache_creation: { ephemeral_1h_input_tokens: 5 } });
+  const delta = { output_tokens: 2, speed: 'standard', service_tier: 'standard', cache_creation: { ephemeral_1h_input_tokens: 9 }, inference_geo: 'eu' };
+  expect(mergeAnthropicMessagesUsageSnapshot(start, delta)).toEqual({ ...start, output_tokens: 2 });
 });
 
 test('Anthropic Messages usage snapshots preserve nullable iterations and isolate all nested iteration data', () => {
   expect(anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: null })).toEqual({ output_tokens: 0, iterations: null });
 
   const source = [{
-    type: 'compaction',
+    type: 'compaction' as const,
     input_tokens: 7,
-    cache_creation: { ephemeral_5m_input_tokens: 3 },
+    output_tokens: 1,
+    cache_creation_input_tokens: 3,
+    cache_read_input_tokens: 0,
+    cache_creation: { ephemeral_5m_input_tokens: 3, ephemeral_1h_input_tokens: 0 },
     provider_metadata: {
       attempts: [{ regions: ['us-east', 'us-west'] }],
     },
@@ -113,19 +113,28 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
   source[0].provider_metadata.attempts[0].regions.push('eu-west');
 
   expect(snapshot.iterations).toEqual([{
-    type: 'compaction',
+    type: 'compaction' as const,
     input_tokens: 7,
-    cache_creation: { ephemeral_5m_input_tokens: 3 },
+    output_tokens: 1,
+    cache_creation_input_tokens: 3,
+    cache_read_input_tokens: 0,
+    cache_creation: { ephemeral_5m_input_tokens: 3, ephemeral_1h_input_tokens: 0 },
     provider_metadata: {
       attempts: [{ regions: ['us-east', 'us-west'] }],
     },
   }]);
-  expect(mergeAnthropicMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toBeNull();
+  expect(mergeAnthropicMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toEqual(snapshot.iterations);
 });
 
 test('Anthropic Messages usage snapshot merges isolate opaque nested iteration data from the delta', () => {
   const iterations = [{
-    type: 'model',
+    type: 'message' as const,
+    model: 'claude-test',
+    input_tokens: 1,
+    output_tokens: 1,
+    cache_creation: null,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
     provider_metadata: {
       attempts: [{ warnings: ['slow'] }],
     },
@@ -134,7 +143,13 @@ test('Anthropic Messages usage snapshot merges isolate opaque nested iteration d
   iterations[0].provider_metadata.attempts[0].warnings[0] = 'mutated';
 
   expect(merged.iterations).toEqual([{
-    type: 'model',
+    type: 'message' as const,
+    model: 'claude-test',
+    input_tokens: 1,
+    output_tokens: 1,
+    cache_creation: null,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
     provider_metadata: {
       attempts: [{ warnings: ['slow'] }],
     },

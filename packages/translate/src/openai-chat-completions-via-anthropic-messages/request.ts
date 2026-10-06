@@ -7,10 +7,11 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthro
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
+import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -23,9 +24,10 @@ interface BuildTargetRequestOptions {
   fallbackMaxOutputTokens?: number;
 }
 
-const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicMessagesAssistantInputContentBlock[] => {
+const buildAssistantBlocks = (message: OpenAIChatCompletionsAssistantMessage): AnthropicMessagesAssistantInputContentBlock[] => {
   const blocks: AnthropicMessagesAssistantInputContentBlock[] = [];
-  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(message), message.reasoning_opaque);
+  const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
+  const thinkingBlock = anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning(openAIChatCompletionsScalarReasoningText(extensions), extensions.reasoning_opaque);
 
   if (thinkingBlock) blocks.push(thinkingBlock);
 
@@ -41,6 +43,7 @@ const buildAssistantBlocks = (message: OpenAIChatCompletionsMessage): AnthropicM
   if (message.refusal) blocks.push({ type: 'text', text: message.refusal });
 
   for (const toolCall of message.tool_calls ?? []) {
+    if (toolCall.type !== 'function') throw new TranslatorInputError('Cannot translate a custom Chat tool call to Anthropic Messages.');
     blocks.push({
       type: 'tool_use',
       id: toolCall.id,
@@ -102,13 +105,13 @@ const convertUserContent = async (message: OpenAIChatCompletionsMessage, loadRem
 // the caller hits an explicit failure instead of having the image silently
 // dropped on the wire. Returns blocks (possibly empty) so the hoist and
 // inline call sites share one shape.
-const convertSystemContent = (content: OpenAIChatCompletionsMessage['content']): AnthropicMessagesTextBlock[] => {
+const convertSystemContent = (content: OpenAIChatCompletionsMessage['content']): AnthropicMessagesTextBlockParam[] => {
   if (typeof content === 'string') {
     return content ? [{ type: 'text', text: content }] : [];
   }
   if (!Array.isArray(content)) return [];
 
-  const blocks: AnthropicMessagesTextBlock[] = [];
+  const blocks: AnthropicMessagesTextBlockParam[] = [];
   for (const part of content) {
     if (part.type === 'image_url') {
       throw new TranslatorInputError("Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.");
@@ -173,16 +176,20 @@ const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessag
 };
 
 const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[]): AnthropicMessagesPayload['tools'] =>
-  tools.map(tool => ({
-    name: tool.function.name,
-    description: tool.function.description,
-    input_schema: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
-    ...(tool.function.strict !== undefined ? { strict: tool.function.strict } : {}),
-  }));
+  tools.map(tool => {
+    if (tool.type !== 'function') throw new TranslatorInputError('Cannot translate custom Chat tools to Anthropic Messages.');
+    return {
+      name: tool.function.name,
+      description: tool.function.description,
+      input_schema: anthropicMessagesToolInputSchema(klona(tool.function.parameters) ?? { type: 'object', properties: {} }),
+      ...(tool.function.strict != null ? { strict: tool.function.strict } : {}),
+    };
+  });
 
 const translateOpenAIChatCompletionsToolChoice = (toolChoice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): AnthropicMessagesPayload['tool_choice'] => {
   if (typeof toolChoice === 'string') return klona(CHAT_TOOL_CHOICES[toolChoice]);
 
+  if (toolChoice.type !== 'function') throw new TranslatorInputError(`Cannot translate ${toolChoice.type} Chat tool choice to Anthropic Messages.`);
   return { type: 'tool', name: toolChoice.function.name };
 };
 
@@ -195,10 +202,10 @@ const CHAT_TOOL_CHOICES = {
 export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, options: BuildTargetRequestOptions = {}): Promise<AnthropicMessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to
   // AnthropicMessagesPayload.system, preserving each ContentPart text as its own
-  // AnthropicMessagesTextBlock so part boundaries survive the hoist. Non-leading
+  // AnthropicMessagesTextBlockParam so part boundaries survive the hoist. Non-leading
   // system/developer messages stay inline as AnthropicMessagesSystemMessage at their
   // chronological position.
-  const systemBlocks: AnthropicMessagesTextBlock[] = [];
+  const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   let prefixEnd = 0;
   for (const message of payload.messages) {
     if (message.role !== 'system' && message.role !== 'developer') break;
