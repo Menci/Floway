@@ -117,7 +117,6 @@ export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customTo
   sequenceNumber: 0,
   responseId: '',
   model: '',
-  outputText: '',
   completedItems: [],
   openFunctionCalls: new Map(),
   deferredAfterReasoning: [],
@@ -130,8 +129,7 @@ const buildResult = (state: OpenAIChatCompletionsToOpenAIResponsesStreamState, s
   openaiResponses.result({
     id: state.responseId,
     model: state.model,
-    output: state.completedItems.filter((item): item is OpenAIResponsesOutputItem => item !== undefined),
-    outputText: state.outputText,
+    output: state.completedItems.filter((item): item is OpenAIResponsesOutputItemEx => item !== undefined),
     status,
     // OpenAI Chat Completions surfaces "ran out of tokens" via
     // `finish_reason === 'length'`, which the caller has already mapped
@@ -299,7 +297,6 @@ const emitContentDelta = (content: string, state: OpenAIChatCompletionsToOpenAIR
   const events = closeRefusal(state);
   const opened = openText(state);
   opened.item.text += content;
-  state.outputText += content;
   events.push(...opened.events, ...openaiResponses.textDelta(state, opened.item.outputIndex, opened.item.itemId, content));
 
   return events;
@@ -397,7 +394,8 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
   }
 
   for (const choice of chunk.choices) {
-    const readableReasoningItems = choice.delta.reasoning_items?.filter(hasReadableSummary) ?? [];
+    const delta = choice.delta as OpenAIChatCompletionsAssistantDeltaEx;
+    const readableReasoningItems = (delta.reasoning_items as OpenAIChatCompletionsReasoningItem[] | undefined)?.filter(hasReadableSummary) ?? [];
 
     if (readableReasoningItems.length) {
       const hadPendingScalarReasoning = state.pendingScalarReasoning !== undefined;
@@ -423,14 +421,14 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
       if (hadPendingScalarReasoning) {
         events.push(...commitReasoningAndReplayDeferredDeltas(state));
       }
-    } else if (openAIChatCompletionsScalarReasoningText(choice.delta) !== undefined) {
+    } else if (openAIChatCompletionsScalarReasoningText(delta) !== undefined) {
       if (!state.reasoningItemsSeen) {
         if (!state.pendingScalarReasoning) {
           events.push(...closeText(state));
           events.push(...closeRefusal(state));
         }
         const reasoning = openScalarReasoning(state);
-        const reasoningText = openAIChatCompletionsScalarReasoningText(choice.delta);
+        const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
 
         if (reasoningText) {
           reasoning.text += reasoningText;

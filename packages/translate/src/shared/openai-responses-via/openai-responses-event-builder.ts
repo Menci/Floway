@@ -113,7 +113,6 @@ export const result = (input: {
   object: 'response',
   model: input.model,
   output: input.output,
-  output_text: input.outputText,
   status: input.status,
   // `error` and `incomplete_details` are spec-required on every
   // Response (both nullable). Default both to null; callers pass a

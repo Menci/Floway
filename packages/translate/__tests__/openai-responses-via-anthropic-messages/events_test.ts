@@ -36,6 +36,7 @@ const runToCompletion = (
     {
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_test',
         type: 'message',
         role: 'assistant',
@@ -44,6 +45,7 @@ const runToCompletion = (
         stop_reason: null,
         stop_sequence: null,
         usage: {
+          cache_creation: null, inference_geo: null, output_tokens_details: null, server_tool_use: null,
           input_tokens: usage.input_tokens,
           output_tokens: 0,
           cache_read_input_tokens: usage.cache_read_input_tokens,
@@ -60,8 +62,8 @@ const runToCompletion = (
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { citations: null, type: 'text', text: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -76,7 +78,7 @@ const runToCompletion = (
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
     {
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn' },
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
       usage: { output_tokens: usage.output_tokens, ...deltaUsageExtras },
     } as AnthropicMessagesStreamEventEx,
     state,
@@ -194,8 +196,8 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { signature: '', type: 'thinking', thinking: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -233,8 +235,8 @@ test('thinking stream block start emits a plain reasoning item', () => {
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { signature: '', type: 'thinking', thinking: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -256,8 +258,8 @@ test('thinking stream block stop emits a plain reasoning item', () => {
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { signature: '', type: 'thinking', thinking: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -292,6 +294,7 @@ test('max_tokens stream stop becomes response.incomplete', () => {
     {
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_max_tokens',
         type: 'message',
         role: 'assistant',
@@ -299,7 +302,7 @@ test('max_tokens stream stop becomes response.incomplete', () => {
         model: 'claude-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 3, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 },
       },
     } as AnthropicMessagesStreamEventEx,
     state,
@@ -307,9 +310,9 @@ test('max_tokens stream stop becomes response.incomplete', () => {
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
     {
       type: 'message_delta',
-      delta: { stop_reason: 'max_tokens' },
-      usage: { output_tokens: 7 },
-    } as AnthropicMessagesStreamEvent,
+      delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'max_tokens' },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 
@@ -337,6 +340,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
     {
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_ctc',
         type: 'message',
         role: 'assistant',
@@ -344,7 +348,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
         model: 'claude-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
       },
     } as AnthropicMessagesStreamEventEx,
     state,
@@ -419,6 +423,7 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createAnthropicMessa
     {
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_cite',
         type: 'message',
         role: 'assistant',
@@ -426,7 +431,7 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createAnthropicMessa
         model: 'claude-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
       },
     } as AnthropicMessagesStreamEventEx,
     state,
@@ -435,8 +440,8 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createAnthropicMessa
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { citations: null, type: 'text', text: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
 };
@@ -466,7 +471,7 @@ test('search_result_location citation_delta becomes one url_citation annotation'
         type: 'citations_delta',
         citation: {
           type: 'search_result_location',
-          url: 'https://docs.example.com/page-1',
+          source: 'https://docs.example.com/page-1',
           title: 'Example Docs · Page 1',
           search_result_index: 0,
           start_block_index: 0,
@@ -544,8 +549,9 @@ test('citation_delta without cited_text is skipped', () => {
       delta: {
         type: 'citations_delta',
         citation: {
+          cited_text: '',
           type: 'search_result_location',
-          url: 'https://example.com/',
+          source: 'https://example.com/',
           title: 'Example',
           search_result_index: 0,
           start_block_index: 0,
@@ -560,18 +566,14 @@ test('citation_delta without cited_text is skipped', () => {
   assertEquals(events, []);
 });
 
-test('unknown citation variant is skipped without throwing', () => {
+test('document citation variant is skipped without throwing', () => {
   const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_cite', 'claude-test');
   startTextBlockWithMessage(state);
 
   pushTextDelta(state, 'Some text.');
 
-  // `char_location` is not currently in our AnthropicMessagesTextCitation union — it
-  // is one of Anthropic's native long-document citation variants. Casting
-  // through `unknown` simulates a future protocol addition the translator
-  // hasn't been taught about yet; it must drop, not throw.
   const events = translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    ({
+    {
       type: 'content_block_delta',
       index: 0,
       delta: {
@@ -580,12 +582,13 @@ test('unknown citation variant is skipped without throwing', () => {
           type: 'char_location',
           document_index: 0,
           document_title: 'A Book',
+          file_id: null,
           start_char_index: 0,
           end_char_index: 5,
           cited_text: 'hello',
         },
       },
-    } as unknown) as AnthropicMessagesStreamEvent,
+    },
     state,
   );
 
@@ -605,7 +608,7 @@ test('multiple citations on the same text content part get monotonic annotation_
         type: 'citations_delta',
         citation: {
           type: 'search_result_location',
-          url: 'https://example.com/a',
+          source: 'https://example.com/a',
           title: 'A',
           search_result_index: 0,
           start_block_index: 0,
@@ -693,7 +696,7 @@ test('citation offsets reflect running text length up to the citation_delta', ()
         type: 'citations_delta',
         citation: {
           type: 'search_result_location',
-          url: 'https://example.com/q',
+          source: 'https://example.com/q',
           title: 'Q',
           search_result_index: 0,
           start_block_index: 0,
@@ -706,6 +709,7 @@ test('citation offsets reflect running text length up to the citation_delta', ()
   );
 
   const [annotation] = events.filter((e): e is AnnotationAddedEvent => e.type === 'response.output_text.annotation.added');
+  if (annotation.annotation?.type !== 'url_citation') throw new Error('Expected a URL citation');
   // 'Intro text. Then "quoted text"' is 30 chars; '"quoted text"' is 13.
   assertEquals(annotation.annotation.start_index, 17);
   assertEquals(annotation.annotation.end_index, 30);
@@ -737,7 +741,7 @@ test('text_delta events on a text block with citations still emit text deltas un
         type: 'citations_delta',
         citation: {
           type: 'search_result_location',
-          url: 'https://example.com/',
+          source: 'https://example.com/',
           title: 'X',
           search_result_index: 0,
           start_block_index: 0,
@@ -760,7 +764,6 @@ test('text_delta events on a text block with citations still emit text deltas un
 
   const moreTextDeltas = more.filter(e => e.type === 'response.output_text.delta');
   assertEquals(moreTextDeltas.length, 1);
-  assertEquals(state.accumulatedText, 'Hello world. More.');
 });
 
 // ── Synthesized output items carry stable, child-consistent ids ──
@@ -783,7 +786,7 @@ test('synthesized message item carries a stable id consistent across added, chil
   const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_test', 'claude-test');
 
   const startEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
-    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEvent,
+    { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } } as AnthropicMessagesStreamEventEx,
     state,
   );
   const deltaEvents = translateAnthropicMessagesEventToOpenAIResponsesEvents(
@@ -831,16 +834,16 @@ test('synthesized function_call item carries a stable id consistent across added
 
 // ── speed / service_tier pass-through ──
 
-test('Anthropic speed:fast maps to service_tier:priority on the OpenAI Responses result', () => {
-  const result = runToCompletion({ input_tokens: 10, output_tokens: 5 }, { speed: 'fast' });
-
-  assertEquals(result.service_tier, 'priority');
-});
-
-test('Anthropic service_tier:standard with no speed passes service_tier:standard through', () => {
-  const result = runToCompletion({ input_tokens: 10, output_tokens: 5 }, { service_tier: 'standard' });
+test('late extended Messages speed updates the OpenAI Responses tier', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' }, { speed: 'standard', service_tier: 'standard' });
 
   assertEquals(result.service_tier, 'standard');
+});
+
+test('late extended Messages speed:fast updates the OpenAI Responses tier', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, service_tier: 'standard' }, { speed: 'fast' });
+
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('Anthropic service_tier absent results in no service_tier on the OpenAI Responses result', () => {
@@ -859,13 +862,13 @@ test('Anthropic Messages message_start speed:fast survives when message_delta om
   assertEquals(result.service_tier, 'priority');
 });
 
-test('Anthropic Messages delta atomically replaces tier and merges late cache accounting into OpenAI Responses', () => {
+test('Anthropic Messages delta keeps initial tier while merging cumulative cache counters into OpenAI Responses', () => {
   const result = runToCompletion(
     { input_tokens: 0, output_tokens: 2, cache_creation_input_tokens: 9, speed: 'fast' },
     {
       input_tokens: 11,
       cache_creation: { ephemeral_1h_input_tokens: 5 },
-      service_tier: 'priority',
+      service_tier: 'standard',
     },
   );
   assertEquals(result.service_tier, 'priority');
@@ -887,6 +890,7 @@ test.each([
   translateAnthropicMessagesEventToOpenAIResponsesEvents({
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_refusal',
       type: 'message',
       role: 'assistant',
@@ -894,12 +898,14 @@ test.each([
       model: 'claude-opus-5',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 10, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
     },
   }, state);
   translateAnthropicMessagesEventToOpenAIResponsesEvents({
     type: 'message_delta',
     delta: {
+      container: null,
+      stop_sequence: null,
       stop_reason: 'refusal',
       stop_details: {
         type: 'refusal',
@@ -907,7 +913,7 @@ test.each([
         explanation: category === 'bio' ? 'Bio refusal.' : `${category === 'cyber' ? 'Cyber' : category === 'frontier_llm' ? 'Frontier' : 'Future'} refusal.`,
       },
     },
-    usage: { output_tokens: 0 },
+    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 0 },
   }, state);
 
   const result = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' }, state);
@@ -922,6 +928,7 @@ test('Anthropic Messages fallback block changes the OpenAI Responses serving mod
   translateAnthropicMessagesEventToOpenAIResponsesEvents({
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_fallback',
       type: 'message',
       role: 'assistant',
@@ -929,7 +936,7 @@ test('Anthropic Messages fallback block changes the OpenAI Responses serving mod
       model: 'claude-opus-5',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 1, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
     },
   }, state);
   const boundary = translateAnthropicMessagesEventToOpenAIResponsesEvents({
@@ -942,7 +949,7 @@ test('Anthropic Messages fallback block changes the OpenAI Responses serving mod
       trigger: { type: 'refusal', category: 'cyber' },
     },
   }, state);
-  translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }, state);
+  translateAnthropicMessagesEventToOpenAIResponsesEvents({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }, state);
   const result = translateAnthropicMessagesEventToOpenAIResponsesEvents({ type: 'message_stop' }, state);
   const completed = result.find((event): event is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => event.type === 'response.completed');
 
@@ -958,8 +965,8 @@ test('an upstream ping is consumed without emitting an OpenAI Responses event or
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
-    } as AnthropicMessagesStreamEvent,
+      content_block: { citations: null, type: 'text', text: '' },
+    } as AnthropicMessagesStreamEventEx,
     state,
   );
   const lastBefore = before.at(-1)?.sequence_number;

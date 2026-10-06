@@ -8,7 +8,7 @@ import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItemEx, type 
 const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResultEx): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
   response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'
     ? 'length'
-    : response.status === 'completed' && response.output.some(item => item.type === 'function_call')
+    : response.status === 'completed' && response.output.some(item => item.type === 'function_call' || item.type === 'custom_tool_call')
       ? 'tool_calls'
       : 'stop';
 
@@ -57,17 +57,28 @@ export const createOpenAIResponsesToOpenAIChatCompletionsStreamState = (): OpenA
   model: '',
   created: Math.floor(Date.now() / 1000),
   toolCallIndex: -1,
-  functionCallIndices: new Map(),
+  toolCallIndices: new Map(),
   reasoningItems: [],
   pendingReasoningSummaryTexts: new Map(),
   emittedReasoningSummaryKeys: new Set(),
   emittedTextContentKeys: new Set(),
   emittedFunctionArgumentOutputIndexes: new Set(),
+  customInputs: new Map(),
   outputOrder: createOpenAIResponsesOutputOrderState(),
   done: false,
 });
 
-const trackReasoningOutputItem = (item: OpenAIResponsesOutputItem): boolean => item.type === 'reasoning';
+const trackReasoningOutputItem = (item: OpenAIResponsesOutputItemEx): boolean => item.type === 'reasoning';
+
+const completeCustomInput = (outputIndex: number, input: string, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+  const index = state.toolCallIndices.get(outputIndex);
+  const emitted = state.customInputs.get(outputIndex);
+  if (index === undefined || emitted === undefined) throw new Error('Custom tool input completed before its output item was added.');
+  if (!input.startsWith(emitted)) throw new Error('Completed custom tool input conflicts with text already emitted to Chat Completions.');
+  state.customInputs.set(outputIndex, input);
+  const suffix = input.slice(emitted.length);
+  return suffix === '' ? [] : [makeChunk(state, { tool_calls: [{ index, custom: { input: suffix } }] })];
+};
 
 const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
   if (state.reasoningItems.length === 0) return [];
@@ -164,11 +175,12 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_item.added': {
-    const { item, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
-    if (item.type !== 'function_call') return [];
+    const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
+    if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return [];
 
     state.toolCallIndex++;
-    state.functionCallIndices.set(output_index, state.toolCallIndex);
+    state.toolCallIndices.set(output_index, state.toolCallIndex);
+    if (item.type === 'custom_tool_call') state.customInputs.set(output_index, item.input);
 
     return [
       makeChunk(state, {
@@ -176,11 +188,9 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
           {
             index: state.toolCallIndex,
             id: item.call_id,
-            type: 'function',
-            function: {
-              name: item.name,
-              arguments: '',
-            },
+            ...(item.type === 'function_call'
+              ? { type: 'function' as const, function: { name: item.name, arguments: '' } }
+              : { type: 'custom' as const, custom: { name: item.name, input: item.input } }),
           },
         ],
       }),
@@ -188,7 +198,8 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_item.done': {
-    const { item, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>;
+    const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
+    if (item.type === 'custom_tool_call') return completeCustomInput(output_index, item.input, state);
     if (item.type !== 'reasoning') return [];
 
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
@@ -259,33 +270,44 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
     return [makeChunk(state, { refusal: part.refusal })];
   }
 
-  case 'response.function_call_arguments.delta': {
-    const { delta, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>;
+  case 'response.function_call_arguments.delta':
+  case 'response.custom_tool_call_input.delta': {
+    const { delta, output_index } = event;
     if (!delta) return [];
 
-    const toolCallIndex = state.functionCallIndices.get(output_index);
-    if (toolCallIndex === undefined) return [];
+    const toolCallIndex = state.toolCallIndices.get(output_index);
+    if (toolCallIndex === undefined) {
+      if (event.type === 'response.custom_tool_call_input.delta') throw new Error('Custom tool input delta arrived before its output item was added.');
+      return [];
+    }
 
-    state.emittedFunctionArgumentOutputIndexes.add(output_index);
+    if (event.type === 'response.custom_tool_call_input.delta') {
+      const emitted = state.customInputs.get(output_index);
+      if (emitted === undefined) throw new Error('Custom tool input delta arrived before its output item was added.');
+      state.customInputs.set(output_index, emitted + delta);
+    } else state.emittedFunctionArgumentOutputIndexes.add(output_index);
     return [
       makeChunk(state, {
         tool_calls: [
           {
             index: toolCallIndex,
-            function: { arguments: delta },
+            ...(event.type === 'response.function_call_arguments.delta' ? { function: { arguments: delta } } : { custom: { input: delta } }),
           },
         ],
       }),
     ];
   }
 
-  case 'response.function_call_arguments.done': {
-    const { arguments: args, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>;
+  case 'response.function_call_arguments.done':
+  case 'response.custom_tool_call_input.done': {
+    const { output_index } = event;
+    if (event.type === 'response.custom_tool_call_input.done') return completeCustomInput(output_index, event.input, state);
+    const args = event.arguments;
     if (!args || state.emittedFunctionArgumentOutputIndexes.has(output_index)) {
       return [];
     }
 
-    const toolCallIndex = state.functionCallIndices.get(output_index);
+    const toolCallIndex = state.toolCallIndices.get(output_index);
     if (toolCallIndex === undefined) return [];
 
     state.emittedFunctionArgumentOutputIndexes.add(output_index);
@@ -398,22 +420,25 @@ const debugFieldsFrom = (value: Record<string, unknown>) => ({
   ...(typeof value.target_api === 'string' ? { target_api: value.target_api } : {}),
 });
 
-const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponsesStreamEvent, { type: 'error' }>): OpenAIChatCompletionsErrorPayload => ({
-  error: {
-    message: event.message,
-    type: event.code ?? 'api_error',
-    ...(event.code ? { code: event.code } : {}),
-    ...(event.name ? { name: event.name } : {}),
-    ...(event.stack ? { stack: event.stack } : {}),
-    ...(event.cause !== undefined ? { cause: event.cause } : {}),
-    ...(event.target_api ? { target_api: event.target_api } : {}),
-  },
-});
+const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): OpenAIChatCompletionsErrorPayload => {
+  const error = 'error' in event ? event.error : event;
+  return {
+    error: {
+      message: error.message,
+      type: 'error' in event ? event.error.type ?? error.code ?? 'api_error' : error.code ?? 'api_error',
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.name ? { name: error.name } : {}),
+      ...(error.stack ? { stack: error.stack } : {}),
+      ...(error.cause !== undefined ? { cause: error.cause } : {}),
+      ...(error.target_api ? { target_api: error.target_api } : {}),
+    },
+  };
+};
 
 const isObjectLike = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
-const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>): OpenAIChatCompletionsErrorPayload => {
-  const response = event.response as OpenAIResponsesResult;
+const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>): OpenAIChatCompletionsErrorPayload => {
+  const response = event.response as OpenAIResponsesResultEx;
   const error = isObjectLike(response.error) ? response.error : undefined;
 
   return {

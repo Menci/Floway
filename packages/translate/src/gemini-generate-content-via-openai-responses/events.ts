@@ -213,8 +213,8 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       break;
 
     case 'error': {
-      const errorEvent = event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>;
-      throw new Error(`Upstream OpenAI Responses stream error: ${errorEvent.message}`, { cause: errorEvent });
+      const errorEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+      throw new Error(`Upstream OpenAI Responses stream error: ${('error' in errorEvent ? errorEvent.error : errorEvent).message}`, { cause: errorEvent });
     }
 
     default:

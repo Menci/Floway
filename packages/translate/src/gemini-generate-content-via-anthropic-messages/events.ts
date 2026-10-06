@@ -2,7 +2,7 @@ import { flushGeminiGenerateContentThoughtSignature, type GeminiGenerateContentT
 import { anthropicMessagesRefusalExplanation } from '../shared/via-anthropic-messages/refusal.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
 import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, isJsonObject, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFinishReason, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
 const anthropicMessagesStopReasonToGeminiGenerateContent = (stopReason: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }>['delta']['stop_reason']): GeminiGenerateContentFinishReason => {
@@ -154,13 +154,15 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
           throw new Error('Anthropic Messages tool use ended without a name.');
         }
 
+        const args = toolUse.argsJson ? parseStrictJsonObject(toolUse.argsJson, 'Anthropic Messages tool use input') : toolUse.args;
+        if (!isJsonObject(args)) throw new Error('Anthropic Messages tool use input must be a JSON object for Gemini function call arguments.');
         yield eventFrame(
           geminiGenerateContentCandidateEvent([
             signGeminiGenerateContentPart(state, {
               functionCall: {
                 ...(toolUse.id !== undefined ? { id: toolUse.id } : {}),
                 name: toolUse.name,
-                args: toolUse.argsJson ? parseStrictJsonObject(toolUse.argsJson, 'Anthropic Messages tool use input') : toolUse.args ?? {},
+                args,
               },
             }),
           ]),

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
-
-import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents, translateToSourceEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
+import { parseAnthropicMessagesStream, collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
+import { parseOpenAIChatCompletionsStream, collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsUsageEx, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse } from '@floway-dev/test-utils';
 
 const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
@@ -10,7 +10,7 @@ const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenA
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{ index: 0, delta, finish_reason: finishReason }],
+  choices: [{  index: 0, delta, finish_reason: finishReason }],
 });
 
 type OpenAIChatCompletionsUsage = OpenAIChatCompletionsUsageEx;
@@ -56,6 +56,7 @@ test('OpenAI Chat Completions refusal deltas become Anthropic Messages refusal s
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: 'refusal',
         stop_details: {
           type: 'refusal',
@@ -64,7 +65,7 @@ test('OpenAI Chat Completions refusal deltas become Anthropic Messages refusal s
         },
         stop_sequence: null,
       },
-      usage: { input_tokens: 12, output_tokens: 4 },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 12, output_tokens: 4 },
     },
     { type: 'message_stop' },
   ]);
@@ -100,7 +101,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits opaque-
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -135,7 +136,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves opa
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -158,7 +159,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps text an
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -187,7 +188,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps reasoni
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -216,7 +217,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits early o
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -245,7 +246,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late op
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -261,7 +262,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents keeps late op
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -285,7 +286,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves lat
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -301,7 +302,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents preserves lat
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -329,7 +330,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits signatu
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -352,8 +353,9 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents merges final 
   assertEquals(events.slice(-2), [
     {
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
       usage: {
+        cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null,
         input_tokens: 12,
         output_tokens: 4,
       },
@@ -372,8 +374,8 @@ test('flushOpenAIChatCompletionsToAnthropicMessagesEvents emits pending stop whe
   assertEquals(flushOpenAIChatCompletionsToAnthropicMessagesEvents(state), [
     {
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn', stop_sequence: null },
-      usage: { input_tokens: 0, output_tokens: 0 },
+      delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 0, output_tokens: 0 },
     },
     { type: 'message_stop' },
   ]);
@@ -419,7 +421,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents defers conten
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -429,8 +431,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents defers conten
     { type: 'content_block_stop', index: 1 },
     {
       type: 'message_delta',
-      delta: { stop_reason: 'tool_use', stop_sequence: null },
-      usage: { input_tokens: 0, output_tokens: 0 },
+      delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 0, output_tokens: 0 },
     },
     { type: 'message_stop' },
   ]);
@@ -472,7 +474,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents defers conten
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -482,8 +484,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents defers conten
     { type: 'content_block_stop', index: 1 },
     {
       type: 'message_delta',
-      delta: { stop_reason: 'tool_use', stop_sequence: null },
-      usage: { input_tokens: 0, output_tokens: 0 },
+      delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 0, output_tokens: 0 },
     },
     { type: 'message_stop' },
   ]);
@@ -517,14 +519,14 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage maps OpenAI cached_t
   assertEquals(usage.cache_read_input_tokens, 60);
 });
 
-test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage omits cache_read_input_tokens when no cache field', () => {
+test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage states cache_read_input_tokens as null when no cache field', () => {
   const usage = mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage({
     prompt_tokens: 100,
     completion_tokens: 20,
     total_tokens: 120,
   } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 100);
-  assertEquals(usage.cache_read_input_tokens, undefined);
+  assertEquals(usage.cache_read_input_tokens, null);
 });
 
 // OpenAI-shaped upstreams reuse prompt_tokens_details to surface Anthropic-style
@@ -559,7 +561,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage surfaces cache_creat
     prompt_tokens_details: { cache_creation_input_tokens: 50 },
   } as OpenAIChatCompletionsUsageEx);
   assertEquals(usage.input_tokens, 30);
-  assertEquals(usage.cache_read_input_tokens, undefined);
+  assertEquals(usage.cache_read_input_tokens, null);
   assertEquals(usage.cache_creation_input_tokens, 50);
 });
 
@@ -595,7 +597,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage rejects malformed in
   } as OpenAIChatCompletionsUsageEx)).toThrowError(RangeError);
 });
 
-test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents surfaces service_tier:fast as usage.speed:fast in message_delta', () => {
+test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents carries late fast mode metadata in full usage delta', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', content: 'hi' }), state),
@@ -615,7 +617,9 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents surfaces serv
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals((messageDelta as { usage: { speed?: string } }).usage.speed, 'fast');
+  assertExists(messageDelta?.usage);
+  assertEquals(messageDelta.usage.speed, 'fast');
+  assertFalse('service_tier' in messageDelta.usage);
 });
 
 test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits usage.speed when service_tier is not fast', () => {
@@ -673,6 +677,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents reports real 
     {
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_chatcmpl_test',
         type: 'message',
         role: 'assistant',
@@ -680,7 +685,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents reports real 
         model: 'gpt-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 47, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 47, output_tokens: 0 },
       },
     },
   ]);
@@ -703,8 +708,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits cumulat
     [
       {
         type: 'message_delta',
-        delta: { stop_reason: null, stop_sequence: null },
-        usage: { input_tokens: 47, output_tokens: 1 },
+        delta: { container: null, stop_details: null, stop_reason: null, stop_sequence: null },
+        usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 47, output_tokens: 1 },
       },
     ],
   );
@@ -717,8 +722,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits cumulat
     [
       {
         type: 'message_delta',
-        delta: { stop_reason: null, stop_sequence: null },
-        usage: { input_tokens: 47, output_tokens: 4 },
+        delta: { container: null, stop_details: null, stop_reason: null, stop_sequence: null },
+        usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 47, output_tokens: 4 },
       },
     ],
   );
@@ -736,8 +741,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents emits cumulat
   assertEquals(flushOpenAIChatCompletionsToAnthropicMessagesEvents(state), [
     {
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn', stop_sequence: null },
-      usage: { input_tokens: 47, output_tokens: 4 },
+      delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 47, output_tokens: 4 },
     },
     { type: 'message_stop' },
   ]);
@@ -761,6 +766,22 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents carries conte
   const start = events[0];
   assertEquals(start.type, 'message_start');
   if (start.type === 'message_start') {
-    assertEquals(start.message.usage, { input_tokens: 23, output_tokens: 1 });
+    assertEquals(start.message.usage.input_tokens, 23);
+    assertEquals(start.message.usage.output_tokens, 1);
   }
+});
+
+test('late fixed usage survives the Messages SSE client collection in its Ex carrier', async () => {
+  const input = [chunk({ role: 'assistant', content: 'answer' }), chunk({}, 'stop'), { ...usageChunk(), service_tier: 'priority' }];
+  const upstreamSSE = `${input.map(value => `data: ${JSON.stringify(value)}\n\n`).join('')  }data: [DONE]\n\n`;
+  const upstream = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(upstreamSSE).body!));
+  let clientSSE = '';
+  for await (const frame of translateToSourceEvents(parseOpenAIChatCompletionsStream(new Response(upstreamSSE).body!))) {
+    const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
+    if (sse) clientSSE += `event: ${sse.event}\ndata: ${sse.data}\n\n`;
+  }
+  const result = await collectAnthropicMessagesProtocolEventsToResult(parseAnthropicMessagesStream(new Response(clientSSE).body!));
+  expect(result.usage).toEqual({ ...mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage(upstream.usage), service_tier: upstream.service_tier });
+  const delta = clientSSE.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))).find(event => event.type === 'message_delta');
+  expect(delta.usage.service_tier).toBe('priority');
 });

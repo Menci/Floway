@@ -10,6 +10,7 @@ type OpenAIChatCompletionsStreamChoice = OpenAIChatCompletionsStreamEvent['choic
 const mapFinishReason = (finishReason: OpenAIChatCompletionsStreamChoice['finish_reason']): GeminiGenerateContentFinishReason | undefined => {
   switch (finishReason) {
   case 'stop':
+  case 'function_call':
   case 'tool_calls':
     return 'STOP';
   case 'length':
@@ -125,7 +126,7 @@ const flushToolCallParts = (state: OpenAIChatCompletionsToGeminiGenerateContentS
 
 const buildCandidate = (choice: OpenAIChatCompletionsStreamChoice, state: OpenAIChatCompletionsToGeminiGenerateContentStreamState): GeminiGenerateContentCandidate | null => {
   const parts: GeminiGenerateContentPart[] = [];
-  const { delta } = choice;
+  const delta = choice.delta as OpenAIChatCompletionsAssistantDeltaEx;
 
   const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
   if (reasoningText !== undefined) {

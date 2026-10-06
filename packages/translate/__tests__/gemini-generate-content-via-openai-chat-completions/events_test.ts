@@ -15,7 +15,7 @@ const chunk = (
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{ index: 0, delta, finish_reason: finishReason }],
+  choices: [{  index: 0, delta, finish_reason: finishReason }],
   ...(usage ? { usage } : {}),
 });
 
@@ -24,7 +24,7 @@ const choiceChunk = (index: number, delta: OpenAIChatCompletionsAssistantDeltaEx
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{ index, delta, finish_reason: finishReason }],
+  choices: [{  index, delta, finish_reason: finishReason }],
 });
 
 const collect = async (input: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<GeminiGenerateContentStreamEvent>[]> => {

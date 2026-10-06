@@ -101,7 +101,6 @@ const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, statu
     id: state.responseId,
     model: state.model,
     output: state.completedItems,
-    outputText: state.accumulatedText,
     status,
     // Anthropic Messages signals "ran out of tokens" with `stop_reason: 'max_tokens'`,
     // which the caller maps to `status === 'incomplete'` (see
@@ -256,8 +255,8 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
   const annotationIndex = info.annotations.length;
   const annotation: OpenAIResponsesAnnotation = {
     type: 'url_citation',
-    url: citation.url,
-    title: citation.title,
+    url: citation.type === 'search_result_location' ? citation.source : citation.url,
+    title: citation.title ?? '',
     start_index: startIndex,
     end_index: endIndex,
   };
@@ -299,7 +298,6 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
     }
     if (event.delta.type !== 'text_delta') return [];
     info.blockText += event.delta.text;
-    state.accumulatedText += event.delta.text;
     return openaiResponses.textDelta(state, info.outputIndex, info.itemId, event.delta.text);
   case 'tool_use':
     if (event.delta.type !== 'input_json_delta') return [];
@@ -366,7 +364,6 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   outputIndex: 0,
   sequenceNumber: 0,
   blockMap: new Map(),
-  accumulatedText: '',
   completedItems: [],
   usage: anthropicMessagesUsageSnapshot(),
   customToolNames,

@@ -11,7 +11,6 @@ const response = (status: OpenAIResponsesResultEx['status'], extra: Partial<Open
   object: 'response',
   model: 'gpt-test',
   output: [],
-  output_text: '',
   status,
   error: null,
   incomplete_details: null,

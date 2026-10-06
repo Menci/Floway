@@ -6,8 +6,8 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIRe
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const functionTool = (name: string): Extract<OpenAIResponsesTool, { type: 'function' }> => ({ type: 'function', name, parameters: { type: 'object' } });
-const emptyResult = (): OpenAIResponsesResult => ({ id: 'resp', object: 'response', model: 'model', status: 'completed', output: [], output_text: '', error: null, incomplete_details: null });
-const framesOf = async function* (events: OpenAIResponsesStreamEvent[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+const emptyResult = (): OpenAIResponsesResultEx => ({ id: 'resp', object: 'response', model: 'model', status: 'completed', output: [], error: null, incomplete_details: null });
+const framesOf = async function* (events: OpenAIResponsesStreamEventEx[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };

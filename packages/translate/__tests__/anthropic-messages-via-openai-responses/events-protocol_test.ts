@@ -11,7 +11,6 @@ const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponse
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -100,7 +99,6 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'message',
@@ -128,6 +126,7 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
   }
 
   assertEquals(refusalDelta?.delta, {
+    container: null,
     stop_reason: 'refusal',
     stop_details: { type: 'refusal', category: null, explanation: 'No.' },
     stop_sequence: null,
@@ -140,7 +139,6 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
       type: 'response.failed',
       response: {
         ...makeResponse('failed'),
-        output_text: '',
         output: [],
         error: {
           type: 'server_error',

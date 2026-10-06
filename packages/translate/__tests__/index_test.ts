@@ -28,7 +28,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
   ],
   tools: [{ type: 'function', name: 'f', parameters: schema }],
   text: { format: { type: 'json_schema', name: 'f', schema: formatSchema } },
-  metadata: { nested: { value: 'x' } },
+  metadata: { nested: 'x' },
 };
 const chat: OpenAIChatCompletionsPayload = {
   model: 'm',
@@ -38,7 +38,7 @@ const chat: OpenAIChatCompletionsPayload = {
   ],
   tools: [{ type: 'function', function: { name: 'f', parameters: schema } }],
   response_format: { type: 'json_schema', json_schema: { name: 'f', schema: formatSchema } },
-  metadata: { nested: { value: 'x' } },
+  metadata: { nested: 'x' },
   stop: ['END'],
   tool_choice: 'auto',
 };
@@ -48,7 +48,7 @@ const anthropic: AnthropicMessagesPayload = {
   tools: [{ name: 'f', input_schema: schema }],
   output_config: { format: { type: 'json_schema', schema: formatSchema } },
   stop_sequences: ['END'],
-  metadata: { user_id: 'u', extension: { nested: 'retained' } } as AnthropicMessagesPayload['metadata'],
+  metadata: { user_id: 'u', extension: 'retained' } as AnthropicMessagesPayload['metadata'],
 };
 const gemini: GeminiGenerateContentPayload = {
   contents: [

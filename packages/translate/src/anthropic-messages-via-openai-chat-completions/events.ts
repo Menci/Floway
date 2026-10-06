@@ -1,5 +1,5 @@
 import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
-import type {  AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent, AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDeltaEx, type  AnthropicMessagesContentBlockDeltaEvent, type AnthropicMessagesContentBlockStartEvent, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -13,6 +13,7 @@ const mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason = (finis
     return 'end_turn';
   case 'length':
     return 'max_tokens';
+  case 'function_call':
   case 'tool_calls':
     return 'tool_use';
   case 'content_filter':
@@ -48,8 +49,7 @@ export const mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage = (usage?: Op
     // `prompt_tokens`, so the subtraction cannot go negative under any
     // standards-conforming upstream. Do NOT clamp with Math.max(0, ...) — that
     // would mask a real upstream contract violation rather than fix anything.
-    input_tokens: input,
-    output_tokens: usage?.completion_tokens ?? 0,
+    ...createAnthropicMessagesUsage(input, usage?.completion_tokens ?? 0),
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
     ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
     ...(writes.cacheWrite1h > 0
@@ -91,6 +91,9 @@ const ensureMessageStart = (
       content: [],
       model: state.upstreamModel,
       stop_reason: null,
+      stop_details: null,
+      container: null,
+      diagnostics: null,
       stop_sequence: null,
       usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
     },
@@ -106,7 +109,7 @@ const emitUsageProgress = (
   state: OpenAIChatCompletionsToAnthropicMessagesStreamState,
   events: AnthropicMessagesStreamEventEx[],
 ): void => {
-  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage === undefined) return;
+  if (state.messageStartSent === false || state.finalMessageSent === true || state.pendingUsage == null) return;
 
   const outputTokens = state.pendingUsage.completion_tokens;
   const advanced = state.lastReportedUsageOutputTokens === undefined || outputTokens > state.lastReportedUsageOutputTokens;
@@ -115,8 +118,8 @@ const emitUsageProgress = (
   state.lastReportedUsageOutputTokens = outputTokens;
   events.push({
     type: 'message_delta',
-    delta: { stop_reason: null, stop_sequence: null },
-    usage: anthropicMessagesUsageWithTier(state, state.pendingUsage),
+    delta: { container: null, stop_reason: null, stop_details: null, stop_sequence: null },
+    usage: toAnthropicMessagesUsageDeltaEx(anthropicMessagesUsageWithTier(state, state.pendingUsage)),
   });
 };
 
@@ -261,7 +264,7 @@ const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: Ope
   }
 
   if (state.openBlock === undefined) {
-    startContentBlock(state, events, 'text', { type: 'text', text: '' });
+    startContentBlock(state, events, 'text', { citations: null, type: 'text', text: '' });
   }
 
   emitContentBlockDelta(state, events, {
@@ -276,17 +279,19 @@ const flushDeferredContent = (state: OpenAIChatCompletionsToAnthropicMessagesStr
 
   const text = state.deferredContent;
   state.deferredContent = undefined;
-  startContentBlock(state, events, 'text', { type: 'text', text: '' });
+  startContentBlock(state, events, 'text', { citations: null, type: 'text', text: '' });
   emitContentBlockDelta(state, events, { type: 'text_delta', text });
   closeCurrentBlock(state, events);
 };
 
-const handleReasoningDelta = (delta: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEvent[]): void => {
+const handleReasoningDelta = (source: OpenAIChatCompletionsStreamDelta, state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
+  const delta = source as OpenAIChatCompletionsAssistantDeltaEx;
   const reasoningText = openAIChatCompletionsScalarReasoningText(delta);
   if (reasoningText) {
     if (state.openBlock !== 'thinking') {
       closeCurrentBlock(state, events);
       startContentBlock(state, events, 'thinking', {
+        signature: '',
         type: 'thinking',
         thinking: '',
       });
@@ -398,7 +403,7 @@ const handleFinishReason = (
 const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState, events: AnthropicMessagesStreamEventEx[]): void => {
   if (state.pendingFinishReason === undefined || state.finalMessageSent === true) return;
 
-  const usage = anthropicMessagesUsageWithTier(state, state.pendingUsage);
+  const usage = toAnthropicMessagesUsageDeltaEx(anthropicMessagesUsageWithTier(state, state.pendingUsage));
 
   const refused = state.sawRefusal || state.pendingFinishReason === 'content_filter';
 
@@ -406,16 +411,9 @@ const emitFinalMessageIfReady = (state: OpenAIChatCompletionsToAnthropicMessages
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: refused ? 'refusal' : mapOpenAIChatCompletionsFinishReasonToAnthropicMessagesStopReason(state.pendingFinishReason),
-        ...(refused
-          ? {
-              stop_details: {
-                type: 'refusal' as const,
-                category: null,
-                explanation: state.refusalText || null,
-              },
-            }
-          : {}),
+        stop_details: refused ? { type: 'refusal', category: null, explanation: state.refusalText || null } : null,
         stop_sequence: null,
       },
       usage,

@@ -68,6 +68,7 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     yield eventFrame({
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: 'msg_truncated',
         type: 'message',
         role: 'assistant',
@@ -75,7 +76,7 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
         model: 'claude-test',
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 0 },
+        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
       },
     });
   }

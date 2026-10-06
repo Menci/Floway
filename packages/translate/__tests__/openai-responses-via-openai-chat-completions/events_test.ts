@@ -23,7 +23,7 @@ const chunk = (
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{ index: 0, delta, finish_reason: finishReason }],
+  choices: [{  index: 0, delta, finish_reason: finishReason }],
   ...(usage ? { usage } : {}),
 });
 
@@ -70,7 +70,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves refus
     role: 'assistant',
     content: [{ type: 'refusal', refusal: 'Cannot help.' }],
   }]);
-  assertEquals(completed?.response.output_text, '');
+  assertEquals(Object.hasOwn(completed!.response, 'output_text'), false);
 });
 
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves an empty refusal item', () => {

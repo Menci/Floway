@@ -1,10 +1,10 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createOpenAIResponsesToOpenAIChatCompletionsStreamState, translateOpenAIResponsesEventToOpenAIChatCompletionsChunks, translateToSourceEvents } from '../../src/openai-chat-completions-via-openai-responses/events.ts';
-
+import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiResponsesResultToEvents, parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Local stand-in for `openaiChatCompletionsProtocolFrameToSSEFrame`: the behavior
@@ -24,7 +24,6 @@ const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponse
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -207,7 +206,6 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'message',
@@ -245,7 +243,6 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
         response: {
           ...makeResponse('in_progress'),
           id: 'resp_deferred_reasoning',
-          output_text: '',
           output: [],
         },
       }),
@@ -275,7 +272,6 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
         response: {
           ...makeResponse('completed'),
           id: 'resp_deferred_reasoning',
-          output_text: 'answer',
           output: [],
           service_tier: 'priority',
           usage: {
@@ -369,7 +365,6 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
       type: 'response.failed',
       response: {
         ...makeResponse('failed'),
-        output_text: '',
         output: [],
         error: {
           type: 'server_error',
@@ -418,7 +413,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -451,7 +445,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops reasoning
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -488,7 +481,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -542,7 +534,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -551,7 +542,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks does not fill s
   );
 
   assertEquals(
-    [...chunks, ...completed].some(chunk => chunk.choices[0]?.delta.reasoning_opaque !== undefined),
+    [...chunks, ...completed].some(chunk => (chunk.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_opaque !== undefined),
     false,
   );
   assertEquals(completed[0].usage, undefined);
@@ -569,7 +560,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -611,7 +601,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks drops multiple 
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -649,7 +638,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -688,7 +676,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects done-o
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -719,7 +706,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -748,7 +734,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks projects output
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -779,7 +764,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits stream us
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -796,7 +780,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits stream us
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
         usage: {
@@ -834,7 +817,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -892,7 +874,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves text 
               content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
-          output_text: 'answer',
           error: null,
           incomplete_details: null,
         },
@@ -923,7 +904,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -981,7 +961,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks preserves later
               content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
-          output_text: 'answer',
           error: null,
           incomplete_details: null,
         },
@@ -1012,7 +991,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits output_te
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1049,7 +1027,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits function_
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1119,7 +1096,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits all done-
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1172,7 +1148,7 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks emits all done-
   ].flatMap(result => result);
 
   assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
+    chunks.map(chunk => (chunk.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text).filter(text => text !== undefined),
     ['first', 'second'],
   );
 });
@@ -1189,7 +1165,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks flushes pending
         model: 'gpt-test',
         status: 'in_progress',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -1215,7 +1190,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks flushes pending
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },
@@ -1241,7 +1215,6 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps first sca
           model: 'gpt-test',
           status: 'in_progress',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -1311,4 +1284,51 @@ test('translateOpenAIResponsesEventToOpenAIChatCompletionsChunks keeps first sca
       },
     ],
   );
+});
+
+test.each([false, true].flatMap(mixed => [
+  { mixed, delivery: 'deltas', initialInput: '', deltas: ['patch ', 'text'], inputDone: true },
+  { mixed, delivery: 'initial prefix and delta', initialInput: 'patch ', deltas: ['text'], inputDone: true },
+  { mixed, delivery: 'initial prefix and input done', initialInput: 'patch ', deltas: [], inputDone: true },
+  { mixed, delivery: 'initial prefix and item done', initialInput: 'patch ', deltas: [], inputDone: false },
+  { mixed, delivery: 'item done only', initialInput: '', deltas: [], inputDone: false },
+]))('native custom call SSE survives Chat client collection and replay (mixed=$mixed, delivery=$delivery)', async ({ mixed, initialInput, deltas, inputDone }) => {
+  const custom = { type: 'custom_tool_call' as const, id: 'ctc_1', call_id: 'call_edit', name: 'edit', input: 'patch text', status: 'completed' };
+  const fn = { type: 'function_call' as const, id: 'fc_1', call_id: 'call_lookup', name: 'lookup', arguments: '{}', status: 'completed' };
+  const index = mixed ? 1 : 0;
+  const response = { ...makeResponse('completed'), output: mixed ? [fn, custom] : [custom] };
+  const events: OpenAIResponsesStreamEventEx[] = [
+    { type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
+    ...(mixed ? [{ type: 'response.output_item.added' as const, output_index: 0, item: { ...fn, status: 'in_progress', arguments: '' } }] : []),
+    { type: 'response.output_item.added', output_index: index, item: { ...custom, status: 'in_progress', input: initialInput } },
+    ...(deltas.length > 0 ? [{ type: 'response.custom_tool_call_input.delta' as const, output_index: index, item_id: custom.id, delta: deltas[0] }] : []),
+    ...(mixed ? [{ type: 'response.function_call_arguments.delta' as const, output_index: 0, item_id: fn.id, delta: '{}' }] : []),
+    ...deltas.slice(1).map(delta => ({ type: 'response.custom_tool_call_input.delta' as const, output_index: index, item_id: custom.id, delta })),
+    ...(inputDone ? [{ type: 'response.custom_tool_call_input.done' as const, output_index: index, item_id: custom.id, input: custom.input }] : []),
+    ...(mixed ? [{ type: 'response.output_item.done' as const, output_index: 0, item: fn }] : []),
+    { type: 'response.output_item.done', output_index: index, item: custom },
+    { type: 'response.completed', response },
+  ];
+  const upstreamSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
+  const upstream = await collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(upstreamSSE).body!));
+  let clientSSE = '';
+  for await (const frame of translateToSourceEvents(parseOpenAIResponsesStream(new Response(upstreamSSE).body!))) {
+    const sse = writeChatFrame(frame, includeUsageChunk);
+    if (sse) clientSSE += `data: ${sse.data}\n\n`;
+  }
+  const client = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!));
+  expect(client.choices[0].finish_reason).toBe('tool_calls');
+  const replay = buildTargetRequest({ model: response.model, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] });
+  expect(replay.input.slice(0, -1)).toEqual(upstream.output.map(({ id: _id, ...item }) => item));
+  expect(replay.input.at(-1)).toEqual({ type: 'custom_tool_call_output', call_id: custom.call_id, output: 'edited' });
+});
+
+test.each(['input done', 'item done'])('rejects custom %s that conflicts with already emitted input', completion => {
+  const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
+  const item = { type: 'custom_tool_call' as const, id: 'ctc_1', call_id: 'call_edit', name: 'edit', input: 'patch ', status: 'in_progress' };
+  translateOpenAIResponsesEventToOpenAIChatCompletionsChunks({ type: 'response.output_item.added', output_index: 0, item }, state);
+  const event: OpenAIResponsesStreamEventEx = completion === 'input done'
+    ? { type: 'response.custom_tool_call_input.done', output_index: 0, item_id: item.id, input: 'replaced text' }
+    : { type: 'response.output_item.done', output_index: 0, item: { ...item, status: 'completed', input: 'replaced text' } };
+  expect(() => translateOpenAIResponsesEventToOpenAIChatCompletionsChunks(event, state)).toThrow('conflicts with text already emitted');
 });

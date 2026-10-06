@@ -14,7 +14,10 @@ const mapAnthropicMessagesStopReasonToOpenAIChatCompletionsFinishReason = (stopR
   case 'refusal':
     return 'stop';
   case 'max_tokens':
+  case 'model_context_window_exceeded':
     return 'length';
+  case 'compaction':
+    throw new Error('Cannot translate an Anthropic Messages compaction stop to Chat Completions.');
   case 'tool_use':
     return 'tool_calls';
   }
@@ -50,6 +53,7 @@ export const createAnthropicMessagesToOpenAIChatCompletionsStreamState = (): Ant
   model: '',
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
+  toolCallIndexes: new Map(),
   usage: anthropicMessagesUsageSnapshot(),
 });
 
@@ -124,6 +128,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
+      state.toolCallIndexes.set(event.index, toolCallIndex);
       return [
         makeChunk(state, {
           tool_calls: [
@@ -146,7 +151,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       return [];
     }
 
-    return unexpectedAnthropicMessagesVariant(block);
+    throw new Error(`Unexpected Anthropic Messages stream variant: ${JSON.stringify(block)}`);
   }
 
   case 'content_block_delta': {
@@ -158,29 +163,25 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
     case 'text_delta':
       return [makeChunk(state, { content: delta.text })];
-    case 'input_json_delta':
+    case 'input_json_delta': {
+      const toolCallIndex = state.toolCallIndexes.get(event.index);
+      if (toolCallIndex === undefined) return [];
       return [
         makeChunk(state, {
           tool_calls: [
             {
-              index: state.nextToolCallIndex - 1,
+              index: toolCallIndex,
               function: { arguments: delta.partial_json },
             },
           ],
         }),
       ];
+    }
+    case 'compaction_delta':
+      throw new Error(`Unexpected Anthropic Messages stream variant: ${JSON.stringify(delta)}`);
     case 'citations_delta':
-      // OpenAI Chat Completions has no equivalent of Anthropic's structured citation
-      // annotations (no `output_text.annotation.added` event, no
-      // `url_citation` annotation type, no `tool_result.search_result` block
-      // shape). Blanket-drop every citation delta — the cited text already
-      // appears inline in earlier `text_delta` events that the model wrote,
-      // so the downstream OpenAI Chat Completions client still sees the substantive content,
-      // just without per-span source attribution. Permanent limitation; the
-      // OpenAI-Responses-shape translator at
-      // `openai-responses-via-anthropic-messages/events.ts:handleTextCitation` DOES translate
-      // these into `url_citation` annotations because OpenAI Responses has the
-      // annotation surface.
+      // Chat's standard streaming delta has no annotations field. Keep the
+      // previously emitted text; Responses supports a separate citation projection.
       return [];
     }
 
@@ -188,6 +189,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
   }
 
   case 'content_block_stop':
+    state.toolCallIndexes.delete(event.index);
     return [];
 
   case 'message_delta': {

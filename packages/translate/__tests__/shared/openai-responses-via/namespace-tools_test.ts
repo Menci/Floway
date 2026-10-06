@@ -32,8 +32,8 @@ test('both targets preserve namespace subsets and excluded replay identities', a
   const chat = chatRequest(source);
   const messages = await messagesRequest(source);
   expect(chat.target.tools?.map(tool => tool.type === 'function' ? tool.function.name : '')).toEqual(['agents_spawn_2']);
-  expect(messages.target.tools?.map(tool => tool.name)).toEqual(['agents_spawn_2']);
-  expect(chat.target.messages[0].tool_calls?.[0].function.name).toBe('agents_wait');
+  expect(messages.target.tools?.map(tool => 'name' in tool ? tool.name : undefined)).toEqual(['agents_spawn_2']);
+  expect((chat.target.messages[0] as OpenAIChatCompletionsAssistantMessageEx).tool_calls?.filter(call => call.type === 'function')[0].function.name).toBe('agents_wait');
   expect(messages.target.messages[0].content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tool_use', name: 'agents_wait' })]));
   expect(chat.target.tool_choice).toBe('required');
   expect(messages.target.tool_choice).toEqual({ type: 'any' });
@@ -56,7 +56,7 @@ test('history-only namespace calls reserve names without inventing declarations'
   const messages = await messagesRequest(source);
   expect(chat.target.tools).toBeUndefined();
   expect(messages.target.tools).toBeUndefined();
-  expect(chat.target.messages[0].tool_calls?.[0].function.name).toBe('agents_wait');
+  expect((chat.target.messages[0] as OpenAIChatCompletionsAssistantMessageEx).tool_calls?.filter(call => call.type === 'function')[0].function.name).toBe('agents_wait');
   expect(chat.namespaceToolNames.targetToSource.get('agents_wait')).toEqual({ namespace: 'agents', name: 'wait', type: 'function_call' });
 });
 
@@ -108,8 +108,8 @@ test('rejects function/custom ambiguity and distinct tuples with the same qualif
 test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {
   const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(payload(), { model: 'm' });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
-    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
+    yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
     yield doneFrame();
   })();
   const events: OpenAIResponsesStreamEventEx[] = [];
@@ -120,12 +120,12 @@ test('the complete Chat Completions trip restores the namespace after target too
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
   const trip = await translateOpenAIResponsesViaAnthropicMessages(payload(), { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
-  const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
-    yield eventFrame({ type: 'message_start', message: { id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
     yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });
     yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } });
     yield eventFrame({ type: 'content_block_stop', index: 0 });
-    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } });
+    yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
     yield eventFrame({ type: 'message_stop' });
   })();
   const events: OpenAIResponsesStreamEventEx[] = [];
