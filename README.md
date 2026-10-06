@@ -9,9 +9,9 @@ Gemini-compatible APIs.
 
 ### Cloudflare Workers
 
-Ask your coding agent to use the
-[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill to
-configure and deploy Floway to your Cloudflare account.
+Ask your agent or follow the
+[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill yourself
+to configure and deploy Floway to your Cloudflare account.
 
 ### Docker
 
@@ -26,8 +26,8 @@ Open <http://localhost:8788>, leave the username blank, and log in with
 
 ### Podman/systemd
 
-Follow the [deployment guide](docker/systemd/README.md) to run Floway as a
-systemd service with Podman.
+Ask your agent or follow the [deployment guide](docker/systemd/README.md) yourself
+to run Floway as a systemd service with Podman.
 
 ## Usage
 
