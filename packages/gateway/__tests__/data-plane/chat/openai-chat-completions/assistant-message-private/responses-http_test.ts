@@ -6,6 +6,7 @@ import { initRepo } from '../../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { flushBackground } from '../../../../test-utils/background-tracker.ts';
+import { collectResponsesHistory } from '../../shared/assistant-message-private/roundtrip.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsResult } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -32,19 +33,21 @@ test.each([false, true])('Responses reasoning survives a complete native upstrea
     { type: 'reasoning' as const, id: 'rs_B', summary: [{ type: 'summary_text' as const, text: 'B' }], encrypted_content: 'cipher-B' },
   ];
   const response = { id: 'resp_1', object: 'response', model: 'model', created_at: 1, status: 'completed', error: null, incomplete_details: null, output: [...items, { type: 'message', id: 'msg_1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] }], usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 } } as OpenAIResponsesResultEx;
+  const upstream = async function* () {
+    yield eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } } as OpenAIResponsesStreamEventEx);
+    for (const [output_index, item] of items.entries()) {
+      yield eventFrame({ type: 'response.output_item.added', output_index, item: { ...item, summary: [], encrypted_content: undefined } } as OpenAIResponsesStreamEventEx);
+      yield eventFrame({ type: 'response.reasoning_summary_text.delta', output_index, summary_index: 0, item_id: item.id, delta: item.summary[0].text } as OpenAIResponsesStreamEventEx);
+      yield eventFrame({ type: 'response.output_item.done', output_index, item } as OpenAIResponsesStreamEventEx);
+    }
+    yield eventFrame({ type: 'response.output_text.delta', output_index: 2, content_index: 0, item_id: 'msg_1', delta: 'answer' } as OpenAIResponsesStreamEventEx);
+    yield eventFrame({ type: 'response.completed', response } as OpenAIResponsesStreamEventEx);
+  };
+  const expected = await collectResponsesHistory(upstream());
   const provider = stubProvider({
     callOpenAIResponses: async (_model, body) => {
       requests.push(body);
-      const events = (async function* () {
-        yield eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } } as OpenAIResponsesStreamEventEx);
-        for (const [output_index, item] of items.entries()) {
-          yield eventFrame({ type: 'response.output_item.added', output_index, item: { ...item, summary: [], encrypted_content: undefined } } as OpenAIResponsesStreamEventEx);
-          yield eventFrame({ type: 'response.reasoning_summary_text.delta', output_index, summary_index: 0, item_id: item.id, delta: item.summary[0].text } as OpenAIResponsesStreamEventEx);
-          yield eventFrame({ type: 'response.output_item.done', output_index, item } as OpenAIResponsesStreamEventEx);
-        }
-        yield eventFrame({ type: 'response.output_text.delta', output_index: 2, content_index: 0, item_id: 'msg_1', delta: 'answer' } as OpenAIResponsesStreamEventEx);
-        yield eventFrame({ type: 'response.completed', response } as OpenAIResponsesStreamEventEx);
-      })();
+      const events = upstream();
       return { ok: true, action: 'generate', events, modelKey: 'key', headers: new Headers({ 'x-native': 'kept' }) };
     },
   });
@@ -59,6 +62,6 @@ test.each([false, true])('Responses reasoning survives a complete native upstrea
   expect(first.choices[0].message).toMatchObject({ content: 'answer', reasoning: 'AB' });
   expect(first.usage).toMatchObject({ prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
   await call([first.choices[0].message, { role: 'user', content: 'continue' }]);
-  expect(requests[1].input).toEqual([...response.output, { type: 'message', role: 'user', content: 'continue' }]);
+  expect(requests[1].input).toEqual([...expected, { type: 'message', role: 'user', content: 'continue' }]);
   await flushBackground();
 });

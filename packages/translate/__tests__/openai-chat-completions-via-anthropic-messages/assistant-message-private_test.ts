@@ -39,15 +39,7 @@ test('parallel thinking and client tools retain their native owners and Chat too
   expect(chunks !== 'DONE' && chunks[0].choices[0].delta.tool_calls?.[0].index).toBe(0);
 });
 
-test('native order, citations, server tools, and client arguments round-trip through thin blocks', async () => {
-  const native = [
-    { type: 'thinking', thinking: 'AB', signature: 'signed' },
-    { type: 'text', text: 'aacc', citations: [] },
-    { type: 'text', text: 'bbdd', citations: [] },
-    { type: 'tool_use', id: 'client', name: 'original', input: { q: 1 } },
-    { type: 'server_tool_use', id: 'server', name: 'web_search', input: { query: 'docs' } },
-    { type: 'redacted_thinking', data: 'opaque' },
-  ];
+test('hash mismatch discards the entire native thin block layout', async () => {
   const events: AnthropicMessagesStreamEventEx[] = [thinking(0), text(0, 'A'), signature(0, 'signed'),
     { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '', citations: [] } },
     { type: 'content_block_start', index: 2, content_block: { type: 'text', text: '', citations: [] } },
@@ -66,8 +58,6 @@ test('native order, citations, server tools, and client arguments round-trip thr
   const context = privateContext();
   const data = await context.codec.encapsulate(message[OpenAIChatCompletionsAssistantMessagePrivate]!);
   const replay = JSON.parse(JSON.stringify({ ...message, reasoning: 'AB', reasoning_details: [{ data }], tool_calls: [{ id: 'client', type: 'function', function: { name: 'mangled', arguments: '{"q":1}' } }] })) as OpenAIChatCompletionsAssistantMessageEx;
-  const trip = await translateOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', messages: [replay] }, { model: 'm', privateContext: context, loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
-  expect(trip.target.messages[0].content).toMatchObject(native);
   for (const mutation of [{ content: 'aabbccdd extra' }, { reasoning: undefined }, { tool_calls: [] }]) {
     const fallback = await translateOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', messages: [{ ...replay, ...mutation }] }, { model: 'm', privateContext: context, loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
     const blocks = fallback.target.messages[0].content;
@@ -83,29 +73,10 @@ test('owned state from a different protocol is dropped', async () => {
   expect(trip.target.messages[0].content).toMatchObject([{ type: 'text', text: 'answer' }]);
 });
 
-test('empty emitted text survives aggregation and unchanged thin replay without mutating citation events', async () => {
+test('empty emitted text survives aggregation without mutating citation events', async () => {
   const citation = { type: 'char_location' as const, cited_text: 'quote', document_index: 0, document_title: null, start_char_index: 0, end_char_index: 5, file_id: null };
   const start: AnthropicMessagesStreamEventEx = { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '', citations: [] } };
   const { message } = await collect([start, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '' } }, { type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation } }, { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'opaque' } }, { type: 'message_stop' }]);
   expect(start.content_block.type === 'text' && start.content_block.citations).toEqual([]);
   expect(message.content).toBe('');
-  const context = privateContext();
-  const data = await context.codec.encapsulate(message[OpenAIChatCompletionsAssistantMessagePrivate]!);
-  const trip = await translateOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', messages: [{ role: 'assistant', content: '', reasoning_details: [{ data }] } as OpenAIChatCompletionsAssistantMessageEx] }, { model: 'm', privateContext: context, loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
-  expect(trip.target.messages[0].content).toMatchObject([{ type: 'text', text: '', citations: [citation] }, { type: 'redacted_thinking', data: 'opaque' }]);
-});
-
-test('thin blocks restore thinking pairs split by another owner and retain lone text surrogates', async () => {
-  const { message } = await collect([
-    thinking(0), thinking(1), text(0, '\ud83d'), text(1, 'x'), text(0, '\ude00'), signature(0, 'first'), signature(1, 'second'),
-    { type: 'content_block_start', index: 2, content_block: { type: 'text', text: '', citations: null } },
-    { type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: '\ud800' } }, { type: 'message_stop' },
-  ]);
-  const context = privateContext();
-  const value = message[OpenAIChatCompletionsAssistantMessagePrivate]!;
-  expect(value.reasoningText).toBe('\ud83dx\ude00');
-  const data = await context.codec.encapsulate(value);
-  const replay = JSON.parse(JSON.stringify({ role: 'assistant', content: message.content, reasoning: value.reasoningText, reasoning_details: [{ data }] })) as OpenAIChatCompletionsAssistantMessageEx;
-  const trip = await translateOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', messages: [replay] }, { model: 'm', privateContext: context, loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
-  expect(trip.target.messages[0].content).toMatchObject([{ type: 'thinking', thinking: '😀', signature: 'first' }, { type: 'thinking', thinking: 'x', signature: 'second' }, { type: 'text', text: '\ud800' }]);
 });

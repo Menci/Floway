@@ -6,6 +6,7 @@ import { initRepo } from '../../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { flushBackground } from '../../../../test-utils/background-tracker.ts';
+import { collectMessagesHistory } from '../../shared/assistant-message-private/roundtrip.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsResult } from '@floway-dev/protocols/openai-chat-completions';
@@ -28,23 +29,25 @@ test.each([false, true])('Messages reasoning survives a complete native upstream
   initRepo(new InMemoryRepo());
   const requests: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
   const blocks = [{ type: 'thinking', thinking: 'AB', signature: 'native-sig' }, { type: 'redacted_thinking', data: 'native-redacted' }];
+  const upstream = async function* () {
+    yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_1', type: 'message', model: 'model', role: 'assistant', content: [], usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 }, stop_reason: null, stop_sequence: null } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } } as AnthropicMessagesStreamEventEx);
+    for (const thinking of ['A', 'B']) yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'native-sig' } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_start', index: 1, content_block: blocks[1] } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_stop', index: 1 } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'text', text: '', citations: null } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'answer' } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'content_block_stop', index: 2 } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 2 } } as AnthropicMessagesStreamEventEx);
+    yield eventFrame({ type: 'message_stop' } as AnthropicMessagesStreamEventEx);
+  };
+  const expected = await collectMessagesHistory(upstream());
   const provider = stubProvider({
     callAnthropicMessages: async (_model, body) => {
       requests.push(body);
-      const events = (async function* () {
-        yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_1', type: 'message', model: 'model', role: 'assistant', content: [], usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 }, stop_reason: null, stop_sequence: null } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } } as AnthropicMessagesStreamEventEx);
-        for (const thinking of ['A', 'B']) yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'native-sig' } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_start', index: 1, content_block: blocks[1] } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_stop', index: 1 } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'answer' } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'content_block_stop', index: 2 } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 2 } } as AnthropicMessagesStreamEventEx);
-        yield eventFrame({ type: 'message_stop' } as AnthropicMessagesStreamEventEx);
-      })();
+      const events = upstream();
       return { ok: true, events, modelKey: 'key', headers: new Headers({ 'x-native': 'kept' }) };
     },
   });
@@ -59,7 +62,7 @@ test.each([false, true])('Messages reasoning survives a complete native upstream
   expect(first.choices[0].message).toMatchObject({ content: 'answer', reasoning: 'AB' });
   expect(first.usage).toMatchObject({ prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
   await call([first.choices[0].message, { role: 'user', content: 'continue' }]);
-  expect(requests[1].messages[0]).toMatchObject({ role: 'assistant', content: [...blocks, { type: 'text', text: 'answer' }] });
+  expect(requests[1].messages[0]).toEqual(expected);
   expect(requests[1].messages[1]).toMatchObject({ role: 'user' });
   await flushBackground();
 });

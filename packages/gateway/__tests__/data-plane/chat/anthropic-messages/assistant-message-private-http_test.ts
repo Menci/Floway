@@ -6,6 +6,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { collectChatHistory, chatHistory } from '../shared/assistant-message-private/roundtrip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesMessage, type AnthropicMessagesResult } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -29,14 +30,16 @@ app.post('/v1/messages/count_tokens', anthropicMessagesHttp.countTokens);
 test.each([false, true])('Messages via Chat replays the final redacted carrier even without display thinking with stream=%s', async stream => {
   initRepo(new InMemoryRepo());
   const requests: Array<Omit<OpenAIChatCompletionsPayload, 'model'>> = [];
+  const upstream = async function* () {
+    const deltas = [{ reasoning_content: 'A' }, { content: 'answer' }, { reasoning_content: 'B' }, { reasoning_opaque: 'native-cipher' }];
+    for (const delta of deltas) yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta, finish_reason: null }] } as OpenAIChatCompletionsStreamEvent);
+    yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } } as OpenAIChatCompletionsStreamEvent);
+  };
+  const expected = chatHistory(await collectChatHistory(upstream()));
   const provider = stubProvider({
     callOpenAIChatCompletions: async (_model, body) => {
       requests.push(body);
-      const events = (async function* () {
-        const deltas = [{ reasoning_content: 'A' }, { content: 'answer' }, { reasoning_content: 'B' }, { reasoning_opaque: 'native-cipher' }];
-        for (const delta of deltas) yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta, finish_reason: null }] } as OpenAIChatCompletionsStreamEvent);
-        yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } } as OpenAIChatCompletionsStreamEvent);
-      })();
+      const events = upstream();
       return { ok: true, events, modelKey: 'key', headers: new Headers({ 'x-native': 'kept' }) };
     },
   });
@@ -51,7 +54,7 @@ test.each([false, true])('Messages via Chat replays the final redacted carrier e
   expect(first.content.map(block => block.type)).toEqual(['thinking', 'text', 'thinking', 'redacted_thinking']);
   expect(first.usage).toMatchObject({ input_tokens: 3, output_tokens: 2 });
   await call([{ role: 'assistant', content: first.content.filter(block => block.type !== 'thinking') }, { role: 'user', content: 'continue' }]);
-  expect(requests[1].messages[0] as OpenAIChatCompletionsAssistantMessageEx).toMatchObject({ role: 'assistant', content: 'answer', reasoning_content: 'AB', reasoning_opaque: 'native-cipher' });
+  expect(chatHistory(requests[1].messages.filter((message): message is OpenAIChatCompletionsAssistantMessageEx => message.role === 'assistant'))).toEqual(expected);
   const originalUpstreamId = selected.provider.upstreamId;
   const countInputs: AnthropicMessagesPayload['messages'][] = [];
   const responseInputs: CanonicalOpenAIResponsesInputItem[][] = [];

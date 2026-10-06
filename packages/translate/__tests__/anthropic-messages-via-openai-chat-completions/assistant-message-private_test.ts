@@ -31,7 +31,7 @@ test('parallel incomplete tool blocks close only at their own JSON boundary with
   expect(earlier).toEqual([{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '}' } }, { type: 'content_block_stop', index: 0 }]);
 });
 
-test('final redacted carrier retains all text even when the client omits display thinking blocks', async () => {
+test('final redacted carrier contains all readable text independently of display blocks', async () => {
   const context = privateContext();
   const result = await collectAnthropicMessagesProtocolEventsToResult(translateToSourceEvents((async function* () {
     yield eventFrame(chunk(thought('A')));
@@ -45,10 +45,6 @@ test('final redacted carrier retains all text even when the client omits display
   const carrier = result.content.at(-1);
   if (carrier?.type !== 'redacted_thinking') throw new Error('Expected carrier');
   expect(await context.codec.unencapsulate(carrier.data)).toEqual({ reasoningText: 'AB', sidecar });
-  const message = { role: 'assistant' as const, content: result.content.filter(block => block.type !== 'thinking') };
-  const trip = await translateAnthropicMessagesViaOpenAIChatCompletions({ model: 'm', max_tokens: 1, messages: [message] }, { model: 'm', privateContext: context });
-  expect((trip.target.messages[0] as import('@floway-dev/protocols/openai-chat-completions').OpenAIChatCompletionsAssistantMessage)[OpenAIChatCompletionsAssistantMessagePrivate]).toEqual({ reasoningText: 'AB', sidecar });
-  expect(JSON.stringify(trip.target.messages)).toBe('[{"role":"assistant","content":"answer"}]');
 });
 
 test('history accepts the first owned redacted block, discards others and ignores edited display text', async () => {

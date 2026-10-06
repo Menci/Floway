@@ -6,6 +6,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { collectChatHistory, chatHistory } from '../shared/assistant-message-private/roundtrip.ts';
 import { eventFrame, parseSSEStream } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentResult, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -27,14 +28,16 @@ app.post('/v1beta/models/:modelAction{.+}', geminiGenerateContentHttp);
 test.each([{ stream: false, includeThoughts: false }, { stream: true, includeThoughts: false }, { stream: false, includeThoughts: true }, { stream: true, includeThoughts: true }])('GenerateContent via Chat replays an independent signature after affinity without thought text: %j', async ({ stream, includeThoughts }) => {
   initRepo(new InMemoryRepo());
   const requests: Array<Omit<OpenAIChatCompletionsPayload, 'model'>> = [];
+  const upstream = async function* () {
+    const deltas = [{ reasoning_content: 'A' }, { content: 'answer' }, { reasoning_content: 'B' }, { reasoning_opaque: 'native-cipher' }];
+    for (const delta of deltas) yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta, finish_reason: null }] } as OpenAIChatCompletionsStreamEvent);
+    yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } } as OpenAIChatCompletionsStreamEvent);
+  };
+  const expected = chatHistory(await collectChatHistory(upstream()));
   const provider = stubProvider({
     callOpenAIChatCompletions: async (_model, body) => {
       requests.push(body);
-      const events = (async function* () {
-        const deltas = [{ reasoning_content: 'A' }, { content: 'answer' }, { reasoning_content: 'B' }, { reasoning_opaque: 'native-cipher' }];
-        for (const delta of deltas) yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta, finish_reason: null }] } as OpenAIChatCompletionsStreamEvent);
-        yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', model: 'model', created: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } } as OpenAIChatCompletionsStreamEvent);
-      })();
+      const events = upstream();
       return { ok: true, events, modelKey: 'key', headers: new Headers({ 'x-native': 'kept' }) };
     },
   });
@@ -56,6 +59,6 @@ test.each([{ stream: false, includeThoughts: false }, { stream: true, includeTho
   expect(typeof carrier.thoughtSignature).toBe('string');
   expect(first.usageMetadata).toMatchObject({ promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 });
   await call([{ ...content, parts: content.parts.filter(part => !part.thought) }, { role: 'user', parts: [{ text: 'continue' }] }]);
-  expect(requests[1].messages[0] as OpenAIChatCompletionsAssistantMessageEx).toMatchObject({ role: 'assistant', content: 'answer', reasoning_content: 'AB', reasoning_opaque: 'native-cipher' });
+  expect(chatHistory(requests[1].messages.filter((message): message is OpenAIChatCompletionsAssistantMessageEx => message.role === 'assistant'))).toEqual(expected);
   await flushBackground();
 });

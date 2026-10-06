@@ -19,7 +19,7 @@ test('each thought delta is yielded before requesting the next upstream frame', 
   await stream.return(undefined);
 });
 
-test.each([false, true])('all reasoning text remains in one standalone signature with includeThoughts=%s', async includeThoughts => {
+test('all reasoning text remains in one standalone signature', async () => {
   const context = privateContext();
   const result = await collectGeminiGenerateContentProtocolEventsToResult(translateToSourceEvents((async function* () {
     yield eventFrame(chunk(0, 'A'));
@@ -34,10 +34,6 @@ test.each([false, true])('all reasoning text remains in one standalone signature
   const carrier = content.parts.at(-1)!;
   expect(Object.keys(carrier)).toEqual(['thoughtSignature']);
   expect(await context.codec.unencapsulate(carrier.thoughtSignature)).toEqual({ reasoningText: 'AB', sidecar });
-  const replay = { ...content, parts: content.parts.filter(part => part.thought !== true) };
-  const trip = await translateGeminiGenerateContentViaOpenAIChatCompletions({ contents: [replay], generationConfig: { thinkingConfig: { includeThoughts } } }, { model: 'm', privateContext: context });
-  expect((trip.target.messages[0] as import('@floway-dev/protocols/openai-chat-completions').OpenAIChatCompletionsAssistantMessage)[OpenAIChatCompletionsAssistantMessagePrivate]).toEqual({ reasoningText: 'AB', sidecar });
-  expect(trip.target.messages[0].content).toBe('answer');
 });
 
 test('different candidates retain independent text and final signature payloads', async () => {
