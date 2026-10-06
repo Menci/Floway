@@ -1,11 +1,17 @@
 # Floway
 
-A self-hosted LLM API gateway for coding agents and API clients, with a web
-dashboard. Connect GitHub Copilot, ChatGPT, Claude.ai, Azure AI, custom HTTP
-providers, and Ollama through OpenAI, Anthropic, and Gemini-compatible APIs.
-Run on Docker, Node.js, or Cloudflare Workers.
+A self-hosted LLM API gateway with a web dashboard. Connect GitHub Copilot,
+ChatGPT, Claude.ai, Azure AI, custom providers, and Ollama through OpenAI,
+Anthropic, and Gemini-compatible APIs.
 
-## Quick Start
+## Deployment
+
+### Cloudflare Workers
+
+Use the
+[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill with your coding agent.
+
+### Docker
 
 ```bash
 git clone https://github.com/Menci/Floway.git
@@ -13,11 +19,14 @@ cd Floway
 ADMIN_KEY='replace-with-a-secret' docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Open <http://localhost:8788>, leave the username blank, and use `ADMIN_KEY` as
-the password. Add an upstream under **Providers → Upstreams**, then create a
-key under **Services → API Keys**. Use it as a bearer token or `x-api-key`, or
-configure Claude Code and Codex through **Agent Setup**. Data persists in the
-`floway-data` volume.
+Open <http://localhost:8788> with a blank username and `ADMIN_KEY` as the password.
+Add an upstream under **Providers → Upstreams**, then create a key under
+**Services → API Keys**. Use it as a bearer token or `x-api-key`, or use
+**Agent Setup** for Claude Code or Codex. Data persists in `floway-data`.
+
+### Podman/systemd
+
+Follow the [deployment guide](docker/systemd/README.md).
 
 ## Development
 
@@ -26,8 +35,5 @@ pnpm install
 pnpm run dev:node
 pnpm run verify
 ```
-
-[Podman/systemd guide](docker/systemd/README.md) ·
-[Agent guide](AGENTS.md)
 
 MIT licensed.
