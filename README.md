@@ -124,15 +124,6 @@ from the observed `output_index` and matches snapshot items by ID; ambiguous
 positions fail explicitly. The shared Responses collector reads terminal
 snapshots directly, with provider-specific repairs applied before collection.
 
-### Transport TLS
-
-HTTPS connections through proxy tunnels use a portable userspace TLS client.
-It verifies upstream certificate signatures, validity, and peer identity against
-its bundled roots, with Node.js adding the runtime's bundled root certificates.
-The maintained TLS dependency patch converts DER ECDSA signatures to the
-curve's fixed-width Web Crypto representation for both P-256 and P-384,
-including Cloudflare's SSL.com-issued certificate chains.
-
 ## Other Deployment Options
 
 ### Cloudflare Workers
@@ -195,32 +186,23 @@ pnpm run dev
 pnpm run verify
 ```
 
-`pnpm run verify` executes the same checks as `.github/workflows/verify.yaml`.
-It starts with `typegen` to produce the untracked route types required by
-TypeScript-aware linting, then runs `lint`, `typecheck`, `test`,
-`test:installers`, `check:agents-md`, `check:generated-assets`,
-`check:verify-parity`, and `build:web`. Every check is also available as a root
-script, and the web build asserts properties of its emitted bundle.
+`verify` chains every check in `.github/workflows/verify.yaml`: `typegen`,
+`lint`, `typecheck`, `test`, `test:installers`, `check:agents-md`,
+`check:generated-assets`, `check:verify-parity`, and `build:web`. Each check is
+also available as a root script. Route type generation runs first because the
+web app's generated types are not checked in and its lint configuration is
+type-aware. The web build includes assertions on the emitted bundle.
 
-HTTP regression tests verify the public Cloudflare TLS Issuing ECC CA 4
-certificate against SSL.com TLS Transit ECC CA R2. Fixed ECDSA signature
-fixtures cover both supported curves, both signature hashes, short integers,
-and DER sign padding. Node.js native verification independently checks their
-signatures; the userspace verifier must accept valid signatures and reject
-altered data or invalid integers. These tests run offline through
-`pnpm run test`.
-
-Protocol regression tests exercise v1 and v2 opaque-blob carrier compatibility,
-lossless UTF-16 recovery, and retained-memory growth during history replay.
-The memory check runs a bounded fixture in a separate Node.js process with
-explicit garbage collection. It samples the retained heap before content
-assertions can flatten strings, then verifies every decoded value. Both
-`pnpm run test` and `pnpm run verify` include this check without additional
-setup; its result measures the local fixture rather than a production Worker's
-peak memory.
+The protocol tests cover v1 and v2 opaque-blob carrier compatibility, lossless
+UTF-16 code-unit recovery, and retained-memory growth during history replay.
+The memory regression runs a bounded fixture in a separate Node.js process with
+explicit garbage collection, samples the retained heap before content checks
+can flatten strings, and then verifies every decoded value. It runs through
+`pnpm run test` and `pnpm run verify` without additional setup; this local
+regression is not a measurement of a production Worker's peak memory.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
-indexes the CI workflows, skills, workspace packages, and their responsibilities.
+indexes its CI workflows, skills, workspace packages, and their responsibilities.
 
 ## License
 
