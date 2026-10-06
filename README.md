@@ -1,6 +1,6 @@
 # Floway
 
-A self-hosted LLM API gateway with a web dashboard. Connect GitHub Copilot,
+A self-hosted LLM API gateway with a dashboard. Connect GitHub Copilot,
 ChatGPT, Claude.ai, Azure AI, custom providers, and Ollama through OpenAI,
 Anthropic, and Gemini-compatible APIs.
 
@@ -9,7 +9,7 @@ Anthropic, and Gemini-compatible APIs.
 ### Cloudflare Workers
 
 Use the
-[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill with your coding agent.
+[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill with your agent.
 
 ### Docker
 
