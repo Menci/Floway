@@ -1,4 +1,7 @@
-# Floway
+<p align="center">
+  <img src="apps/web/src/assets/floway-blue.svg" alt="Floway logo" width="120" height="120">
+</p>
+<h1 align="center">Floway</h1>
 
 Floway is a self-hosted LLM API gateway for coding agents and API clients, with
 a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai, Azure AI,
