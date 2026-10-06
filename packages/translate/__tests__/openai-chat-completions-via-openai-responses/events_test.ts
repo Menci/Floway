@@ -387,6 +387,39 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal events
   });
 });
 
+test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace without copying (%s)', async path => {
+  const provider_specific_fields = {
+    name: 'TranslatorInputError',
+    stack: 'translator stack',
+    cause: { message: 'source failed', cause: { code: 17, details: [false, null, { value: 'nested' }] } },
+    target_api: 'openai-responses',
+    upstream_metadata: { retryable: false, values: ['first', 2] },
+  };
+  const error = { type: 'server_error', code: 'upstream_failure', message: 'upstream failed', provider_specific_fields, name: 'legacy name', stack: 'legacy stack', cause: { message: 'legacy cause' }, target_api: 'legacy target' };
+  const event: OpenAIResponsesStreamEventEx = path === 'flat error'
+    ? { ...error, type: 'error' }
+    : path === 'nested error'
+      ? { type: 'error', error }
+      : { type: 'response.failed', response: { ...makeResponse('failed'), error } };
+  async function* stream() {
+    yield toProtocolFrame(event);
+  }
+  const frames = await collect(translateToSourceEvents(stream()));
+  expect(frames).toHaveLength(1);
+  if (frames[0].type !== 'event') throw new Error('expected error event frame');
+  const translated = (frames[0].event as unknown as { error: Record<string, unknown> }).error;
+  expect(translated).toEqual({
+    message: error.message,
+    type: path === 'flat error' ? error.code : error.type,
+    code: error.code,
+    provider_specific_fields,
+  });
+  expect(translated.provider_specific_fields).toBe(provider_specific_fields);
+  const sse = writeChatFrame(frames[0], includeUsageChunk);
+  if (sse === null) throw new Error('expected error SSE frame');
+  expect(JSON.parse(sse.data)).toEqual({ error: translated });
+});
+
 test('translateToSourceEvents rejects truncated OpenAI Responses streams without terminal events', async () => {
   async function* stream() {
     yield toProtocolFrame({

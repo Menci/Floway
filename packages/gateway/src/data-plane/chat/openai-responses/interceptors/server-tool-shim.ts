@@ -20,7 +20,7 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
+import { internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 
 export interface MergeUsage {
   input_tokens?: number;
@@ -641,8 +641,9 @@ export const consumeTurnStreaming = async function* (
     if (event.type === 'error') {
       const e = 'error' in event ? event.error : event;
       const code = typeof e.code === 'string' && e.code.length > 0 ? e.code : 'server_error';
+      const failure: OpenAIResponsesErrorEx = { message: e.message, code, ...(e.provider_specific_fields === undefined ? {} : { provider_specific_fields: e.provider_specific_fields }) };
       if (merge.lastSeenModel === null) {
-        terminalStatus = { kind: 'bare-error-pre-shell', error: { message: e.message, code } };
+        terminalStatus = { kind: 'bare-error-pre-shell', error: failure };
       } else {
         terminalStatus = {
           kind: 'failed',
@@ -652,7 +653,7 @@ export const consumeTurnStreaming = async function* (
             model: ensureModel(),
             output: [],
             status: 'failed',
-            error: { message: e.message, code },
+            error: failure,
             incomplete_details: null,
           },
         };
@@ -879,7 +880,7 @@ const MAX_BODY_EXCERPT_CHARS = 512;
 const buildErrorFromResult = (
   result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
 ): NonNullable<OpenAIResponsesResultEx['error']> => {
-  if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error' };
+  if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error', provider_specific_fields: internalDebugErrorFields(result.error) };
   const decoded = new TextDecoder('utf-8', { fatal: false }).decode(result.body);
   let parsed: unknown = undefined;
   try {
@@ -894,7 +895,8 @@ const buildErrorFromResult = (
       message: typeof e.message === 'string' ? e.message : `Upstream returned HTTP ${result.status}`,
       code: typeof e.code === 'string' ? e.code : `upstream_${result.status}`,
     };
-    if (typeof e.type === 'string') (out as Record<string, unknown>).type = e.type;
+    if (typeof e.type === 'string') out.type = e.type;
+    if (e.provider_specific_fields !== undefined) out.provider_specific_fields = e.provider_specific_fields as Record<string, unknown>;
     return out;
   }
   const truncated = truncatePreservingCodePoints(decoded, MAX_BODY_EXCERPT_CHARS);
@@ -1062,7 +1064,7 @@ async function* runMultiTurnLoop(args: {
       if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
         yield synthesizeTerminalEnvelope(merge, {
           kind: 'failed',
-          error: { code: turn.terminalStatus.error.code, message: turn.terminalStatus.error.message },
+          error: turn.terminalStatus.error,
         }, active);
         return;
       }
@@ -1133,6 +1135,7 @@ async function* runMultiTurnLoop(args: {
       error: {
         code: 'server_error',
         message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
+        provider_specific_fields: internalDebugErrorFields(toInternalDebugError(error)),
       },
     }, active);
   } finally {

@@ -20,7 +20,7 @@ import { isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/commo
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
@@ -673,17 +673,11 @@ const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
 const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
   type: error.type,
   code: error.type,
-  name: error.name,
   message: error.message,
-  stack: error.stack,
-  cause: error.cause,
-  target_api: error.target_api,
+  provider_specific_fields: internalDebugErrorFields(error),
 });
 
-const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
-  ...toInternalDebugError(error),
-  code: 'internal_error',
-});
+const serverErrorEnvelope = (error: unknown): Record<string, unknown> => internalErrorEnvelope(toInternalDebugError(error));
 
 const normalizeErrorBody = (body: unknown, status: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'

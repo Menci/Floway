@@ -232,6 +232,11 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   const body = JSON.parse(new TextDecoder().decode(unexpectedResp.body));
   assertEquals(body.error.code, 502);
   assertEquals(body.error.status, 'UNAVAILABLE');
+  assertEquals(Object.keys(body.error).sort(), ['code', 'details', 'message', 'status']);
+  assertEquals(body.error.message, 'Invalid upstream token counting response.');
+  assertEquals(body.error.details[0]['@type'], 'type.googleapis.com/google.rpc.DebugInfo');
+  assertEquals(body.error.details[0].stackEntries[0], 'Error: Invalid upstream token counting response.');
+  assertEquals(body.error.details[1], { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name: 'Error' } });
 });
 
 test('countTokens refuses a non-anthropic-messages candidate', async () => {

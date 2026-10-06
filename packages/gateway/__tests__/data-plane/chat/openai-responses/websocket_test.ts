@@ -349,7 +349,9 @@ test('OpenAI Responses WebSocket rejects the next turn after its API key is rota
 
 test('OpenAI Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
-  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  const nested = new TypeError('nested persistence'); nested.stack = 'TypeError: nested persistence\n  at database';
+  const failure = new Error('simulated item persistence failure', { cause: nested }); failure.stack = 'Error: simulated item persistence failure\n  at persistence';
+  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(failure);
   try {
     await withMockedFetch(
       async request => {
@@ -396,7 +398,8 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
         const error = messages.find(message => message.type === 'error') as { status?: unknown; error?: { message?: unknown } } | undefined;
         assertExists(error);
         assertEquals(error.status, 500);
-        assertEquals(error.error?.message, 'simulated item persistence failure');
+        assertEquals(error.error, { type: 'internal_error', code: 'internal_error', message: 'simulated item persistence failure', provider_specific_fields: { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested persistence', stack: nested.stack } } });
+        assertEquals((error as Record<string, unknown>).event_id, 'evt_persist_failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(isTerminalResponseEvent));
       }),
@@ -1561,7 +1564,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
       operation: 'chat',
       runtimeLocation: 'TEST',
     };
-    throw new Error('simulated mid-attempt provider throw');
+    const failure = new Error('simulated mid-attempt provider throw'); failure.stack = undefined; throw failure;
   });
 
   try {
@@ -1591,6 +1594,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
         assertEquals(errorMessage.type, 'error');
         assertEquals(errorMessage.status, 500);
         assertEquals(errorMessage.event_id, 'evt_throw');
+        assertEquals(errorMessage.error, { type: 'internal_error', code: 'internal_error', message: 'simulated mid-attempt provider throw', provider_specific_fields: { name: 'Error' } });
       }),
     );
 

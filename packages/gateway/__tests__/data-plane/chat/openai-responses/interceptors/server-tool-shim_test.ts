@@ -2261,12 +2261,14 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
       incomplete_details: null,
     } as OpenAIResponsesResultEx,
   });
+  const diagnostics = { name: 'UpstreamError', cause: { request_id: 'req_failed' }, target_api: 'openaiResponses' };
   const script = scriptedRun([[
     createdWith,
     eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'error',
       message: 'mid-stream upstream blew up',
       code: 'server_error',
+      provider_specific_fields: diagnostics,
     }),
   ]]);
 
@@ -2281,9 +2283,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   assertEquals(failed.response.error?.message, 'mid-stream upstream blew up');
   // Upstream-supplied code carries through verbatim.
   assertEquals(failed.response.error?.code, 'server_error');
-  // No synthetic `type` field — the OpenAPI OpenAIResponsesError schema
-  // defines only `{code, message}` and the bare `error` upstream frame
-  // doesn't carry a `type` to forward.
+  assert(failed.response.error?.provider_specific_fields === diagnostics);
   assertFalse('type' in (failed.response.error as object));
 });
 
@@ -2358,16 +2358,14 @@ test('pathological upstream emitting frames without response.created: shim event
 });
 
 test('turn-1 iterator throws AFTER response.created: synthesizes response.failed with synthesized id + last-seen model', async () => {
-  // After identity (model) is captured, a mid-stream throw is
-  // funneled through the response.failed synthesizer so the
-  // downstream wire mirrors a native upstream's mid-stream drop
-  // instead of escaping uncaught to a gateway internal_error.
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
+  const cause = { socket: 'upstream-1' };
+  const streamError = new Error('connection reset by peer', { cause });
   const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     yield mkResponseCreated('upstream_mid');
-    throw new Error('connection reset by peer');
+    throw streamError;
   })();
   const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
@@ -2387,8 +2385,11 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('connection reset by peer'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
-  // No synthetic `type` per the spec OpenAIResponsesError schema (only
-  // `{code, message}`).
+  const diagnostics = failed.response.error?.provider_specific_fields;
+  assertEquals(diagnostics?.name, 'Error');
+  assertEquals(diagnostics?.stack, streamError.stack);
+  assert(diagnostics?.cause === cause);
+  assertFalse('stack' in (failed.response.error as object));
   assertFalse('type' in (failed.response.error as object));
 });
 
@@ -3932,6 +3933,7 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
 
+  const diagnostics = { name: 'RateLimitError', cause: { limit: 'images' }, target_api: 'openaiResponses' };
   let runCalls = 0;
   const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
@@ -3952,6 +3954,7 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
           type: 'insufficient_quota',
           code: 'insufficient_quota',
           param: null,
+          provider_specific_fields: diagnostics,
         },
       })),
     };
@@ -3964,6 +3967,7 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   assertEquals(failed.response.error?.code, 'insufficient_quota');
   assertEquals(failed.response.error?.type, 'insufficient_quota');
   assertEquals(failed.response.error?.message, 'You exceeded your current quota.');
+  assertEquals(failed.response.error?.provider_specific_fields, diagnostics);
 });
 
 test('upstream response.incomplete forwards as response.incomplete with the same incomplete_details.reason', async () => {
@@ -6905,4 +6909,35 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   assertEquals(tools?.[0], qualified);
   assertEquals(tools?.[1].type, 'web_search');
   assertEquals(findResponseCompleted(frames).response.tool_choice, choice);
+});
+
+test('server-tool loop preserves internal failure diagnostics on the failed resource', async () => {
+  makeStubDeps();
+  const cause = { operation: 'translated upstream dispatch' };
+  const failure = { type: 'internal_error' as const, name: 'TypeError', message: 'Cannot translate tool input', stack: 'TypeError: Cannot translate tool input', cause, target_api: 'anthropicMessages' };
+  let runCalls = 0;
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+    runCalls += 1;
+    if (runCalls === 1) return { type: 'events', events: framesOf(...searchCallTurn(0, 'call_1', 'q1')), modelIdentity: testTelemetryModelIdentity };
+    return { type: 'internal-error', status: 502, error: failure };
+  };
+  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), run);
+  assert(result.type === 'events');
+  const events = eventPayloads(await collectFrames(result.events));
+  const terminal = events.at(-1);
+  assert(terminal?.type === 'response.failed');
+  assertEquals(runCalls, 2);
+  assertEquals(terminal.response.error?.code, 'server_error');
+  assertEquals(terminal.response.error?.message, failure.message);
+  assertEquals(terminal.response.error?.provider_specific_fields, { name: failure.name, stack: failure.stack, cause, target_api: failure.target_api });
+  assert(terminal.response.error?.provider_specific_fields?.cause === cause);
+  assertFalse('stack' in (terminal.response.error as object));
+});
+
+test('consumeTurn retains namespaced diagnostics before a response shell is announced', async () => {
+  const diagnostics = { name: 'UpstreamError', stack: 'UpstreamError: no response shell', cause: { connection: 'closed' } };
+  const result = await consumeTurn(framesOf(eventFrame<OpenAIResponsesStreamEventEx>({ type: 'error', error: { message: 'No response shell', code: 'connection_error', provider_specific_fields: diagnostics } })), createMergeState(), true);
+  assert(result.summary.terminalStatus.kind === 'bare-error-pre-shell');
+  assertEquals(result.summary.terminalStatus.error.code, 'connection_error');
+  assert(result.summary.terminalStatus.error.provider_specific_fields === diagnostics);
 });

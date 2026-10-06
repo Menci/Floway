@@ -413,13 +413,6 @@ interface OpenAIChatCompletionsErrorPayload {
 
 const stringField = (value: unknown, fallback: string): string => (typeof value === 'string' && value.length > 0 ? value : fallback);
 
-const debugFieldsFrom = (value: Record<string, unknown>) => ({
-  ...(typeof value.name === 'string' ? { name: value.name } : {}),
-  ...(typeof value.stack === 'string' ? { stack: value.stack } : {}),
-  ...(value.cause !== undefined ? { cause: value.cause } : {}),
-  ...(typeof value.target_api === 'string' ? { target_api: value.target_api } : {}),
-});
-
 const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): OpenAIChatCompletionsErrorPayload => {
   const error = 'error' in event ? event.error : event;
   return {
@@ -427,26 +420,20 @@ const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponses
       message: error.message,
       type: 'error' in event ? event.error.type ?? error.code ?? 'api_error' : error.code ?? 'api_error',
       ...(error.code ? { code: error.code } : {}),
-      ...(error.name ? { name: error.name } : {}),
-      ...(error.stack ? { stack: error.stack } : {}),
-      ...(error.cause !== undefined ? { cause: error.cause } : {}),
-      ...(error.target_api ? { target_api: error.target_api } : {}),
+      ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
     },
   };
 };
 
-const isObjectLike = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
 const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>): OpenAIChatCompletionsErrorPayload => {
-  const response = event.response as OpenAIResponsesResultEx;
-  const error = isObjectLike(response.error) ? response.error : undefined;
+  const error = event.response.error;
 
   return {
     error: {
       message: stringField(error?.message, 'Response failed due to unknown error.'),
       type: stringField(error?.type, 'api_error'),
       ...(typeof error?.code === 'string' ? { code: error.code } : {}),
-      ...(error ? debugFieldsFrom(error) : {}),
+      ...(error?.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
     },
   };
 };

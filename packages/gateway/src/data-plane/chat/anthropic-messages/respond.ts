@@ -13,7 +13,7 @@ import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '.
 import { anthropicMessagesProtocolFrameToSSEFrame, ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
 // Renders an upstream Anthropic Messages result into the client HTTP/SSE response. An
@@ -89,11 +89,8 @@ const internalAnthropicMessagesErrorPayload = (error: InternalDebugError) => ({
   type: 'error',
   error: {
     type: error.type,
-    name: error.name,
     message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    target_api: error.target_api,
+    provider_specific_fields: internalDebugErrorFields(error),
   },
 });
 
