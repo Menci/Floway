@@ -9,12 +9,18 @@ overrides:
   dompurify: 3.4.12
 
 patchedDependencies:
+  '@discoveryjs/json-ext@1.1.0':
+    hash: 481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd
+    path: patches/@discoveryjs__json-ext@1.1.0.patch
   '@fluentui/react-charts@9.3.22':
     hash: a8bd95e1c6e43665fa49850716d2bf5e123b05b959f4b88cc83526cbedeeed35
     path: patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2':
     hash: 594c15be37c1bfd7b93e11a12a90361c953a28e2d2123ae6ae59933a31f29a8b
     path: patches/@reclaimprotocol__tls@0.1.2.patch
+  klona@2.0.6:
+    hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
+    path: patches/klona@2.0.6.patch
   overlayscrollbars@2.13.0:
     hash: 0989d8ab263bb64de03bfa5ce05a0492b7a0b2211ac83be29beaf137c31b2e22
     path: patches/overlayscrollbars@2.13.0.patch
@@ -377,7 +383,7 @@ importers:
         version: 3.14.0
       klona:
         specifier: 2.0.6
-        version: 2.0.6
+        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -461,7 +467,7 @@ importers:
     dependencies:
       '@discoveryjs/json-ext':
         specifier: 1.1.0
-        version: 1.1.0
+        version: 1.1.0(patch_hash=481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd)
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
@@ -473,7 +479,7 @@ importers:
         version: 2.2.0
       klona:
         specifier: 2.0.6
-        version: 2.0.6
+        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -624,7 +630,7 @@ importers:
         version: link:../protocols
       klona:
         specifier: 2.0.6
-        version: 2.0.6
+        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -5505,7 +5511,7 @@ snapshots:
 
   '@ctrl/tinycolor@3.6.1': {}
 
-  '@discoveryjs/json-ext@1.1.0': {}
+  '@discoveryjs/json-ext@1.1.0(patch_hash=481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd)': {}
 
   '@emnapi/core@1.10.0':
     dependencies:
@@ -9250,7 +9256,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  klona@2.0.6: {}
+  klona@2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2): {}
 
   levn@0.4.1:
     dependencies:

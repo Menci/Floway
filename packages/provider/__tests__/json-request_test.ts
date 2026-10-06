@@ -1,13 +1,23 @@
 import { expect, test } from 'vitest';
 
 import { jsonRequestBody } from '../src/json-request.ts';
-
+import { jsonInteger } from '@floway-dev/protocols/common';
 
 const readChunks = async (body: ReturnType<typeof jsonRequestBody>): Promise<Uint8Array[]> => {
   const chunks: Uint8Array[] = [];
   for await (const chunk of body.open()) chunks.push(chunk);
   return chunks;
 };
+
+test('preserves exact raw integer tokens through snapshots and repeated request serialization', async () => {
+  const value = { properties: { items: { maxItems: jsonInteger(9007199254740993n) } } };
+  const expected = '{"properties":{"items":{"maxItems":9007199254740993}}}';
+  const body = jsonRequestBody(value);
+  value.properties.items.maxItems = 1;
+  expect(body.contentLength).toBe(new TextEncoder().encode(expected).byteLength);
+  expect(await new Response(body.open()).text()).toBe(expected);
+  expect(await new Response(body.open()).text()).toBe(expected);
+});
 
 test.each([
   { plain: 'text', escaped: '\b\f\n\r\t"\\', unicode: '中文😀', lone: '\ud800' },
@@ -53,4 +63,10 @@ test('replays the bytes captured when the body is created', async () => {
   expect(await new Response(body.open()).text()).toBe('{"nested":{"text":"before"}}');
   expect(await new Response(body.open()).text()).toBe('{"nested":{"text":"before"}}');
   expect(body.contentLength).toBe(28);
+});
+
+test('preserves explicit integer-key enumeration order in request snapshots', async () => {
+  const properties = new Proxy({ '0': { type: 'string' }, '1': { type: 'integer' } }, { ownKeys: () => ['1', '0'] });
+  const body = jsonRequestBody({ properties });
+  expect(await new Response(body.open()).text()).toBe('{"properties":{"1":{"type":"integer"},"0":{"type":"string"}}}');
 });

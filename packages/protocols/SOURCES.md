@@ -22,4 +22,6 @@ Provider additions and broader wire views use `Ex`. Chat assistant and tool-call
 
 Messages collectors follow the pinned SDK's cumulative usage counters, citation events, complete signature replacement, and compaction final-value assignment, including null.
 
+Gemini Schema conversion preserves constraints, reorders properties before removing `propertyOrdering`, and emits int64 constraints as exact JSON numeric tokens. The `klona/json` and streaming JSON serializer patches retain immutable raw JSON values; ordered schema properties retain their enumeration order through request cloning and serialization, including integer-named keys. Boolean JSON schemas use exact object equivalents; destination schema restrictions remain enforced by the destination boundary or upstream. Mutually exclusive schema fields fail explicitly. Omitted Chat schema is not replaced with an unconstrained schema.
+
 References for individual extension fields remain beside their declarations. The copied SDK licenses are retained in [anthropic-sdk.txt](licenses/anthropic-sdk.txt) and [openai-node.txt](licenses/openai-node.txt).
