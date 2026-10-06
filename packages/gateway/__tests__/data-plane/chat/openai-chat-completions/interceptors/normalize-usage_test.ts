@@ -70,7 +70,7 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
       object: 'chat.completion.chunk',
       created: 1,
       model: 'gpt-test',
-      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       usage: {
         prompt_tokens: 100,
         completion_tokens: 20,
@@ -84,7 +84,7 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
 
   const first = frames[0];
   if (first.type !== 'event') throw new Error('expected event frame');
-  assertEquals(first.event.choices, [{ index: 0, delta: {}, finish_reason: 'stop' }]);
+  assertEquals(first.event.choices, [{  index: 0, delta: {}, finish_reason: 'stop' }]);
   assertEquals(first.event.usage, undefined);
 
   const carrier = frames[1];
@@ -131,7 +131,7 @@ test('leaves chunks without usage untouched', async () => {
     created: 1,
     model: 'gpt-test',
     choices: [
-      { index: 0, delta: { content: 'hi' }, finish_reason: null },
+      {  index: 0, delta: { content: 'hi' }, finish_reason: null },
     ],
   } satisfies OpenAIChatCompletionsStreamEvent);
 

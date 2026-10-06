@@ -52,6 +52,7 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
   const candidateB = candidate('upstream-b');
   const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
     eventFrame(chunk([{
+
       index: 0,
       delta: { content: 'answer', reasoning_opaque: 'upstream-opaque' },
       finish_reason: 'stop',
@@ -76,7 +77,7 @@ test('a synthetic carrier issued for a choice without reasoning decodes on the n
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
-    eventFrame(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
+    eventFrame(chunk([{  index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
     doneFrame(),
   ]), { codec, affinity: targetFor(candidateA) }));
 

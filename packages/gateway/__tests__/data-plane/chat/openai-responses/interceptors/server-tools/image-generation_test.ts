@@ -479,7 +479,7 @@ test('imageTerminal on failure emits a failed item and no closing events', () =>
   assertEquals((item as { status?: string }).status, 'failed');
   assertEquals((item as { error?: { code: string } }).error?.code, 'EngineOverloaded');
   assertEquals((item as { error?: { type?: string } }).error?.type, 'image_generation_user_error');
-  assertFalse('result' in item);
+  assertEquals((item as { result?: string | null }).result, null);
   assertEquals(endEvents.length, 0);
 });
 

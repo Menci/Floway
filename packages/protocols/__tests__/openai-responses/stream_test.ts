@@ -19,7 +19,6 @@ const makeResponse = (status: OpenAIResponsesResultEx['status'], overrides: Part
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -48,7 +47,6 @@ test('parseOpenAIResponsesStream parses OpenAI Responses SSE frames into protoco
           object: 'response',
           model: 'gpt-test',
           output: [],
-          output_text: '',
           status: 'in_progress',
         },
         sequence_number: 0,
@@ -79,7 +77,6 @@ test('parseOpenAIResponsesStream parses OpenAI Responses SSE frames into protoco
         object: 'response',
         model: 'gpt-test',
         output: [],
-        output_text: '',
         status: 'in_progress',
       },
       sequence_number: 0,
@@ -162,7 +159,7 @@ test('parseOpenAIResponsesStream passes structured upstream events through uncha
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
         sequence_number: 0,
       }),
       'response.created',
@@ -223,7 +220,7 @@ test('parseOpenAIResponsesStream fills in sequence_number when upstream omits it
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
       }),
       'response.created',
     ),
@@ -256,7 +253,7 @@ test('parseOpenAIResponsesStream advances its counter past upstream-provided seq
   const frames = await collect(parse(
     sseFrame(
       JSON.stringify({
-        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        response: { ...makeResponse('in_progress'), output: [] },
         sequence_number: 5,
       }),
       'response.created',
@@ -278,7 +275,6 @@ test('parseOpenAIResponsesStream advances its counter past upstream-provided seq
 test('parseOpenAIResponsesStream fast-paths response.failed terminal with error preserved on terminal only', async () => {
   const failed = makeResponse('failed', {
     output: [],
-    output_text: '',
     error: { type: 'server_error', code: 'server_error', message: 'upstream failed' },
   });
   // The in-progress wrapper must carry `error: null` per spec
@@ -311,7 +307,6 @@ test('parseOpenAIResponsesStream fast-paths response.failed terminal with error 
 // work rather than losing it.
 test('parseOpenAIResponsesStream fast-paths response.failed terminal with partial output synthesised before the error', async () => {
   const failed = makeResponse('failed', {
-    output_text: 'partial',
     output: [
       {
         type: 'message',

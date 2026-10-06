@@ -1,6 +1,14 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import { type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesTool, type OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import {
+  type CanonicalOpenAIResponsesPayload,
+  type CanonicalOpenAIResponsesInputItem,
+  type OpenAIResponsesOutputItemEx,
+  type OpenAIResponsesResultEx,
+  type OpenAIResponsesStreamEventEx,
+  type OpenAIResponsesTool,
+  type OpenAIResponsesToolChoice,
+} from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 const CLIENT_NAMESPACE = 'collaboration';

@@ -11,7 +11,6 @@ test('collectOpenAIResponsesProtocolEventsToResult reassembles synthetic OpenAI 
     object: 'response',
     model: 'gpt-test',
     status: 'completed',
-    output_text: 'Hello',
     output: [
       {
         type: 'message',

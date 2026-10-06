@@ -112,7 +112,7 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
 
-const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
+const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort ?? undefined;
 
 const openaiResponsesReasoningEffort = (body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 

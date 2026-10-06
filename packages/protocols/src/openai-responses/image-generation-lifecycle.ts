@@ -12,6 +12,7 @@ export const imageGenerationCallLifecycleEvents = (
     type: 'image_generation_call',
     id: itemId,
     status: 'in_progress',
+    result: null,
   };
   return {
     startFrames: [

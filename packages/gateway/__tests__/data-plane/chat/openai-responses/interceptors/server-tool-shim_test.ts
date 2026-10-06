@@ -61,7 +61,6 @@ const emptyResult = (id: string, status: OpenAIResponsesResultEx['status']): Ope
   object: 'response',
   model: 'test-model',
   output: [],
-  output_text: '',
   status,
   error: null,
   incomplete_details: null,
@@ -1819,19 +1818,19 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
 const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'in_progress', error: null, incomplete_details: null },
   });
 
 const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.in_progress',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'in_progress', error: null, incomplete_details: null },
   });
 
 const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.completed',
-    response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'completed', error: null, incomplete_details: null },
+    response: { id: responseId, object: 'response', model, output: [], status: 'completed', error: null, incomplete_details: null },
   });
 
 test('synthesized response.created / completed quote the upstream-reported model, not ctx.payload.model', async () => {
@@ -1929,7 +1928,7 @@ test('shim refuses to synthesize a response envelope when upstream response.crea
 
   const modelless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { id: 'upstream_x', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
+    response: { id: 'upstream_x', object: 'response', output: [], status: 'in_progress' } as never,
   });
   const script = scriptedRun([[modelless, mkResponseCompleted()]]);
 
@@ -1958,7 +1957,7 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
 
   const idless = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
-    response: { model: 'gpt-5', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
+    response: { model: 'gpt-5', object: 'response', output: [], status: 'in_progress' } as never,
   });
   const script = scriptedRun([[idless, mkResponseCompleted()]]);
 
@@ -2366,7 +2365,7 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () {
+  const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
     yield mkResponseCreated('upstream_mid');
     throw new Error('connection reset by peer');
   })();
@@ -2799,7 +2798,7 @@ test('success-path synth envelopes carry spec-required `error: null` and `incomp
 
 // ── output_text is never synthesized ─────────────────────────────────
 
-test('shim rebuilds `output_text` on terminal envelopes from the accumulated message items (matches openai-python Response.output_text)', async () => {
+test('shim keeps accumulated message text in output items without a derived wire alias', async () => {
   // SDKs derive `output_text` from the `output` array. Per-turn
   // upstream `output_text` on a terminal frame only describes that
   // one turn, so on multi-turn shim responses the snapshot value
@@ -2848,7 +2847,7 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
   const events = eventPayloads(await collectFrames(result.events));
   const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
-  assertEquals((completed.response as unknown as { output_text: string }).output_text, 'hi there');
+  assertEquals(Object.hasOwn(completed.response, 'output_text'), false);
 });
 
 test('upstream-emitted `output_text` on in-progress envelopes flows through verbatim from the snapshot', async () => {
@@ -2866,7 +2865,6 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       model: 'test-model',
       output: [],
       status: 'in_progress',
-      output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
     } as OpenAIResponsesResultEx,
@@ -2879,7 +2877,6 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       model: 'test-model',
       output: [],
       status: 'in_progress',
-      output_text: 'snapshot output_text',
       error: null,
       incomplete_details: null,
     } as OpenAIResponsesResultEx,
@@ -2918,8 +2915,8 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   assert(inProgress !== undefined);
   // Snapshot's output_text flows through verbatim on in-progress
   // envelopes — the shim only overrides id/model/status/output.
-  assertEquals((created.response as unknown as { output_text?: string }).output_text, 'snapshot output_text');
-  assertEquals((inProgress.response as unknown as { output_text?: string }).output_text, 'snapshot output_text');
+  assertEquals(Object.hasOwn(created.response, 'output_text'), false);
+  assertEquals(Object.hasOwn(inProgress.response, 'output_text'), false);
 });
 
 // ── finalMetadata follows the latest turn's modelIdentity ──────────────
@@ -3998,7 +3995,7 @@ test('upstream response.incomplete forwards as response.incomplete with the same
   assertEquals(terminal.response.status, 'incomplete');
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
   assertEquals(terminal.response.output.map(item => item.type), ['message']);
-  assertEquals(terminal.response.output_text, 'partial answer');
+  assertEquals(Object.hasOwn(terminal.response, 'output_text'), false);
   assertFalse(events.some(e => e.type === 'response.completed'));
 });
 
@@ -4056,7 +4053,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
 
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.output.map(item => item.type), ['message', 'web_search_call']);
-  assertEquals(terminal.response.output_text, 'partial answer');
+  assertEquals(Object.hasOwn(terminal.response, 'output_text'), false);
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
 });
 
@@ -5067,7 +5064,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5090,7 +5087,7 @@ test('consumeTurn throws when upstream response.created has no model field (no c
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         } as never,
       }),
@@ -5120,7 +5117,7 @@ test('consumeTurn captures upstream-reported model and writes it into MergeState
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], output_text: '', status: 'in_progress',
+          id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5143,7 +5140,7 @@ test('consumeTurn re-captures upstream-reported model when later turns change it
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], output_text: '', status: 'in_progress',
+          id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5168,7 +5165,7 @@ test('consumeTurn does NOT capture upstream response.id (downstream uses the shi
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], output_text: '', status: 'in_progress',
+          id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         },
       }),
@@ -5191,7 +5188,7 @@ test('consumeTurn keeps previous upstream-reported model when a later turn omits
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.created',
         response: {
-          id: 'r2', object: 'response', output: [], output_text: '', status: 'in_progress',
+          id: 'r2', object: 'response', output: [], status: 'in_progress',
           error: null, incomplete_details: null,
         } as never,
       }),
@@ -5798,7 +5795,6 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
     object: 'response',
     model: 'test-model',
     output: [],
-    output_text: '',
     status: 'failed',
     error: { message: 'upstream gave up', type: 'server_error', code: '500' },
     incomplete_details: null,
@@ -5826,7 +5822,6 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
     object: 'response',
     model: 'test-model',
     output: [],
-    output_text: '',
     status: 'incomplete',
     error: null,
     incomplete_details: null,
@@ -6725,20 +6720,21 @@ for (const targetApi of ['openaiChatCompletions', 'anthropicMessages', 'openaiRe
         const client = trip.target.tools?.[1];
         assert(client?.type === 'function');
         const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'client', type: 'function', function: { name: client.function.name, arguments: '{}' } }] }, finish_reason: null }] });
-          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'client', type: 'function', function: { name: client.function.name, arguments: '{}' } }] }, finish_reason: null }] });
+          yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
         })();
         return eventResult(trip.events(events), testTelemetryModelIdentity);
       }
       const trip = await translateOpenAIResponsesViaAnthropicMessages(inv.payload, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected image'); } });
-      const name = trip.target.tools?.[1].name;
+      const tool = trip.target.tools?.[1];
+      const name = tool !== undefined && 'name' in tool ? tool.name : undefined;
       assert(typeof name === 'string');
-      const events = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
-        yield eventFrame({ type: 'message_start', message: { id: 'msg', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
+      const events = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+        yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
         yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'client', name, input: {} } });
         yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } });
         yield eventFrame({ type: 'content_block_stop', index: 0 });
-        yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } });
+        yield eventFrame({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
         yield eventFrame({ type: 'message_stop' });
       })();
       return eventResult(trip.events(events), testTelemetryModelIdentity);

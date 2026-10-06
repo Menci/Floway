@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputMessageEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -94,7 +94,7 @@ export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], g
   // ordinary completion carrying no compaction item.
   //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L380-L428
   //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/codex-api/src/endpoint/compact.rs#L39-L88
-  const compactionItems = generated.output.filter(it => it.type === 'compaction');
+  const compactionItems = generated.output.filter(isOpenAIResponsesCompactionItem);
   if (compactionItems.length === 0) {
     throw new Error("Copilot's compaction trigger turn returned no compaction output item");
   }

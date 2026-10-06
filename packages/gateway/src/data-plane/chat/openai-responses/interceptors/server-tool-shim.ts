@@ -639,7 +639,7 @@ export const consumeTurnStreaming = async function* (
     }
 
     if (event.type === 'error') {
-      const e = event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>;
+      const e = 'error' in event ? event.error : event;
       const code = typeof e.code === 'string' && e.code.length > 0 ? e.code : 'server_error';
       if (merge.lastSeenModel === null) {
         terminalStatus = { kind: 'bare-error-pre-shell', error: { message: e.message, code } };
@@ -820,10 +820,8 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    // No event of the current protocol reaches here; every positionless type is
-    // answered above. This line is for what the protocol grows:
-    // `parseOpenAIResponsesStream` classifies by deny-list so an unrecognized type
-    // survives as structured, and dropping it here would spend that guarantee.
+    // Preserve positionless events and unknown types admitted by
+    // parseOpenAIResponsesStream so the shim retains the parser's pass-through contract.
     yield stamp(event);
   }
 
@@ -880,7 +878,7 @@ const MAX_BODY_EXCERPT_CHARS = 512;
 
 const buildErrorFromResult = (
   result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
-): NonNullable<OpenAIResponsesResult['error']> => {
+): NonNullable<OpenAIResponsesResultEx['error']> => {
   if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error' };
   const decoded = new TextDecoder('utf-8', { fatal: false }).decode(result.body);
   let parsed: unknown = undefined;
@@ -960,13 +958,6 @@ const synthesizeTerminalEnvelope = (
   const output = materializeAccumulatedOutput(state);
   const usage = usageForWire(state);
   const frame = SYNTHESIZED_TERMINAL_FRAME[kind.kind];
-  let outputText = '';
-  for (const item of output) {
-    if (item.type !== 'message') continue;
-    for (const block of item.content) {
-      if (block.type === 'output_text') outputText += block.text;
-    }
-  }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
   const restoredToolChoice = restoreEchoedToolChoice(snapshot.tool_choice, active);
@@ -980,7 +971,6 @@ const synthesizeTerminalEnvelope = (
       model: state.lastSeenModel,
       status: frame.status,
       output,
-      output_text: outputText,
       ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
       ...(restoredToolChoice !== undefined ? { tool_choice: restoredToolChoice } : {}),
       ...(usage !== undefined ? { usage } : {}),

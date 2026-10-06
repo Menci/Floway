@@ -46,17 +46,17 @@ test('strips per-block from an array-form system prompt and filters blocks that 
     max_tokens: 1,
     messages: [],
     system: [
-      { type: 'text', text: 'You are a helpful assistant.' },
-      { type: 'text', text: 'x-anthropic-billing-header: token\ncch=abcdef12345' },
-      { type: 'text', text: 'Keep going. cch=99fffaa1;' },
+      { citations: null, type: 'text', text: 'You are a helpful assistant.' },
+      { citations: null, type: 'text', text: 'x-anthropic-billing-header: token\ncch=abcdef12345' },
+      { citations: null, type: 'text', text: 'Keep going. cch=99fffaa1;' },
     ],
   });
 
   await stripBillingAttribution(input, stubCtx, okEvents);
 
   assertEquals(input.payload.system, [
-    { type: 'text', text: 'You are a helpful assistant.' },
-    { type: 'text', text: 'Keep going.' },
+    { citations: null, type: 'text', text: 'You are a helpful assistant.' },
+    { citations: null, type: 'text', text: 'Keep going.' },
   ]);
 });
 
@@ -66,8 +66,8 @@ test('deletes the system field entirely when every array block becomes empty', a
     max_tokens: 1,
     messages: [],
     system: [
-      { type: 'text', text: 'x-anthropic-billing-header: token' },
-      { type: 'text', text: 'cch=deadbeef1234;' },
+      { citations: null, type: 'text', text: 'x-anthropic-billing-header: token' },
+      { citations: null, type: 'text', text: 'cch=deadbeef1234;' },
     ],
   });
 

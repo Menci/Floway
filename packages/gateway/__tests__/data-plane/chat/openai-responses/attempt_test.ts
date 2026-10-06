@@ -47,7 +47,6 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx =>
     status: 'completed',
     content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
-  output_text: 'hi',
   error: null,
   incomplete_details: null,
 });
@@ -152,7 +151,7 @@ test('generate native success leaves source-edge state ownership to the caller',
 test('generate isolates provider mutations with JSON-safe container cloning', async () => {
   installRepo();
   const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;
-  const payload = makePayload({ metadata });
+  const payload = makePayload({ metadata: metadata as unknown as Record<string, string> });
   const sourceItem = payload.input[0];
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
     const clonedMetadata = body.metadata as { nested: { value: string } } & Record<string, unknown>;
@@ -296,21 +295,21 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
           object: 'chat.completion.chunk',
           created: 0,
           model: 'test-model',
-          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+          choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
         });
         yield eventFrame<OpenAIChatCompletionsStreamEvent>({
           id: 'chatcmpl_test',
           object: 'chat.completion.chunk',
           created: 0,
           model: 'test-model',
-          choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+          choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
         });
         yield eventFrame<OpenAIChatCompletionsStreamEvent>({
           id: 'chatcmpl_test',
           object: 'chat.completion.chunk',
           created: 0,
           model: 'test-model',
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+          choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
         });
         yield doneFrame();
       })(),
@@ -399,7 +398,7 @@ test('compact returns the clean upstream result for source-edge affinity and sto
   // Native /responses/compact returns a fully-shaped compaction envelope —
   // the `action: 'compact'` branch of `provider.callOpenAIResponses` does the
   // Copilot compaction_trigger reshape internally — so the attempt receives
-  // a OpenAIResponsesResult, expands it into synthetic frames, and wraps the
+  // a compaction result envelope, expands it into synthetic frames, and wraps the
   // output for storage. The synthesized envelope carries a `compaction`
   // output item; wrap observes it and derives the 'replace' snapshot.
   const compactionItem = {
@@ -463,9 +462,10 @@ test('generate strips disallowed headers and injects external image loading acro
           yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'message_start',
             message: {
+              container: null, diagnostics: null, stop_details: null,
               id: 'msg_1', type: 'message', role: 'assistant', content: [],
               model: 'test-model', stop_reason: null, stop_sequence: null,
-              usage: { input_tokens: 1, output_tokens: 0 },
+              usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
             },
           });
           yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
@@ -692,8 +692,8 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
     tool.function.parameters.providerOnly = true;
     return {
       ok: true, modelKey: 'test-model-key', events: (async function* () {
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'next', type: 'function', function: { name: 'files_read_2', arguments: '{}' } }] }, finish_reason: null }] });
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{  index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'next', type: 'function', function: { name: 'files_read_2', arguments: '{}' } }] }, finish_reason: null }] });
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
         yield doneFrame();
       })(),
     };

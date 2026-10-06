@@ -224,6 +224,7 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
     model: 'deepseek-reasoner',
     choices: [
       {
+
         index: 0,
         delta: { reasoning_content: 'thinking...' } as DeepSeekReasoningDelta,
         finish_reason: null,
@@ -255,7 +256,7 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
     object: 'chat.completion.chunk',
     created: 1,
     model,
-    choices: [{ index: 0, delta, finish_reason }],
+    choices: [{  index: 0, delta, finish_reason }],
   });
 
   const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
@@ -271,8 +272,8 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
     )));
 
   const frames = await collectFrames(result);
-  const reasoningFrame = frames.find(frame => frame.type === 'event' && frame.event.choices[0]?.delta.reasoning_text !== undefined);
-  assertEquals(reasoningFrame?.type === 'event' ? reasoningFrame.event.choices[0]?.delta.reasoning_text : undefined, 'json thinking');
+  const reasoningFrame = frames.find(frame => frame.type === 'event' && (frame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text !== undefined);
+  assertEquals(reasoningFrame?.type === 'event' ? (reasoningFrame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text : undefined, 'json thinking');
 });
 
 // ── Inbound: usage cache-token field rewrite ──

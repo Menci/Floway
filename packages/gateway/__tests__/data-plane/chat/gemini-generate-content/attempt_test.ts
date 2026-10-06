@@ -36,15 +36,16 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_1', type: 'message', role: 'assistant', content: [],
       model: 'test-model', stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 4, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
@@ -54,8 +55,7 @@ const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStream
     output: [{
       type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'hi from responses', annotations: [] }],
-    }],
-    output_text: 'hi from responses', error: null, incomplete_details: null,
+    }], error: null, incomplete_details: null,
   };
   return { type: 'response.completed', sequence_number: 0, response };
 };
@@ -63,11 +63,11 @@ const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStream
 const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
   {
     id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
   },
 ];
 

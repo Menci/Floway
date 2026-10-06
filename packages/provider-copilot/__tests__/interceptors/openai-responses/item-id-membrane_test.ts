@@ -4,7 +4,7 @@ import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/interceptor
 import { withCopilotOpenAIResponsesItemIdMembrane } from '../../../src/interceptors/openai-responses/item-id-membrane.ts';
 import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -177,7 +177,7 @@ test.each([
     recipient: 'b',
     content: [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
   }],
-  ['compaction', { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compaction state' }],
+  ...(['compaction', 'compaction_summary', 'context_compaction'] as const).map(type => [type, { type, id: 'cmp_raw', encrypted_content: 'compaction state' }] as const),
 ] as const)('normalizes carrier state on generic fast-path %s added frames', async (_type, fixture) => {
   const { result } = await runStream(openaiResponsesResultToEvents(response([fixture as OpenAIResponsesOutputItemEx])));
   const frames = await collect(result);
@@ -206,8 +206,11 @@ test.each([
     ]);
     return;
   }
-  if (added.type === 'compaction' && done.type === 'compaction' && terminal.type === 'compaction') {
-    expect([added, done, terminal].map(item => unwrapCopilotItemId(item.encrypted_content))).toEqual([
+  if (isOpenAIResponsesCompactionItem(added) && isOpenAIResponsesCompactionItem(done) && isOpenAIResponsesCompactionItem(terminal)) {
+    expect([added, done, terminal].map(item => {
+      if (typeof item.encrypted_content !== 'string') throw new Error('expected compaction ciphertext');
+      return unwrapCopilotItemId(item.encrypted_content);
+    })).toEqual([
       expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
       expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
       expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
@@ -450,10 +453,10 @@ test('rejects conflicting ids carried by one input item', async () => {
   })).rejects.toThrow(/conflicting upstream ids/);
 });
 
-test('normalizes the generated compaction item without touching retained compact messages', async () => {
+test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('normalizes generated %s without touching retained compact messages', async type => {
   const compactResult = response([
     { type: 'message', id: 'msg_retained', status: 'completed', role: 'assistant', content: [] },
-    { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
+    { type, id: 'cmp_raw', encrypted_content: 'compact state' },
   ]);
   const result = await withCopilotOpenAIResponsesItemIdMembrane(invocation(), {}, () => Promise.resolve({
     action: 'compact',
@@ -463,10 +466,11 @@ test('normalizes the generated compaction item without touching retained compact
   }));
   if (result.action !== 'compact' || !result.ok) throw new Error('expected compact/ok result');
 
-  expect(result.result.output[0].id).toBe('msg_retained');
+  expect('id' in result.result.output[0] ? result.result.output[0].id : undefined).toBe('msg_retained');
   const compaction = result.result.output[1];
+  if (!isOpenAIResponsesCompactionItem(compaction) || typeof compaction.encrypted_content !== 'string') throw new Error('expected compaction ciphertext');
+  expect(compaction.type).toBe(type);
   expect(compaction.id).toMatch(/^cmp_[0-9a-f]{32}$/);
-  if (compaction.type !== 'compaction') throw new Error('expected compaction');
   expect(unwrapCopilotItemId(compaction.encrypted_content)).toMatchObject({
     kind: 'owned',
     value: 'compact state',

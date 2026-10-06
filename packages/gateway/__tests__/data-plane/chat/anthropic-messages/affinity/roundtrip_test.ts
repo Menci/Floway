@@ -4,7 +4,7 @@ import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-pla
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import { reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -35,7 +35,8 @@ const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEve
 const assistantContent = async (
   source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
 ): Promise<AnthropicMessagesAssistantContentBlock[]> => {
-  const events = async function* () {
+  const events = async function* (): AsyncGenerator<AnthropicMessagesStreamEventEx> {
+    yield { type: 'message_start', message: { id: 'msg_roundtrip', type: 'message', role: 'assistant', model: 'model', content: [], stop_reason: null, stop_details: null, stop_sequence: null, container: null, diagnostics: null, usage: createAnthropicMessagesUsage(0, 0) } };
     for await (const frame of source) if (frame.type === 'event') yield frame.event;
   };
   return (await reassembleAnthropicMessagesEvents(events())).content;
@@ -45,13 +46,13 @@ test('carriers a real codec emits on both Anthropic Messages slots decode on the
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames([
-    eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+    eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'upstream-signature' } }),
     eventFrame({ type: 'content_block_stop', index: 0 }),
     eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'upstream-redacted' } }),
     eventFrame({ type: 'content_block_stop', index: 1 }),
-    eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
     eventFrame({ type: 'message_stop' }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
@@ -76,7 +77,7 @@ test('a synthetic carrier issued for a turn without thinking decodes on the next
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames([
-    eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+    eventFrame({ type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } }),
     eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } }),
     eventFrame({ type: 'content_block_stop', index: 0 }),
     eventFrame({ type: 'message_stop' }),
@@ -92,6 +93,6 @@ test('a synthetic carrier issued for a turn without thinking decodes on the next
   const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(false);
-  expect(projectionA.materialize().messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
-  expect(projectionB.materialize().messages[0].content).toEqual([{ type: 'text', text: 'answer' }]);
+  expect(projectionA.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
+  expect(projectionB.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
 });

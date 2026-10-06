@@ -111,7 +111,6 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx =>
     status: 'completed',
     content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
-  output_text: 'hi',
   error: null,
   incomplete_details: null,
 });
@@ -250,7 +249,6 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
         ...makeOpenAIResponsesResult('resp_first'),
         status: 'in_progress' as const,
         output: [],
-        output_text: '',
       };
       return {
         action: 'generate',
@@ -767,9 +765,9 @@ const translatedCustomCandidate = (
       const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({ id: 'chat_exec', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices });
       return {
         ok: true, modelKey: 'test-model-key', events: (async function* () {
-          yield eventFrame(chunk([{ index: 0, delta: { role: 'assistant' }, finish_reason: null }]));
-          yield eventFrame(chunk([{ index: 0, delta: callExec ? { tool_calls: [{ index: 0, id: 'call_exec', type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }] } : { content: 'done' }, finish_reason: null }]));
-          yield eventFrame(chunk([{ index: 0, delta: {}, finish_reason: callExec ? 'tool_calls' : 'stop' }]));
+          yield eventFrame(chunk([{  index: 0, delta: { role: 'assistant' }, finish_reason: null }]));
+          yield eventFrame(chunk([{  index: 0, delta: callExec ? { tool_calls: [{ index: 0, id: 'call_exec', type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }] } : { content: 'done' }, finish_reason: null }]));
+          yield eventFrame(chunk([{  index: 0, delta: {}, finish_reason: callExec ? 'tool_calls' : 'stop' }]));
           yield doneFrame();
         })(),
       };
@@ -778,12 +776,12 @@ const translatedCustomCandidate = (
       observe(body as unknown as Record<string, unknown>);
       return {
         ok: true, modelKey: 'test-model-key', events: (async function* () {
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_start', message: { id: 'msg_exec', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'content_block_start', index: 0, content_block: callExec ? { type: 'tool_use', id: 'call_exec', name: 'exec', input: {} } : { type: 'text', text: '' } });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'content_block_delta', index: 0, delta: callExec ? { type: 'input_json_delta', partial_json: '{"input":"patch"}' } : { type: 'text_delta', text: 'done' } });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'content_block_stop', index: 0 });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_delta', delta: { stop_reason: callExec ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } });
-          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_exec', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_start', index: 0, content_block: callExec ? { type: 'tool_use', id: 'call_exec', name: 'exec', input: {} } : { citations: null, type: 'text', text: '' } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 0, delta: callExec ? { type: 'input_json_delta', partial_json: '{"input":"patch"}' } : { type: 'text_delta', text: 'done' } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: callExec ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
         })(),
       };
     },
@@ -824,7 +822,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
     assertEquals(second.status, 200);
     const completed = await second.json() as OpenAIResponsesResultEx;
     assertEquals(completed.status, 'completed');
-    assertEquals(completed.output_text, 'done');
+    assertEquals(Object.hasOwn(completed, 'output_text'), false);
     assertEquals(bodies.length, 2);
     if (target === 'openaiChatCompletions') {
       assertEquals(bodies[1]!.messages, [
@@ -842,7 +840,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         {
           role: 'user',
           content: [{
-            type: 'tool_result', tool_use_id: call.call_id,
+            type: 'tool_result', tool_use_id: call.call_id, is_error: undefined,
             content: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }],
             cache_control: { type: 'ephemeral' },
           }],

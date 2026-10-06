@@ -16,6 +16,10 @@ These revisions identify Git snapshots or the discovery document's own revision,
 
 SDK request parameters sent as HTTP headers are excluded from body declarations. Anthropic's `betas`, `user_profile_id`, and `workspace_id` belong to that category. OpenAI's derived `Response.output_text` helper is also excluded from the standard response declaration.
 
-Standard declarations follow either the pinned SDK (including beta) or OpenResponses. Provider additions use Ex views; Canonical request types express normalized discriminators and input arrays.
+For Responses, a field declared by either the pinned official SDK (including beta) or OpenResponses is standard. Multi-agent items are official beta contracts. `compaction`, `compaction_summary`, and `context_compaction` share recognition rules; additional item properties use `Ex` at their consumers. `generate` is a standard WebSocket `response.create` field and is outside HTTP create. Reasoning input permits an omitted or null ID, while output requires a string ID. `Canonical` request types guarantee explicit message discriminators and array input.
+
+Provider additions and broader wire views use `Ex`. Chat assistant and tool-call extensions remain separate from standard message types. Tool-call `provider_specific_fields` follow LiteLLM's key-wise merge; Google's complete thought signature follows the signature proxy's first-value retention. Unknown tool fields retain received values without assuming text-delta semantics. Messages caller metadata beyond `user_id` uses a metadata extension view when translated into a string metadata map.
+
+Messages collectors follow the pinned SDK's cumulative usage counters, citation events, complete signature replacement, and compaction final-value assignment, including null.
 
 References for individual extension fields remain beside their declarations. The copied SDK licenses are retained in [anthropic-sdk.txt](licenses/anthropic-sdk.txt) and [openai-node.txt](licenses/openai-node.txt).

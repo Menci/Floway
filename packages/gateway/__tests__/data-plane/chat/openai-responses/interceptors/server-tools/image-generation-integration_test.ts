@@ -95,8 +95,8 @@ const shim = withOpenAIResponsesServerToolShim([imageGenerationServerTool]);
 
 const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', pricing: null };
 
-const emptyResult = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
-  id: 'upstream', object: 'response', model: 'orchestrator', output: [], output_text: '', status, error: null, incomplete_details: null,
+const emptyResult = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
+  id: 'upstream', object: 'response', model: 'orchestrator', output: [], status, error: null, incomplete_details: null,
 });
 
 const jsonResponse = (b64: string): Response =>

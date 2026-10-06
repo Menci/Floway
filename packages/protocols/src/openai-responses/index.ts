@@ -92,9 +92,7 @@ export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, '
   background?: boolean | null;
   // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L44064-L44080
   top_logprobs?: number | null;
-  // OpenAI Chat Completions sampling penalties. OpenAI's OpenAI Responses request schema
-  // does not carry them, but the OpenResponses request and response schemas
-  // both do, so a client may send them and expects them echoed.
+  // OpenResponses includes these standard request and response sampling controls.
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
   // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L32766-L32771
   presence_penalty?: number | null;
@@ -493,6 +491,8 @@ export interface OpenAIResponsesInputMultiAgentCallOutputItem {
 }
 
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
+// The compaction state also uses Codex's alias and context-compaction tag.
+// https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1252
 export interface OpenAIResponsesCompactionItem {
   type: 'compaction' | 'compaction_summary' | 'context_compaction';
   id?: string | null;
@@ -506,7 +506,7 @@ export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompacti
 }
 
 export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
-  item.type === 'compaction' || item.type === 'compaction_summary';
+  item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction';
 
 // Payload-free trailing input item for a RemoteCompactionV2 round trip.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902
@@ -1426,12 +1426,7 @@ export const isOpenAIResponsesTerminalEvent = (event: Pick<OpenAIResponsesStream
 export const openaiResponsesResultFromStreamEvent = (event: OpenAIResponsesStreamEventEx): OpenAIResponsesResultEx | null =>
   'response' in event ? event.response : null;
 
-export {
-  type CanonicalOpenAIResponsesCompactPayload,
-  type OpenAIResponsesCompactionResult,
-  type OpenAIResponsesCompactPayload,
-  toCompactPayloadShape,
-} from './compact.ts';
+export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape } from './compact.ts';
 export { openaiResponsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';

@@ -43,17 +43,17 @@ interface OpenAIResponsesBlobCandidateProjection {
 }
 
 const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
+  itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const itemInheritsRequiredTarget = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   !isOpenAIResponsesCompactShimItem(item)
-  && ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
+  && ['compaction', 'compaction_summary', 'context_compaction', 'program', 'program_output'].includes(item.type);
 
-const blobRequiresOriginalTarget = (item: OpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
-  item.type === 'context_compaction'
+const blobRequiresOriginalTarget = (item: CanonicalOpenAIResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
+  item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction'
     ? decoded.kind === 'owned' && decoded.value !== undefined
     : itemInheritsRequiredTarget(item);
 

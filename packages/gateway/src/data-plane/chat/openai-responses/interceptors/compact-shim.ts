@@ -21,8 +21,8 @@
 //     (Codex CLI's RemoteCompactionV2 path: a `generate` call whose input
 //     ends in a control item that semantically requests compaction).
 //
-// Every request first walks `payload.input` for `compaction` and
-// `compaction_summary` items whose `encrypted_content` decodes as our
+// Every request first walks `payload.input` for `compaction`,
+// `compaction_summary`, and `context_compaction` items whose `encrypted_content` decodes as our
 // base64url-JSON marker. Each match is replaced inline with the items it
 // originally encoded. This normalization is independent of both flags because
 // gateway-owned payloads are portable and must never be forwarded as if they
@@ -276,13 +276,6 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
   // envelope's semantics complete regardless of who decodes it.
   const encryptedContent = encodeShimCompactionPayload(`${SUMMARY_PREFIX}\n${summaryText}`);
 
-  // Drop the SDK-only `output_text` alias that some upstreams emit — its
-  // value is the upstream's summary plaintext, which has no place on a
-  // synthesized `response.compaction` envelope whose `output` carries only
-  // an opaque compaction item. Same destructure precedent at
-  // `protocols/openai-responses/from-result.ts:14`.
-  const { output_text: _droppedOutputText, ...upstreamBase } = upstream;
-
   // `status`, `incomplete_details`, and `error` flow through verbatim from
   // the spread: a summarization turn that hit `max_output_tokens` returns
   // `status: 'incomplete'` with `incomplete_details.reason` set, and an
@@ -290,7 +283,7 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
   // Synthesizing `status: 'completed'` would have the envelope confidently
   // lie about the underlying turn's outcome.
   return {
-    ...upstreamBase,
+    ...upstream,
     id: `resp_compact_shim_${crypto.randomUUID()}`,
     object: 'response.compaction',
     output: [
@@ -421,7 +414,7 @@ const decryptNativeCompaction = async (
   const output: OpenAIResponsesOutputItemEx[] = [];
 
   for (const item of nativeResponse.output) {
-    if (!isOpenAIResponsesCompactionItem(item)) {
+    if (!isOpenAIResponsesCompactionItem(item) || typeof item.encrypted_content !== 'string') {
       output.push(item);
       continue;
     }

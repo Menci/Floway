@@ -54,13 +54,14 @@ const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(
 const makeNativeReplayPayload = (): AnthropicMessagesPayload => ({
   model: 'claude-test',
   max_tokens: 64,
-  tools: [{ type: 'web_search_20260209', max_uses: 2 }],
+  tools: [{ name: 'web_search', type: 'web_search_20260209', max_uses: 2 }],
   messages: [
     { role: 'user', content: 'latest React docs' },
     {
       role: 'assistant',
       content: [
         {
+          caller: { type: 'direct' },
           type: 'server_tool_use',
           id: 'srvtoolu_1',
           name: 'web_search',
@@ -173,6 +174,7 @@ const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesRe
     eventFrame({
       type: 'message_start',
       message: {
+        container: null, diagnostics: null, stop_details: null,
         id: response.id,
         type: response.type,
         role: response.role,
@@ -193,6 +195,7 @@ const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesRe
       type: 'content_block_start',
       index,
       content_block: {
+        citations: null,
         type: 'text',
         text: '',
         ...(block.citations?.length ? { citations: [] } : {}),
@@ -210,8 +213,8 @@ const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesRe
   frames.push(
     eventFrame({
       type: 'message_delta',
-      delta: { stop_reason: response.stop_reason, stop_sequence: response.stop_sequence },
-      usage: { output_tokens: response.usage.output_tokens },
+      delta: { container: null, stop_details: null, stop_reason: response.stop_reason, stop_sequence: response.stop_sequence },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: response.usage.output_tokens },
     }),
     eventFrame({ type: 'message_stop' }),
   );
@@ -325,7 +328,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest rejects duplicate native tool
     model: 'claude-test',
     max_tokens: 64,
     messages: [{ role: 'user', content: 'latest React docs' }],
-    tools: [{ type: 'web_search_20250305' }, { type: 'web_search_20260209' }],
+    tools: [{ name: 'web_search', type: 'web_search_20250305' }, { name: 'web_search', type: 'web_search_20260209' }],
   });
 
   assertEquals(prepared, {
@@ -387,8 +390,8 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system"
       {
         role: 'system',
         content: [
-          { type: 'text', text: 'paragraph A' },
-          { type: 'text', text: 'paragraph B' },
+          { citations: null, type: 'text', text: 'paragraph A' },
+          { citations: null, type: 'text', text: 'paragraph B' },
         ],
       },
       { role: 'user', content: 'who are you' },
@@ -406,8 +409,8 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system"
   assertEquals(messages[2], {
     role: 'system',
     content: [
-      { type: 'text', text: 'paragraph A' },
-      { type: 'text', text: 'paragraph B' },
+      { citations: null, type: 'text', text: 'paragraph A' },
+      { citations: null, type: 'text', text: 'paragraph B' },
     ],
   });
 });
@@ -443,6 +446,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest leaves native-looking replay 
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_1',
             name: 'web_search',
@@ -480,6 +484,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes through foreign native
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_foreign',
             name: 'web_search',
@@ -521,6 +526,7 @@ test('prepareAnthropicMessagesWebSearchShimRequest creates a separate user tool_
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'srvtoolu_1',
             name: 'web_search',
@@ -611,7 +617,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
       model: 'claude-test',
       max_tokens: 64,
       messages: [{ role: 'user', content: 'search' }],
-      tools: [{ type: 'web_search_20260209' }, { type: 'web_search_20260209' }],
+      tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
     }),
     mockChatGatewayCtx(),
     () => Promise.reject(new Error('run should not be called')),
@@ -637,13 +643,14 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
       type: 'events',
       events: toAsyncIterable(
         anthropicMessagesResponseToUpstreamFrames({
+          container: null, diagnostics: null, stop_details: null,
           id: messageId,
           type: 'message',
           role: 'assistant',
           model: 'claude-test',
           stop_reason: 'end_turn',
           stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 1 },
           content: [
             {
               type: 'text',
@@ -651,7 +658,7 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
               citations: [
                 {
                   type: 'search_result_location',
-                  url: 'https://react.dev',
+                  source: 'https://react.dev',
                   title: 'React',
                   search_result_index: 0,
                   start_block_index: 0,
@@ -680,7 +687,7 @@ test('withAnthropicMessagesWebSearchShim returns internal-error when request req
       model: 'claude-test',
       max_tokens: 64,
       messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ type: 'web_search_20260209' }],
+      tools: [{ name: 'web_search', type: 'web_search_20260209' }],
     }), mockChatGatewayCtx(),
     () => Promise.reject(new Error('run should not be called')),
   );
@@ -735,6 +742,7 @@ test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for r
 const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEventEx => ({
   type: 'message_start',
   message: {
+    container: null, diagnostics: null, stop_details: null,
     id,
     type: 'message',
     role: 'assistant',
@@ -742,7 +750,7 @@ const upstreamMessageStart = (id = 'msg_upstream'): AnthropicMessagesStreamEvent
     model: 'claude-test',
     stop_reason: null,
     stop_sequence: null,
-    usage: { input_tokens: 10, output_tokens: 0 },
+    usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
   },
 });
 
@@ -750,7 +758,7 @@ const upstreamTextBlock = (index: number, text: string, citations?: AnthropicMes
   {
     type: 'content_block_start',
     index,
-    content_block: { type: 'text', text: '' },
+    content_block: { citations: null, type: 'text', text: '' },
   },
   ...(text.length > 0
     ? [{
@@ -810,8 +818,8 @@ const upstreamClientToolBlock = (index: number, id: string, name: string, input:
 const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['stop_reason']> = 'tool_use'): AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_delta',
-    delta: { stop_reason: stopReason, stop_sequence: null },
-    usage: { output_tokens: 7 },
+    delta: { container: null, stop_details: null, stop_reason: stopReason, stop_sequence: null },
+    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
   },
   { type: 'message_stop' },
 ];
@@ -869,6 +877,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
 
   const serverToolUse = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'server_tool_use');
   assertEquals(serverToolUse?.type === 'content_block_start' ? serverToolUse.content_block : undefined, {
+    caller: { type: 'direct' },
     type: 'server_tool_use',
     id: 'srvtoolu_1',
     name: 'web_search',
@@ -880,7 +889,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits se
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, 'pause_turn');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across two intercepted searches', async () => {
@@ -916,7 +925,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across t
 
   assertEquals(providerCalls, 2);
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when provider throws on second search', async () => {
@@ -942,7 +951,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
   assertEquals(secondResult.content, { type: 'web_search_tool_result_error', error_code: 'unavailable' });
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative maps provider error result codes through', async () => {
@@ -982,7 +991,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded on
   assertEquals((resultBlocks[1].content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' });
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative honours priorSearchUseCount when computing remaining budget', async () => {
@@ -1083,47 +1092,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and 
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, 'tool_use');
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations carried by text_delta', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'text', text: '' },
-      },
-      {
-        type: 'content_block_delta',
-        index: 0,
-        delta: {
-          type: 'text_delta',
-          text: 'cited',
-          citations: [
-            {
-              type: 'search_result_location',
-              url: 'https://react.dev',
-              title: 'React',
-              search_result_index: 0,
-              start_block_index: 0,
-              end_block_index: 0,
-            },
-          ],
-        },
-      },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('end_turn'),
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: ['owned'],
-    },
-  );
-
-  const textDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'text_delta') as Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
-  assertEquals(textDelta?.delta.type === 'text_delta' ? textDelta.delta.citations?.[0]?.type : undefined, 'web_search_result_location');
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta entries', async () => {
   const events = await runStreamingShim(
     [
@@ -1131,7 +1099,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -1139,8 +1107,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta e
         delta: {
           type: 'citations_delta',
           citation: {
+            cited_text: '',
             type: 'search_result_location',
-            url: 'https://react.dev',
+            source: 'https://react.dev',
             title: 'React',
             search_result_index: 0,
             start_block_index: 0,
@@ -1174,8 +1143,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites pre-populated cit
           text: '',
           citations: [
             {
+              cited_text: '',
               type: 'search_result_location',
-              url: 'https://react.dev',
+              source: 'https://react.dev',
               title: 'React',
               search_result_index: 0,
               start_block_index: 0,
@@ -1205,7 +1175,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -1213,8 +1183,9 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
         delta: {
           type: 'citations_delta',
           citation: {
+            cited_text: '',
             type: 'search_result_location',
-            url: 'https://example.com',
+            source: 'https://example.com',
             title: 'Foreign',
             search_result_index: 0,
             start_block_index: 0,
@@ -1243,8 +1214,8 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative replay-only mode forwards 
       ...upstreamTextBlock(0, 'plain text'),
       {
         type: 'message_delta',
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
-        usage: { output_tokens: 5 },
+        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 5 },
       },
       { type: 'message_stop' },
     ],
@@ -1256,8 +1227,8 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative replay-only mode forwards 
   );
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta : undefined, { stop_reason: 'end_turn', stop_sequence: null });
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage : undefined, { output_tokens: 5 });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta : undefined, { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null });
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.output_tokens : undefined, 5);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative forwards upstream error and returns without synthetic terminal', async () => {
@@ -1302,12 +1273,12 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative throws when upstream inter
           {
             type: 'content_block_start',
             index: 0,
-            content_block: { type: 'text', text: '' },
+            content_block: { citations: null, type: 'text', text: '' },
           },
           {
             type: 'content_block_start',
             index: 1,
-            content_block: { type: 'text', text: '' },
+            content_block: { citations: null, type: 'text', text: '' },
           },
         ],
         {

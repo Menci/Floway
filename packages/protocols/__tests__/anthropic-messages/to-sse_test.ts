@@ -14,7 +14,7 @@ test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning 
   );
 });
 
-test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url to SSE source', () => {
+test('anthropicMessagesProtocolFrameToSSEFrame preserves search_result_location source', () => {
   const frame = anthropicMessagesProtocolFrameToSSEFrame(
     eventFrame({
       type: 'content_block_delta',
@@ -22,8 +22,9 @@ test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url t
       delta: {
         type: 'citations_delta',
         citation: {
+          cited_text: '',
           type: 'search_result_location',
-          url: 'https://example.com/protocol',
+          source: 'https://example.com/protocol',
           title: 'Protocol Citation',
           search_result_index: 0,
           start_block_index: 0,
@@ -38,6 +39,7 @@ test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url t
   };
 
   assertEquals(payload.delta.citation, {
+    cited_text: '',
     type: 'search_result_location',
     source: 'https://example.com/protocol',
     title: 'Protocol Citation',

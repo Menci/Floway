@@ -53,8 +53,9 @@ const rewriteOutboundMessage = (message: OpenAIChatCompletionsMessage): OpenAICh
   // `reasoning_opaque` is the OpenAI-canonical signature for cross-turn
   // reasoning replay; DeepSeek doesn't accept it, so it's dropped on the
   // floor when we project assistant messages onto `reasoning_content`.
-  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message;
-  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items);
+  if (message.role !== 'assistant') return message;
+  const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message as OpenAIChatCompletionsAssistantMessageEx;
+  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
   if (text === undefined) return rest as OpenAIChatCompletionsMessage;
   return { ...rest, reasoning_content: text } as OpenAIChatCompletionsMessage;
 };

@@ -13,8 +13,10 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic O
     model: 'gpt-test',
     choices: [
       {
+        logprobs: null,
         index: 0,
         message: {
+          refusal: null,
           role: 'assistant',
           reasoning_text: 'think',
           content: 'Hello',
@@ -30,7 +32,7 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic O
     object: 'chat.completion.chunk',
     created: expected.created,
     model: expected.model,
-    choices: [{ index: 0, delta, finish_reason }],
+    choices: [{  index: 0, delta, finish_reason }],
   });
 
   async function* events() {

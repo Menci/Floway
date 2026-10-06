@@ -3,10 +3,6 @@ import type * as Native from './sdk-stable.ts';
 
 export type AnthropicMessagesUsageIteration = Beta.BetaIterationsUsage[number];
 
-// The beta usage union includes model attempts, advisor attempts, and
-// compaction entries, and remains additively extensible. Floway only needs an
-// isolated opaque snapshot, not a closed projection of those variants.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
 export const cloneAnthropicMessagesUsageIterations = (iterations: AnthropicMessagesUsageIteration[] | null): AnthropicMessagesUsageIteration[] | null =>
   iterations === null ? null : structuredClone(iterations);
 
@@ -37,15 +33,38 @@ export interface AnthropicMessagesUsageDeltaEx extends AnthropicMessagesUsageDel
   inference_geo?: AnthropicMessagesUsage['inference_geo'];
 }
 
-// The whole-message totals, carried by the non-streaming response body and by
-// the `message_start` snapshot that reuses it — the two places upstream
-// declares `input_tokens` non-null. Upstream's own delta carrier declares a
-// narrower field set than the type above, which stays widened because real
-// upstreams do repeat the tier and per-TTL fields on `message_delta`.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/resources/messages/messages.ts#L2362-L2412
-export interface AnthropicMessagesUsage extends Omit<AnthropicMessagesUsageDelta, 'input_tokens'> {
-  input_tokens: number;
-}
+export const createAnthropicMessagesUsage = (inputTokens: number, outputTokens: number): AnthropicMessagesUsage => ({
+  input_tokens: inputTokens,
+  output_tokens: outputTokens,
+  cache_creation: null,
+  cache_creation_input_tokens: null,
+  cache_read_input_tokens: null,
+  inference_geo: null,
+  output_tokens_details: null,
+  server_tool_use: null,
+  service_tier: null,
+});
+
+export const usageDeltaKeys = ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens_details', 'server_tool_use', 'iterations', 'fallback_credit'] as const;
+
+export const toAnthropicMessagesUsageDelta = (usage: AnthropicMessagesUsage | AnthropicMessagesUsageDelta): AnthropicMessagesUsageDelta => ({
+  input_tokens: usage.input_tokens,
+  output_tokens: usage.output_tokens,
+  cache_creation_input_tokens: usage.cache_creation_input_tokens,
+  cache_read_input_tokens: usage.cache_read_input_tokens,
+  output_tokens_details: usage.output_tokens_details,
+  server_tool_use: usage.server_tool_use,
+  ...(usage.iterations === undefined ? {} : { iterations: usage.iterations }),
+  ...(usage.fallback_credit === undefined ? {} : { fallback_credit: usage.fallback_credit }),
+});
+
+export const toAnthropicMessagesUsageDeltaEx = (usage: AnthropicMessagesUsage): AnthropicMessagesUsageDeltaEx => ({
+  ...toAnthropicMessagesUsageDelta(usage),
+  ...(usage.cache_creation === null ? {} : { cache_creation: usage.cache_creation }),
+  ...(usage.service_tier === null ? {} : { service_tier: usage.service_tier }),
+  ...(usage.speed == null ? {} : { speed: usage.speed }),
+  ...(usage.inference_geo === null ? {} : { inference_geo: usage.inference_geo }),
+});
 
 export interface AnthropicMessagesCacheCreationUsage {
   cache_creation_input_tokens?: number;
@@ -86,16 +105,17 @@ export const mergeAnthropicMessagesUsageSnapshot = (
   current: AnthropicMessagesUsageSnapshot,
   delta: Partial<AnthropicMessagesUsageDeltaEx> & { output_tokens: number },
 ): AnthropicMessagesUsageSnapshot => {
-  const update = anthropicMessagesUsageSnapshot(delta);
   return {
     ...current,
-    ...update,
-    // The served tier is one fact spelled by two fields, so an update that
-    // states either one restates both and neither may survive from an earlier
-    // event on its own.
-    ...(update.speed === undefined && update.service_tier === undefined
-      ? {}
-      : { speed: update.speed, service_tier: update.service_tier }),
+    ...(delta.cache_creation === undefined ? {} : { cache_creation: delta.cache_creation ?? undefined }),
+    ...(present(delta.service_tier) ? { service_tier: delta.service_tier } : {}),
+    ...(present(delta.speed) ? { speed: delta.speed } : {}),
+    output_tokens: delta.output_tokens,
+    ...(present(delta.input_tokens) ? { input_tokens: delta.input_tokens } : {}),
+    ...(present(delta.cache_read_input_tokens) ? { cache_read_input_tokens: delta.cache_read_input_tokens } : {}),
+    ...(present(delta.cache_creation_input_tokens) ? { cache_creation_input_tokens: delta.cache_creation_input_tokens } : {}),
+    ...(present(delta.output_tokens_details) ? { output_tokens_details: { ...delta.output_tokens_details } } : {}),
+    ...(present(delta.iterations) ? { iterations: cloneAnthropicMessagesUsageIterations(delta.iterations) } : {}),
   };
 };
 

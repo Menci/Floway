@@ -9,8 +9,8 @@ export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses strea
 // already carry the completed client resource collects into a completed
 // resource. The narrow signature comes first so overload resolution picks it
 // exactly when the argument is narrow — `ClientOpenAIResponsesStreamEvent` is
-// assignable to `OpenAIResponsesStreamEvent`, so the wide signature would otherwise
-// swallow both calls and widen the completed result back to `OpenAIResponsesResult`.
+// assignable to `OpenAIResponsesStreamEventEx`, so the wide signature would otherwise
+// swallow both calls and widen the completed result back to `OpenAIResponsesResultEx`.
 export function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): Promise<ClientResponseResource>;
 export function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesResultEx>;
 export async function collectOpenAIResponsesProtocolEventsToResult(frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesResultEx> {

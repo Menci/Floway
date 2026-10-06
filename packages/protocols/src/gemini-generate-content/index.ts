@@ -1,3 +1,6 @@
+// Developer REST wire types; SDK-only and Vertex-only configuration stay outside this contract.
+// https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+// https://github.com/googleapis/js-genai/blob/ca5690c0999f499f69bb69ea6187ef29d26ddfef/src/types.ts
 
 export interface GeminiGenerateContentPayload {
   contents: GeminiGenerateContentContent[];

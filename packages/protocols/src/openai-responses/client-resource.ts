@@ -2,7 +2,7 @@ import type { OpenAIResponsesCompactionResultEx } from './compact.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from './index.ts';
 
 // The shape a client-facing OpenAI Responses body must have, derived from
-// `OpenAIResponsesResult` rather than restated beside it. `OpenAIResponsesResult` models
+// `OpenAIResponsesResultEx` rather than restated beside it. `OpenAIResponsesResultEx` models
 // four things at once — what an arbitrary upstream sent, what a translator
 // assembles mid-stream, what reaches a client, and (under
 // `object: 'response.compaction'`) a different resource entirely — so its
@@ -10,14 +10,14 @@ import type { OpenAIResponsesFunctionTool, OpenAIResponsesResultEx, OpenAIRespon
 // `ResponseResource.required`, and only at the last stage before
 // serialization.
 //
-// Deriving means the two cannot drift: a field added to `OpenAIResponsesResult`
+// Deriving means the two cannot drift: a field added to `OpenAIResponsesResultEx`
 // widens these types automatically. The only hand-maintained artefacts are the
 // two key unions below, which transcribe the schema and change when it does.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
 //
 // `ResponseResource.required` lists 31 keys. Seven of them (`id`, `object`,
 // `model`, `output`, `status`, `error`, `incomplete_details`) are already
-// non-optional on `OpenAIResponsesResult`. The remaining 24 are split below by the
+// non-optional on `OpenAIResponsesResultEx`. The remaining 24 are split below by the
 // single bit that decides how an absent value may be spelled on the wire:
 // whether the slot carries a `null` alternative.
 
@@ -113,7 +113,7 @@ export type ClientOpenAIResponsesCompaction =
 
 // Every resource-bearing member of the stream union, re-declared with the
 // completed resource. Distributive so each member keeps its `type` literal.
-// A `response.*` event added to `OpenAIResponsesStreamEvent` is narrowed
+// A `response.*` event added to `OpenAIResponsesStreamEventEx` is narrowed
 // automatically.
 type WithClientResource<Event> = Event extends { response: OpenAIResponsesResultEx }
   ? Omit<Event, 'response'> & { response: ClientResponseResource }

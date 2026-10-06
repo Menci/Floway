@@ -2,25 +2,11 @@ import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean =>
-  part.text !== undefined
-  && part.thought !== true
-  && part.thoughtSignature === undefined
-  && part.inlineData === undefined
-  && part.functionCall === undefined
-  && part.functionResponse === undefined
-  && part.fileData === undefined
-  && part.executableCode === undefined
-  && part.codeExecutionResult === undefined;
-
+const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean => part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
 const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): void => {
   const previous = parts.at(-1);
-  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) {
-    previous.text = `${previous.text}${part.text}`;
-    return;
-  }
-
-  parts.push({ ...part });
+  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) previous.text = `${previous.text}${part.text}`;
+  else parts.push({ ...part });
 };
 interface CandidateAccumulator {
   candidate: GeminiGenerateContentCandidate;
@@ -28,72 +14,32 @@ interface CandidateAccumulator {
   extras: Record<string, unknown>;
 }
 
-const mergeCandidate = (candidates: Map<number, GeminiGenerateContentCandidateWithExtras>, incoming: GeminiGenerateContentCandidate): void => {
-  const existing = candidates.get(incoming.index);
-  if (!existing) {
-    const candidate: GeminiGenerateContentCandidateWithExtras = {
-      index: incoming.index,
-      content: {
-        ...(incoming.content.role !== undefined ? { role: incoming.content.role } : {}),
-        parts: [],
-      },
-      ...(incoming.finishReason !== undefined ? { finishReason: incoming.finishReason } : {}),
-      ...(incoming.finishMessage !== undefined ? { finishMessage: incoming.finishMessage } : {}),
-      ...(incoming.safetyRatings !== undefined ? { safetyRatings: incoming.safetyRatings.map(rating => ({ ...rating })) } : {}),
-    };
-    for (const part of incoming.content.parts) {
-      appendPart(candidate.content.parts, part);
-    }
-    const extras: Record<string, unknown> = {};
-    captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
-    if (Object.keys(extras).length > 0) candidate.__extras = extras;
-    candidates.set(incoming.index, candidate);
-    return;
-  }
-
-  if (incoming.content.role !== undefined) {
-    existing.content.role = incoming.content.role;
-  }
-  for (const part of incoming.content.parts) {
-    appendPart(existing.content.parts, part);
-  }
-  if (incoming.finishReason !== undefined) {
-    existing.finishReason = incoming.finishReason;
-  }
-  if (incoming.finishMessage !== undefined) existing.finishMessage = incoming.finishMessage;
-  if (incoming.safetyRatings !== undefined) existing.safetyRatings = incoming.safetyRatings.map(rating => ({ ...rating }));
-  const extras = existing.__extras ?? {};
-  captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
-  if (Object.keys(extras).length > 0) existing.__extras = extras;
-};
-
-const finalizeCandidate = (candidate: GeminiGenerateContentCandidateWithExtras): GeminiGenerateContentCandidate => {
-  const { __extras: extras, ...rest } = candidate;
-  return extras ? ({ ...rest, ...extras } as GeminiGenerateContentCandidate) : (rest as GeminiGenerateContentCandidate);
-};
-
 export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
   const candidates = new Map<number, CandidateAccumulator>();
   const result: GeminiGenerateContentResult = {};
   const resultExtras: Record<string, unknown> = {};
-
   for await (const event of events) {
-    if ('error' in event) {
-      throw new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
+    if ('error' in event) throw new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
+    for (const incoming of event.candidates ?? []) {
+      // Protobuf omits an index whose value is zero; finish-only candidates may have no Content.
+      // https://github.com/googleapis/googleapis/blob/e09e85d32ca349e1b205514a412817a7692595c6/google/ai/generativelanguage/v1beta/generative_service.proto
+      const index = incoming.index ?? 0;
+      const state = candidates.get(index) ?? { candidate: { index }, extras: {} };
+      candidates.set(index, state);
+      if (incoming.content !== undefined) {
+        const content = state.content ??= { parts: [] };
+        if (incoming.content.role !== undefined) content.role = incoming.content.role;
+        for (const part of incoming.content.parts ?? []) appendPart(content.parts, part);
+        state.candidate.content = content;
+      }
+      const { content: _content, ...fields } = incoming;
+      Object.assign(state.candidate, fields);
+      captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, state.extras);
     }
-
-    for (const candidate of event.candidates ?? []) {
-      mergeCandidate(candidates, candidate);
-    }
-
-    if (event.modelVersion !== undefined) result.modelVersion = event.modelVersion;
-    if (event.responseId !== undefined) result.responseId = event.responseId;
-    if (event.usageMetadata !== undefined) result.usageMetadata = event.usageMetadata;
+    const { candidates: _candidates, ...fields } = event;
+    Object.assign(result, fields);
     captureExtras(event as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, resultExtras);
   }
-
-  const mergedCandidates = [...candidates.values()].sort((a, b) => a.index - b.index).map(finalizeCandidate);
-  if (mergedCandidates.length > 0) result.candidates = mergedCandidates;
-
-  return Object.keys(resultExtras).length > 0 ? ({ ...result, ...resultExtras } as GeminiGenerateContentResult) : result;
+  if (candidates.size > 0) result.candidates = [...candidates.entries()].toSorted(([a], [b]) => a - b).map(([, state]) => Object.assign(state.candidate, state.extras));
+  return Object.assign(result, resultExtras);
 }

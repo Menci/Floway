@@ -1,7 +1,7 @@
 import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import type { CopilotOpenAIResponsesBoundaryInterceptor } from './types.ts';
 import { encodeHex, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI's published examples establish these item-specific prefixes. Keeping
 // the Copilot output inventory closed prevents a new upstream item kind from
@@ -30,7 +30,8 @@ const COPILOT_OUTPUT_ITEM_POLICIES = {
 type CopilotOutputItemType = keyof typeof COPILOT_OUTPUT_ITEM_POLICIES;
 type CarrierItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
 
-const copilotOutputItemType = (item: OpenAIResponsesOutputItem): CopilotOutputItemType => {
+const copilotOutputItemType = (item: OpenAIResponsesOutputItemEx): CopilotOutputItemType => {
+  if (isOpenAIResponsesCompactionItem(item)) return 'compaction';
   if (Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return item.type as CopilotOutputItemType;
   throw new TypeError(`Unsupported Copilot OpenAI Responses output item type '${item.type}'`);
 };
@@ -45,8 +46,9 @@ const mapCarrierValues = <TItem extends CarrierItem>(
   item: TItem,
   transform: (value: string) => string,
 ): TItem => {
-  if (!Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return item;
-  const policy = COPILOT_OUTPUT_ITEM_POLICIES[item.type as CopilotOutputItemType];
+  const type = isOpenAIResponsesCompactionItem(item) ? 'compaction' : item.type;
+  if (!Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, type)) return item;
+  const policy = COPILOT_OUTPUT_ITEM_POLICIES[type as CopilotOutputItemType];
   switch (policy.carrier) {
   case 'encrypted_content': {
     const record = item as CarrierItem & { encrypted_content?: unknown };
@@ -263,7 +265,7 @@ const normalizeFrames = async function* (
 const normalizeCompactionResult = (response: OpenAIResponsesCompactionResultEx): OpenAIResponsesCompactionResultEx => ({
   ...response,
   output: response.output.map(item => {
-    if (item.type !== 'compaction') return item;
+    if (!isOpenAIResponsesCompactionItem(item)) return item;
     return normalizeObservedItem(item, createPublicItemId('compaction'));
   }),
 });

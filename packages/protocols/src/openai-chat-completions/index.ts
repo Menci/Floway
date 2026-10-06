@@ -107,7 +107,7 @@ export interface OpenAIChatCompletionsAssistantExtensions {
   reasoning_opaque?: string | null;
   // DeepSeek and compatible providers: https://api-docs.deepseek.com/guides/reasoning_model
   reasoning_content?: string | null;
-  /** Vendor-dialect alias of `reasoning_text`; same quantity, `reasoning_text` wins when both are present. */
+  // OpenRouter: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details
   reasoning?: string | null;
   reasoning_details?: unknown;
   // LiteLLM: https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/types/llms/openai.py#L646-L651
@@ -142,7 +142,6 @@ export interface OpenAIChatCompletionsResult {
   metadata?: Official.ChatCompletion['metadata'];
   moderation?: Official.ChatCompletion['moderation'];
   choices: OpenAIChatCompletionsChoiceNonStreaming[];
-  // https://platform.openai.com/docs/api-reference/chat/object
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   system_fingerprint?: string | null;
   usage?: OpenAIChatCompletionsUsage;
@@ -166,9 +165,7 @@ export interface OpenAIChatCompletionsStreamEvent {
 }
 
 export * from './errors.ts';
-
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
-
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { reassembleOpenAIChatCompletionsEvents } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

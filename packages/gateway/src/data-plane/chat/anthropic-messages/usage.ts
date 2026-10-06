@@ -22,11 +22,9 @@ export const billableUsageFromAnthropicMessagesUsage = (usage: AnthropicMessages
 export const createAnthropicMessagesBillableUsageReader = (): (event: AnthropicMessagesStreamEventEx) => BillableUsage | null => {
   let merged = anthropicMessagesUsageSnapshot();
   return event => {
-    const usage = event.type === 'message_start' ? event.message.usage
-      : event.type === 'message_delta' ? event.usage
-        : undefined;
-    if (usage === undefined) return null;
-    merged = mergeAnthropicMessagesUsageSnapshot(merged, usage);
+    if (event.type === 'message_start') merged = anthropicMessagesUsageSnapshot(event.message.usage);
+    else if (event.type === 'message_delta' && event.usage !== undefined) merged = mergeAnthropicMessagesUsageSnapshot(merged, event.usage);
+    else return null;
     return billableUsageFromAnthropicMessagesUsage(merged);
   };
 };

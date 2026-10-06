@@ -1167,6 +1167,7 @@ export const imageTerminal = (
     const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
+      result: null,
       revised_prompt: prompt,
       error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
     };

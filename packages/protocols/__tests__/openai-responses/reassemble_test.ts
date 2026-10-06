@@ -28,7 +28,6 @@ test('reassembleOpenAIResponsesEvents extracts response from completed event', a
     object: 'response',
     model: 'gpt-test',
     status: 'completed',
-    output_text: 'Hello',
     output: [
       {
         type: 'message',
@@ -71,7 +70,7 @@ test('reassembleOpenAIResponsesEvents extracts response from completed event', a
 
   assertEquals(result.id, 'resp_1');
   assertEquals(result.status, 'completed');
-  assertEquals(result.output_text, 'Hello');
+  assertEquals(Object.hasOwn(result, 'output_text'), false);
 });
 
 test('reassembleOpenAIResponsesEvents handles incomplete event', async () => {
@@ -80,7 +79,6 @@ test('reassembleOpenAIResponsesEvents handles incomplete event', async () => {
     object: 'response',
     model: 'gpt-test',
     status: 'incomplete',
-    output_text: '',
     output: [],
     error: null,
     incomplete_details: { reason: 'max_tokens' },

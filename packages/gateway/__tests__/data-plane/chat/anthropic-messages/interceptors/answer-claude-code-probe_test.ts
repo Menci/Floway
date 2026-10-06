@@ -23,8 +23,8 @@ const PROBE_USER_AGENT = 'claude-cli/2.1.226 (external, cli)';
 const probePayload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
   model: 'test-model',
   max_tokens: 1,
-  system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-  messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+  system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+  messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
   metadata: { user_id: 'user_0_account__session_0' },
   ...overrides,
 });
@@ -82,7 +82,7 @@ test('reports no performance context so the turn contributes no latency sample',
 test('answers every fixed probe prompt, in block and bare-string form', async () => {
   for (const prompt of ['Hi', 'test']) {
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
-    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
+    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
   }
 });
 
@@ -132,7 +132,7 @@ test('forwards a multi-turn conversation that happens to end on a probe prompt',
 
 test('forwards a sole turn that carries more than one block', async () => {
   await assertForwarded(invocation(probePayload({
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }, { type: 'text', text: 'and explain this file' }] }],
+    messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi' }, { citations: null, type: 'text', text: 'and explain this file' }] }],
   })), 'two text blocks');
 });
 

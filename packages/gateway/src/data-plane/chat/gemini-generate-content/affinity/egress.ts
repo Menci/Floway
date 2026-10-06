@@ -126,7 +126,20 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
   }
 };
 
-const cloneGeminiGenerateContentEvent = (event: GeminiGenerateContentResult): GeminiGenerateContentResult => structuredClone(event);
+const cloneGeminiGenerateContentEvent = (event: WireResult): GeminiGenerateContentResult => {
+  const { candidates, ...rest } = event;
+  return {
+    ...rest,
+    ...(candidates === undefined ? {} : {
+      candidates: candidates.map(candidate => ({
+        ...candidate, index: candidate.index ?? 0,
+        ...(candidate.content === undefined ? {} : { content: { ...candidate.content, ...(candidate.content.parts === undefined ? {} : { parts: candidate.content.parts.map(part => ({ ...part })) }) } }),
+      })),
+    }),
+  };
+};
+
+const hasContentParts = (candidate: WireCandidate & { index: number }): candidate is GeminiGenerateContentCandidateWithParts => candidate.content?.parts !== undefined;
 
 const wrapGeminiGenerateContentEventAffinity = async (
   current: GeminiGenerateContentResult,
@@ -141,7 +154,8 @@ const wrapGeminiGenerateContentEventAffinity = async (
   const removedCandidates = new WeakSet<WireCandidate>();
 
   for (const candidate of current.candidates ?? []) {
-    const nextCandidate = next?.candidates?.find(nextCandidate => nextCandidate.index === candidate.index);
+    if (!hasContentParts(candidate)) continue;
+    const nextCandidate = next?.candidates?.find((nextCandidate): nextCandidate is GeminiGenerateContentCandidateWithParts => nextCandidate.index === candidate.index && hasContentParts(nextCandidate));
     normalizeElementSignatures(candidate);
     if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
     relocateSignatureOnlyForward(candidate, nextCandidate, removedCandidates);

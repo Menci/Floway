@@ -64,6 +64,7 @@ test('compresses a top-level image block to WebP', async () => {
   const block = (ctx.payload.messages[0].content as Array<{ type: string; source?: { media_type: string; data: string } }>)[1];
   assertEquals(block.source?.media_type, 'image/webp');
   assertEquals(block.source?.data, 'AQID');
+  if (imageBlock.source.type !== 'base64') throw new Error('Expected base64 image');
   assertEquals(imageBlock.source.media_type, 'image/png');
   assertEquals(imageBlock.source.data, 'AAAA');
   assert(ctx.payload !== payload);
@@ -118,6 +119,7 @@ test('compresses an image nested inside tool_result content', async () => {
   if (rewrittenToolResult?.type !== 'tool_result' || !Array.isArray(rewrittenToolResult.content)) throw new Error('expected rewritten tool result');
   const rewrittenImage = rewrittenToolResult.content[1];
   if (rewrittenImage?.type !== 'image') throw new Error('expected rewritten nested image');
+  if (rewrittenImage.source.type !== 'base64' || nestedImage.source.type !== 'base64') throw new Error('Expected base64 images');
   assertEquals(rewrittenImage.source.media_type, 'image/webp');
   assertEquals(rewrittenImage.source.data, 'AQID');
   assertEquals(nestedImage.source.media_type, 'image/png');

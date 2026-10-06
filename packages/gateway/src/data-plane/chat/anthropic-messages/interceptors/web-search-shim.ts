@@ -194,6 +194,7 @@ const buildNativeWebSearchErrorResultBlock = (toolUseId: string, errorCode: Anth
 });
 
 const buildNativeWebSearchServerToolUseBlock = (toolUseId: string, query: string): Extract<AnthropicMessagesAssistantContentBlock, { type: 'server_tool_use' }> => ({
+  caller: { type: 'direct' },
   type: 'server_tool_use',
   id: toNativeServerToolUseId(toolUseId),
   name: WEB_SEARCH_TOOL_NAME,
@@ -207,7 +208,7 @@ const buildNativeWebSearchResultBlock = (result: Extract<WebSearchProviderResult
   encrypted_content: encodeWebSearchResultPayload({
     content: result.content,
   }),
-  ...(result.pageAge ? { page_age: result.pageAge } : {}),
+  page_age: result.pageAge ?? null,
 });
 
 // Error-only replay blocks do not carry our encoded payload marker, so the
@@ -261,8 +262,9 @@ const decodeOwnedReplayCitation = (citation: AnthropicMessagesTextCitationParam)
   }
 
   return {
+    cited_text: '',
     type: 'search_result_location',
-    url: citation.url,
+    source: citation.url,
     title: citation.title,
     search_result_index: decoded.search_result_index,
     start_block_index: decoded.start_block_index,
@@ -448,7 +450,7 @@ const validateNativeWebSearchToolDefinitions = (payload: AnthropicMessagesPayloa
     };
   }
 
-  if (nativeTool && (payload.tools ?? []).some(tool => !isNativeWebSearchToolDefinition(tool) && tool.name === WEB_SEARCH_TOOL_NAME)) {
+  if (nativeTool && (payload.tools ?? []).some(tool => !isNativeWebSearchToolDefinition(tool) && 'name' in tool && tool.name === WEB_SEARCH_TOOL_NAME)) {
     return {
       type: 'invalid-request',
       message: `Native web search tool name collides with another client tool: ${WEB_SEARCH_TOOL_NAME}.`,
@@ -477,15 +479,15 @@ const buildAnthropicMessagesWebSearchShimState = (nativeTool: AnthropicMessagesN
   return {
     mode: 'active',
     toolVersion: nativeTool.type,
-    maxUses: nativeTool.max_uses,
-    allowedDomains: normalizeNonEmptyDomainList(nativeTool.allowed_domains),
-    blockedDomains: normalizeNonEmptyDomainList(nativeTool.blocked_domains),
+    maxUses: nativeTool.max_uses ?? undefined,
+    allowedDomains: normalizeNonEmptyDomainList(nativeTool.allowed_domains ?? undefined),
+    blockedDomains: normalizeNonEmptyDomainList(nativeTool.blocked_domains ?? undefined),
     userLocation: nativeTool.user_location
       ? {
-          city: nativeTool.user_location.city,
-          region: nativeTool.user_location.region,
-          country: nativeTool.user_location.country,
-          timezone: nativeTool.user_location.timezone,
+          city: nativeTool.user_location.city ?? undefined,
+          region: nativeTool.user_location.region ?? undefined,
+          country: nativeTool.user_location.country ?? undefined,
+          timezone: nativeTool.user_location.timezone ?? undefined,
         }
       : undefined,
     priorSearchUseCount: replay.priorSearchUseCount,
@@ -537,8 +539,9 @@ const rewriteResponseCitationToNative = (citation: AnthropicMessagesTextCitation
   }
 
   return {
+    cited_text: '',
     type: 'web_search_result_location',
-    url: citation.url,
+    url: citation.source,
     title: citation.title,
     encrypted_index: encodeWebSearchCitationPayload({
       search_result_index: citation.search_result_index,
@@ -604,27 +607,11 @@ const rewriteContentBlockStartCitations = (
 const rewriteContentBlockDeltaCitations = (
   event: Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }>,
   state: AnthropicMessagesWebSearchShimState,
-): Extract<AnthropicMessagesStreamEvent, { type: 'content_block_delta' }> => {
-  if (event.delta.type === 'text_delta' && event.delta.citations?.length) {
-    return {
-      ...event,
-      delta: {
-        ...event.delta,
-        citations: event.delta.citations.map(citation => rewriteResponseCitationToNative(citation, state)),
-      },
-    };
-  }
-
-  if (event.delta.type === 'citations_delta') {
-    return {
-      ...event,
-      delta: {
-        type: 'citations_delta',
-        citation: rewriteResponseCitationToNative(event.delta.citation, state),
-      },
-    };
-  }
-
+): Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> => {
+  if (event.delta.type === 'citations_delta') return {
+    ...event,
+    delta: { type: 'citations_delta', citation: rewriteResponseCitationToNative(event.delta.citation, state) },
+  };
   return event;
 };
 
@@ -815,9 +802,9 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     // (Anthropic's own) would have produced.
     if (event.type === 'message_delta') {
       const interceptedAny = shimState.interceptedSearches > 0;
-      const baseUsage = event.usage ?? { output_tokens: 0 };
+      const baseUsage = event.usage;
       const newUsage = shimState.executedSearchCount > 0
-        ? { ...baseUsage, server_tool_use: { web_search_requests: shimState.executedSearchCount } }
+        ? { ...baseUsage, server_tool_use: { web_search_requests: shimState.executedSearchCount, web_fetch_requests: baseUsage.server_tool_use === null ? 0 : baseUsage.server_tool_use.web_fetch_requests } }
         : baseUsage;
 
       yield eventFrame({

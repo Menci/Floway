@@ -19,15 +19,13 @@ const getTerminalEventName = (response: OpenAIResponsesResultEx): 'response.fail
   throw new TypeError(`OpenAI Responses result states no terminal status (got ${JSON.stringify(response.status)})`);
 };
 
-const openaiResponsesStartSnapshot = (response: OpenAIResponsesResult): OpenAIResponsesResult => {
-  const { error: _error, incomplete_details: _incompleteDetails, output: _output, output_text: _outputText, ...snapshot } = response;
+const openaiResponsesStartSnapshot = (response: OpenAIResponsesResultEx): OpenAIResponsesResultEx => {
+  const { error: _error, incomplete_details: _incompleteDetails, output: _output, ...snapshot } = response;
 
   // JSON fallback has no upstream incremental frames, so synthesize the same
   // empty in-progress envelope that a real stream would start with. Emitting
   // terminal output or errors here would duplicate later item/terminal events.
-  // `output_text` is not synthesized — it's an SDK-only convenience alias
-  // and absent from real upstream wire frames. `error` and
-  // `incomplete_details` are required-nullable per the OpenAI Responses spec; on
+  // `error` and `incomplete_details` are required-nullable per the Responses spec; on
   // a success-path in-progress envelope they MUST be present as null.
   return {
     ...snapshot,

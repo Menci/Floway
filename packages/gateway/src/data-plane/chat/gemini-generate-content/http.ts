@@ -34,8 +34,9 @@ const parseGeminiGenerateContentModelAction = (modelAction: string | undefined):
 // `generateContentRequest` envelope (Google's SDK shape). Normalize both to a
 // single `GeminiGenerateContentPayload` for the rest of the chain.
 const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
-  const shape = (body ?? {}) as { contents?: GeminiGenerateContentContent[]; generateContentRequest?: GeminiGenerateContentPayload };
-  return shape.generateContentRequest ?? { contents: shape.contents };
+  const shape = body as GeminiCountTokensPayload;
+  if (shape.generateContentRequest !== undefined) return shape.generateContentRequest;
+  return { contents: shape.contents ?? [] };
 };
 
 const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {

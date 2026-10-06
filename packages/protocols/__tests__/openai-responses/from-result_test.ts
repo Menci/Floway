@@ -9,7 +9,6 @@ const completedResponse: OpenAIResponsesResultEx = {
   object: 'response',
   model: 'gpt-test',
   status: 'completed',
-  output_text: 'Hello',
   output: [
     {
       type: 'message',
@@ -117,7 +116,6 @@ test('openaiResponsesResultToEvents keeps failure details only on the terminal e
       object: 'response',
       model: 'gpt-test',
       status: 'failed',
-      output_text: '',
       output: [],
       error: {
         message: 'upstream failed',
@@ -400,7 +398,6 @@ test('openaiResponsesResultToEvents expands a web_search_call with the full 5-ev
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'web_search_call',
@@ -438,7 +435,6 @@ test('openaiResponsesResultToEvents expands a completed image_generation_call li
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'image_generation_call',
@@ -475,12 +471,12 @@ test('openaiResponsesResultToEvents omits image_generation_call completed event 
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'image_generation_call',
           id: 'ig_1',
           status: 'failed',
+          result: null,
           error: { message: 'failed', code: 'server_error' },
         },
       ],

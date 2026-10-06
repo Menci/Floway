@@ -102,7 +102,6 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx =>
     status: 'completed',
     content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
-  output_text: 'hi',
   error: null,
   incomplete_details: null,
 });
@@ -470,6 +469,7 @@ test('generate falls through translate-out to messages target', async () => {
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_translated',
           type: 'message',
           role: 'assistant',
@@ -477,13 +477,13 @@ test('generate falls through translate-out to messages target', async () => {
           model: 'test-model',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 4, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
         },
       },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
       { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
       { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
       { type: 'message_stop' },
     ]),
     modelKey: 'messages-key',
@@ -512,6 +512,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_bio_refusal',
           type: 'message',
           role: 'assistant',
@@ -519,12 +520,13 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
           model: 'claude-fable-5',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 4, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
         },
       },
       {
         type: 'message_delta',
         delta: {
+          container: null,
           stop_reason: 'refusal',
           stop_details: {
             type: 'refusal',
@@ -533,7 +535,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
           },
           stop_sequence: null,
         },
-        usage: { output_tokens: 0 },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 0 },
       },
       { type: 'message_stop' },
     ]),
@@ -564,15 +566,15 @@ test('generate falls through translate-out to openai-chat-completions target', a
     events: makeProtocolFrames([
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+        choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',

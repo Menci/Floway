@@ -39,12 +39,14 @@ test('preserves ephemeral cache_control when caller already holds 3 breakpoints 
     input_schema: { type: 'object' },
     cache_control: { type: 'ephemeral' },
   };
-  const cachedSystemBlock: AnthropicMessagesTextBlock = {
+  const cachedSystemBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'caller-supplied cached system fragment',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlock: AnthropicMessagesTextBlock = {
+  const cachedUserBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached prior turn',
     cache_control: { type: 'ephemeral' },
@@ -71,17 +73,20 @@ test('demotes our cache_control when caller already holds 4 breakpoints (would b
     input_schema: { type: 'object' },
     cache_control: { type: 'ephemeral' },
   };
-  const cachedSystemBlock: AnthropicMessagesTextBlock = {
+  const cachedSystemBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'caller-supplied cached system fragment',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlockA: AnthropicMessagesTextBlock = {
+  const cachedUserBlockA: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached turn A',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlockB: AnthropicMessagesTextBlock = {
+  const cachedUserBlockB: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached turn B',
     cache_control: { type: 'ephemeral' },

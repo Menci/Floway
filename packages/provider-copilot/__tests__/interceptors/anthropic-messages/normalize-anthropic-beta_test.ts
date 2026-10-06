@@ -49,7 +49,7 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
 });
 
 test('does not synthesize interleaved thinking for adaptive thinking', async () => {
-  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive', budget_tokens: 1024 } });
+  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive' } });
   await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
   assertEquals(ctx.anthropicBeta, []);
 });

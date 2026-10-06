@@ -84,7 +84,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       if (typeof opaque === 'string') state.opaque = opaque;
       const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
-      if (finishReason === null) {
+      if (finishReason == null) {
         if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
         continue;
       }

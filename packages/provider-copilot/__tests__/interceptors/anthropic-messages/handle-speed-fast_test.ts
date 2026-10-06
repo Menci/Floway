@@ -14,7 +14,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-const baseUsage: AnthropicMessagesUsage = { input_tokens: 10, output_tokens: 0 };
+const baseUsage: AnthropicMessagesUsage = { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 };
 
 const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
   payload: {
@@ -33,6 +33,7 @@ const stubRequest = {};
 const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
   type: 'message_start',
   message: {
+    container: null, diagnostics: null, stop_details: null,
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
@@ -46,8 +47,8 @@ const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMes
 
 const messageDelta = (output_tokens: number): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
   type: 'message_delta',
-  delta: { stop_reason: 'end_turn', stop_sequence: null },
-  usage: { output_tokens },
+  delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+  usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens },
 });
 
 const messageStop = (): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
@@ -104,7 +105,7 @@ test('withSpeedFast stamps usage.speed=fast on message_start when fast was reque
   ]);
 });
 
-test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usage', async () => {
+test('withSpeedFast keeps fast mode metadata on message_start and leaves message_delta unchanged', async () => {
   const ctx = makeCtx('fast');
 
   const result = await withSpeedFast(ctx, stubRequest, () =>
@@ -117,8 +118,8 @@ test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usag
     messageStart({ ...baseUsage, speed: 'fast' }),
     eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'message_delta',
-      delta: { stop_reason: 'end_turn', stop_sequence: null },
-      usage: { output_tokens: 7, speed: 'fast' },
+      delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
     }),
     messageStop(),
   ]);

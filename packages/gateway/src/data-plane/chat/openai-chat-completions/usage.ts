@@ -7,8 +7,9 @@ export const billableUsageFromOpenAIChatCompletionsUsage = (
   usage: OpenAIChatCompletionsUsage,
   serviceTier: string | null | undefined,
 ): BillableUsage => {
-  const cacheWrite = usage.prompt_tokens_details?.cache_creation_input_tokens
-    ?? usage.prompt_tokens_details?.cache_write_tokens
+  const extensions = usage as OpenAIChatCompletionsUsageEx;
+  const cacheWrite = extensions.prompt_tokens_details?.cache_creation_input_tokens
+    ?? extensions.prompt_tokens_details?.cache_write_tokens
     ?? 0;
   const { input, cacheRead } = splitInclusiveInputTokens(
     usage.prompt_tokens,

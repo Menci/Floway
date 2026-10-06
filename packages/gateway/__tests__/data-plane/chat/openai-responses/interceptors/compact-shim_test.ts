@@ -275,7 +275,6 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
         status: 'completed',
         content: [{ type: 'output_text', text: 'THE SUMMARY', annotations: [] }],
       }],
-      output_text: 'THE SUMMARY',
       error: null,
       incomplete_details: null,
       usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
@@ -291,7 +290,7 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, runWithOutputText);
   if (result.type !== 'events') throw new Error('expected events branch');
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.output_text, undefined);
+  assertEquals(Object.hasOwn(collected, 'output_text'), false);
 });
 
 test('compact + flag on: upstream incomplete status propagates onto the synthesized envelope', async () => {

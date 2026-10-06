@@ -194,21 +194,11 @@ export interface AnthropicMessagesClientTool {
 type NativeWebSearchTool = Native.WebSearchTool20250305 | Native.WebSearchTool20260209 | Native.WebSearchTool20260318 | Beta.BetaWebSearchTool20250305 | Beta.BetaWebSearchTool20260209 | Beta.BetaWebSearchTool20260318;
 export type AnthropicMessagesNativeWebSearchTool = NativeWebSearchTool extends infer Tool ? Tool extends NativeWebSearchTool ? Omit<Tool, 'name' | 'allowed_callers'> & { name: string; allowed_callers?: string[] } : never : never;
 
-export type AnthropicMessagesTool = AnthropicMessagesClientTool | AnthropicMessagesNativeWebSearchTool;
+export type AnthropicMessagesNativeTool = Exclude<Native.ToolUnion, Native.Tool | Native.WebSearchTool20250305 | Native.WebSearchTool20260209 | Native.WebSearchTool20260318> | Exclude<Beta.BetaToolUnion, Beta.BetaTool | Beta.BetaWebSearchTool20250305 | Beta.BetaWebSearchTool20260209 | Beta.BetaWebSearchTool20260318>;
+export type AnthropicMessagesTool = AnthropicMessagesClientTool | AnthropicMessagesNativeWebSearchTool | AnthropicMessagesNativeTool;
 
-export {
-  mergeAnthropicMessagesUsageSnapshot,
-  anthropicMessagesUsageSnapshot,
-  splitAnthropicMessagesCacheCreationTokens,
-  type AnthropicMessagesCacheCreationUsage,
-  type AnthropicMessagesUsage,
-  type AnthropicMessagesUsageDelta,
-  type AnthropicMessagesUsageIteration,
-  type AnthropicMessagesUsageServerToolUse,
-  type AnthropicMessagesUsageSnapshot,
-} from './usage.ts';
-
-export interface AnthropicMessagesResult {
+export { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, toAnthropicMessagesUsageDeltaEx, mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, splitAnthropicMessagesCacheCreationTokens, type AnthropicMessagesCacheCreationUsage, type AnthropicMessagesUsage, type AnthropicMessagesUsageDelta, type AnthropicMessagesUsageDeltaEx, type AnthropicMessagesUsageIteration, type AnthropicMessagesUsageSnapshot } from './usage.ts';
+export interface AnthropicMessagesResult extends Omit<Native.Message, 'content' | 'usage' | 'model' | 'stop_reason' | 'stop_details' | 'container'>, Partial<Pick<Beta.BetaMessage, 'context_management' | 'input_transformations'>> {
   id: string;
   type: 'message';
   role: 'assistant';
@@ -244,7 +234,6 @@ export interface AnthropicMessagesContentBlockStartEvent {
   index: number;
   content_block: AnthropicMessagesAssistantContentBlock;
 }
-
 export interface AnthropicMessagesContentBlockDeltaEvent {
   type: 'content_block_delta';
   index: number;
@@ -261,7 +250,6 @@ export interface AnthropicMessagesContentBlockStopEvent {
   type: 'content_block_stop';
   index: number;
 }
-
 export interface AnthropicMessagesMessageDeltaEvent {
   type: 'message_delta';
   delta: {

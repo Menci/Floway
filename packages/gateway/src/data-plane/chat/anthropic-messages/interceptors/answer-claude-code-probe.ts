@@ -1,6 +1,6 @@
 import type { AnthropicMessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
-import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
@@ -100,11 +100,14 @@ const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFram
       model,
       content: [],
       stop_reason: null,
+      stop_details: null,
+      container: null,
+      diagnostics: null,
       stop_sequence: null,
-      usage: { input_tokens: 0, output_tokens: 0 },
+      usage: createAnthropicMessagesUsage(0, 0),
     },
   });
-  yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'max_tokens', stop_sequence: null }, usage: { output_tokens: 0 } });
+  yield eventFrame({ type: 'message_delta', delta: { container: null, stop_reason: 'max_tokens', stop_details: null, stop_sequence: null }, usage: toAnthropicMessagesUsageDelta(createAnthropicMessagesUsage(0, 0)) });
   yield eventFrame({ type: 'message_stop' });
   yield doneFrame();
 };

@@ -16,7 +16,6 @@ test('openaiResponsesProtocolFrameToSSEFrame names each event and renders the te
         model: 'gpt-test',
         status: 'completed',
         output: [],
-        output_text: '',
         error: null,
         incomplete_details: null,
       },

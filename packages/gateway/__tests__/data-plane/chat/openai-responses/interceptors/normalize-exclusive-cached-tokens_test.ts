@@ -40,7 +40,6 @@ const completedEvent = (usage: NonNullable<OpenAIResponsesResultEx['usage']>): O
     model: 'test-model',
     status: 'completed',
     output: [],
-    output_text: '',
     error: null,
     incomplete_details: null,
     usage,

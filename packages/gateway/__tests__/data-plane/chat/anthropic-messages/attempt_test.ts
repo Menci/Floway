@@ -27,6 +27,7 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_1',
       type: 'message',
       role: 'assistant',
@@ -34,13 +35,13 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[
       model: 'test-model',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 4, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
@@ -151,8 +152,7 @@ test('generate translate-to-responses branch routes through openaiResponsesAttem
     output: [{
       type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'hi', annotations: [] }],
-    }],
-    output_text: 'hi', error: null, incomplete_details: null,
+    }], error: null, incomplete_details: null,
   };
   const callOpenAIResponses = vi.fn(async (_model, _body, _action, _signal, opts): Promise<ProviderOpenAIResponsesResult> => {
     upstreamHeaders = opts?.headers;
@@ -187,7 +187,7 @@ test('generate does not carry Anthropic Messages beta metadata through translati
       ok: true,
       events: makeProtocolFrames([{
         id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       }]),
       modelKey: 'k',
       headers: new Headers(),
@@ -225,7 +225,6 @@ test('generate lets the target system-to-developer rewrite take precedence over 
           model: 'test-model',
           status: 'completed',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -284,7 +283,6 @@ test('generate translate-to-responses branch rewrites a multi-block system prefi
           model: 'test-model',
           status: 'completed',
           output: [],
-          output_text: '',
           error: null,
           incomplete_details: null,
         },
@@ -296,7 +294,7 @@ test('generate translate-to-responses branch rewrites a multi-block system prefi
 
   const result = await anthropicMessagesAttempt.generate({
     payload: makePayload({
-      system: [{ type: 'text', text: 'base A' }, { type: 'text', text: 'base B' }],
+      system: [{ citations: null, type: 'text', text: 'base A' }, { citations: null, type: 'text', text: 'base B' }],
       messages: [
         { role: 'user', content: 'hello' },
         { role: 'system', content: 'inline instructions' },
@@ -432,7 +430,7 @@ test('countTokens prepares the generation web-search request shape', async () =>
   });
 
   const result = await anthropicMessagesAttempt.countTokens({
-    payload: makePayload({ tools: [{ type: 'web_search_20260209', max_uses: 3 }] }),
+    payload: makePayload({ tools: [{ name: 'web_search', type: 'web_search_20260209', max_uses: 3 }] }),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callAnthropicMessagesCountTokens,

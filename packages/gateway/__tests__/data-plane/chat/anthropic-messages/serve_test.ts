@@ -68,6 +68,7 @@ const makeAnthropicMessagesResultEvents = (id = 'msg_test'): readonly AnthropicM
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id,
       type: 'message',
       role: 'assistant',
@@ -75,13 +76,13 @@ const makeAnthropicMessagesResultEvents = (id = 'msg_test'): readonly AnthropicM
       model: 'test-model',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 10, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
     },
   },
   {
     type: 'content_block_start',
     index: 0,
-    content_block: { type: 'text', text: '' },
+    content_block: { type: 'text', text: '', citations: null },
   },
   {
     type: 'content_block_delta',
@@ -91,8 +92,8 @@ const makeAnthropicMessagesResultEvents = (id = 'msg_test'): readonly AnthropicM
   { type: 'content_block_stop', index: 0 },
   {
     type: 'message_delta',
-    delta: { stop_reason: 'end_turn', stop_sequence: null },
-    usage: { output_tokens: 1 },
+    delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 },
   },
   { type: 'message_stop' },
 ];
@@ -110,7 +111,6 @@ const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStream
       status: 'completed',
       content: [{ type: 'output_text', text: 'hi from responses', annotations: [] }],
     }],
-    output_text: 'hi from responses',
     error: null,
     incomplete_details: null,
   };
@@ -674,7 +674,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(payload.model, 'claude-fast');
   const observed = capturedBodies[0]!;
   assertEquals(observed.output_config?.effort, 'high');
-  assertEquals(observed.thinking?.budget_tokens, 2048);
+  if (observed.thinking?.type !== 'enabled') throw new Error('Expected enabled thinking');
+  assertEquals(observed.thinking.budget_tokens, 2048);
   // The serviceTier=fast → speed=fast bridge lands the alias rule on
   // Anthropic's native Fast Mode field.
   assertEquals(observed.speed, 'fast');

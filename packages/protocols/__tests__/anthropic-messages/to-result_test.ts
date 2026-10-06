@@ -7,14 +7,15 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectAnthropicMessagesProtocolEventsToResult reassembles synthetic Anthropic Messages events', async () => {
   const expected: AnthropicMessagesResult = {
+    container: null, diagnostics: null, stop_details: null,
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
-    content: [{ type: 'text', text: 'Hello' }],
+    content: [{ citations: null, type: 'text', text: 'Hello' }],
     model: 'claude-test',
     stop_reason: 'end_turn',
     stop_sequence: null,
-    usage: { input_tokens: 3, output_tokens: 2 },
+    usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 2 },
   };
 
   async function* events() {
@@ -23,10 +24,10 @@ test('collectAnthropicMessagesProtocolEventsToResult reassembles synthetic Anthr
         type: 'message_start',
         message: { ...expected, content: [], stop_reason: null, stop_sequence: null, usage: { ...expected.usage, output_tokens: 0 } },
       },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
       { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } },
       { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } },
+      { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 2 } },
       { type: 'message_stop' },
     ];
     for (const event of payloads) yield eventFrame(event);
@@ -41,6 +42,7 @@ test('collectAnthropicMessagesProtocolEventsToResult preserves final message_del
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_late_usage',
           type: 'message',
           role: 'assistant',
@@ -48,13 +50,13 @@ test('collectAnthropicMessagesProtocolEventsToResult preserves final message_del
           model: 'claude-test',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 0, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 0, output_tokens: 0 },
         },
       },
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -67,8 +69,8 @@ test('collectAnthropicMessagesProtocolEventsToResult preserves final message_del
       },
       {
         type: 'message_delta',
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
-        usage: { input_tokens: 12, output_tokens: 4 },
+        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+        usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 12, output_tokens: 4 },
       },
       {
         type: 'message_stop',
@@ -80,7 +82,7 @@ test('collectAnthropicMessagesProtocolEventsToResult preserves final message_del
 
   const response = await collectAnthropicMessagesProtocolEventsToResult(events());
 
-  assertEquals(response.usage, { input_tokens: 12, output_tokens: 4 });
+  assertEquals(response.usage, { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 12, output_tokens: 4 });
 });
 
 test('collectAnthropicMessagesProtocolEventsToResult rejects streams without message_stop', async () => {
@@ -89,6 +91,7 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_truncated',
           type: 'message',
           role: 'assistant',
@@ -96,13 +99,13 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
           model: 'claude-test',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 3, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 },
         },
       },
       {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'text', text: '' },
+        content_block: { citations: null, type: 'text', text: '' },
       },
       {
         type: 'content_block_delta',
@@ -115,8 +118,8 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
       },
       {
         type: 'message_delta',
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
-        usage: { output_tokens: 1 },
+        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 },
       },
     ];
 
