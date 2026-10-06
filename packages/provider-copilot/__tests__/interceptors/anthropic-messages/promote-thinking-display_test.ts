@@ -98,7 +98,7 @@ test('withThinkingDisplayPromoted sends summarized upstream when thinking displa
       },
     }));
 
-  assertEquals(ctx.payload.thinking?.display, 'summarized');
+  assertEquals((ctx.payload.thinking !== undefined && 'display' in ctx.payload.thinking ? ctx.payload.thinking.display : undefined), 'summarized');
 });
 
 test('withThinkingDisplayPromoted overrides omitted but preserves full', async () => {
@@ -108,8 +108,8 @@ test('withThinkingDisplayPromoted overrides omitted but preserves full', async (
   await withThinkingDisplayPromoted(omittedCtx, stubRequest, okEvents);
   await withThinkingDisplayPromoted(fullCtx, stubRequest, okEvents);
 
-  assertEquals(omittedCtx.payload.thinking?.display, 'summarized');
-  assertEquals(fullCtx.payload.thinking?.display, 'full');
+  assertEquals((omittedCtx.payload.thinking !== undefined && 'display' in omittedCtx.payload.thinking ? omittedCtx.payload.thinking.display : undefined), 'summarized');
+  assertEquals((fullCtx.payload.thinking !== undefined && 'display' in fullCtx.payload.thinking ? fullCtx.payload.thinking.display : undefined), 'full');
 });
 
 test('withThinkingDisplayPromoted leaves disabled or absent thinking untouched', async () => {
@@ -142,7 +142,7 @@ test('withThinkingDisplayPromoted simulates omitted display on protocol events',
           yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_start',
             index: 0,
-            content_block: { type: 'thinking', thinking: 'summary prefix' },
+            content_block: { signature: '', type: 'thinking', thinking: 'summary prefix' },
           });
           yield eventFrame<AnthropicMessagesStreamEventEx>({
             type: 'content_block_delta',
@@ -171,7 +171,7 @@ test('withThinkingDisplayPromoted simulates omitted display on protocol events',
     eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     }),
     eventFrame<AnthropicMessagesStreamEventEx>({
       type: 'content_block_delta',

@@ -41,6 +41,8 @@ const GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND: Record<GeminiGenerateContentPa
   fileData: 'file_data',
   executableCode: 'executable_code',
   codeExecutionResult: 'code_execution_result',
+  toolCall: 'tool_call',
+  toolResponse: 'tool_response',
 };
 
 const GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS = Object.keys(GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND) as GeminiGenerateContentPartDataField[];
@@ -68,7 +70,7 @@ export const geminiGenerateContentThoughtText = (part: GeminiGenerateContentPart
 export const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): string | null => (part.thought === true ? null : geminiGenerateContentPartText(part));
 
 export const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
-  const texts = content?.parts.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
+  const texts = content?.parts?.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
 
   return texts?.length ? texts.join('\n\n') : null;
 };

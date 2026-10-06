@@ -111,6 +111,7 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
         role: 'assistant',
         content: [
           {
+            caller: { type: 'direct' },
             type: 'server_tool_use',
             id: 'st_1',
             name: 'web_search',
@@ -133,7 +134,7 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
     ],
   });
 
-  assertEquals(result.tools, null);
+  assertEquals(result.tools, []);
   assertEquals(result.tool_choice, undefined);
   assertEquals(result.input, [
     {
@@ -188,11 +189,11 @@ test('buildTargetRequest preserves output_config.effort max at the translation b
 });
 
 test('buildTargetRequest maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', () => {
-  for (const budget of [undefined, 1024, 16384]) {
+  for (const budget of [1024, 16384]) {
     const result = buildTargetRequest({
       model: 'gpt-test',
       max_tokens: 4096,
-      thinking: budget === undefined ? { type: 'enabled' } : { type: 'enabled', budget_tokens: budget },
+      thinking: { type: 'enabled', budget_tokens: budget },
       messages: [{ role: 'user', content: 'hi' }],
     });
 
@@ -361,7 +362,7 @@ test('buildTargetRequest preserves text-only thinking input', () => {
     messages: [
       {
         role: 'assistant',
-        content: [{ type: 'thinking', thinking: 'trace' }],
+        content: [{ signature: '', type: 'thinking', thinking: 'trace' }],
       },
     ],
   });
@@ -637,4 +638,10 @@ test('buildTargetRequest forwards service_tier:standard_only to OpenAI Responses
   });
 
   assertEquals(result.service_tier, 'standard_only');
+});
+
+test('preserves expressible Messages metadata extensions and rejects non-string values', () => {
+  const payload = { model: 'm', max_tokens: 16, messages: [], metadata: { user_id: 'u', tenant: 't' } };
+  assertEquals(buildTargetRequest(payload).metadata, { user_id: 'u', tenant: 't' });
+  assertThrows(() => buildTargetRequest({ ...payload, metadata: { user_id: 'u', tenant: { nested: 't' } } } as AnthropicMessagesPayload), undefined, "metadata field 'tenant'");
 });

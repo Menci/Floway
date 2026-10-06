@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import {
   geminiGenerateContentFunctionCallingIntent,
@@ -14,7 +13,7 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
-
+import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
@@ -41,7 +40,7 @@ const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: n
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
@@ -80,7 +79,7 @@ const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnInd
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
@@ -134,15 +133,14 @@ const applyGenerationConfig = (request: CanonicalOpenAIResponsesPayload, generat
     request.top_p = generationConfig.topP;
   }
 
-  if (generationConfig.responseSchema !== undefined) {
+  const schema = geminiResponseSchema(generationConfig);
+  if (schema !== undefined) {
     request.text = {
       ...request.text,
       format: {
         type: 'json_schema',
-        json_schema: {
-          name: 'gemini_response',
-          schema: klona(generationConfig.responseSchema),
-        },
+        name: 'gemini_response',
+        schema,
       },
     };
   } else if (generationConfig.responseMimeType === 'application/json') {
@@ -163,7 +161,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
     type: 'function' as const,
     name: declaration.name,
     ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    parameters: klona(declaration.parameters) ?? { type: 'object', properties: {} },
+    parameters: geminiFunctionParameters(declaration) ?? { type: 'object', properties: {} },
     strict: false,
   }));
 
@@ -183,6 +181,10 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
 
   const input = request.input as CanonicalOpenAIResponsesInputItem[];
   payload.contents?.forEach((content, turnIndex) => {
+    if ((content.parts?.length ?? 0) === 0 && (content.role === 'model' || content.role === 'user' || content.role === undefined)) {
+      input.push({ type: 'message', role: content.role === 'model' ? 'assistant' : 'user', content: '' });
+      return;
+    }
     switch (content.role) {
     case 'model':
       input.push(...buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds));

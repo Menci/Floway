@@ -136,12 +136,12 @@ const translateOpenAIResponsesToolChoice = (choice?: OpenAIResponsesToolChoice |
 
 const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayloadEx['text']): OpenAIChatCompletionsPayload['response_format'] | undefined => {
   if (text === undefined) return undefined;
-  if (text === null) return null;
+  if (text === null) return undefined;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
   // absence into an explicit OpenAI Chat Completions `response_format: null`.
   const format = klona(text.format);
   if (!Object.hasOwn(text, 'format') || format === undefined) return undefined;
-  if (format === null) return null;
+  if (format === null) return undefined;
   // OpenAI Responses API uses a flat json_schema shape
   // ({ type, name, strict, schema }), while OpenAI Chat Completions wraps the
   // schema details under a nested `json_schema` field. Reshape only when
@@ -260,10 +260,11 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
     }
 
     flushAssistant();
-    messages.push({
-      role: item.role,
-      content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content),
-    });
+    if (item.role === 'user') messages.push({ role: 'user', content: openaiResponsesContentToOpenAIChatCompletionsContent(item.content) as OpenAIChatCompletionsUserContentPart[] | string });
+    else {
+      if (Array.isArray(item.content) && item.content.some(part => part.type !== 'input_text' && part.type !== 'output_text')) throw new TranslatorInputError('Only text content is supported in Chat system/developer messages.');
+      messages.push({ role: item.role, content: typeof item.content === 'string' ? item.content : item.content.map(part => ({ type: 'text', text: (part as CanonicalOpenAIResponsesText).text })) });
+    }
   }
 
   flushAssistant();
@@ -282,15 +283,13 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     ...(payload.store !== undefined ? { store: payload.store } : {}),
-    ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
+    ...(payload.parallel_tool_calls != null ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
     ...(responseFormat !== undefined ? { response_format: responseFormat } : {}),
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.reasoning?.effort != null ? { reasoning_effort: payload.reasoning.effort } : {}),
     ...(payload.text?.verbosity != null ? { verbosity: payload.text.verbosity } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
-    // OpenAI Chat Completions has no request-level counterpart for OpenAI Responses
-    // `reasoning`; only explicit reasoning items survive this translation.
     tools,
     tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };

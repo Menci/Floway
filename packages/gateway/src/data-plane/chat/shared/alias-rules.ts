@@ -63,27 +63,18 @@ export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPay
       // Adaptive auto-determines the budget; strip any client-set
       // `budget_tokens` so the alias rule's mode isn't accompanied by a
       // sibling budget the operator didn't ask for.
-      const { budget_tokens: _drop, ...priorThinking } = body.thinking ?? {};
+      const priorThinking = body.thinking?.type === 'enabled' ? { display: body.thinking.display } : body.thinking;
       body.thinking = { ...priorThinking, type: 'adaptive', ...displayPart };
     } else if (budget_tokens !== undefined) {
       body.thinking = { ...body.thinking, type: 'enabled', budget_tokens, ...displayPart };
-    } else if (display !== undefined) {
-      // Anthropic discards `thinking.display` unless a mode is set; default
-      // to the enabled variant so the summary hint reaches the wire.
-      body.thinking = { ...body.thinking, type: 'enabled', ...displayPart };
+    } else if (display !== undefined && (body.thinking?.type === 'enabled' || body.thinking?.type === 'adaptive')) {
+      body.thinking = { ...body.thinking, ...displayPart };
     }
   }
   // `verbosity` has no native Anthropic Messages slot; drop silently.
   if (rules.serviceTier !== undefined) {
-    // The cross-protocol bridge in translate maps `speed: 'fast'` ↔ the
-    // OpenAI accelerated lane; on a native Anthropic Messages target an alias
-    // rule naming that lane lands on `speed` so the upstream sees Fast Mode
-    // through its native field. Both OpenAI spellings count, since OpenAI
-    // itself accepts `priority` and `fast` interchangeably. Other tier values
-    // pass through on `service_tier` since Anthropic Messages's native request
-    // enum (`auto`/`standard_only`) doesn't model them. Whichever branch we
-    // take, clear the sibling field so the upstream never sees two tiers in
-    // conflict.
+    // Floway maps both accelerated-lane aliases to native Messages Fast Mode.
+    // Clear the sibling field so tier and speed cannot specify conflicting lanes.
     if (isFastServiceTier(rules.serviceTier)) {
       body.speed = 'fast';
       delete body.service_tier;

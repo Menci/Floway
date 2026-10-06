@@ -60,6 +60,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
   }
   return {
     ...payload,
+    model: payload.model,
     input: typeof input === 'string'
       ? [{ type: 'message', role: 'user', content: input }]
       : input.map((item, index) => {

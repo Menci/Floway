@@ -37,7 +37,7 @@ export const createOpenAIChatCompletionsReasoningProjection = (): OpenAIChatComp
 
 export const toOpenAIChatCompletionsReasoningItem = (item: OpenAIChatCompletionsReasoningSourceItem): OpenAIChatCompletionsReasoningItem => ({
   type: 'reasoning',
-  id: item.id,
+  ...(item.id == null ? {} : { id: item.id }),
   summary: item.summary,
 });
 

@@ -21,7 +21,8 @@ const isClaudeVersionAtLeast = (model: string, major: number, minor: number): bo
 };
 
 export const resolveAnthropicMessagesDownstreamThinkingDisplay = (ctx: Pick<AnthropicMessagesBoundaryCtx, 'payload'>): AnthropicMessagesThinkingDisplay | undefined => {
-  const display = ctx.payload.thinking?.display;
+  const thinking = ctx.payload.thinking;
+  const display = thinking?.type === 'enabled' || thinking?.type === 'adaptive' ? thinking.display : undefined;
   if (display !== undefined) {
     // Request JSON is not runtime-validated before boundary interceptors; leave
     // unknown display values untouched so upstream, not this workaround, owns
@@ -94,7 +95,7 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
 export const withThinkingDisplayPromoted: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const downstreamDisplay = resolveAnthropicMessagesDownstreamThinkingDisplay(ctx);
   const thinking = ctx.payload.thinking;
-  const hasActiveThinking = !!thinking && thinking.type !== 'disabled';
+  const hasActiveThinking = thinking?.type === 'enabled' || thinking?.type === 'adaptive';
   const shouldExposeOmitted = hasActiveThinking && downstreamDisplay === 'omitted';
 
   if (hasActiveThinking && downstreamDisplay !== undefined && downstreamDisplay !== 'full') {

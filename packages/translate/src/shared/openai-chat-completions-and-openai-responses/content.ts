@@ -25,6 +25,10 @@ export const openaiChatCompletionsContentToOpenAIResponsesInputContent = (conten
         return { type: 'input_text', text: part.text };
       case 'refusal':
         return { type: 'refusal', refusal: part.refusal };
+      case 'input_audio':
+        throw new TranslatorInputError('Cannot translate input_audio content to OpenAI Responses.');
+      case 'file':
+        return { type: 'input_file', ...part.file };
       case 'image_url':
         return {
           type: 'input_image',

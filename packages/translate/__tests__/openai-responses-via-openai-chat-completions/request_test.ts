@@ -204,14 +204,14 @@ test('buildTargetRequest omits response_format when OpenAI Responses text.format
   assertEquals('response_format' in result.target, false);
 });
 
-test('buildTargetRequest preserves explicit null text format', () => {
+test('buildTargetRequest omits a null text format from the Chat response-format field', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: null,
   });
 
-  assertEquals(result.target.response_format, null);
+  assertEquals(result.target.response_format, undefined);
 });
 
 test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat Completions shape', () => {
@@ -910,4 +910,9 @@ test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no
 
   assertEquals(result.target.reasoning_effort, 'medium');
   assertEquals('reasoning_summary' in result.target, false);
+});
+
+test.each(['system', 'developer'] as const)('preserves %s text part boundaries', role => {
+  const result = buildTargetRequest({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
+  assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
 });

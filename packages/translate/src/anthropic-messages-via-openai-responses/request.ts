@@ -1,4 +1,3 @@
-import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
@@ -8,7 +7,21 @@ import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthr
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import { type AnthropicMessagesAssistantMessage, type AnthropicMessagesClientTool, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesMetadataEx, type AnthropicMessagesServerToolUseBlockParam, type AnthropicMessagesSystemMessage, type AnthropicMessagesTextBlockParam, type AnthropicMessagesToolResultBlock, type AnthropicMessagesToolUseBlockParam, type AnthropicMessagesUserContentBlock, type AnthropicMessagesUserMessage, type AnthropicMessagesWebSearchToolResultBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import {
+  type AnthropicMessagesAssistantMessage,
+  type AnthropicMessagesClientTool,
+  type AnthropicMessagesMessage,
+  type AnthropicMessagesPayload,
+  type AnthropicMessagesMetadataEx,
+  type AnthropicMessagesServerToolUseBlockParam,
+  type AnthropicMessagesSystemMessage,
+  type AnthropicMessagesTextBlockParam,
+  type AnthropicMessagesToolResultBlock,
+  type AnthropicMessagesToolUseBlockParam,
+  type AnthropicMessagesUserContentBlock,
+  type AnthropicMessagesUserMessage,
+  type AnthropicMessagesWebSearchToolResultBlockParam,
+} from '@floway-dev/protocols/anthropic-messages';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const flushPendingContent = (pending: OpenAIResponsesInputContent[], input: CanonicalOpenAIResponsesInputItem[], role: 'user' | 'assistant'): void => {
@@ -24,6 +37,8 @@ const translateUserContentBlock = (
 ): OpenAIResponsesInputContent => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
   if (block.type === 'image') {
+    if (block.source.type === 'file') return { type: 'input_image', file_id: block.source.file_id };
+    if (block.source.type === 'url') return { type: 'input_image', image_url: block.source.url };
     return {
       type: 'input_image',
       image_url: `data:${block.source.media_type};base64,${block.source.data}`,
@@ -125,7 +140,10 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
     role: 'system',
     content: typeof message.content === 'string'
       ? message.content
-      : message.content.map(block => ({ type: 'input_text', text: block.text })),
+      : message.content.map(block => {
+          if (block.type !== 'text') throw new TranslatorInputError('Only text system content is supported by this Responses translation.');
+          return { type: 'input_text', text: block.text };
+        }),
   },
 ];
 
@@ -167,8 +185,8 @@ const placeAnthropicMessagesSystem = (system: string | AnthropicMessagesTextBloc
   };
 };
 
-const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenAIResponsesTool[] | null => {
-  if (!tools || tools.length === 0) return null;
+const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenAIResponsesTool[] => {
+  if (!tools || tools.length === 0) return [];
 
   return tools.map(tool => ({
     type: 'function',
@@ -205,6 +223,12 @@ const translateToolChoice = (toolChoice: AnthropicMessagesPayload['tool_choice']
   }
 };
 
+const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string, string> => Object.fromEntries(Object.entries(metadata).flatMap(([key, value]) => {
+  if (key === 'user_id' && value == null) return [];
+  if (typeof value !== 'string') throw new TranslatorInputError(`Cannot translate Anthropic Messages metadata field '${key}' to a Responses string metadata value.`);
+  return [[key, value]];
+}));
+
 export const buildTargetRequest = (payload: AnthropicMessagesPayload): CanonicalOpenAIResponsesPayload => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves
@@ -233,7 +257,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
     max_output_tokens: payload.max_tokens,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
     ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-    ...(payload.metadata ? { metadata: klona(payload.metadata) } : {}),
+    ...(payload.metadata ? { metadata: translateMetadata(payload.metadata as AnthropicMessagesMetadataEx) } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
     ...(text ? { text } : {}),

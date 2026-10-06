@@ -47,7 +47,7 @@ export const withClaudeAgentHeadersSet: CopilotAnthropicMessagesBoundaryIntercep
     return await run();
   }
 
-  const { safetyIdentifier, sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id);
+  const { safetyIdentifier, sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id ?? undefined);
   if (safetyIdentifier && sessionId) {
     ctx.headers.set('x-interaction-type', 'messages-proxy');
     ctx.headers.set('openai-intent', 'messages-proxy');

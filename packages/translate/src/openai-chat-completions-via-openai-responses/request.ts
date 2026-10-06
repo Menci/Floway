@@ -8,21 +8,32 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, Cano
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
-    ? tools.map(tool => ({
-        type: 'function',
-        name: tool.function.name,
-        parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
-        // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
-        // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
-        strict: tool.function.strict ?? false,
-        ...(tool.function.description ? { description: tool.function.description } : {}),
-      }))
-    : null;
+    ? tools.map(tool => {
+        if (tool.type === 'custom') return { type: 'custom', ...klona(tool.custom) };
+        return {
+          type: 'function',
+          name: tool.function.name,
+          parameters: klona(tool.function.parameters) ?? { type: 'object', properties: {} },
+          // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
+          // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
+          strict: tool.function.strict ?? false,
+          ...(tool.function.description ? { description: tool.function.description } : {}),
+        };
+      })
+    : [];
 
-const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): OpenAIResponsesToolChoice =>
-  typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
+const translateChatToolChoice = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): OpenAIResponsesToolChoice => {
+  if (typeof choice === 'string') return choice;
+  if (choice.type === 'function') return { type: 'function', name: choice.function.name };
+  if (choice.type === 'custom') return { type: 'custom', name: choice.custom.name };
+  return {
+    type: 'allowed_tools', mode: choice.allowed_tools.mode, tools: choice.allowed_tools.tools.map(tool => {
+      return tool.type === 'function' ? { type: 'function', name: tool.function.name } : { type: 'custom', name: tool.custom.name };
+    }),
+  };
+};
 
-const translateAssistantContent = (message: OpenAIChatCompletionsMessage): OpenAIResponsesInputContent[] => {
+const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessage): OpenAIResponsesInputContent[] => {
   const content: OpenAIResponsesInputContent[] = [];
   let hasRefusalPart = false;
 
@@ -47,7 +58,8 @@ const translateAssistantContent = (message: OpenAIChatCompletionsMessage): OpenA
 
 export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => {
   const instructions: string[] = [];
-  const input: OpenAIResponsesInputItem[] = [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  const customToolCallIds = new Set<string>();
   let hoistSystemPrefix = true;
 
   for (const message of payload.messages) {
@@ -73,8 +85,9 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
 
     if (message.role === 'assistant') {
       const assistantContent = translateAssistantContent(message);
-      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(message.reasoning_items);
-      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(message));
+      const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
+      const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
+      const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(extensions));
       if (reasoningItems) {
         input.push(...reasoningItems);
       } else if (scalarReasoning) {
@@ -91,6 +104,11 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
         }
 
         for (const toolCall of message.tool_calls) {
+          if (toolCall.type === 'custom') {
+            customToolCallIds.add(toolCall.id);
+            input.push({ type: 'custom_tool_call', call_id: toolCall.id, ...toolCall.custom, status: 'completed' });
+            continue;
+          }
           input.push({
             type: 'function_call',
             call_id: toolCall.id,
@@ -129,18 +147,21 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     }
 
     input.push({
-      type: 'function_call_output',
+      type: customToolCallIds.has(message.tool_call_id) ? 'custom_tool_call_output' : 'function_call_output',
       call_id: message.tool_call_id,
       output: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
     });
   }
 
-  const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: klona(payload.response_format) };
+  const format = klona(payload.response_format);
+  if (format?.type === 'json_schema' && format.json_schema.schema === undefined) throw new TranslatorInputError('Cannot translate json_schema response format without a schema.');
+  const responseTextConfig = format == null ? undefined : {
+    format: format.type === 'json_schema'
+      ? { type: 'json_schema' as const, ...format.json_schema, schema: format.json_schema.schema! }
+      : format,
+  };
 
-  // OpenAI Chat Completions' `reasoning_effort: 'none'` disables reasoning without an OpenAI Responses
-  // equivalent (OpenAI Responses `reasoning.effort` has no 'none' member); drop the
-  // field instead of forwarding a value the upstream rejects.
-  const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
+  const reasoningEffort = payload.reasoning_effort ?? undefined;
   const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
 
   return {
@@ -151,11 +172,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     ...(payload.max_tokens !== undefined ? { max_output_tokens: payload.max_tokens } : {}),
     ...(payload.tools !== undefined ? { tools: translateChatTools(payload.tools) } : {}),
-    // OpenAI Responses upstreams disagree on an orphaned `tool_choice` — one sent
-    // without tools: OpenAI-backed models ignore it, while xAI-backed ones
-    // reject the request with `invalid-argument: A tool_choice was set on the
-    // request but no tools were specified`. Other gateways hit the same wall on
-    // both the native OpenAI Responses path and the OpenAI Responses → OpenAI Chat Completions path:
+    // Omit tool_choice without tools: xAI-backed upstreams reject this shape.
     // https://github.com/Wei-Shaw/sub2api/issues/4819
     // https://github.com/jlcodes99/cockpit-tools/issues/1727
     ...(payload.tool_choice != null && payload.tools?.length ? { tool_choice: translateChatToolChoice(payload.tool_choice) } : {}),
@@ -164,11 +181,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     // pairwise translation.
     ...(payload.metadata !== undefined ? { metadata: klona(payload.metadata) } : {}),
     stream: true,
-    // Preserve OpenAI Chat Completions' omitted `store` as omitted instead of synthesizing
-    // `store: false`. OpenAI's migration guide treats storage as the default
-    // behavior for both OpenAI Responses and new OpenAI Chat Completions accounts; callers
-    // disable it explicitly with `store: false`.
-    // Reference:
+    // Omitted store inherits the target/account default; explicit false disables it.
     // https://developers.openai.com/api/docs/guides/migrate-to-responses
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),

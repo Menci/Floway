@@ -1,6 +1,7 @@
 import type { AnthropicMessagesTextBlockParam, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
 
 export const flattenAnthropicMessagesToolResult = (content: AnthropicMessagesToolResultBlock['content']): string => {
+  if (content === undefined) return '';
   if (typeof content === 'string') {
     return content;
   }

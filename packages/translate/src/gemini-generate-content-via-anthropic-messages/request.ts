@@ -14,9 +14,9 @@ import {
   type GeminiGenerateContentToolCallIds,
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
-
+import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
-
+import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
@@ -46,7 +46,7 @@ const inlineDataToImageBlock = (part: GeminiGenerateContentPart): AnthropicMessa
 const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): AnthropicMessagesPayload['messages'][number] | null => {
   const blocks: AnthropicMessagesUserContentBlock[] = [];
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     const kind = geminiGenerateContentPartKind(part);
     switch (kind) {
     case null:
@@ -75,7 +75,7 @@ const buildUserMessage = (content: GeminiGenerateContentContent, turnIndex: numb
     }
   });
 
-  return blocks.length ? { role: 'user', content: blocks } : null;
+  return blocks.length ? { role: 'user', content: blocks } : (content.parts?.length ?? 0) === 0 ? { role: 'user', content: '' } : null;
 };
 
 const attachSignatureToThinking = (
@@ -106,7 +106,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
   let firstActionSignature: string | undefined;
   let firstSignedActionIndex: number | undefined;
 
-  content.parts.forEach((part, partIndex) => {
+  (content.parts ?? []).forEach((part, partIndex) => {
     if (part.thoughtSignature !== undefined && firstActionSignature === undefined) {
       firstActionSignature = part.thoughtSignature;
     }
@@ -130,7 +130,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
       const thoughtText = geminiGenerateContentThoughtText(part);
       if (thoughtText !== null) {
         firstThinkingIndex ??= blocks.length;
-        blocks.push({ type: 'thinking', thinking: thoughtText });
+        blocks.push({ signature: '', type: 'thinking', thinking: thoughtText });
         return;
       }
       const text = geminiGenerateContentVisibleText(part);
@@ -147,7 +147,7 @@ const buildAssistantMessage = (content: GeminiGenerateContentContent, turnIndex:
 
   attachSignatureToThinking(blocks, firstActionSignature, firstThinkingIndex, firstSignedActionIndex);
 
-  return blocks.length ? { role: 'assistant', content: blocks } : null;
+  return blocks.length ? { role: 'assistant', content: blocks } : (content.parts?.length ?? 0) === 0 ? { role: 'assistant', content: '' } : null;
 };
 
 interface ThinkingConfigFields {
@@ -194,19 +194,8 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
   if (generationConfig.stopSequences !== undefined) {
     request.stop_sequences = klona(generationConfig.stopSequences);
   }
-  // Gemini generateContent's `responseSchema` is the bare JSON Schema; Anthropic carries it
-  // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
-  // application/json` without a schema has no Anthropic equivalent and is
-  // dropped — the routing fallback degrades gracefully rather than fails.
-  return generationConfig.responseSchema !== undefined
-    ? { format: { type: 'json_schema', schema: klona(generationConfig.responseSchema as Record<string, unknown>) } }
-    : {};
-};
-
-const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
-  // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
-  // declarations use the smallest object schema rather than dropping the tool.
-  return klona(parameters) ?? { type: 'object', properties: {} };
+  const schema = geminiResponseSchema(generationConfig);
+  return schema === undefined ? {} : { format: { type: 'json_schema', schema } };
 };
 
 const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesTool[] | undefined => {
@@ -214,7 +203,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesToo
     type: 'custom' as const,
     name: declaration.name,
     ...(declaration.description !== undefined ? { description: declaration.description } : {}),
-    input_schema: inputSchemaForDeclaration(declaration.parameters),
+    input_schema: anthropicMessagesToolInputSchema(geminiFunctionParameters(declaration) ?? { type: 'object', properties: {} }),
   }));
 
   return tools.length ? tools : undefined;

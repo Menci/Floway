@@ -11,7 +11,7 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthro
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
-
+import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import {
@@ -207,7 +207,7 @@ const translateOpenAIResponsesInput = async (
 ): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlockParam[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
-  // part as its own AnthropicMessagesTextBlock so part boundaries survive the hoist.
+  // part as its own AnthropicMessagesTextBlockParam so part boundaries survive the hoist.
   // Non-leading system/developer messages stay inline as AnthropicMessagesSystemMessage.
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   let prefixEnd = 0;
@@ -314,7 +314,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
+        input_schema: anthropicMessagesToolInputSchema(klona(tool.parameters) ?? { type: 'object', properties: {} }),
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
@@ -371,7 +371,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
   // after it. Each source — the instructions field and each leading input
-  // message — is preserved as its own AnthropicMessagesTextBlock so the boundary
+  // message — is preserved as its own AnthropicMessagesTextBlockParam so the boundary
   // between "canonical instructions" and "leading input system" survives
   // and the downstream prompt cache sees stable per-source segments.
   const systemBlocks: AnthropicMessagesTextBlockParam[] = [

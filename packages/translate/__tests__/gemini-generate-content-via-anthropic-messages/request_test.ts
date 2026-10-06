@@ -11,6 +11,7 @@ const withMaxOutputTokens = (maxOutputTokens: number) => ({ fallbackMaxOutputTok
 
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({
+    contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'claude-test', noOptions);
 
@@ -19,6 +20,7 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
 
 test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', () => {
   const request = buildTargetRequest({
+    contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
   }, 'claude-test', noOptions);
 
@@ -64,12 +66,13 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
 });
 
 test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', () => {
-  const request = buildTargetRequest({}, 'claude-test', withMaxOutputTokens(6144));
+  const request = buildTargetRequest({ contents: [] }, 'claude-test', withMaxOutputTokens(6144));
   assertEquals(request.max_tokens, 6144);
 });
 
 test('buildTargetRequest maps generation config and thinking controls', () => {
   const payload: GeminiGenerateContentPayload = {
+    contents: [],
     generationConfig: {
       maxOutputTokens: 512,
       temperature: 0.25,
@@ -96,7 +99,7 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
     output_config: { effort: 'high' },
   });
 
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions).thinking, { type: 'disabled' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'claude-test', noOptions).thinking, { type: 'disabled' });
 });
 
 test('buildTargetRequest maps assistant thinking signatures and tool calls', () => {
@@ -223,6 +226,7 @@ test('buildTargetRequest correlates omitted function response ids in call order'
 
 test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   const payload: GeminiGenerateContentPayload = {
+    contents: [],
     tools: [
       {
         functionDeclarations: [
@@ -268,14 +272,15 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     tool_choice: { type: 'tool', name: 'lookup' },
   });
 
-  assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions).tool_choice, { type: 'none' });
-  assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
-  assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions).tool_choice, { type: 'any' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'NONE' } } }, 'claude-test', noOptions).tool_choice, { type: 'none' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions).tool_choice, { type: 'auto' });
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions).tool_choice, { type: 'any' });
 });
 
 test('buildTargetRequest filters tools to multiple allowed names for ANY mode', () => {
   const payload: GeminiGenerateContentPayload = {
+    contents: [],
     tools: [
       {
         functionDeclarations: [{ name: 'lookup' }, { name: 'ping' }, { name: 'blocked' }],
@@ -312,12 +317,12 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
 });
 
 test('buildTargetRequest maps dynamic thinking budget to adaptive thinking', () => {
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions).thinking, { type: 'adaptive' });
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions).thinking, { type: 'adaptive' });
 });
 
 test('buildTargetRequest wraps generationConfig.responseSchema as output_config.format', () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const request = buildTargetRequest({ generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
+  const request = buildTargetRequest({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
 
   assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
 });
@@ -325,7 +330,7 @@ test('buildTargetRequest wraps generationConfig.responseSchema as output_config.
 test('buildTargetRequest merges thinking-level effort with responseSchema format on a single output_config', () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
   const request = buildTargetRequest(
-    { generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
+    { contents: [], generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
     'claude-test',
     noOptions,
   );
@@ -421,4 +426,10 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     Error,
     'has no recognized content',
   );
+});
+
+test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
+  const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
+  const result = buildTargetRequest(payload, 'target-model', noOptions);
+  assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });

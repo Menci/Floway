@@ -133,7 +133,7 @@ test('messages: empty rules leave the payload unchanged', () => {
   const body = msgPayload({ output_config: { effort: 'high' }, thinking: { type: 'enabled', budget_tokens: 512 }, speed: 'fast' });
   applyRulesToUpstreamAnthropicMessages(body, {});
   assertEquals(body.output_config?.effort, 'high');
-  assertEquals(body.thinking?.budget_tokens, 512);
+  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 512);
   assertEquals(body.speed, 'fast');
 });
 
@@ -144,7 +144,7 @@ test('messages: effort lands on output_config, budget+adaptive land on thinking'
   });
   assertEquals(body.output_config?.effort, 'high');
   assertEquals(body.thinking?.type, 'enabled');
-  assertEquals(body.thinking?.budget_tokens, 2048);
+  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 2048);
 });
 
 test('messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
@@ -153,17 +153,25 @@ test('messages: verbosity has no Anthropic-shaped slot — silently dropped', ()
   assertEquals('verbosity' in body, false);
 });
 
-test('messages: summary=concise|detailed collapses onto thinking.display=summarized (enables thinking)', () => {
+test('messages: summary updates display without changing enabled thinking', () => {
   const body = msgPayload();
+  body.thinking = { type: 'enabled', budget_tokens: 2048 };
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'concise' } });
-  assertEquals(body.thinking?.type, 'enabled');
-  assertEquals(body.thinking?.display, 'summarized');
+  assertEquals(body.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
 });
 
 test('messages: summary=omitted collapses onto thinking.display=omitted', () => {
   const body = msgPayload();
+  body.thinking = { type: 'adaptive' };
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
-  assertEquals(body.thinking?.display, 'omitted');
+  assertEquals(body.thinking, { type: 'adaptive', display: 'omitted' });
+});
+
+test.each([undefined, { type: 'disabled' }, { type: 'between_tools' }] as const)('messages: display-only rules preserve inactive thinking %j', thinking => {
+  const body = msgPayload();
+  if (thinking !== undefined) body.thinking = thinking;
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'detailed' } });
+  assertEquals(body.thinking, thinking);
 });
 
 test('messages: summary=auto is a no-op (Anthropic default takes over)', () => {
@@ -232,5 +240,5 @@ test('messages: alias rules overwrite existing thinking + output_config fields',
   const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
   assertEquals(body.output_config?.effort, 'xhigh');
-  assertEquals(body.thinking?.budget_tokens, 9999);
+  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 9999);
 });

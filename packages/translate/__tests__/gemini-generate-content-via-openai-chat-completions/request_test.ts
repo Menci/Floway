@@ -7,6 +7,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({
+    contents: [],
     generationConfig: { thinkingConfig: { thinkingLevel: '' } },
   }, 'gpt-test');
 
@@ -15,6 +16,7 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
 
 test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', () => {
   const request = buildTargetRequest({
+    contents: [],
     generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
   }, 'gpt-test');
 
@@ -214,6 +216,7 @@ test('buildTargetRequest does not rematch a prior call already answered by expli
 
 test('buildTargetRequest maps generation config and reasoning effort', () => {
   const payload: GeminiGenerateContentPayload = {
+    contents: [],
     generationConfig: {
       maxOutputTokens: 512,
       temperature: 0.25,
@@ -255,6 +258,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
   assertEquals(
     buildTargetRequest(
       {
+        contents: [],
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: schema,
@@ -278,6 +282,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
 
 test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   const payload: GeminiGenerateContentPayload = {
+    contents: [],
     tools: [
       {
         functionDeclarations: [
@@ -326,6 +331,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   assertEquals(
     buildTargetRequest(
       {
+        contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'NONE' } },
       },
@@ -336,6 +342,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   assertEquals(
     buildTargetRequest(
       {
+        contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
       },
@@ -346,6 +353,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   assertEquals(
     buildTargetRequest(
       {
+        contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } },
       },
@@ -356,6 +364,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
   assertEquals(
     buildTargetRequest(
       {
+        contents: [],
         tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
         toolConfig: { functionCallingConfig: { mode: 'ANY' } },
       },
@@ -363,12 +372,13 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
     ).tool_choice,
     'required',
   );
-  assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
+  assertEquals(buildTargetRequest({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
 });
 
 test('buildTargetRequest filters tools to allowed function names for ANY mode', () => {
   const result = buildTargetRequest(
     {
+      contents: [],
       tools: [
         {
           functionDeclarations: [
@@ -404,11 +414,11 @@ test('buildTargetRequest filters tools to allowed function names for ANY mode', 
 });
 
 test('buildTargetRequest maps thinking budget thresholds', () => {
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test').reasoning_effort, 'none');
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test').reasoning_effort, undefined);
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning_effort, 'low');
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning_effort, 'medium');
-  assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning_effort, 'high');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test').reasoning_effort, 'none');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test').reasoning_effort, undefined);
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning_effort, 'low');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning_effort, 'medium');
+  assertEquals(buildTargetRequest({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning_effort, 'high');
 });
 
 test('buildTargetRequest rejects an unknown content role', () => {
@@ -520,4 +530,24 @@ test('buildTargetRequest forwards a vendor-specific thinkingLevel verbatim (no e
     'gpt-test',
   );
   assertEquals(turbo.reasoning_effort, 'turbo');
+});
+
+test('buildTargetRequest preserves an explicitly empty model text turn', () => {
+  assertEquals(buildTargetRequest({
+    contents: [
+      { role: 'user', parts: [{ text: 'first' }] },
+      { role: 'model', parts: [{ text: '' }] },
+      { role: 'user', parts: [{ text: 'second' }] },
+    ],
+  }, 'm').messages, [
+    { role: 'user', content: 'first' },
+    { role: 'assistant', content: '' },
+    { role: 'user', content: 'second' },
+  ]);
+});
+
+test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
+  const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
+  const result = buildTargetRequest(payload, 'target-model');
+  assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });

@@ -609,7 +609,7 @@ test('reasoning_text + reasoning_opaque → thinking block with signature', asyn
   assertEquals(thinking.signature, 'sig');
 });
 
-test('reasoning_text only → thinking block without signature', async () => {
+test('reasoning_text only → thinking block with the required empty signature field', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [
@@ -622,7 +622,7 @@ test('reasoning_text only → thinking block without signature', async () => {
   const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
   assertEquals(thinking.type, 'thinking');
   assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, undefined);
+  assertEquals(thinking.signature, '');
 });
 
 test('reasoning_opaque only → redacted_thinking block', async () => {
@@ -937,7 +937,7 @@ test('tool_choice auto → { type: auto }', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
       tool_choice: 'auto',
     }),
   );
@@ -958,7 +958,7 @@ test('tool_choice required → { type: any }', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
       tool_choice: 'required',
     }),
   );
@@ -972,7 +972,7 @@ test('tool_choice specific function → { type: tool, name }', async () => {
       tools: [
         {
           type: 'function',
-          function: { name: 'get_weather', parameters: {} },
+          function: { name: 'get_weather', parameters: { type: 'object' } },
         },
       ],
       tool_choice: { type: 'function', function: { name: 'get_weather' } },
@@ -1243,7 +1243,7 @@ test('buildTargetRequest merges reasoning_effort with structured-output format o
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'high',
-      response_format: { type: 'json_schema', json_schema: { schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
     }),
   );
 
@@ -1328,7 +1328,7 @@ test('buildTargetRequest keeps a structured-output format alongside thinking.dis
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'none',
-      response_format: { type: 'json_schema', json_schema: { schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
     }),
   );
 
@@ -1346,4 +1346,14 @@ test('buildTargetRequest leaves thinking absent when reasoning_effort is not non
 
   assertFalse('thinking' in result);
   assertEquals(result.output_config, { effort: 'high' });
+});
+
+test.each(['auto', 'required'] as const)('allowed_tools %s restricts native Messages declarations', async mode => {
+  const result = await buildTargetRequest({
+    model: 'claude-test', messages: [{ role: 'user', content: 'hello' }], tools: [
+      { type: 'function', function: { name: 'allowed' } }, { type: 'function', function: { name: 'excluded' } },
+    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } },
+  });
+  assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['allowed']);
+  assertEquals(result.tool_choice, { type: mode === 'required' ? 'any' : 'auto' });
 });

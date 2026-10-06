@@ -43,12 +43,8 @@ const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserC
     }
 
     if (block.type === 'image') {
-      parts.push({
-        type: 'image_url',
-        image_url: {
-          url: `data:${block.source.media_type};base64,${block.source.data}`,
-        },
-      });
+      if (block.source.type === 'file') throw new TranslatorInputError('Cannot translate file_id-only Anthropic image input to Chat Completions.');
+      parts.push({ type: 'image_url', image_url: { url: block.source.type === 'url' ? block.source.url : `data:${block.source.media_type};base64,${block.source.data}` } });
     }
   }
 
@@ -106,7 +102,7 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
     return [
       {
         role: 'user',
-        content: toOpenAIChatCompletionsContent(message.content),
+        content: message.content,
       },
     ];
   }
@@ -154,7 +150,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
     return [
       {
         role: 'assistant',
-        content: toOpenAIChatCompletionsContent(message.content),
+        content: message.content,
       },
     ];
   }
@@ -208,7 +204,10 @@ const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockPara
 const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIChatCompletionsMessage[] => [
   {
     role: 'system',
-    content: systemContentFromBlocks(message.content),
+    content: typeof message.content === 'string' ? message.content : message.content.map(block => {
+      if (block.type !== 'text') throw new TranslatorInputError('Only text is supported in Chat system messages.');
+      return { type: 'text', text: block.text };
+    }),
   },
 ];
 
