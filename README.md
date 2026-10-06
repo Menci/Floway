@@ -1,16 +1,19 @@
 # Floway
 
-A self-hosted LLM API gateway with a web dashboard. Connect GitHub Copilot,
-ChatGPT, Claude.ai, Azure AI, custom HTTP providers, and Ollama through OpenAI,
-Anthropic, and Gemini-compatible APIs.
+Floway is a self-hosted LLM API gateway for coding agents and API clients, with
+a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai, Azure AI,
+custom HTTP providers, and Ollama through OpenAI, Anthropic, and
+Gemini-compatible APIs.
 
 ## Deployment
 
-| Platform | Setup |
-| --- | --- |
-| Cloudflare Workers | Ask your coding agent to deploy with the [$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill. |
-| Docker | Run the commands below. |
-| Podman/systemd | Follow the [deployment guide](docker/systemd/README.md). |
+### Cloudflare Workers
+
+Ask your coding agent to use the
+[$deploy-to-cloudflare](.agents/skills/deploy-to-cloudflare/SKILL.md) skill to
+configure and deploy Floway to your Cloudflare account.
+
+### Docker
 
 ```bash
 git clone https://github.com/Menci/Floway.git
@@ -18,11 +21,25 @@ cd Floway
 ADMIN_KEY='replace-with-a-secret' docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Open <http://localhost:8788> with a blank username and `ADMIN_KEY` as the password.
-Add an upstream under **Providers → Upstreams** and a key under **Services → API Keys**.
-Use the key as a bearer token or `x-api-key`, or use **Agent Setup** for Claude Code
-or Codex. Docker stores persistent data in the `floway-data` volume.
+Open <http://localhost:8788>, leave the username blank, and log in with
+`ADMIN_KEY`. Data persists in the `floway-data` volume.
 
-**Development:** `pnpm install`, `pnpm run dev:node`; validate with `pnpm run verify`.
+### Podman/systemd
 
-**License:** MIT
+Follow the [deployment guide](docker/systemd/README.md) to run Floway as a
+systemd service with Podman.
+
+## Usage
+
+Add an upstream under **Providers → Upstreams**, then create a key under
+**Services → API Keys**. Use it as a bearer token or `x-api-key`, or configure
+Claude Code and Codex through **Agent Setup**.
+
+## Development
+
+Install dependencies with `pnpm install`, start locally with `pnpm run dev:node`,
+and run all checks with `pnpm run verify`.
+
+## License
+
+MIT
