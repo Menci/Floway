@@ -29,6 +29,7 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
+  pi: { model: null },
 });
 
 export const cloneAgentSetupConfiguration = (
@@ -58,6 +59,7 @@ export const applyLocalAgentSetupChanges = (
   const merged = cloneAgentSetupConfiguration(server);
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
+  copyChangedFields(merged.pi, local.pi, baseline.pi);
   return merged;
 };
 

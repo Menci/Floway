@@ -94,3 +94,15 @@ https://github.com/andreberg/Meslo-Font/blob/09a431d546d211130352c28eb0466e5d7d5
 
 Meslo LG is licensed under the Apache License, Version 2.0. A complete copy is
 in fonts/LICENSE-Meslo-LG.txt.
+
+Pi
+--
+
+pi.svg is the Pi logo referenced by the project's README, copied from the
+project's website on 2026-10-08. Only the viewBox was cropped to the artwork's
+bounds with a small margin so the mark is not rendered larger than the other
+icons; the paths are unchanged. The project's source repository is MIT licensed:
+
+- pi.svg
+  https://pi.dev/logo-auto.svg
+  https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/LICENSE

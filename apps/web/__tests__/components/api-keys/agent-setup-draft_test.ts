@@ -7,6 +7,7 @@ describe('pre-lease Agent Setup edits', () => {
     const baseline = blankAgentSetupDraft();
     const local = structuredClone(baseline);
     local.claudeCode.defaultOpusModel = 'claude-opus-custom';
+    local.pi.model = 'local-pi';
     const server = { ...blankAgentSetupDraft(), apiKeyId: 'key-1' };
     server.claudeCode.model = 'server-default';
     server.codex.model = 'server-codex';
@@ -15,6 +16,7 @@ describe('pre-lease Agent Setup edits', () => {
       apiKeyId: 'key-1',
       claudeCode: { model: 'server-default', defaultOpusModel: 'claude-opus-custom' },
       codex: { model: 'server-codex' },
+      pi: { model: 'local-pi' },
     });
   });
 });

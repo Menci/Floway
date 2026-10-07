@@ -23,6 +23,7 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
+  pi: { model: null },
 });
 
 const lease = (apiKeyId: string): AgentSetupLease => ({
@@ -34,6 +35,7 @@ const lease = (apiKeyId: string): AgentSetupLease => ({
   scripts: {
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
+    pi: { sh: '/pi.sh', ps1: '/pi.ps1' },
   },
 });
 
@@ -82,6 +84,14 @@ describe('Agent Setup card fields', () => {
   it('draws every setting from the lease the session holds', () => {
     renderInApp(<Host />);
     expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
+  });
+
+  it('renders the Pi tab with the static snapshot hint and no config snippet tab', () => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
+    expect(screen.getByRole('combobox', { name: 'Default model' })).toBeTruthy();
+    expect(screen.getByText(/Pi does not support dynamic model discovery/i)).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Config snippet' })).toBeNull();
   });
 
   it('keeps the configuration on screen while another key is being leased', () => {
