@@ -30,21 +30,23 @@ import {
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
   SETUP_BASH_COMMON,
+  SETUP_BASH_OMP,
   SETUP_POWERSHELL_CLAUDE,
   SETUP_POWERSHELL_CODEX,
   SETUP_POWERSHELL_COMMON,
+  SETUP_POWERSHELL_OMP,
 } from '../src/script-assets.generated.ts';
 import { type ScriptAgent, SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
 
 const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
-const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex' };
+const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex', omp: 'oh-my-pi' };
 const shellEntry = (agent: ScriptAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
 const powerShellEntry = (agent: ScriptAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
 const shellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].sh;
 const powerShellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].ps1;
-const ALL_BASH_FRAGMENTS = SETUP_BASH_COMMON + SETUP_BASH_CLAUDE + SETUP_BASH_CODEX;
-const ALL_POWERSHELL_FRAGMENTS = SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_CLAUDE + SETUP_POWERSHELL_CODEX;
+const ALL_BASH_FRAGMENTS = SETUP_BASH_COMMON + SETUP_BASH_CLAUDE + SETUP_BASH_CODEX + SETUP_BASH_OMP;
+const ALL_POWERSHELL_FRAGMENTS = SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_CLAUDE + SETUP_POWERSHELL_CODEX + SETUP_POWERSHELL_OMP;
 
 // A fixed, highly greppable fake credential. Every test asserts this string
 // never reaches the installer's stdout/stderr, so a real leak is unmistakable.
@@ -106,7 +108,7 @@ for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'da
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
 }
-for (const tool of ['sha256sum', 'openssl', 'timeout', 'gtimeout']) {
+for (const tool of ['sha256sum', 'openssl', 'timeout', 'gtimeout', 'node', 'bun']) {
   const path = resolveTool(tool);
   if (path) symlinkSync(path, join(SHIM_BIN, tool));
 }
@@ -302,6 +304,53 @@ chmod 755 "$target/codex"
 : > "$FAKE_INSTALLER_MARKER"
 `;
 
+// The fake `omp` mirrors the observable CLI surface setup invokes:
+// `--version` prints a version line, and `config path` prints the effective
+// agent directory taking profiles/environment into account.
+const FAKE_OMP = `#!/bin/bash
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake omp inherited the setup API key environment variable\\n' >&2
+  exit 91
+fi
+case "$1" in
+  --version)
+    if [ "\${FAKE_OMP_VERSION_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_OMP_VERSION_SLEEP"; fi
+    printf '%s\\n' "\${FAKE_OMP_VERSION:-0.1.0}"
+    ;;
+  config)
+    if [ "$2" = "path" ]; then
+      if [ "\${FAKE_OMP_NO_CONFIG_PATH:-0}" = "1" ]; then
+        exit 1
+      elif [ -n "\${FAKE_OMP_CONFIG_PATH:-}" ]; then
+        printf '%s\\n' "$FAKE_OMP_CONFIG_PATH"
+      else
+        printf '%s\\n' "$HOME/.omp/agent"
+      fi
+    else
+      printf 'fake omp: unhandled config subcommand: %s\\n' "$2" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    printf 'fake omp: unhandled args: %s\\n' "$*" >&2
+    exit 2
+    ;;
+esac
+`;
+
+const FAKE_OMP_INSTALLER = `#!/bin/bash
+set -eu
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake omp installer inherited the setup API key environment variable\\n' >&2
+  exit 92
+fi
+target="$HOME/.local/bin"
+mkdir -p "$target"
+cp "$FAKE_OMP_SRC" "$target/omp"
+chmod 755 "$target/omp"
+: > "$FAKE_INSTALLER_MARKER"
+`;
+
 const FIXTURES = join(HARNESS_ROOT, 'fixtures');
 mkdirSync(FIXTURES, { recursive: true });
 const FAKE_CLAUDE_SRC = join(FIXTURES, 'claude');
@@ -312,16 +361,26 @@ const FAKE_CODEX_SRC = join(FIXTURES, 'codex');
 writeFileSync(FAKE_CODEX_SRC, FAKE_CODEX, { mode: 0o755 });
 const FAKE_CODEX_INSTALLER_SCRIPT = join(FIXTURES, 'install-codex.sh');
 writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 });
+const FAKE_OMP_SRC = join(FIXTURES, 'omp');
+writeFileSync(FAKE_OMP_SRC, FAKE_OMP, { mode: 0o755 });
+const FAKE_OMP_INSTALLER_SCRIPT = join(FIXTURES, 'install-omp.sh');
+writeFileSync(FAKE_OMP_INSTALLER_SCRIPT, FAKE_OMP_INSTALLER, { mode: 0o755 });
 
 // --- local HTTP fixtures ----------------------------------------------------
 
 type ModelServerMode =
   | 'ok'
   | 'installer-sh' | 'installer-ps1' | 'installer-html'
-  | 'installer-codex-sh' | 'installer-codex-ps1';
+  | 'installer-codex-sh' | 'installer-codex-ps1'
+  | 'installer-omp-sh' | 'installer-omp-ps1';
+interface ModelServerRequest {
+  method: string;
+  path: string;
+  headers: Record<string, string | string[] | undefined>;
+}
 interface ModelServer {
   url: string;
-  readonly requests: { method: string; path: string }[];
+  readonly requests: ModelServerRequest[];
   mode: ModelServerMode;
   reset(): void;
   close(): Promise<void>;
@@ -353,12 +412,12 @@ New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
 const startModelServer = async (): Promise<ModelServer> => {
   const state = {
     mode: 'ok' as ModelServerMode,
-    requests: [] as { method: string; path: string }[],
+    requests: [] as ModelServerRequest[],
   };
   const HTML_BODY = '<!DOCTYPE html><HTML><BODY>blocked</BODY></HTML>';
   const server: Server = createServer((req, res) => {
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-    state.requests.push({ method: req.method ?? '', path: pathname });
+    state.requests.push({ method: req.method ?? '', path: pathname, headers: req.headers });
     // Unauthenticated probe bodies for the command-injection-semantics tests:
     // each echoes the base URL the wrapping command injected into the executing
     // shell, so the harness can confirm `export SETUP_ENDPOINT` / `$SetupEndpoint`
@@ -373,7 +432,7 @@ const startModelServer = async (): Promise<ModelServer> => {
       res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $SetupEndpoint) { \'UNSET\' } else { $SetupEndpoint })]"\n');
       return;
     }
-    if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
+    if (pathname === '/install.sh' || pathname === '/install-codex.sh' || pathname === '/install-omp.sh') {
       if (state.mode === 'installer-html') {
         res.writeHead(200, { 'content-type': 'text/html' });
         res.end(HTML_BODY);
@@ -389,8 +448,13 @@ const startModelServer = async (): Promise<ModelServer> => {
         res.end(FAKE_CODEX_INSTALLER);
         return;
       }
+      if (state.mode === 'installer-omp-sh') {
+        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
+        res.end(FAKE_OMP_INSTALLER);
+        return;
+      }
     }
-    if (pathname === '/install.ps1' || pathname === '/install-codex.ps1') {
+    if (pathname === '/install.ps1' || pathname === '/install-codex.ps1' || pathname === '/install-omp.ps1') {
       if (state.mode === 'installer-html') {
         res.writeHead(200, { 'content-type': 'text/html' });
         res.end(HTML_BODY);
@@ -406,6 +470,21 @@ const startModelServer = async (): Promise<ModelServer> => {
         res.end(PS1_FAKE_INSTALLER_BODY('codex', 'FAKE_CODEX_SRC'));
         return;
       }
+      if (state.mode === 'installer-omp-ps1') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(PS1_FAKE_INSTALLER_BODY('omp', 'FAKE_OMP_SRC'));
+        return;
+      }
+    }
+    if (pathname === '/v1/models' || pathname === '/models') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        object: 'list',
+        data: [
+          { id: 'floway-model-1', object: 'model', created: 1000, owned_by: 'floway' },
+        ],
+      }));
+      return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end('{"error":"not found"}');
@@ -463,9 +542,19 @@ case "$*" in
     cp "$FAKE_CODEX_SRC" "$HOME/.local/bin/codex"
     chmod 755 "$HOME/.local/bin/codex"
     ;;
+  *'@oh-my-pi/pi-coding-agent'*)
+    mkdir -p "$HOME/.local/bin"
+    cp "$FAKE_OMP_SRC" "$HOME/.local/bin/omp"
+    chmod 755 "$HOME/.local/bin/omp"
+    ;;
   *) exit 64 ;;
 esac
 `, { mode: 0o755 });
+};
+
+const placeFakeOmp = (dir: string): void => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'omp'), FAKE_OMP, { mode: 0o755 });
 };
 
 type InstallerTestConfiguration = AgentSetupConfiguration & { readonly testAgent: ScriptAgent };
@@ -478,6 +567,7 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...overrides,
   },
   codex: { model: null, reasoningEffort: null },
+  omp: { model: null },
 });
 
 const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}): InstallerTestConfiguration => ({
@@ -488,11 +578,13 @@ const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}):
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null, ...overrides },
+  omp: { model: null },
 });
 
 const bothConfig = (
   claude: Partial<AgentSetupConfiguration['claudeCode']> = {},
   codex: Partial<AgentSetupConfiguration['codex']> = {},
+  omp: Partial<AgentSetupConfiguration['omp']> = {},
 ): InstallerTestConfiguration => ({
   testAgent: 'claude',
   apiKeyId: 'key-a',
@@ -501,7 +593,21 @@ const bothConfig = (
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...claude,
   },
   codex: { model: null, reasoningEffort: null, ...codex },
+  omp: { model: null, ...omp },
 });
+
+// Prepared for Stage B / C tests:
+const ompConfig = (overrides: Partial<AgentSetupConfiguration['omp']> = {}): InstallerTestConfiguration => ({
+  testAgent: 'omp',
+  apiKeyId: 'key-a',
+  claudeCode: {
+    model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+  },
+  codex: { model: null, reasoningEffort: null },
+  omp: { model: null, ...overrides },
+});
+const _ompConfig = ompConfig;
 
 interface RunOptions {
   workspace: Workspace;
@@ -543,6 +649,17 @@ interface RunOptions {
   withCodexInstallHook?: boolean;
   codexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
+  // omp knobs.
+  fakeOmpVersion?: string;
+  fakeOmpVersionSleep?: number;
+  fakeOmpConfigPath?: string;
+  fakeOmpNoConfigPath?: boolean;
+  withOmpInstallHook?: boolean;
+  ompInstallerUrl?: string;
+  piCodingAgentDir?: string;
+  piConfigDir?: string;
+  ompProfile?: string;
+  fakeOmpFailConfig?: boolean;
   powerShellTimeSeparator?: string;
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
@@ -587,6 +704,23 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
   return env;
 };
 
+const ompEnv = (options: RunOptions): Record<string, string> => {
+  const env: Record<string, string> = {
+    FAKE_OMP_SRC,
+  };
+  if (options.fakeOmpVersion) env.FAKE_OMP_VERSION = options.fakeOmpVersion;
+  if (options.fakeOmpVersionSleep !== undefined) env.FAKE_OMP_VERSION_SLEEP = String(options.fakeOmpVersionSleep);
+  if (options.fakeOmpConfigPath) env.FAKE_OMP_CONFIG_PATH = options.fakeOmpConfigPath;
+  if (options.fakeOmpNoConfigPath) env.FAKE_OMP_NO_CONFIG_PATH = '1';
+  if (options.withOmpInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT = FAKE_OMP_INSTALLER_SCRIPT;
+  if (options.ompInstallerUrl) env.AGENT_SETUP_TEST_OMP_URL = options.ompInstallerUrl;
+  if (options.piCodingAgentDir) env.PI_CODING_AGENT_DIR = options.piCodingAgentDir;
+  if (options.piConfigDir) env.PI_CONFIG_DIR = options.piConfigDir;
+  if (options.ompProfile) env.OMP_PROFILE = options.ompProfile;
+  if (options.fakeOmpFailConfig) env.AGENT_SETUP_TEST_FAIL_CONFIG = '1';
+  return env;
+};
+
 // The origin the wrapping one-line command injects into the executing shell.
 const injectedBaseUrlValue = (options: RunOptions): string => options.baseUrlOverride ?? options.baseUrl;
 
@@ -626,6 +760,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
+    ...ompEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
@@ -692,8 +827,16 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
-    AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
+    ...codexEnv(options),
+    ...ompEnv(options),
   };
+  if (agent === 'claude') {
+    env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
+  } else if (agent === 'codex') {
+    env.AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
+  } else if (agent === 'omp') {
+    env.AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT = FAKE_OMP_INSTALLER_SCRIPT;
+  }
   return new Promise<RunResult>(resolve => {
     const child = spawn('/bin/bash', [scriptPath], { env });
     let stdout = '';
@@ -747,6 +890,29 @@ const readCodexToken = (workspace: Workspace, codexHome?: string): string =>
   readFileSync(codexTokenPath(workspace, codexHome), 'utf8');
 const powerShellCallerSurvivalPath = (workspace: Workspace): string => join(workspace.root, 'powershell-caller-survived');
 
+// --- omp inspection helpers -------------------------------------------------
+
+const ompDirFor = (workspace: Workspace, subPath = '.omp/agent'): string => join(workspace.home, subPath);
+const ompModelsPath = (workspace: Workspace, subPath = '.omp/agent', ext = 'yml'): string => join(ompDirFor(workspace, subPath), `models.${ext}`);
+const ompConfigPath = (workspace: Workspace, subPath = '.omp/agent', ext = 'yml'): string => join(ompDirFor(workspace, subPath), `config.${ext}`);
+const ompBackupFiles = (dir: string, base: string): string[] =>
+  existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
+const ompStagedFiles = (dir: string): string[] =>
+  existsSync(dir) ? readdirSync(dir).filter(name => name.includes('.floway-stage.')) : [];
+
+const hostOmpBin = ((): string | null => {
+  const custom = process.env.OMP_BIN;
+  const resolved = spawnSync('/bin/sh', ['-c', 'command -v omp'], { encoding: 'utf8' }).stdout.trim() || null;
+  const cmd = custom ?? resolved ?? 'omp';
+  try {
+    const probe = spawnSync('/bin/sh', ['-c', `${cmd} --version`], { encoding: 'utf8' });
+    if (probe.status === 0 && probe.stdout.trim().length > 0) return cmd;
+  } catch {
+    // ignore
+  }
+  return null;
+})();
+
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
   return probe.status === 0;
@@ -792,6 +958,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
+    ...ompEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
@@ -2537,14 +2704,1018 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
   t.equal(backups.length, 1, 'the provider-token backup is preserved for manual recovery');
 });
 
+// --- omp test cases ---------------------------------------------------------
+
+// omp agent installer test suite.
+
+test('omp', 'fresh install writes models.yml with 0600 mode and exact YAML shape, without config.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  modelServer.reset();
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `fresh install should succeed:\n${run.combined}`);
+  t.includes(run.stdout, '==> Completed Agent Setup: oh-my-pi', 'completion notice emitted');
+  const modelsFile = ompModelsPath(ws);
+  t.ok(existsSync(modelsFile), 'models.yml exists');
+  t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'models.yml permissions are 0600');
+  const expectedYaml = [
+    'providers:',
+    '  # floway:begin',
+    '  floway:',
+    `    baseUrl: ${modelServer.url}/v1`,
+    '    api: openai-responses',
+    '    auth: apiKey',
+    `    apiKey: ${SENTINEL_KEY}`,
+    '    headers: { User-Agent: floway-omp/1 }',
+    '    discovery:',
+    '      type: openai-models-list',
+    '  # floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(modelsFile, 'utf8'), expectedYaml, 'exact YAML shape matches specification');
+  t.equal(modelServer.requests.length, 0, 'installation and configuration remain entirely local');
+});
+
+test('omp', 'model set, changed, and cleared updates config.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const configFile = ompConfigPath(ws);
+
+  // 1. Model set
+  const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
+  t.ok(existsSync(configFile), 'config.yml created');
+  const expectedConfig1 = [
+    '# floway:begin',
+    'modelRoles:',
+    "  default: 'floway/gpt-4o'",
+    '# floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
+
+  // 2. Model changed (with quotes/special characters)
+  const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
+  t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
+  const expectedConfig2 = [
+    '# floway:begin',
+    'modelRoles:',
+    "  default: 'floway/claude-3-5:special''quote'",
+    '# floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
+
+  // 3. Model cleared
+  const run3 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
+  t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
+  t.ok(!existsSync(configFile) || readFileSync(configFile, 'utf8') === '', 'empty modelRoles cleaned up completely');
+});
+
+test('omp', 'idempotent re-run produces no diff and prunes backups', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run1.code, 0, `first run should succeed:\n${run1.combined}`);
+  const models1 = readFileSync(ompModelsPath(ws), 'utf8');
+  const config1 = readFileSync(ompConfigPath(ws), 'utf8');
+
+  const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), models1, 'models.yml identical');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'models.yml').length, 0, 'no models backups remain');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
+});
+
+test('omp', 'preserves unrelated providers, comments, roles, CRLF, and missing trailing newline', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+
+  const priorModels = '# User comments\r\nproviders:\r\n  anthropic:\r\n    baseUrl: https://api.anthropic.com\r\n    apiKey: ant-secret';
+  const priorConfig = '# Custom config\r\nmodelRoles:\r\n  plan: anthropic/claude-3-opus';
+  writeFileSync(ompModelsPath(ws), priorModels);
+  writeFileSync(ompConfigPath(ws), priorConfig);
+
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'test-model' }) });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+
+  const modelsText = readFileSync(ompModelsPath(ws), 'utf8');
+  t.includes(modelsText, '# User comments', 'comments preserved in models.yml');
+  t.includes(modelsText, 'anthropic:', 'unrelated provider preserved');
+  t.includes(modelsText, 'apiKey: ant-secret', 'unrelated provider keys preserved');
+  t.includes(modelsText, 'floway:', 'floway provider present');
+  t.ok(modelsText.includes('\r\n'), 'CRLF preserved in models.yml');
+
+  const configText = readFileSync(ompConfigPath(ws), 'utf8');
+  t.includes(configText, '# Custom config', 'comments preserved in config.yml');
+  t.includes(configText, 'plan: anthropic/claude-3-opus', 'unrelated role preserved');
+  t.includes(configText, "default: 'floway/test-model'", 'managed default inserted');
+  t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
+
+  // Clear model: user's plan role and comments must stay, only managed default is removed
+  const runClear = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
+  t.equal(runClear.code, 0, `clearing should succeed:\n${runClear.combined}`);
+
+  const configCleared = readFileSync(ompConfigPath(ws), 'utf8');
+  t.includes(configCleared, '# Custom config', 'comments preserved after clear');
+  t.includes(configCleared, 'modelRoles:', 'modelRoles header preserved');
+  t.includes(configCleared, 'plan: anthropic/claude-3-opus', 'unrelated user role preserved');
+  t.excludes(configCleared, 'default:', 'managed default key removed');
+});
+
+test('omp', 'refuses models.yml containing tabs without modifying file', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n\tfloway: {}\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'tabs in models.yml must fail');
+  t.includes(run.combined, 'tabs found in', 'error mentions tabs');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses config.yml containing tabs without modifying file', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles:\n\tdefault: foo\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'tabs in config.yml must fail');
+  t.includes(run.combined, 'tabs found in', 'error mentions tabs');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses flow-style providers mapping in models.yml without modifying file', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers: {}\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'flow-style providers must fail');
+  t.includes(run.combined, "flow-style 'providers:' mapping found", 'error mentions flow-style providers');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses flow-style modelRoles mapping in config.yml without modifying file', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles: {}\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'flow-style modelRoles must fail');
+  t.includes(run.combined, "flow-style 'modelRoles:' mapping found", 'error mentions flow-style modelRoles');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses existing unmanaged floway provider key in models.yml without modifying file', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n  floway:\n    baseUrl: https://custom.example.com\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'unmanaged floway provider must fail');
+  t.includes(run.combined, "existing unmanaged 'floway' provider found", 'error mentions unmanaged floway provider');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses YAML anchors, aliases, or merge keys touching providers in models.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers: &p\n  other:\n    baseUrl: https://test\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'anchors in models.yml must fail');
+  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses YAML anchors, aliases, or merge keys touching modelRoles in config.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles: &r\n  plan: claude\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'anchors in config.yml must fail');
+  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses existing unmanaged modelRoles.default in config.yml when model is configured', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles:\n  default: openai/gpt-4o\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'my-model' }) });
+  t.ok(run.code !== 0, 'unmanaged default must fail when model is set');
+  t.includes(run.combined, "existing unmanaged 'modelRoles.default' found", 'error mentions unmanaged default');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'refuses models.json-only setup without modifying models.json or creating models.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const jsonPath = join(ompDirFor(ws), 'models.json');
+  const jsonContent = '{"providers":{"openai":{}}}';
+  writeFileSync(jsonPath, jsonContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'models.json without models.yml must fail');
+  t.includes(run.combined, 'found models.json without models.yml', 'error explains models.json migration');
+  t.equal(readFileSync(jsonPath, 'utf8'), jsonContent, 'models.json unmodified');
+  t.ok(!existsSync(ompModelsPath(ws)), 'models.yml not created');
+});
+
+test('omp', 'refuses mismatched Floway markers in models.yml or config.yml', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n  # floway:begin\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'unmatched markers must fail');
+  t.includes(run.combined, 'mismatched or malformed Floway markers', 'error mentions malformed markers');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'rollback restores original models.yml and cleans stage files on mid-install failure', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const priorContent = 'providers:\n  custom:\n    baseUrl: https://custom.com\n';
+  writeFileSync(ompModelsPath(ws), priorContent);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
+  t.ok(run.code !== 0, 'simulated failure should exit nonzero');
+  t.includes(run.combined, 'rolling back configuration', 'rollback warning emitted');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), priorContent, 'models.yml restored to original content');
+  t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
+});
+
+test('omp', 'rollback restore failure preserves backup file and warns operator', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const priorContent = 'providers:\n  custom:\n    baseUrl: https://custom.com\n';
+  writeFileSync(ompModelsPath(ws), priorContent);
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpFailConfig: true,
+    fakeRestoreFailure: true,
+  });
+  t.ok(run.code !== 0, 'should fail');
+  t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
+  t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'models.yml').length, 1, 'backup file preserved for manual recovery');
+});
+
+test('omp', 'resolves agent directory from omp config path when omp CLI provides it', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const customDir = join(ws.home, 'from-config-path');
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpConfigPath: customDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(customDir, 'models.yml')), 'models.yml written under directory returned by omp config path');
+});
+
+test('omp', 'resolves agent directory from PI_CODING_AGENT_DIR when omp does not provide config path', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const customDir = join(ws.home, 'from-pi-env-dir');
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpNoConfigPath: true,
+    piCodingAgentDir: customDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(customDir, 'models.yml')), 'models.yml written under PI_CODING_AGENT_DIR');
+});
+
+test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const ignoredDir = join(ws.home, 'ignored-pi-env-dir');
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpNoConfigPath: true,
+    ompProfile: 'work',
+    piCodingAgentDir: ignoredDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.home, '.omp/profiles/work/agent/models.yml')), 'models.yml written under profile agent directory');
+  t.ok(!existsSync(ignoredDir), 'PI_CODING_AGENT_DIR was ignored');
+});
+
+test('omp', 'API key is never printed to stdout or stderr during setup', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed to stdout or stderr');
+});
+
+test('omp', 'ambient SETUP_API_KEY is not inherited by fake omp CLI', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runShellInstallerWithAmbientKey({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `ambient key run should succeed:\n${run.combined}`);
+  t.excludes(run.combined, 'fake omp inherited the setup API key', 'subprocesses must not inherit SETUP_API_KEY');
+});
+
+test('omp', 'CLI not found runs test installer hook and installs omp', async t => {
+  const ws = makeWorkspace();
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), withOmpInstallHook: true });
+  t.equal(run.code, 0, `hook installation should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.home, '.local/bin/omp')), 'installer hook installed omp');
+  t.includes(run.stdout, 'oh-my-pi CLI not found; running the test installer', 'reports test installer invocation');
+  t.ok(existsSync(ompModelsPath(ws)), 'models.yml written after installing');
+});
+
+test('omp', 'CLI not found installs via npm when npm is available', async t => {
+  const ws = makeWorkspace();
+  placeFakeNpm(ws);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), withOmpInstallHook: false });
+  t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
+  t.includes(run.stdout, 'oh-my-pi CLI not found; installing with npm', 'reports npm installation');
+  t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @oh-my-pi/pi-coding-agent', 'npm receives the official global package');
+});
+
+test('omp', 'CLI not found fails when installer download fails', async t => {
+  const ws = makeWorkspace();
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    withOmpInstallHook: false,
+    ompInstallerUrl: `${modelServer.url}/nonexistent`,
+  });
+  t.ok(run.code !== 0, 'download failure must fail setup');
+  t.includes(run.combined, 'could not download the installer', 'reports download failure');
+});
+
+test('omp', 'warns when multiple omp installations are detected', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const localBin = join(ws.home, '.local/bin');
+  mkdirSync(localBin, { recursive: true });
+  writeFileSync(join(localBin, 'omp'), FAKE_OMP, { mode: 0o755 });
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.includes(run.combined, 'multiple oh-my-pi installations detected', 'warns about multiple CLIs');
+});
+
+test('omp', 'fails when omp --version times out', async t => {
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpVersionSleep: 5,
+    timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'version timeout must fail setup');
+  t.includes(run.combined, '`omp --version` timed out', 'reports version command timeout');
+});
+
+test('omp', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
+  const body = shellBody('omp');
+  const entry = shellEntry('omp');
+  t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('configure_agent() {'), 'the entry call follows every agent function');
+  const script = renderShellPrefix({ agent: 'omp', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: ompConfig({ model: 'm' }) }) + body;
+  const scriptPath = join(HARNESS_ROOT, 'omp-syntax-check.sh');
+  writeFileSync(scriptPath, script);
+  const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
+  t.equal(result.status, 0, `/bin/bash -n reported a syntax error:\n${result.stderr}`);
+});
+
+test('omp', 'a download that ends before the final main call performs no setup work', t => {
+  const ws = makeWorkspace();
+  const configuration = ompConfig();
+  const body = shellBody('omp');
+  const bodyWithoutEntry = body.slice(0, body.lastIndexOf(shellEntry('omp')));
+  const script = renderShellPrefix({ agent: 'omp', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + bodyWithoutEntry;
+  const scriptPath = join(ws.root, 'truncated-omp-setup.sh');
+  writeFileSync(scriptPath, script);
+  const result = spawnSync('/bin/bash', [scriptPath], {
+    encoding: 'utf8',
+    env: { HOME: ws.home, PATH: [ws.binDir, SHIM_BIN].join(':'), SETUP_ENDPOINT: modelServer.url },
+  });
+  t.equal(result.status, 0, `definitions-only script should exit cleanly:\n${result.stderr}`);
+  t.equal(result.stdout, '', 'definitions-only script prints nothing');
+  t.ok(!existsSync(ompModelsPath(ws)), 'definitions-only script writes no models.yml');
+  t.ok(!existsSync(installerMarker(ws)), 'definitions-only script starts no installer');
+});
+
+// --- omp PowerShell parse + execution ---------------------------------------
+
+test('omp', 'PowerShell: fresh install writes models.yml with 0600 mode and exact YAML shape, without config.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  modelServer.reset();
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `fresh install should succeed:\n${run.combined}`);
+  t.includes(run.stdout, '==> Completed Agent Setup: oh-my-pi', 'completion notice emitted');
+  const modelsFile = ompModelsPath(ws);
+  t.ok(existsSync(modelsFile), 'models.yml exists');
+  t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'models.yml permissions are 0600');
+  const expectedYaml = [
+    'providers:',
+    '  # floway:begin',
+    '  floway:',
+    `    baseUrl: ${modelServer.url}/v1`,
+    '    api: openai-responses',
+    '    auth: apiKey',
+    `    apiKey: ${SENTINEL_KEY}`,
+    '    headers: { User-Agent: floway-omp/1 }',
+    '    discovery:',
+    '      type: openai-models-list',
+    '  # floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(modelsFile, 'utf8'), expectedYaml, 'exact YAML shape matches specification');
+  t.equal(modelServer.requests.length, 0, 'installation and configuration remain entirely local');
+});
+
+test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const configFile = ompConfigPath(ws);
+
+  // 1. Model set
+  const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
+  t.ok(existsSync(configFile), 'config.yml created');
+  const expectedConfig1 = [
+    '# floway:begin',
+    'modelRoles:',
+    "  default: 'floway/gpt-4o'",
+    '# floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
+
+  // 2. Model changed (with quotes/special characters)
+  const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
+  t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
+  const expectedConfig2 = [
+    '# floway:begin',
+    'modelRoles:',
+    "  default: 'floway/claude-3-5:special''quote'",
+    '# floway:end',
+    '',
+  ].join('\n');
+  t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
+
+  // 3. Model cleared
+  const run3 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
+  t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
+  t.ok(!existsSync(configFile) || readFileSync(configFile, 'utf8') === '', 'empty modelRoles cleaned up completely');
+});
+
+test('omp', 'PowerShell: idempotent re-run produces no diff and prunes backups', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run1.code, 0, `first run should succeed:\n${run1.combined}`);
+  const models1 = readFileSync(ompModelsPath(ws), 'utf8');
+  const config1 = readFileSync(ompConfigPath(ws), 'utf8');
+
+  const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
+  t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), models1, 'models.yml identical');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'models.yml').length, 0, 'no models backups remain');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
+});
+
+test('omp', 'PowerShell: preserves unrelated providers, comments, roles, CRLF, and missing trailing newline', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+
+  const priorModels = '# User comments\r\nproviders:\r\n  anthropic:\r\n    baseUrl: https://api.anthropic.com\r\n    apiKey: ant-secret';
+  const priorConfig = '# Custom config\r\nmodelRoles:\r\n  plan: anthropic/claude-3-opus';
+  writeFileSync(ompModelsPath(ws), priorModels);
+  writeFileSync(ompConfigPath(ws), priorConfig);
+
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'test-model' }) });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+
+  const modelsText = readFileSync(ompModelsPath(ws), 'utf8');
+  t.includes(modelsText, '# User comments', 'comments preserved in models.yml');
+  t.includes(modelsText, 'anthropic:', 'unrelated provider preserved');
+  t.includes(modelsText, 'apiKey: ant-secret', 'unrelated provider keys preserved');
+  t.includes(modelsText, 'floway:', 'floway provider present');
+  t.ok(modelsText.includes('\r\n'), 'CRLF preserved in models.yml');
+
+  const configText = readFileSync(ompConfigPath(ws), 'utf8');
+  t.includes(configText, '# Custom config', 'comments preserved in config.yml');
+  t.includes(configText, 'plan: anthropic/claude-3-opus', 'unrelated role preserved');
+  t.includes(configText, "default: 'floway/test-model'", 'managed default inserted');
+  t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
+
+  // Clear model: user's plan role and comments must stay, only managed default is removed
+  const runClear = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
+  t.equal(runClear.code, 0, `clearing should succeed:\n${runClear.combined}`);
+
+  const configCleared = readFileSync(ompConfigPath(ws), 'utf8');
+  t.includes(configCleared, '# Custom config', 'comments preserved after clear');
+  t.includes(configCleared, 'modelRoles:', 'modelRoles header preserved');
+  t.includes(configCleared, 'plan: anthropic/claude-3-opus', 'unrelated user role preserved');
+  t.excludes(configCleared, 'default:', 'managed default key removed');
+});
+
+test('omp', 'PowerShell: refuses models.yml containing tabs without modifying file', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n\tfloway: {}\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'tabs in models.yml must fail');
+  t.includes(run.combined, 'tabs found in', 'error mentions tabs');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses config.yml containing tabs without modifying file', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles:\n\tdefault: foo\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'tabs in config.yml must fail');
+  t.includes(run.combined, 'tabs found in', 'error mentions tabs');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses flow-style providers mapping in models.yml without modifying file', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers: {}\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'flow-style providers must fail');
+  t.includes(run.combined, "flow-style 'providers:' mapping found", 'error mentions flow-style providers');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses flow-style modelRoles mapping in config.yml without modifying file', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles: {}\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'flow-style modelRoles must fail');
+  t.includes(run.combined, "flow-style 'modelRoles:' mapping found", 'error mentions flow-style modelRoles');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses existing unmanaged floway provider key in models.yml without modifying file', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n  floway:\n    baseUrl: https://custom.example.com\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'unmanaged floway provider must fail');
+  t.includes(run.combined, "existing unmanaged 'floway' provider found", 'error mentions unmanaged floway provider');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses YAML anchors, aliases, or merge keys touching providers in models.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers: &p\n  other:\n    baseUrl: https://test\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'anchors in models.yml must fail');
+  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses YAML anchors, aliases, or merge keys touching modelRoles in config.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles: &r\n  plan: claude\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
+  t.ok(run.code !== 0, 'anchors in config.yml must fail');
+  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses existing unmanaged modelRoles.default in config.yml when model is configured', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'modelRoles:\n  default: openai/gpt-4o\n';
+  writeFileSync(ompConfigPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'my-model' }) });
+  t.ok(run.code !== 0, 'unmanaged default must fail when model is set');
+  t.includes(run.combined, "existing unmanaged 'modelRoles.default' found", 'error mentions unmanaged default');
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: refuses models.json-only setup without modifying models.json or creating models.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const jsonPath = join(ompDirFor(ws), 'models.json');
+  const jsonContent = '{"providers":{"openai":{}}}';
+  writeFileSync(jsonPath, jsonContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'models.json without models.yml must fail');
+  t.includes(run.combined, 'found models.json without models.yml', 'error explains models.json migration');
+  t.equal(readFileSync(jsonPath, 'utf8'), jsonContent, 'models.json unmodified');
+  t.ok(!existsSync(ompModelsPath(ws)), 'models.yml not created');
+});
+
+test('omp', 'PowerShell: refuses mismatched Floway markers in models.yml or config.yml', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const badContent = 'providers:\n  # floway:begin\n';
+  writeFileSync(ompModelsPath(ws), badContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.ok(run.code !== 0, 'unmatched markers must fail');
+  t.includes(run.combined, 'mismatched or malformed Floway markers', 'error mentions malformed markers');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), badContent, 'file unmodified');
+});
+
+test('omp', 'PowerShell: rollback restores original models.yml and cleans stage files on mid-install failure', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const priorContent = 'providers:\n  custom:\n    baseUrl: https://custom.com\n';
+  writeFileSync(ompModelsPath(ws), priorContent);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
+  t.ok(run.code !== 0, 'simulated failure should exit nonzero');
+  t.includes(run.combined, 'rolling back configuration', 'rollback warning emitted');
+  t.equal(readFileSync(ompModelsPath(ws), 'utf8'), priorContent, 'models.yml restored to original content');
+  t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
+});
+
+test('omp', 'PowerShell: rollback restore failure preserves backup file and warns operator', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  mkdirSync(ompDirFor(ws), { recursive: true });
+  const priorContent = 'providers:\n  custom:\n    baseUrl: https://custom.com\n';
+  writeFileSync(ompModelsPath(ws), priorContent);
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpFailConfig: true,
+    failRestore: true,
+  });
+  t.ok(run.code !== 0, 'should fail');
+  t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
+  t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
+  t.equal(ompBackupFiles(ompDirFor(ws), 'models.yml').length, 1, 'backup file preserved for manual recovery');
+});
+
+test('omp', 'PowerShell: resolves agent directory from omp config path when omp CLI provides it', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const customDir = join(ws.home, 'from-config-path');
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpConfigPath: customDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(customDir, 'models.yml')), 'models.yml written under directory returned by omp config path');
+});
+
+test('omp', 'PowerShell: resolves agent directory from PI_CODING_AGENT_DIR when omp does not provide config path', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const customDir = join(ws.home, 'from-pi-env-dir');
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpNoConfigPath: true,
+    piCodingAgentDir: customDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(customDir, 'models.yml')), 'models.yml written under PI_CODING_AGENT_DIR');
+});
+
+test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const ignoredDir = join(ws.home, 'ignored-pi-env-dir');
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpNoConfigPath: true,
+    ompProfile: 'work',
+    piCodingAgentDir: ignoredDir,
+  });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.home, '.omp/profiles/work/agent/models.yml')), 'models.yml written under profile agent directory');
+  t.ok(!existsSync(ignoredDir), 'PI_CODING_AGENT_DIR was ignored');
+});
+
+test('omp', 'PowerShell: API key is never printed to stdout or stderr during setup', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed to stdout or stderr');
+});
+
+test('omp', 'PowerShell: ambient SETUP_API_KEY is not inherited by fake omp CLI', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), ambientApiKey: true });
+  t.equal(run.code, 0, `ambient key run should succeed:\n${run.combined}`);
+  t.excludes(run.combined, 'fake omp inherited the setup API key', 'subprocesses must not inherit SETUP_API_KEY');
+});
+
+test('omp', 'PowerShell: CLI not found runs test installer hook and installs omp', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), withOmpInstallHook: true });
+  t.equal(run.code, 0, `hook installation should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.home, '.local/bin/omp')), 'installer hook installed omp');
+  t.includes(run.stdout, 'oh-my-pi CLI not found; running the test installer', 'reports test installer invocation');
+  t.ok(existsSync(ompModelsPath(ws)), 'models.yml written after installing');
+});
+
+test('omp', 'PowerShell prefers npm over the direct installer when npm is available', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeNpm(ws);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), withOmpInstallHook: false });
+  t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
+  t.includes(run.stdout, 'oh-my-pi CLI not found; installing with npm', 'reports npm installation');
+  t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @oh-my-pi/pi-coding-agent', 'npm receives the official global package');
+});
+
+test('omp', 'PowerShell: CLI not found fails when installer download fails', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    withOmpInstallHook: false,
+    ompInstallerUrl: `${modelServer.url}/nonexistent`,
+  });
+  t.ok(run.code !== 0, 'download failure must fail setup');
+});
+
+test('omp', 'PowerShell: warns when multiple omp installations are detected', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const localBin = join(ws.home, '.local/bin');
+  mkdirSync(localBin, { recursive: true });
+  writeFileSync(join(localBin, 'omp'), FAKE_OMP, { mode: 0o755 });
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
+  t.includes(run.combined, 'multiple oh-my-pi installations detected', 'warns about multiple CLIs');
+});
+
+test('omp', 'PowerShell: fails when omp --version times out', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeOmp(ws.binDir);
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    fakeOmpVersionSleep: 5,
+    timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'version timeout must fail setup');
+  t.includes(run.combined, '`omp --version` timed out', 'reports version command timeout');
+});
+
+test('omp', 'local PowerShell installer accepts script content and rejects HTML', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const accepted = makeWorkspace();
+  modelServer.mode = 'installer-omp-ps1';
+  const success = await runPowerShellInstaller({
+    workspace: accepted,
+    configuration: ompConfig(),
+    baseUrl: modelServer.url,
+    withOmpInstallHook: false,
+    ompInstallerUrl: `${modelServer.url}/install-omp.ps1`,
+  });
+  t.equal(success.code, 0, `a local PowerShell installer should be accepted:\n${success.combined}`);
+  t.ok(existsSync(installerMarker(accepted)), 'accepted installer executed');
+
+  const rejected = makeWorkspace();
+  modelServer.mode = 'installer-html';
+  const failure = await runPowerShellInstaller({
+    workspace: rejected,
+    configuration: ompConfig(),
+    baseUrl: modelServer.url,
+    withOmpInstallHook: false,
+    ompInstallerUrl: `${modelServer.url}/install-omp.ps1`,
+  });
+  t.ok(failure.code !== 0, 'HTML installer response must be rejected');
+  t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
+});
+
+test('omp', 'PowerShell: timed-out installer terminates cleanly', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  modelServer.mode = 'installer-omp-ps1';
+  const started = Date.now();
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    configuration: ompConfig(),
+    baseUrl: modelServer.url,
+    withOmpInstallHook: false,
+    ompInstallerUrl: `${modelServer.url}/install-omp.ps1`,
+    installerSleep: 12,
+    timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'timed out installer must fail the agent');
+  t.ok(Date.now() - started < 8_000, 'installer deadline must fire well before natural completion');
+  t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
+});
+
+test('omp', 'PowerShell installer body parses without syntax errors', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const body = powerShellBody('omp');
+  const entry = powerShellEntry('omp');
+  t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
+  const script = renderPowerShellPrefix({
+    agent: 'omp',
+    apiKey: SENTINEL_KEY,
+    apiKeyName: 'Primary key',
+    configuration: ompConfig({ model: 'm' }),
+  }) + body;
+  const scriptPath = join(HARNESS_ROOT, 'omp-parse-check.ps1');
+  writeFileSync(scriptPath, script);
+  const check = `$errs=$null; [System.Management.Automation.Language.Parser]::ParseFile('${scriptPath.replace(/'/g, "''")}',[ref]$null,[ref]$errs); if($errs -and $errs.Count -gt 0){ $errs | ForEach-Object { [Console]::Error.WriteLine($_.Message) }; exit 1 } else { exit 0 }`;
+  const result = spawnSync(hostPwsh, ['-NoProfile', '-Command', check], { encoding: 'utf8' });
+  t.equal(result.status, 0, `PowerShell parse errors:\n${result.stdout}${result.stderr}`);
+});
+
+test('omp', 'PowerShell: a download that ends before the final Main call performs no setup work', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const configuration = ompConfig();
+  const body = powerShellBody('omp');
+  const bodyWithoutEntry = body.slice(0, body.lastIndexOf(powerShellEntry('omp')));
+  const script = renderPowerShellPrefix({ agent: 'omp', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + bodyWithoutEntry;
+  const scriptPath = join(ws.root, 'truncated-omp-setup.ps1');
+  writeFileSync(scriptPath, script);
+  const result = spawnSync(hostPwsh, ['-NoProfile', '-File', scriptPath], {
+    encoding: 'utf8',
+    env: { HOME: ws.home, PATH: [ws.binDir, SHIM_BIN].join(':'), SETUP_ENDPOINT: modelServer.url },
+  });
+  t.equal(result.status, 0, `definitions-only script should exit cleanly:\n${result.stderr}`);
+  t.equal(result.stdout, '', 'definitions-only script prints nothing');
+  t.ok(!existsSync(ompModelsPath(ws)), 'definitions-only script writes no models.yml');
+  t.ok(!existsSync(installerMarker(ws)), 'definitions-only script starts no installer');
+});
+
+test('omp', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', t => {
+  const body = powerShellBody('omp');
+  const createIndex = body.indexOf('[System.IO.File]::Create($script:OmpModelsStage).Dispose()');
+  const protectStageIndex = body.indexOf('Protect-SetupFile $script:OmpModelsStage', createIndex);
+  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($script:OmpModelsStage, $sb.ToString()', protectStageIndex);
+  const protectTargetIndex = body.indexOf('Protect-SetupFile $script:OmpModelsPath', writeIndex);
+  const replaceIndex = body.indexOf('[System.IO.File]::Replace($script:OmpModelsStage, $script:OmpModelsPath, [System.Management.Automation.Language.NullString]::Value)', protectTargetIndex);
+  t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
+  t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret YAML is written');
+  t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
+  t.includes(body, '$runningOnWindows = Test-SetupIsWindows', 'the replacement path uses the shared Windows predicate');
+  t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
+  t.excludes(body, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
+  t.includes(body, 'Move-Item -LiteralPath $script:OmpModelsStage -Destination $script:OmpModelsPath', 'new target must use a same-directory move');
+});
+
+test('omp', 'installer scripts embed expected URLs and command sequences', t => {
+  t.includes(SETUP_POWERSHELL_OMP, "Install-SetupNpmPackage -Package '@oh-my-pi/pi-coding-agent'", 'PowerShell can install omp with npm');
+  t.includes(SETUP_POWERSHELL_OMP, 'https://omp.sh/install.ps1', 'omp Windows uses the official install.ps1');
+  t.includes(SETUP_BASH_OMP, '@oh-my-pi/pi-coding-agent', 'Bash installer specifies the npm package name');
+});
+
+test('omp', 'real omp smoke: discovery succeeds and server receives headers', async t => {
+  if (!hostOmpBin) skip('real omp is not available or --version failed');
+  const ws = makeWorkspace();
+  const ompHome = ws.home;
+  const cmd = hostOmpBin;
+  writeFileSync(join(ws.binDir, 'omp'), `#!/bin/sh\nexec ${cmd} "$@"\n`, { mode: 0o755 });
+  const run = await runShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: ompConfig(),
+    withOmpInstallHook: false,
+  });
+  t.equal(run.code, 0, `omp installer should succeed: ${run.combined}`);
+  // Asynchronous on purpose: the fixture server lives in this process, so a
+  // blocking spawnSync would starve it and omp's discovery request would hang.
+  const refresh = await new Promise<RunResult>(resolve => {
+    const child = spawn('/bin/sh', ['-c', `${cmd} models refresh`], { env: { ...process.env, HOME: ompHome } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
+    child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+  });
+  t.equal(refresh.code, 0, `models refresh failed: ${refresh.stderr}\n${refresh.stdout}`);
+  const req = modelServer.requests.find(r => r.path === '/v1/models' || r.path === '/models');
+  t.ok(req !== undefined, 'modelServer received discovery request');
+  t.equal(req?.headers['authorization'], `Bearer ${SENTINEL_KEY}`, 'discovery sent Authorization header with setup API key');
+  t.equal(req?.headers['user-agent'], 'floway-omp/1', 'discovery sent User-Agent: floway-omp/1');
+
+  if (hostPwsh) {
+    const psWs = makeWorkspace();
+    const psOmpHome = psWs.home;
+    writeFileSync(join(psWs.binDir, 'omp'), `#!/bin/sh\nexec ${cmd} "$@"\n`, { mode: 0o755 });
+    modelServer.reset();
+    const psRun = await runPowerShellInstaller({
+      workspace: psWs,
+      baseUrl: modelServer.url,
+      configuration: ompConfig(),
+      withOmpInstallHook: false,
+    });
+    t.equal(psRun.code, 0, `omp PowerShell installer should succeed: ${psRun.combined}`);
+    const psRefresh = await new Promise<RunResult>(resolve => {
+      const child = spawn('/bin/sh', ['-c', `${cmd} models refresh`], { env: { ...process.env, HOME: psOmpHome } });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
+      child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+    });
+    t.equal(psRefresh.code, 0, `models refresh failed: ${psRefresh.stderr}\n${psRefresh.stdout}`);
+    const psReq = modelServer.requests.find(r => r.path === '/v1/models' || r.path === '/models');
+    t.ok(psReq !== undefined, 'modelServer received discovery request from PowerShell setup');
+    t.equal(psReq?.headers['authorization'], `Bearer ${SENTINEL_KEY}`, 'discovery sent Authorization header with setup API key');
+    t.equal(psReq?.headers['user-agent'], 'floway-omp/1', 'discovery sent User-Agent: floway-omp/1');
+  }
+});
+
 // --- run --------------------------------------------------------------------
 
 const parseAgentFilter = (): ScriptAgent | 'all' => {
   const index = process.argv.indexOf('--agent');
   if (index === -1) return 'all';
   const value = process.argv[index + 1];
-  if (value === 'claude' || value === 'codex') return value;
-  throw new Error(`--agent must be "claude" or "codex", got ${JSON.stringify(value)}`);
+  if (value === 'claude' || value === 'codex' || value === 'omp') return value;
+  throw new Error(`--agent must be "claude", "codex", or "omp", got ${JSON.stringify(value)}`);
 };
 
 const main = async (): Promise<void> => {

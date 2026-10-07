@@ -50,6 +50,13 @@ export const agentSetupConfigurationSchema = z.object({
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
+  // oh-my-pi (omp) agent configuration.
+  // Ref: https://github.com/can1357/oh-my-pi
+  omp: z.object({
+    model: opaqueOptionalString,
+  }).strict().default({
+    model: null,
+  }),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
@@ -74,5 +81,8 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   codex: {
     model: null,
     reasoningEffort: null,
+  },
+  omp: {
+    model: null,
   },
 });

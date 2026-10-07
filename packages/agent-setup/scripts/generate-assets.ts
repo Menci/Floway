@@ -45,6 +45,7 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_BASH_CLAUDE', file: 'installers/bash/claude.sh' },
       { name: 'SETUP_BASH_CODEX', file: 'installers/bash/codex.sh' },
+      { name: 'SETUP_BASH_OMP', file: 'installers/bash/omp.sh' },
     ],
   },
   powershell: {
@@ -70,6 +71,7 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
+      { name: 'SETUP_POWERSHELL_OMP', file: 'installers/powershell/omp.ps1' },
     ],
   },
 } as const satisfies Record<string, PlatformSources>;

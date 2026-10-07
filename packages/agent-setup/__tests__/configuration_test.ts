@@ -25,6 +25,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  omp: {
+    model: 'custom-omp-model',
+  },
 };
 
 describe('agentSetupConfigurationSchema', () => {
@@ -102,11 +105,50 @@ describe('agentSetupConfigurationSchema', () => {
       ...fullConfiguration,
       codex: { ...fullConfiguration.codex, unexpected: true },
     }).success).toBe(false);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      omp: { ...fullConfiguration.omp, unexpected: true },
+    }).success).toBe(false);
+  });
+
+  test('accepts legacy stored configuration without omp and defaults it to null model', () => {
+    const legacy = {
+      apiKeyId: 'key-a',
+      claudeCode: {
+        model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
+      },
+      codex: { model: null, reasoningEffort: null },
+    };
+    const parsed = agentSetupConfigurationSchema.safeParse(legacy);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.omp).toEqual({ model: null });
+    }
+  });
+
+  test('accepts null or non-empty string for omp model and rejects empty or NUL string', () => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      omp: { model: null },
+    }).success).toBe(true);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      omp: { model: 'gpt-4o' },
+    }).success).toBe(true);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      omp: { model: '' },
+    }).success).toBe(false);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      omp: { model: 'bad\0model' },
+    }).success).toBe(false);
   });
 });
 
 describe('defaultAgentSetupConfiguration', () => {
-  test('sets the given key, enables both agents, nulls overrides, enables discovery', () => {
+  test('sets the given key, enables agents, nulls overrides, enables discovery', () => {
     expect(defaultAgentSetupConfiguration('key-a')).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
@@ -114,6 +156,7 @@ describe('defaultAgentSetupConfiguration', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
+      omp: { model: null },
     });
   });
 

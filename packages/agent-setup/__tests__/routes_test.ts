@@ -143,12 +143,14 @@ interface LeaseResponse {
     apiKeyId: string;
     claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean; disableAutoMemory: boolean; disableAgentView: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
+    omp: { model: string | null };
   };
   configurationRevision: number;
   expiresAt: number;
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    omp: { sh: string; ps1: string };
   };
 }
 
@@ -158,6 +160,7 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
+  omp: { model: null },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -194,12 +197,15 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.configuration.claudeCode.model, null);
   assertEquals(body.configuration.claudeCode.cleanupPeriodDays, null);
   assertEquals(body.configuration.claudeCode.optOutAiAttribution, false);
+  assertEquals(body.configuration.omp.model, null);
   assertEquals(body.configurationRevision, 1);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
   assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  assertEquals(body.scripts.omp.sh, `/api/setup/${body.token}/omp.sh`);
+  assertEquals(body.scripts.omp.ps1, `/api/setup/${body.token}/omp.ps1`);
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -479,6 +485,27 @@ test('GET re-reads the current configuration each request', async () => {
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
+});
+
+test('GET serves rendered omp bash and powershell scripts reflecting configuration', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const shInitial = await (await h.request(lease.scripts.omp.sh, { method: 'GET' })).text();
+  expect(shInitial).toContain("SETUP_OMP_MODEL=''");
+  expect(shInitial).toContain("main 'oh-my-pi' \"$@\"");
+
+  const ps1Initial = await (await h.request(lease.scripts.omp.ps1, { method: 'GET' })).text();
+  expect(ps1Initial).toContain('$SetupOmpModel = $null');
+  expect(ps1Initial).toContain("Main 'oh-my-pi'");
+
+  const edited = { ...lease.configuration, omp: { model: 'custom-pi-model' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+
+  const shAfter = await (await h.request(lease.scripts.omp.sh, { method: 'GET' })).text();
+  expect(shAfter).toContain("SETUP_OMP_MODEL='custom-pi-model'");
+
+  const ps1After = await (await h.request(lease.scripts.omp.ps1, { method: 'GET' })).text();
+  expect(ps1After).toContain("$SetupOmpModel = 'custom-pi-model'");
 });
 
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {

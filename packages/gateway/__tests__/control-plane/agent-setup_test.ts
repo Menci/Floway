@@ -29,7 +29,11 @@ const testApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
 interface LeaseResponse {
   status: string;
   token: string;
-  scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } };
+  scripts: {
+    claude: { sh: string; ps1: string };
+    codex: { sh: string; ps1: string };
+    omp: { sh: string; ps1: string };
+  };
 }
 
 const createLease = async (apiKey: ApiKey): Promise<LeaseResponse> => {
@@ -78,6 +82,16 @@ test('the public GET serves the rendered script with hardened headers and no COR
   expect(text).toContain('Floway Agent Setup common installer fragment (Bash 3.2+)');
   expect(text).toContain('Claude Code Agent Setup fragment.');
   expect(text).not.toContain('Codex Agent Setup fragment.');
+
+  const ompResponse = await requestApp(lease.scripts.omp.sh, { method: 'GET' });
+  assertEquals(ompResponse.status, 200);
+  assertEquals(ompResponse.headers.get('content-type'), 'text/plain; charset=utf-8');
+  assertEquals(ompResponse.headers.get('cache-control'), 'no-store');
+  assertEquals(ompResponse.headers.get('access-control-allow-origin'), null);
+  const ompText = await ompResponse.text();
+  expect(ompText).toContain("SETUP_API_KEY='raw-key'");
+  expect(ompText).toContain("SETUP_OMP_MODEL=''");
+  expect(ompText).toContain('oh-my-pi (omp) Agent Setup fragment.');
 });
 
 test('HEAD validates without assembling the API-key body', async () => {

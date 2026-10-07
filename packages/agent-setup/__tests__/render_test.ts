@@ -22,6 +22,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  omp: {
+    model: 'floway-omp-model',
+  },
 };
 
 describe('renderShellPrefix', () => {
@@ -84,6 +87,7 @@ describe('renderShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        omp: { model: null },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -93,6 +97,32 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AUTO_MEMORY=''");
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AGENT_VIEW=''");
     expect(prefix).not.toContain('SETUP_CODEX_');
+  });
+
+  test('renders omp prefix assignments for shell with quoting and null handling', () => {
+    const withModel = renderShellPrefix({
+      agent: 'omp',
+      apiKey: "key'with'quote",
+      apiKeyName: 'Key Label',
+      configuration: fullConfiguration,
+    });
+    expect(withModel).toBe([
+      'set +x',
+      "SETUP_API_KEY='key'\\''with'\\''quote'",
+      "SETUP_API_KEY_NAME='Key Label'",
+      "SETUP_OMP_MODEL='floway-omp-model'",
+      '',
+    ].join('\n'));
+
+    const withoutModel = renderShellPrefix({
+      agent: 'omp',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Key Label',
+      configuration: { ...fullConfiguration, omp: { model: null } },
+    });
+    expect(withoutModel).toContain("SETUP_OMP_MODEL=''");
+    expect(withoutModel).not.toContain('SETUP_CLAUDE_');
+    expect(withoutModel).not.toContain('SETUP_CODEX_');
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
@@ -155,6 +185,7 @@ describe('renderPowerShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        omp: { model: null },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
@@ -177,5 +208,31 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $true');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $true');
+  });
+
+  test('renders omp prefix assignments for PowerShell with quoting and null handling', () => {
+    const withModel = renderPowerShellPrefix({
+      agent: 'omp',
+      apiKey: "key'with'quote",
+      apiKeyName: 'Key Label',
+      configuration: fullConfiguration,
+    });
+    expect(withModel).toBe([
+      'Set-PSDebug -Off',
+      "$SetupApiKey = 'key''with''quote'",
+      "$SetupApiKeyName = 'Key Label'",
+      "$SetupOmpModel = 'floway-omp-model'",
+      '',
+    ].join('\n'));
+
+    const withoutModel = renderPowerShellPrefix({
+      agent: 'omp',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Key Label',
+      configuration: { ...fullConfiguration, omp: { model: null } },
+    });
+    expect(withoutModel).toContain('$SetupOmpModel = $null');
+    expect(withoutModel).not.toContain('$SetupClaude');
+    expect(withoutModel).not.toContain('$SetupCodex');
   });
 });
