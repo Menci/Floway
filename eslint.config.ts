@@ -225,7 +225,8 @@ const parserOptions: Linter.ParserOptions = {
 const config: Linter.Config[] = [
   {
     ...commonConfig,
-    files: ['**/*.{ts,tsx}'],
+    // .mjs is the installers' embedded Node helper; it has no .ts counterpart.
+    files: ['**/*.{ts,tsx,mjs}'],
     languageOptions: {
       parser: tsParser,
       ecmaVersion: 'latest',
