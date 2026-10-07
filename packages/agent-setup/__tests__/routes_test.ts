@@ -119,6 +119,7 @@ const harness = (options: {
     resolveApiKey: (_userId, apiKeyId) => Promise.resolve(
       secrets[apiKeyId] === undefined ? null : { name: apiKeyId === 'key_primary' ? 'Primary key' : apiKeyId, secret: secrets[apiKeyId] },
     ),
+    listVisibleModels: () => Promise.resolve([]),
     ...options.publicOverrides,
   };
   const controlDeps = {
@@ -446,6 +447,7 @@ test('near-miss public URLs are consumed before host middleware can log their to
       repository: { findByToken: () => Promise.resolve(null) },
       userExists: () => Promise.resolve(false),
       resolveApiKey: () => Promise.resolve(null),
+      listVisibleModels: () => Promise.resolve(null),
     }))
     .use('*', async (c, next) => {
       downstream(c.req.path);
@@ -479,6 +481,78 @@ test('GET re-reads the current configuration each request', async () => {
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
+});
+
+test('GET /:token/pi-models.json serves the public model catalog mapped for Pi without credentials', async () => {
+  const fakeModels = [
+    {
+      id: 'gpt-4o',
+      display_name: 'GPT-4o',
+      kind: 'chat',
+      upstream: { id: 'openai', model: 'gpt-4o' },
+      limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
+      pricing: {
+        entries: [
+          {
+            rates: {
+              input_tokens: '0.000005',
+              output_tokens: '0.000015',
+            },
+          },
+        ],
+      },
+    },
+    {
+      id: 'text-embedding-3',
+      display_name: 'Embedding',
+      kind: 'embedding',
+      upstream: { id: 'openai', model: 'text-embedding-3' },
+    },
+  ];
+  const h = harness({
+    publicOverrides: {
+      listVisibleModels: () => Promise.resolve(fakeModels as any),
+    },
+  });
+  const lease = await create(h);
+
+  const res = await h.request(`/api/setup/${lease.token}/pi-models.json`, { method: 'GET' });
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get('content-type'), 'application/json');
+  assertEquals(res.headers.get('cache-control'), 'no-store');
+  const data = await res.json();
+  expect(data).toEqual({
+    models: [
+      {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        input: ['text'],
+        contextWindow: 128000,
+        maxTokens: 4096,
+        cost: {
+          input: 5,
+          output: 15,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+      },
+    ],
+  });
+
+  const headRes = await h.request(`/api/setup/${lease.token}/pi-models.json`, { method: 'HEAD' });
+  assertEquals(headRes.status, 200);
+  assertEquals(headRes.headers.get('content-type'), 'application/json');
+  assertEquals(await headRes.text(), '');
+
+  const notFoundRes = await h.request(`/api/setup/${'x'.repeat(43)}/pi-models.json`, { method: 'GET' });
+  assertEquals(notFoundRes.status, 404);
+});
+
+test('GET /:token/pi-models.json returns 404 when the lease owner can no longer see the key', async () => {
+  const h = harness({ publicOverrides: { listVisibleModels: () => Promise.resolve(null) } });
+  const lease = await create(h);
+  const res = await h.request(`/api/setup/${lease.token}/pi-models.json`, { method: 'GET' });
+  assertEquals(res.status, 404);
 });
 
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {

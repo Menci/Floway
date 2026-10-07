@@ -125,16 +125,22 @@ export const sessionIdFromContext = (c: AuthedContext): string | undefined => c.
 export const userUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null =>
   c.get('user')?.upstreamIds ?? null;
 
-// Effective upstream whitelist for this request: intersect the per-user cap
-// with the per-key whitelist. null = unrestricted. Session-only requests
-// resolve to the per-user cap alone (apiKey is absent). Data-plane reads
-// this to constrain provider/candidate selection.
-export const effectiveUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null => {
-  const userIds = c.get('user')?.upstreamIds ?? null;
-  const keyIds = c.get('apiKey')?.upstreamIds ?? null;
+// Intersect the per-user upstream cap with the per-key whitelist.
+// null = unrestricted.
+export const intersectUpstreamIds = (
+  userIds: readonly string[] | null,
+  keyIds: readonly string[] | null,
+): readonly string[] | null => {
   if (userIds === null && keyIds === null) return null;
   if (userIds === null) return keyIds;
   if (keyIds === null) return userIds;
   const userSet = new Set(userIds);
   return keyIds.filter(id => userSet.has(id));
 };
+
+// Effective upstream whitelist for this request: intersect the per-user cap
+// with the per-key whitelist. null = unrestricted. Session-only requests
+// resolve to the per-user cap alone (apiKey is absent). Data-plane reads
+// this to constrain provider/candidate selection.
+export const effectiveUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null =>
+  intersectUpstreamIds(c.get('user')?.upstreamIds ?? null, c.get('apiKey')?.upstreamIds ?? null);

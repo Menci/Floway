@@ -21,11 +21,13 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
+import { toPiCatalog } from './pi-catalog.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
+import type { PublicModel } from '@floway-dev/protocols/common';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
 
@@ -98,6 +100,9 @@ export interface AgentSetupPublicDeps {
   // Resolve the servable API key label and secret for the lease owner, or null
   // when the key is gone or no longer owned by that user.
   resolveApiKey: (userId: number, apiKeyId: string) => Promise<{ name: string; secret: string } | null>;
+  // Resolve the chat models visible to the lease's user and API key, or null
+  // when either is gone. Serves the Pi models snapshot.
+  listVisibleModels: (userId: number, apiKeyId: string) => Promise<readonly PublicModel[] | null>;
 }
 
 // Every failure — unknown token, expired lease, deleted user or key, or a
@@ -106,14 +111,14 @@ export interface AgentSetupPublicDeps {
 const resolveServeableLease = async (
   deps: AgentSetupPublicDeps,
   token: string,
-): Promise<{ apiKey: string; apiKeyName: string; configuration: AgentSetupConfiguration } | null> => {
+): Promise<{ apiKey: string; apiKeyName: string; configuration: AgentSetupConfiguration; record: AgentSetupRecord } | null> => {
   const record = await deps.repository.findByToken(token);
   if (!record || record.expiresAt <= Date.now()) return null;
   if (!(await deps.userExists(record.userId))) return null;
   const configuration = parseConfiguration(record);
   const apiKey = await deps.resolveApiKey(record.userId, configuration.apiKeyId);
   if (apiKey === null) return null;
-  return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
+  return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration, record };
 };
 
 const publicErrorDiagnostics = (error: unknown, token: string): string => {
@@ -145,6 +150,24 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     }
   };
 
+  const servePiModels = async (c: Context) => {
+    const token = c.req.param('token')!;
+    try {
+      const resolved = await resolveServeableLease(deps, token);
+      if (!resolved) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+      if (c.req.method === 'HEAD') {
+        return c.body(null, 200, { ...NON_CACHEABLE_HEADERS, 'content-type': 'application/json' });
+      }
+
+      const models = await deps.listVisibleModels(resolved.record.userId, resolved.configuration.apiKeyId);
+      if (models === null) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+      return c.json(toPiCatalog(models), 200, NON_CACHEABLE_HEADERS);
+    } catch (error) {
+      console.error('Agent Setup: failed to serve a public pi-models.json snapshot', publicErrorDiagnostics(error, token));
+      return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
+    }
+  };
+
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
   const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
@@ -153,6 +176,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/pi-models.json', servePiModels)
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

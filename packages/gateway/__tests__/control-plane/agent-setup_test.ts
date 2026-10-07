@@ -7,8 +7,9 @@ import { expect, test, vi } from 'vitest';
 
 import { getRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
-import { requestApp, setupAppTest } from '../test-utils/app.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { saveUpstreamForTest } from '../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestApp, requestAppWithWarmModels, setupAppTest } from '../test-utils/app.ts';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
 
@@ -78,6 +79,39 @@ test('the public GET serves the rendered script with hardened headers and no COR
   expect(text).toContain('Floway Agent Setup common installer fragment (Bash 3.2+)');
   expect(text).toContain('Claude Code Agent Setup fragment.');
   expect(text).not.toContain('Codex Agent Setup fragment.');
+});
+
+test('the public pi-models.json snapshot is scoped to the lease key and carries no secret', async () => {
+  const { apiKey, repo } = await setupAppTest({ apiKey: testApiKey({ upstreamIds: ['up_custom_models'] }) });
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  const lease = await createLease(apiKey);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-sonnet-4', display_name: 'Claude Sonnet 4', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-model', supported_endpoints: ['/chat/completions'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestAppWithWarmModels(`/api/setup/${lease.token}/pi-models.json`, { method: 'GET' });
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals(response.headers.get('cache-control'), 'no-store');
+      const text = await response.text();
+      expect(text).not.toContain(RAW_KEY);
+      const body = JSON.parse(text) as { models: Array<{ id: string }> };
+      assertEquals(body.models.map(model => model.id), ['custom-model']);
+    },
+  );
 });
 
 test('HEAD validates without assembling the API-key body', async () => {

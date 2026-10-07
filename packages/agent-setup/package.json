@@ -12,6 +12,7 @@
     "test:installers": "jiti scripts/test-installers.ts"
   },
   "dependencies": {
+    "@floway-dev/protocols": "workspace:*",
     "@hono/zod-validator": "^0.8.0",
     "hono": "^4",
     "zod": "^4.4.3"

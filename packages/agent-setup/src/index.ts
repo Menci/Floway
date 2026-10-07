@@ -10,6 +10,13 @@ export {
   createAgentSetupPublicRoutes,
 } from './routes.ts';
 export {
+  toPiModel,
+  toPiCatalog,
+  type PiModelCost,
+  type PiModelDefinition,
+  type PiModelsSnapshotResponse,
+} from './pi-catalog.ts';
+export {
   type AgentSetupMutation,
   type AgentSetupRecord,
   type AgentSetupRenewal,

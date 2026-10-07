@@ -7,7 +7,8 @@
 // The repository is threaded through a lazy adapter so the singleton repo is
 // resolved per request (via getRepo()), not at module-load time.
 
-import { type AuthVars, userFromContext } from '../middleware/auth.ts';
+import { loadModels } from '../data-plane/models/load.ts';
+import { type AuthVars, intersectUpstreamIds, userFromContext } from '../middleware/auth.ts';
 import { getRepo } from '../repo/index.ts';
 import {
   type AgentSetupRepository,
@@ -33,6 +34,15 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   resolveApiKey: async (userId, apiKeyId) => {
     const key = await getRepo().apiKeys.getById(apiKeyId);
     return key?.userId === userId ? { name: key.name, secret: key.key } : null;
+  },
+  // Models visible to the lease's user and API key, for the Pi models snapshot.
+  listVisibleModels: async (userId, apiKeyId) => {
+    const [user, key] = await Promise.all([getRepo().users.getById(userId), getRepo().apiKeys.getById(apiKeyId)]);
+    if (!user || key?.userId !== userId) return null;
+    const upstreamIds = intersectUpstreamIds(user.upstreamIds ?? null, key.upstreamIds ?? null);
+    // No background refresh: a one-shot snapshot must not schedule work.
+    const catalog = await loadModels(upstreamIds, () => {}, getRepo().modelAliases);
+    return catalog.data;
   },
 });
 
