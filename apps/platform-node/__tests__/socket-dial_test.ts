@@ -128,22 +128,23 @@ describe('nodeSocketDial', () => {
   it('destroys the underlying socket when the caller aborts post-connect', async () => {
     const ac = new AbortController();
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal });
-    // Drive a single round-trip so the server-side socket is established.
-    const writer = dialed.writable.getWriter();
-    await writer.write(new TextEncoder().encode('warmup'));
-    writer.releaseLock();
+    try {
+      const writer = dialed.writable.getWriter();
+      await writer.write(new TextEncoder().encode('warmup'));
+      writer.releaseLock();
+      const reader = dialed.readable.getReader();
+      expect(new TextDecoder().decode((await withDeadline(reader.read(), 'warmup echo before abort')).value)).toBe('warmup');
+      reader.releaseLock();
 
-    ac.abort();
-    // Give the abort listener a tick to call socket.destroy().
-    await new Promise(r => setTimeout(r, 20));
-
-    const remote = server.lastSocket();
-    // Either reading proves the abort reached the underlying fd:
-    // socket.destroy() flips `destroyed` immediately on the local side, but
-    // a peer-driven FIN can leave the local socket as
-    // `destroyed: false, readableEnded: true` for a tick before the close
-    // event lands.
-    expect(remote?.destroyed === true || remote?.readableEnded === true).toBe(true);
+      const remote = server.lastSocket();
+      if (remote === null) throw new Error('echo server did not accept the socket');
+      const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
+      ac.abort();
+      await withDeadline(remoteClosed, 'peer close after caller abort');
+      expect(remote.destroyed).toBe(true);
+    } finally {
+      await dialed.close();
+    }
   });
 
   // The proxy URL parser hands `url.hostname` straight through, which keeps

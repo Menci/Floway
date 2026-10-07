@@ -165,9 +165,10 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    // Let the ClientHello be emitted first.
-    await new Promise(r => setTimeout(r, 10));
-    expect(fake.written().byteLength).toBeGreaterThan(0);
+    await fake.waitFirstWrite();
+    const clientHello = fake.written();
+    expect(clientHello[0]).toBe(0x16);
+    expect(clientHello[5]).toBe(0x01);
     ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',

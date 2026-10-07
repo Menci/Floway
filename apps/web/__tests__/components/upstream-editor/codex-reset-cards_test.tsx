@@ -1,12 +1,29 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useEffect, useRef, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { DialogShell } from '../../../src/components/ui/dialog-shell';
 import { CodexAccountCard } from '../../../src/components/upstream-editor/codex-account-card';
 import { CodexResetCards } from '../../../src/components/upstream-editor/codex-reset-cards';
 import type { CodexRecord } from '../../../src/components/upstreams/codex-account';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
+
+// Modal focus and exit motion require browser layout. These tests observe redemption state
+// through the shell's controlled lifecycle while keeping the confirmation actions real.
+vi.mock('../../../src/components/ui/dialog-shell', () => ({
+  DialogShell: ({ open, title, children, actions, onExited }: ComponentProps<typeof DialogShell>) => {
+    const wasOpen = useRef(open);
+    useEffect(() => {
+      const exited = wasOpen.current && !open;
+      wasOpen.current = open;
+      if (exited) onExited?.();
+    }, [onExited, open]);
+    return open ? <div role="dialog">{title}{children}{actions}</div> : null;
+  },
+}));
 
 stubLocalStorage();
 
@@ -61,17 +78,20 @@ afterEach(() => {
 
 describe('Codex reset cards', () => {
   it('loads, confirms, and reuses one redemption key when a retry succeeds', async () => {
+    const user = userEvent.setup();
     const onQuotaReset = vi.fn();
     renderInApp(<CodexResetCards record={record} onQuotaReset={onQuotaReset} />);
 
     expect(await screen.findByText('Full reset')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Use' }));
+    await user.click(screen.getByRole('button', { name: 'Use' }));
     const dialog = await screen.findByRole('dialog');
     const confirm = await within(dialog).findByRole('button', { name: 'Use reset card' });
 
-    fireEvent.click(confirm);
+    await user.click(confirm);
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
-    fireEvent.click(confirm);
+    expect(document.activeElement).toBe(confirm);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    await user.click(confirm);
 
     await waitFor(() => expect(onQuotaReset).toHaveBeenCalledOnce());
     expect(consumeBodies).toHaveLength(2);
@@ -85,6 +105,7 @@ describe('Codex reset cards', () => {
   });
 
   it('removes both the quota windows and account credit summary after a reset', async () => {
+    const user = userEvent.setup();
     failFirstConsume = false;
     const accountRecord: CodexRecord = {
       ...record,
@@ -100,9 +121,9 @@ describe('Codex reset cards', () => {
     const view = renderInApp(<CodexAccountCard record={accountRecord} />);
 
     expect(screen.getByText('credits: 1')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
+    await user.click(await screen.findByRole('button', { name: 'Use' }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
 
     await waitFor(() => expect(screen.queryByText('credits: 1')).toBeNull());
     expect(screen.getByText('No quota snapshots yet - Codex calls populate them.')).toBeTruthy();
@@ -119,38 +140,42 @@ describe('Codex reset cards', () => {
   });
 
   it('keeps the redemption key after an ambiguous failure and reopening confirmation', async () => {
+    const user = userEvent.setup();
     vi.mocked(crypto.randomUUID)
       .mockReturnValueOnce('00000000-0000-4000-8000-000000000001')
       .mockReturnValueOnce('00000000-0000-4000-8000-000000000002');
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    let dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
+    await user.click(await screen.findByRole('button', { name: 'Use' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
     expect(await within(dialog).findByText('Could not confirm the reset. Retry to check the same redemption safely.')).toBeTruthy();
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
+    await user.click(await screen.findByRole('button', { name: 'Use' }));
+    const reopened = await screen.findByRole('dialog');
+    const confirm = within(reopened).getByRole('button', { name: 'Use reset card' });
+    await user.click(confirm);
     await waitFor(() => expect(consumeBodies).toHaveLength(2));
     expect(consumeBodies[0].idempotency_key).toBe(consumeBodies[1].idempotency_key);
   });
 
   it('does not redeem when confirmation is cancelled', async () => {
+    const user = userEvent.setup();
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Cancel' }));
+    await user.click(await screen.findByRole('button', { name: 'Use' }));
+    await user.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(consumeBodies).toHaveLength(0);
   });
 
   it('shows a load failure without pretending there are no cards or echoing upstream input', async () => {
+    const user = userEvent.setup();
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: 'sensitive stored input' }, { status: 502 }));
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
     expect(await screen.findByText('Could not load reset cards. Try refreshing again.')).toBeTruthy();
     expect(screen.queryByText(/No reset cards are available/)).toBeNull();
     expect(screen.queryByText('sensitive stored input')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
     expect(await screen.findByText('Full reset')).toBeTruthy();
   });
 
@@ -180,19 +205,20 @@ describe('Codex reset cards', () => {
   });
 
   it('keeps redeemed cards disabled until the upstream list removes them', async () => {
+    const user = userEvent.setup();
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({
       reset_credits: { available_count: 0, credits: [{ ...card, status: 'redeemed' }] },
     }));
     renderInApp(<CodexResetCards record={record} onQuotaReset={vi.fn()} />);
     const redeemed = await screen.findByRole('button', { name: 'Redeemed' });
     expect(redeemed.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(redeemed);
+    await user.click(redeemed);
     expect(consumeBodies).toHaveLength(0);
 
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({
       reset_credits: { available_count: 0, credits: [] },
     }));
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
     expect(await screen.findByText('No reset cards are available for this ChatGPT subscription.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Redeemed' })).toBeNull();
   });

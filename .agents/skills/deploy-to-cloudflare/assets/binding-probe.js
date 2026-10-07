@@ -30,19 +30,32 @@ const checks = {
   KV: async (env) => {
     await env.KV.get(PROBE_KEY);
   },
-  BROADCAST_DO: async (env) => {
-    const id = env.BROADCAST_DO.idFromName(PROBE_KEY);
-    const response = await env.BROADCAST_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
+  EXECUTION_DO: async (env) => {
+    const id = env.EXECUTION_DO.idFromName(PROBE_KEY);
+    const response = await env.EXECUTION_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
     if (!response.ok || await response.text() !== 'Hello World') {
       throw new Error(`Durable Object probe returned HTTP ${response.status}`);
     }
+  },
+  LOG_STREAM_DO: async env => {
+    const id = env.LOG_STREAM_DO.idFromName(PROBE_KEY);
+    const response = await env.LOG_STREAM_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
+    if (!response.ok || await response.text() !== 'Hello World') throw new Error(`LogStream probe returned HTTP ${response.status}`);
   },
 };
 
 const probe = async env => Promise.all(Object.values(checks).map(check => check(env)));
 
-export class BroadcastDO extends DurableObject {
+export class ExecutionDO extends DurableObject {
   fetch() {
+    return new Response('Hello World');
+  }
+}
+
+export class LogStreamDO extends DurableObject {
+  fetch() {
+    const row = this.ctx.storage.sql.exec('SELECT 1 AS value').one();
+    if (row.value !== 1) throw new Error('LogStream SQLite probe failed');
     return new Response('Hello World');
   }
 }
@@ -54,7 +67,7 @@ export default {
     try {
       await probe(env);
       return new Response('Hello World', {
-        headers: { 'x-floway-binding-probe': 'DB,FILES,IMAGES,KV,BROADCAST_DO' },
+        headers: { 'x-floway-binding-probe': Object.keys(checks).join(',') },
       });
     } catch (error) {
       const detail = error instanceof Error
