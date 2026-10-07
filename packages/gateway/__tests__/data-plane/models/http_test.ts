@@ -1059,3 +1059,167 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
     },
   );
 });
+
+// Floway-omp/* model catalog tailoring and caller precedence.
+test('/v1/models serves omp-tailored catalog to floway-omp/* callers and preserves precedence for other callers', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_omp_test',
+    name: 'OMP Test Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://omp-test.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-omp-test',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [
+        {
+          upstreamModelId: 'test-chat',
+          publicModelId: 'test-chat',
+          kind: 'chat',
+          endpoints: { openaiChatCompletions: {} },
+          limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 4_096 },
+          chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+        },
+        {
+          upstreamModelId: 'test-embed',
+          publicModelId: 'test-embed',
+          kind: 'embedding',
+          endpoints: { openaiEmbeddings: {} },
+          limits: { max_context_window_tokens: 8_192 },
+        },
+        {
+          upstreamModelId: 'test-image',
+          publicModelId: 'test-image',
+          kind: 'image',
+          endpoints: { openaiImagesGenerations: {} },
+        },
+        {
+          upstreamModelId: 'test-rerank',
+          publicModelId: 'test-rerank',
+          kind: 'rerank',
+          endpoints: { rerank: {} },
+          rerankTarget: { protocol: 'cohere-v1' },
+          limits: { max_context_window_tokens: 4_096 },
+        },
+      ],
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'raw.githubusercontent.com') {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      // 1. floway-omp/1 receives the tailored catalog:
+      // - context_length from max_context_window_tokens
+      // - input_modalities from chat.modalities.input
+      // - output_modalities for embedding ('embedding') and image ('image')
+      // - non-chat/non-embedding/non-image kind (rerank) is strictly OMITTED
+      // - original PublicModel fields are preserved intact (additive-only)
+      const ompResp1 = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'floway-omp/1' },
+      });
+      assertEquals(ompResp1.status, 200);
+      const ompBody1 = (await ompResp1.json()) as {
+        object: string;
+        has_more: boolean;
+        first_id: string | null;
+        last_id: string | null;
+        data: Array<{
+          id: string;
+          kind?: string;
+          context_length?: number;
+          input_modalities?: string[];
+          output_modalities?: string[];
+          limits?: Record<string, number>;
+          display_name?: string;
+        }>;
+      };
+
+      assertEquals(ompBody1.object, 'list');
+      assertEquals(ompBody1.has_more, false);
+      const ompIds1 = ompBody1.data.map(m => m.id);
+      assertEquals(ompIds1, ['test-image', 'test-embed', 'test-chat']);
+      assertEquals(ompIds1.includes('test-rerank'), false);
+      assertEquals(ompBody1.first_id, 'test-image');
+      assertEquals(ompBody1.last_id, 'test-chat');
+
+      const chatModel = ompBody1.data.find(m => m.id === 'test-chat')!;
+      assertEquals(chatModel.kind, 'chat');
+      assertEquals(chatModel.context_length, 128_000);
+      assertEquals(chatModel.input_modalities, ['text', 'image']);
+      assertEquals(chatModel.output_modalities, undefined);
+      assertEquals(chatModel.limits?.max_output_tokens, 4_096);
+      assertEquals(chatModel.limits?.max_prompt_tokens, 100_000);
+      assertEquals(chatModel.limits?.max_input_tokens, undefined);
+
+      const embedModel = ompBody1.data.find(m => m.id === 'test-embed')!;
+      assertEquals(embedModel.kind, 'embedding');
+      assertEquals(embedModel.context_length, 8_192);
+      assertEquals(embedModel.output_modalities, ['embedding']);
+
+      const imageModel = ompBody1.data.find(m => m.id === 'test-image')!;
+      assertEquals(imageModel.kind, 'image');
+      assertEquals(imageModel.context_length, undefined);
+      assertEquals(imageModel.output_modalities, ['image']);
+
+      // 2. floway-omp/2 (same prefix) receives identical tailored catalog
+      const ompResp2 = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'floway-omp/2' },
+      });
+      assertEquals(ompResp2.status, 200);
+      const ompBody2 = (await ompResp2.json()) as typeof ompBody1;
+      assertEquals(ompBody2, ompBody1);
+
+      // 3. Lookalike User-Agent (not-floway-omp/1) does NOT get enriched catalog
+      // and retains all models including rerank, without context_length / output_modalities
+      const lookalikeResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'not-floway-omp/1' },
+      });
+      assertEquals(lookalikeResp.status, 200);
+      const lookalikeBody = (await lookalikeResp.json()) as typeof ompBody1;
+      assertEquals(lookalikeBody.data.map(m => m.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
+      const lookalikeChat = lookalikeBody.data.find(m => m.id === 'test-chat')!;
+      assertEquals(lookalikeChat.context_length, undefined);
+      assertEquals(lookalikeChat.input_modalities, undefined);
+      const lookalikeEmbed = lookalikeBody.data.find(m => m.id === 'test-embed')!;
+      assertEquals(lookalikeEmbed.output_modalities, undefined);
+
+      // 4. Default callers (e.g. standard openai SDK or omitted UA) get standard superset
+      const defaultResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'openai-python/1.42.0' },
+      });
+      assertEquals(defaultResp.status, 200);
+      const defaultBody = (await defaultResp.json()) as typeof ompBody1;
+      assertEquals(defaultBody.data.map(m => m.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
+
+      // 5. Claude Code caller gets Claude Code Anthropic-shaped catalog
+      const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
+      });
+      assertEquals(claudeCodeResp.status, 200);
+      const claudeCodeBody = (await claudeCodeResp.json()) as { object?: unknown; data: Array<{ id: string; type: string }> };
+      assertEquals(claudeCodeBody.object, undefined);
+      assertEquals(claudeCodeBody.data.length, 4);
+
+      // 6. Codex caller gets Codex catalog
+      const codexResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'codex-tui/0.1.0' },
+      });
+      assertEquals(codexResp.status, 200);
+      const codexBody = (await codexResp.json()) as { object?: unknown; models: Array<{ slug: string }> };
+      assertEquals(codexBody.object, undefined);
+      assertEquals(Array.isArray(codexBody.models), true);
+    },
+  );
+});

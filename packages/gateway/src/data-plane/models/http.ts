@@ -6,6 +6,7 @@
 import type { Context } from 'hono';
 
 import { loadModels } from './load.ts';
+import { isOmpUserAgent, toOmpCatalog } from './omp-catalog.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -89,9 +90,16 @@ export const serveModels = async (c: Context): Promise<Response> => {
     // discovery UA specifically. Every other caller (OpenAI SDKs,
     // Anthropic SDKs, dashboards) receives the standard PublicModel
     // superset.
-    return Response.json(isClaudeCodeUserAgent(userAgent)
-      ? toClaudeCodeCatalog(publicCatalog)
-      : publicCatalog);
+    if (isClaudeCodeUserAgent(userAgent)) {
+      return Response.json(toClaudeCodeCatalog(publicCatalog));
+    }
+
+    // Tailor model catalog for oh-my-pi (floway-omp/* User-Agent).
+    if (isOmpUserAgent(userAgent)) {
+      return Response.json(toOmpCatalog(publicCatalog));
+    }
+
+    return Response.json(publicCatalog);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return Response.json({ error: { message, type: 'api_error' } }, { status: 502 });
