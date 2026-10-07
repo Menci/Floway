@@ -35,6 +35,19 @@ describe('Agent Setup model ranking', () => {
       'other',
     ]);
   });
+
+  it('retains the chat catalog for omp in catalog order and leaves ids opaque', () => {
+    expect(rankAgentSetupModels([
+      catalogModel('gpt-4o', { contextWindow: 200_000 }),
+      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
+      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
+    ], { family: 'omp' }).map(entry => entry.id)).toEqual([
+      'gpt-4o',
+      'claude-sonnet-4-5',
+    ]);
+    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'omp' })[0]?.value)
+      .toBe('claude-sonnet-4-5');
+  });
 });
 
 describe('Agent Setup persisted model values', () => {

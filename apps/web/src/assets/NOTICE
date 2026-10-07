@@ -94,3 +94,16 @@ https://github.com/andreberg/Meslo-Font/blob/09a431d546d211130352c28eb0466e5d7d5
 
 Meslo LG is licensed under the Apache License, Version 2.0. A complete copy is
 in fonts/LICENSE-Meslo-LG.txt.
+
+oh-my-pi
+--------
+
+omp.svg is the oh-my-pi favicon from the project's website, copied on 2026-10-07.
+The dark rounded background plate was removed and the viewBox cropped around the
+gradient glyph so it fills its box like the other icons; the glyph path and
+gradient are unchanged. The project's source repository is MIT licensed:
+
+- omp.svg
+  https://omp.sh/favicon.svg
+  https://github.com/can1357/oh-my-pi/blob/4ef97c8/LICENSE
+

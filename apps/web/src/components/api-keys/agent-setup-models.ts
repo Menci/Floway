@@ -4,7 +4,8 @@ export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
 export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }
-  | { family: 'codex' };
+  | { family: 'codex' }
+  | { family: 'omp' };
 
 export interface AgentModelOption {
   value: string;
@@ -56,6 +57,10 @@ export const rankAgentSetupModels = (
       .map(entry => entry.model);
   }
 
+  if (ranking.family === 'omp') {
+    return chat;
+  }
+
   const entries = chat.map((model, index) => ({ model, index, parts: codexModelParts(model.id) }));
   const versionOrder = new Map<string, number>();
   for (const entry of entries) {
@@ -103,6 +108,6 @@ export const buildAgentModelOptions = (
   return options;
 };
 
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
+export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex' | 'omp', picker: ClaudePicker) =>
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
     .map(option => ({ value: option.value, label: option.publicModelId }));

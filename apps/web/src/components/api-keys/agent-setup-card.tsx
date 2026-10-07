@@ -15,6 +15,7 @@ import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import ompIconUrl from '../../assets/omp.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
@@ -28,7 +29,7 @@ import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex';
+type Agent = 'claude' | 'codex' | 'omp';
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
@@ -65,19 +66,24 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
     ? agentSetupCommand(window.location.origin, scriptPath, platform)
     : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
 
+  const effectiveView = agent === 'omp' ? 'setup' : view;
+
   return <div className="grid gap-[14px] min-w-0">
     <SectionHeader level={2} title={t('dashboard.apiKeys.configuration.title')} actions={
-      <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
-        <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
-        <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
-      </TabList>
+      agent !== 'omp' && (
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
+          <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
+          <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
+        </TabList>
+      )
     } />
 
     <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
-        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value as Agent)} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+          <AgentTab icon={ompIconUrl} label={t('dashboard.apiKeys.configuration.omp')} value="omp" />
         </TabList>
       </nav>
 
@@ -96,9 +102,9 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
         </section>
 
-        {view === 'snippets' && selectedKey
+        {effectiveView === 'snippets' && selectedKey
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
-          : view === 'snippets'
+          : effectiveView === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-divider pt-4">
                 <CodeBlock
@@ -111,7 +117,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
                 />
               </div>}
 
-        {(selectedKey !== null || view === 'setup') && (
+        {(selectedKey !== null || effectiveView === 'setup') && (
           <Text size={200} className="text-fui-fg2">
             {selectedKey && <>
               <Trans
@@ -119,9 +125,9 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
                 i18nKey="dashboard.apiKeys.configuration.usingKey"
                 values={{ name: selectedKey.name }}
               />
-              {view === 'setup' && ' '}
+              {effectiveView === 'setup' && ' '}
             </>}
-            {view === 'setup' && t('dashboard.apiKeys.agentSetup.expires')}
+            {effectiveView === 'setup' && t('dashboard.apiKeys.agentSetup.expires')}
           </Text>
         )}
       </div>
@@ -192,10 +198,20 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const { t } = useTranslation();
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
+  const patchOmp = (patch: Partial<AgentSetupConfiguration['omp']>) => onChange(current => ({ ...current, omp: { ...current.omp, ...patch } }));
   const codexModel = configuration.codex.model
     ? models.find(model => model.id === configuration.codex.model)
     : rankAgentSetupModels(models, { family: 'codex' })[0];
   const effortOptions = codexModel?.chat?.reasoning?.effort?.supported ?? [];
+
+  if (agent === 'omp') return <div className="grid gap-3">
+    <div className={FIELD_GRID_CLASS}>
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="omp" picker="default" value={configuration.omp.model} onChange={model => patchOmp({ model })} />
+    </div>
+    <Text size={200} className="text-fui-fg2">
+      {t('dashboard.apiKeys.agentSetup.ompModelHint')}
+    </Text>
+  </div>;
 
   if (agent === 'claude') return <div className="grid gap-5">
     <div className={CLAUDE_MODEL_GRID_CLASS}>
@@ -283,7 +299,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 }
 
 function ModelSelect({ family, label, models, onChange, picker, value }: {
-  family: 'claude' | 'codex';
+  family: 'claude' | 'codex' | 'omp';
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;
