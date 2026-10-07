@@ -22,6 +22,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  pi: {
+    model: 'custom-pi',
+  },
 };
 
 describe('agent setup request bodies', () => {
@@ -31,6 +34,19 @@ describe('agent setup request bodies', () => {
       configuration: fullConfiguration,
       expectedRevision: 3,
     }).success).toBe(true);
+  });
+
+  test('agentSetupUpdateBody accepts a configuration without pi and defaults it', () => {
+    const { pi: _, ...legacyConfig } = fullConfiguration;
+    const parsed = agentSetupUpdateBody.safeParse({
+      token: 'token-a',
+      configuration: legacyConfig,
+      expectedRevision: 3,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.configuration.pi).toEqual({ model: null });
+    }
   });
 
   test('agentSetupUpdateBody rejects an invalid inner configuration', () => {

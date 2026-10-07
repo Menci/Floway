@@ -50,6 +50,14 @@ export const agentSetupConfigurationSchema = z.object({
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
+  // Pi (the original coding agent) has no model discovery; the installer
+  // writes a static snapshot of the key's models and `model` selects the default.
+  // Ref: https://pi.dev
+  pi: z.object({
+    model: opaqueOptionalString,
+  }).strict().default({
+    model: null,
+  }),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
@@ -74,5 +82,8 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   codex: {
     model: null,
     reasoningEffort: null,
+  },
+  pi: {
+    model: null,
   },
 });

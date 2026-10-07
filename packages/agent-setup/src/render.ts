@@ -14,6 +14,8 @@ export interface RenderPrefixInput {
   apiKey: string;
   apiKeyName: string;
   configuration: AgentSetupConfiguration;
+  // The lease token; the Pi installer uses it to fetch its models snapshot.
+  token?: string;
 }
 
 const assertNoNul = (value: string): void => {
@@ -65,11 +67,14 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_DISABLE_AGENT_VIEW', shellFlag(claudeCode.disableAgentView)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (agent === 'codex') {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
       ['SETUP_CODEX_REASONING_EFFORT', shellOptional(configuration.codex.reasoningEffort)],
     );
+  } else {
+    assignments.push(['SETUP_PI_MODEL', shellOptional(configuration.pi.model)]);
+    if (input.token !== undefined) assignments.push(['SETUP_TOKEN', input.token]);
   }
   const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
@@ -111,11 +116,14 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeDisableAgentView', powerShellBool(claudeCode.disableAgentView)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (agent === 'codex') {
     assignments.push(
       ['$SetupCodexModel', powerShellOptional(configuration.codex.model)],
       ['$SetupCodexReasoningEffort', powerShellOptional(configuration.codex.reasoningEffort)],
     );
+  } else {
+    assignments.push(['$SetupPiModel', powerShellOptional(configuration.pi.model)]);
+    if (input.token !== undefined) assignments.push(['$SetupToken', powerShellLiteral(input.token)]);
   }
   const lines = assignments.map(([name, value]) => `${name} = ${value}`);
   return `Set-PSDebug -Off\n${lines.join('\n')}\n`;

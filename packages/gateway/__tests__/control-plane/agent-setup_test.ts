@@ -30,7 +30,7 @@ const testApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
 interface LeaseResponse {
   status: string;
   token: string;
-  scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } };
+  scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string }; pi: { sh: string; ps1: string } };
 }
 
 const createLease = async (apiKey: ApiKey): Promise<LeaseResponse> => {
@@ -79,6 +79,15 @@ test('the public GET serves the rendered script with hardened headers and no COR
   expect(text).toContain('Floway Agent Setup common installer fragment (Bash 3.2+)');
   expect(text).toContain('Claude Code Agent Setup fragment.');
   expect(text).not.toContain('Codex Agent Setup fragment.');
+
+  const piResponse = await requestApp(lease.scripts.pi.sh, { method: 'GET' });
+  assertEquals(piResponse.status, 200);
+  assertEquals(piResponse.headers.get('cache-control'), 'no-store');
+  assertEquals(piResponse.headers.get('access-control-allow-origin'), null);
+  const piText = await piResponse.text();
+  expect(piText).toContain("SETUP_API_KEY='raw-key'");
+  expect(piText).toContain(`SETUP_TOKEN='${lease.token}'`);
+  expect(piText).toContain('Pi Agent Setup fragment.');
 });
 
 test('the public pi-models.json snapshot is scoped to the lease key and carries no secret', async () => {

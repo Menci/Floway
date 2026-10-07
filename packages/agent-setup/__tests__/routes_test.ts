@@ -144,12 +144,14 @@ interface LeaseResponse {
     apiKeyId: string;
     claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean; disableAutoMemory: boolean; disableAgentView: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
+    pi: { model: string | null };
   };
   configurationRevision: number;
   expiresAt: number;
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    pi: { sh: string; ps1: string };
   };
 }
 
@@ -159,6 +161,7 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
+  pi: { model: null },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -201,6 +204,9 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  assertEquals(body.configuration.pi.model, null);
+  assertEquals(body.scripts.pi.sh, `/api/setup/${body.token}/pi.sh`);
+  assertEquals(body.scripts.pi.ps1, `/api/setup/${body.token}/pi.ps1`);
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -481,6 +487,26 @@ test('GET re-reads the current configuration each request', async () => {
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
+});
+
+test('GET serves rendered pi bash and powershell scripts reflecting configuration and token', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const shInitial = await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text();
+  expect(shInitial).toContain("SETUP_PI_MODEL=''");
+  expect(shInitial).toContain(`SETUP_TOKEN='${lease.token}'`);
+  expect(shInitial).toContain("main 'Pi' \"$@\"");
+
+  const ps1Initial = await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text();
+  expect(ps1Initial).toContain('$SetupPiModel = $null');
+  expect(ps1Initial).toContain(`$SetupToken = '${lease.token}'`);
+  expect(ps1Initial).toContain("Main 'Pi'");
+
+  const edited = { ...lease.configuration, pi: { model: 'custom-pi-model' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+
+  expect(await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text()).toContain("SETUP_PI_MODEL='custom-pi-model'");
+  expect(await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text()).toContain("$SetupPiModel = 'custom-pi-model'");
 });
 
 test('GET /:token/pi-models.json serves the public model catalog mapped for Pi without credentials', async () => {

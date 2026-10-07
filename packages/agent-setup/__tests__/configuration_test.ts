@@ -25,6 +25,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  pi: {
+    model: 'custom-pi-model',
+  },
 };
 
 describe('agentSetupConfigurationSchema', () => {
@@ -40,6 +43,7 @@ describe('agentSetupConfigurationSchema', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
+      pi: { model: null },
     }).success).toBe(true);
   });
 
@@ -102,6 +106,26 @@ describe('agentSetupConfigurationSchema', () => {
       ...fullConfiguration,
       codex: { ...fullConfiguration.codex, unexpected: true },
     }).success).toBe(false);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      pi: { ...fullConfiguration.pi, unexpected: true },
+    }).success).toBe(false);
+  });
+
+  test('accepts a stored configuration without pi and defaults it to a null model', () => {
+    const { pi: _, ...withoutPi } = fullConfiguration;
+    const parsed = agentSetupConfigurationSchema.safeParse(withoutPi);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.pi).toEqual({ model: null });
+    }
+  });
+
+  test('accepts null or a non-empty string for the pi model and rejects an empty or NUL string', () => {
+    expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, pi: { model: null } }).success).toBe(true);
+    expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, pi: { model: 'floway-pi-model' } }).success).toBe(true);
+    expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, pi: { model: '' } }).success).toBe(false);
+    expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, pi: { model: 'bad\0model' } }).success).toBe(false);
   });
 });
 
@@ -114,6 +138,7 @@ describe('defaultAgentSetupConfiguration', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
+      pi: { model: null },
     });
   });
 

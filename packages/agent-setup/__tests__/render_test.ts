@@ -22,6 +22,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  pi: {
+    model: 'floway-pi-model',
+  },
 };
 
 describe('renderShellPrefix', () => {
@@ -84,6 +87,7 @@ describe('renderShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        pi: { model: null },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -93,6 +97,36 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AUTO_MEMORY=''");
     expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AGENT_VIEW=''");
     expect(prefix).not.toContain('SETUP_CODEX_');
+    expect(prefix).not.toContain('SETUP_PI_');
+  });
+
+  test('renders pi prefix assignments for shell with quoting, the lease token, and null handling', () => {
+    const withModel = renderShellPrefix({
+      agent: 'pi',
+      apiKey: "key'with'quote",
+      apiKeyName: 'Key Label',
+      configuration: fullConfiguration,
+      token: 'test-lease-token',
+    });
+    expect(withModel).toBe([
+      'set +x',
+      "SETUP_API_KEY='key'\\''with'\\''quote'",
+      "SETUP_API_KEY_NAME='Key Label'",
+      "SETUP_PI_MODEL='floway-pi-model'",
+      "SETUP_TOKEN='test-lease-token'",
+      '',
+    ].join('\n'));
+
+    const withoutModel = renderShellPrefix({
+      agent: 'pi',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Key Label',
+      configuration: { ...fullConfiguration, pi: { model: null } },
+    });
+    expect(withoutModel).toContain("SETUP_PI_MODEL=''");
+    expect(withoutModel).not.toContain('SETUP_TOKEN');
+    expect(withoutModel).not.toContain('SETUP_CLAUDE_');
+    expect(withoutModel).not.toContain('SETUP_CODEX_');
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
@@ -155,6 +189,7 @@ describe('renderPowerShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        pi: { model: null },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
@@ -164,6 +199,7 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $false');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $false');
     expect(prefix).not.toContain('$SetupCodex');
+    expect(prefix).not.toContain('$SetupPi');
   });
 
   test('renders a selected Claude cleanup period as a PowerShell number', () => {
@@ -177,5 +213,34 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $true');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $true');
+  });
+
+  test('renders pi prefix assignments for PowerShell with quoting, the lease token, and null handling', () => {
+    const withModel = renderPowerShellPrefix({
+      agent: 'pi',
+      apiKey: "key'with'quote",
+      apiKeyName: 'Key Label',
+      configuration: fullConfiguration,
+      token: 'test-lease-token',
+    });
+    expect(withModel).toBe([
+      'Set-PSDebug -Off',
+      "$SetupApiKey = 'key''with''quote'",
+      "$SetupApiKeyName = 'Key Label'",
+      "$SetupPiModel = 'floway-pi-model'",
+      "$SetupToken = 'test-lease-token'",
+      '',
+    ].join('\n'));
+
+    const withoutModel = renderPowerShellPrefix({
+      agent: 'pi',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Key Label',
+      configuration: { ...fullConfiguration, pi: { model: null } },
+    });
+    expect(withoutModel).toContain('$SetupPiModel = $null');
+    expect(withoutModel).not.toContain('$SetupToken');
+    expect(withoutModel).not.toContain('$SetupClaude');
+    expect(withoutModel).not.toContain('$SetupCodex');
   });
 });

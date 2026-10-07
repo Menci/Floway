@@ -78,6 +78,10 @@ const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string)
       sh: `${publicScriptBasePath}/${record.token}/codex.sh`,
       ps1: `${publicScriptBasePath}/${record.token}/codex.ps1`,
     },
+    pi: {
+      sh: `${publicScriptBasePath}/${record.token}/pi.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/pi.ps1`,
+    },
   },
 });
 
@@ -138,7 +142,13 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
+      const input = {
+        agent,
+        apiKey: resolved.apiKey,
+        apiKeyName: resolved.apiKeyName,
+        configuration: resolved.configuration,
+        token,
+      };
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
@@ -176,6 +186,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/pi.sh', serveSetupScript('pi', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/pi.ps1', serveSetupScript('pi', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/pi-models.json', servePiModels)
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
