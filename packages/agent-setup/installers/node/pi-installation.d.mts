@@ -1,1 +1,1 @@
-export function getLegacyNpmPrefix(binaryPath: string, npmRoot: string | null): string | null;
+export function getLegacyNpmPrefix(binaryPath: string): string | null;

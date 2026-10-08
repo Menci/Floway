@@ -7,19 +7,12 @@ function Test-SetupPiNode {
   if (-not $nodeCmd) {
     Stop-Setup 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.'
   }
-  $rawVer = & $nodeCmd.Source -v 2>$null
-  if ($rawVer) {
-    $verStr = ([string]$rawVer).Trim().TrimStart('v')
-    $parts = $verStr.Split('.')
-    if ($parts.Length -ge 2) {
-      $major = 0
-      $minor = 0
-      if ([int]::TryParse($parts[0], [ref]$major) -and [int]::TryParse($parts[1], [ref]$minor)) {
-        if ($major -lt 22 -or ($major -eq 22 -and $minor -lt 19)) {
-          Write-SetupWarn "Node.js version is v$verStr; Pi requires Node.js >= 22.19."
-        }
-      }
-    }
+  $result = Invoke-SetupProcess -Exe $nodeCmd.Source -Arguments @('-v') -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
+  if ($result.ExitCode -ne 0) { Stop-Setup ('`node -v` failed. ' + $result.Output) }
+  $version = $result.Output.Trim()
+  if ($version -notmatch '^v(\d+)\.(\d+)\.(\d+)$') { Stop-Setup 'Node.js returned an invalid version.' }
+  if ([Version]$version.Substring(1) -lt [Version]'22.19.0') {
+    Write-SetupWarn "Node.js version is $version; Pi requires Node.js >= 22.19."
   }
 }
 
@@ -73,14 +66,8 @@ function Install-SetupPi {
       $legacyPrefix = $null
       if ($global:PiBin) {
         Write-SetupPiInstallationChecker
-        $npmRoot = ''
-        if ($platform -eq 'windows') {
-          $root = Invoke-SetupProcess -Exe $npm.Source -Arguments @('root', '--global') -TimeoutSeconds (Get-SetupTimeoutSeconds 30) -TimeoutMessage '`npm root --global` timed out.'
-          if ($root.ExitCode -ne 0) { Stop-Setup ('`npm root --global` failed. ' + $root.Output) }
-          $npmRoot = $root.Output.Trim()
-        }
         $node = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
-        $ownership = Invoke-SetupProcess -Exe $node.Source -Arguments @((Join-Path $script:PiTmpDir 'pi-installation.mjs'), $global:PiBin, $npmRoot) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
+        $ownership = Invoke-SetupProcess -Exe $node.Source -Arguments @((Join-Path $script:PiTmpDir 'pi-installation.mjs'), $global:PiBin) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
         if ($ownership.ExitCode -ne 0) { Stop-Setup ('Pi installation ownership check failed. ' + $ownership.Output) }
         $legacyPrefix = ConvertFrom-Json -InputObject $ownership.Output
       }
@@ -108,7 +95,7 @@ function Write-PiVersion {
   $timeoutSeconds = Get-SetupTimeoutSeconds 30
   foreach ($attempt in @('initial', 'upgraded')) {
     $result = Invoke-SetupProcess -Exe $global:PiBin -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '`pi --version` timed out.'
-    if ($result.ExitCode -ne 0) { Stop-Setup '`pi --version` failed.' }
+    if ($result.ExitCode -ne 0) { Stop-Setup ('`pi --version` failed. ' + $result.Output) }
     $version = ($result.Output -join "`n").Trim()
     Write-SetupInfo "Pi version: $version"
     if ($version -notmatch '^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$') { Stop-Setup 'Pi returned an invalid version.' }
@@ -138,22 +125,14 @@ function Backup-SetupPiFiles {
 
   if ($script:PiExtensionExisted) {
     $script:PiExtensionBackup = "$($script:PiExtensionPath).floway-backup.$stamp"
-    try {
-      Copy-Item -LiteralPath $script:PiExtensionPath -Destination $script:PiExtensionBackup -Force
-      Protect-SetupFile $script:PiExtensionBackup
-    } catch {
-      Stop-Setup "could not back up $($script:PiExtensionPath)"
-    }
+    Copy-Item -LiteralPath $script:PiExtensionPath -Destination $script:PiExtensionBackup -Force
+    Protect-SetupFile $script:PiExtensionBackup
   }
 
   if ($script:PiSettingsExisted) {
     $script:PiSettingsBackup = "$($script:PiSettingsPath).floway-backup.$stamp"
-    try {
-      Copy-Item -LiteralPath $script:PiSettingsPath -Destination $script:PiSettingsBackup -Force
-      Protect-SetupFile $script:PiSettingsBackup
-    } catch {
-      Stop-Setup "could not back up $($script:PiSettingsPath)"
-    }
+    Copy-Item -LiteralPath $script:PiSettingsPath -Destination $script:PiSettingsBackup -Force
+    Protect-SetupFile $script:PiSettingsBackup
   }
 }
 
@@ -174,14 +153,14 @@ function Restore-SetupPiFiles {
 
 function Remove-SetupPiBackups {
   Remove-SetupOlderBackups -Path $script:PiExtensionPath -Keep $script:PiExtensionBackup
-  if ($script:PiExtensionBackup -and (Test-Path -LiteralPath $script:PiExtensionBackup)) {
+  if ($script:PiExtensionBackup) {
     Remove-Item -LiteralPath $script:PiExtensionBackup -Force -ErrorAction Stop
   }
   $script:PiExtensionBackup = $null
 
   if (Test-Path -LiteralPath $script:PiSettingsPath) {
     Remove-SetupOlderBackups -Path $script:PiSettingsPath -Keep $script:PiSettingsBackup
-    if ($script:PiSettingsBackup -and (Test-Path -LiteralPath $script:PiSettingsBackup)) {
+    if ($script:PiSettingsBackup) {
       Remove-Item -LiteralPath $script:PiSettingsBackup -Force -ErrorAction Stop
     }
     $script:PiSettingsBackup = $null
@@ -196,18 +175,14 @@ function Fetch-SetupPiExtension {
   }
   $extensionUrl += '?endpoint=' + [System.Uri]::EscapeDataString($SetupEndpoint) + '&provider=' + [System.Uri]::EscapeDataString($SetupPiProvider)
   $script:PiExtensionStage = "$($script:PiExtensionPath).floway-stage.$([System.Diagnostics.Process]::GetCurrentProcess().Id)"
-  try {
-    [System.IO.File]::WriteAllText($script:PiExtensionStage, '')
-    Protect-SetupFile $script:PiExtensionStage
-    $resp = Invoke-WebRequest -Uri $extensionUrl -UseBasicParsing -TimeoutSec 60
-    $body = [string]$resp.Content
-    if (-not $body.StartsWith("// Managed by Floway Agent Setup.`n")) { Stop-Setup 'the Pi extension download has an invalid ownership marker' }
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($script:PiExtensionStage, $body, $utf8NoBom)
-    Protect-SetupFile $script:PiExtensionStage
-  } catch {
-    Stop-Setup 'failed to fetch the Floway Pi extension'
-  }
+  [System.IO.File]::WriteAllText($script:PiExtensionStage, '')
+  Protect-SetupFile $script:PiExtensionStage
+  $resp = Invoke-WebRequest -Uri $extensionUrl -UseBasicParsing -TimeoutSec 60
+  $body = [string]$resp.Content
+  if (-not $body.StartsWith("// Managed by Floway Agent Setup.`n")) { Stop-Setup 'the Pi extension download has an invalid ownership marker' }
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($script:PiExtensionStage, $body, $utf8NoBom)
+  Protect-SetupFile $script:PiExtensionStage
   Merge-SetupProviderExtension -ExistingPath $script:PiExtensionPath -StagePath $script:PiExtensionStage
 }
 
@@ -215,7 +190,7 @@ function Invoke-SetupNodeJsonc {
   param(
     [string]$InputText,
     [string]$OutputPath,
-    [hashtable]$EnvVars
+    [Parameter(Mandatory=$true)][hashtable]$EnvVars
   )
   $nodeCmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $nodeCmd) { Stop-Setup 'Node.js is required but was not found on PATH.' }
@@ -230,14 +205,8 @@ function Invoke-SetupNodeJsonc {
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
 
-  if ($EnvVars) {
-    foreach ($k in $EnvVars.Keys) {
-      if ($startInfo.EnvironmentVariables.ContainsKey($k)) {
-        $startInfo.EnvironmentVariables[$k] = [string]$EnvVars[$k]
-      } else {
-        $startInfo.EnvironmentVariables.Add($k, [string]$EnvVars[$k])
-      }
-    }
+  foreach ($k in $EnvVars.Keys) {
+    $startInfo.EnvironmentVariables[$k] = [string]$EnvVars[$k]
   }
 
   $process = New-Object System.Diagnostics.Process
@@ -317,7 +286,10 @@ function Set-SetupAgent {
   $script:PiTmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ('pi-setup-' + [System.Guid]::NewGuid().ToString('N'))
   try {
     [void][System.IO.Directory]::CreateDirectory($script:PiTmpDir)
-    if (-not (Test-SetupIsWindows)) { & chmod 700 $script:PiTmpDir }
+    if (-not (Test-SetupIsWindows)) {
+      & chmod 700 $script:PiTmpDir
+      if ($LASTEXITCODE -ne 0) { Stop-Setup 'could not protect the Pi temporary directory.' }
+    }
     Ensure-PiInstalled
     Write-PiVersion
 
@@ -332,11 +304,7 @@ function Set-SetupAgent {
     $script:PiSettingsPath = Join-Path $script:PiAgentDir 'settings.json'
 
     if (-not (Test-Path -LiteralPath (Join-Path $script:PiAgentDir 'extensions'))) {
-      try {
-        [void][System.IO.Directory]::CreateDirectory((Join-Path $script:PiAgentDir 'extensions'))
-      } catch {
-        Stop-Setup "could not create $($script:PiAgentDir)"
-      }
+      [void][System.IO.Directory]::CreateDirectory((Join-Path $script:PiAgentDir 'extensions'))
     }
 
     if (Test-Path -LiteralPath $script:PiExtensionPath) {

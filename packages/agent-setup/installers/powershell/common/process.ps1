@@ -17,15 +17,32 @@ function Stop-SetupProcessTree {
   }
 }
 
+# Windows batch launchers require an interpreter with UseShellExecute disabled.
+# Encode literal paths/arguments in a fresh host; both output modes use this boundary.
+# https://learn.microsoft.com/en-us/dotnet/fundamentals/runtime-libraries/system-diagnostics-processstartinfo-useshellexecute
+function New-SetupProcessStartInfo {
+  param([string]$Exe, [string[]]$Arguments)
+  if ((Test-SetupIsWindows) -and $Exe -match '\.(cmd|bat)$') {
+    $tokens = @($Exe) + $Arguments
+    $command = '& ' + (($tokens | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ' ') + '; exit $LASTEXITCODE'
+    $Exe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $Arguments = @('-NoProfile', '-NonInteractive', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+  }
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  # ArgumentList is unavailable in Windows PowerShell 5.1; escape quoted argv
+  # including trailing backslashes before constructing Arguments.
+  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + ([Regex]::Replace($_, '\\+(?="|$)', '$0$0')).Replace('"', '\"') + '"' }) -join ' '
+  $startInfo.UseShellExecute = $false
+  return $startInfo
+}
+
 # Run a fixed package-manager command with inherited stdout/stderr. The child
 # remains attached to the real terminal, so progress updates and ANSI control
 # sequences render in real time without a lossy line-prefix filter.
 function Invoke-SetupLiveProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
-  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-  $startInfo.FileName = $Exe
-  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
-  $startInfo.UseShellExecute = $false
+  $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments
   $startInfo.CreateNoWindow = $false
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
@@ -42,16 +59,10 @@ function Invoke-SetupLiveProcess {
 # whole process tree and throwing on timeout.
 function Invoke-SetupProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
-  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-  $startInfo.FileName = $Exe
-  $startInfo.UseShellExecute = $false
+  $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
-  # ArgumentList is unavailable in Windows PowerShell 5.1. These arguments are
-  # fixed internal tokens, so quoting them with ProcessStartInfo.Arguments is
-  # safe and keeps external input out of the child command line.
-  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
   if (-not $process.Start()) { Stop-Setup "failed to start $Exe." }

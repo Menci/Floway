@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, expect, test } from 'vitest';
@@ -29,42 +29,82 @@ test('recognizes the exact legacy Pi executable under a Unix global npm prefix',
   mkdirSync(join(prefix, 'bin'));
   const binary = join(prefix, 'bin', 'pi');
   symlinkSync(join(directory, 'dist', 'cli.js'), binary);
-  expect(getLegacyNpmPrefix(binary, null)).toBe(prefix);
+  expect(getLegacyNpmPrefix(binary)).toBe(prefix);
 });
 
 test('does not force arbitrary executables, local packages, or another package entrypoint', () => {
   const prefix = workspace();
   const arbitrary = join(prefix, 'pi');
   writeFileSync(arbitrary, 'unmanaged binary');
-  expect(getLegacyNpmPrefix(arbitrary, null)).toBeNull();
+  expect(getLegacyNpmPrefix(arbitrary)).toBeNull();
   const local = legacyPackage(join(prefix, 'node_modules'));
   const binary = join(prefix, 'local-pi');
   symlinkSync(join(local, 'dist', 'cli.js'), binary);
-  expect(getLegacyNpmPrefix(binary, null)).toBeNull();
+  expect(getLegacyNpmPrefix(binary)).toBeNull();
   const global = legacyPackage(join(prefix, 'lib', 'node_modules'));
   writeFileSync(join(global, 'dist', 'other.js'), 'another entrypoint');
   const other = join(prefix, 'other-pi');
   symlinkSync(join(global, 'dist', 'other.js'), other);
-  expect(getLegacyNpmPrefix(other, null)).toBeNull();
+  expect(getLegacyNpmPrefix(other)).toBeNull();
 });
 
-test('Windows npm shims require global-root evidence and the exact legacy target', () => {
+test('recognizes a selected Windows npm prefix only with the exact legacy shim target', () => {
   const prefix = workspace();
   const root = join(prefix, 'node_modules');
   legacyPackage(root);
   const binary = join(prefix, 'pi.cmd');
   writeFileSync(binary, '@echo off\n"%dp0%\\node_modules\\@mariozechner\\pi-coding-agent\\dist\\cli.js" %*\n');
-  expect(getLegacyNpmPrefix(binary, null)).toBeNull();
-  expect(getLegacyNpmPrefix(binary, root)).toBe(prefix);
+  expect(getLegacyNpmPrefix(binary)).toBe(prefix);
+  writeFileSync(binary, '@echo off\n"%dp0%\\node_modules\\@mariozechner\\pi-coding-agent\\dist\\cli.js.old" %*\n');
+  expect(getLegacyNpmPrefix(binary)).toBeNull();
   writeFileSync(binary, '@echo off\necho some other CLI\n');
-  expect(getLegacyNpmPrefix(binary, root)).toBeNull();
+  expect(getLegacyNpmPrefix(binary)).toBeNull();
 });
 
 test('invalid legacy manifests propagate their parsing error', () => {
   const prefix = workspace();
   const directory = legacyPackage(join(prefix, 'lib', 'node_modules'));
-  const binary = join(prefix, 'pi');
+  mkdirSync(join(prefix, 'bin'));
+  const binary = join(prefix, 'bin', 'pi');
   symlinkSync(join(directory, 'dist', 'cli.js'), binary);
   writeFileSync(join(directory, 'package.json'), '{invalid');
-  expect(() => getLegacyNpmPrefix(binary, null)).toThrow(SyntaxError);
+  expect(() => getLegacyNpmPrefix(binary)).toThrow(SyntaxError);
+});
+
+test('a selected alias cannot authorize replacing a differently owned global launcher', () => {
+  const prefix = workspace();
+  const directory = legacyPackage(join(prefix, 'lib', 'node_modules'));
+  const alias = join(prefix, 'alias');
+  symlinkSync(join(directory, 'dist', 'cli.js'), alias);
+  expect(getLegacyNpmPrefix(alias)).toBeNull();
+  mkdirSync(join(prefix, 'bin'));
+  const launcher = join(prefix, 'bin', 'pi');
+  writeFileSync(launcher, 'another package');
+  expect(getLegacyNpmPrefix(alias)).toBeNull();
+  rmSync(launcher);
+  symlinkSync(join(directory, 'dist', 'cli.js'), launcher);
+  expect(getLegacyNpmPrefix(alias)).toBe(prefix);
+});
+
+test('local Windows npm shims do not identify a global prefix', () => {
+  const prefix = workspace();
+  legacyPackage(join(prefix, 'node_modules'));
+  const bin = join(prefix, 'node_modules', '.bin');
+  mkdirSync(bin);
+  const shim = join(bin, 'pi.cmd');
+  writeFileSync(shim, '"%dp0%\\..\\@mariozechner\\pi-coding-agent\\dist\\cli.js" %*');
+  expect(getLegacyNpmPrefix(shim)).toBeNull();
+});
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('ownership probing exposes filesystem permission failures', () => {
+  const prefix = workspace();
+  const directory = legacyPackage(join(prefix, 'node_modules'));
+  const binary = join(prefix, 'pi.cmd');
+  writeFileSync(binary, 'legacy shim');
+  chmodSync(directory, 0o000);
+  try {
+    expect(() => getLegacyNpmPrefix(binary)).toThrow(expect.objectContaining({ code: 'EACCES' }));
+  } finally {
+    chmodSync(directory, 0o700);
+  }
 });

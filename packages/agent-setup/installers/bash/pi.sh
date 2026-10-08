@@ -63,7 +63,7 @@ pi_install() {
       _pi_legacy_prefix=""
       if [ -n "$PI_BIN" ]; then
         _write_pi_installation_checker || return 1
-        _pi_prefix_json=$(node "$SETUP_TMPDIR/pi-installation.mjs" "$PI_BIN" "") || return 1
+        _pi_prefix_json=$(node "$SETUP_TMPDIR/pi-installation.mjs" "$PI_BIN") || return 1
         _pi_legacy_prefix=$(node -e 'const prefix = JSON.parse(process.argv[1]); if (prefix !== null) process.stdout.write(prefix)' "$_pi_prefix_json") || return 1
       fi
       if [ -n "$_pi_legacy_prefix" ]; then
