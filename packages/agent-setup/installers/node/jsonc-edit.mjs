@@ -399,12 +399,8 @@ function runCli() {
   try {
     const defaultModel = envOrEmpty('FLOWAY_DEFAULT_MODEL') || null;
     const thinkingLevel = envOrEmpty('FLOWAY_PI_THINKING_LEVEL') || null;
-    // https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/docs/settings.md#model-and-thinking
-    if (thinkingLevel !== null && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(thinkingLevel)) throw new JsoncRefusalError('Invalid Pi thinking level');
     const retryEnabled = envOrEmpty('FLOWAY_PI_RETRY_ENABLED');
-    if (retryEnabled !== '' && retryEnabled !== 'true' && retryEnabled !== 'false') throw new JsoncRefusalError('Invalid Pi retry.enabled');
     const maxRetries = envOrEmpty('FLOWAY_PI_MAX_RETRIES');
-    if (maxRetries !== '' && (!/^\d+$/.test(maxRetries) || !Number.isSafeInteger(Number(maxRetries)))) throw new JsoncRefusalError('Invalid Pi retry.maxRetries');
     const output = updatePiSettings(input, {
       modelId: defaultModel,
       provider: process.env.FLOWAY_DEFAULT_PROVIDER,
