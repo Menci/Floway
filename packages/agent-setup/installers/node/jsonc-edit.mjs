@@ -272,7 +272,6 @@ function detectIndent(src) {
 }
 
 export function updateDefaultModel(src, modelId, provider) {
-  if (typeof provider !== 'string' || !provider) throw new JsoncRefusalError('A provider ID is required');
   const eol = detectLineEnding(src);
 
   const ast = parseJsoncAst(src);
