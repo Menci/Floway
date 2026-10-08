@@ -37,9 +37,7 @@ function New-SetupProcessStartInfo {
   return $startInfo
 }
 
-# Run a fixed package-manager command with inherited stdout/stderr. The child
-# remains attached to the real terminal, so progress updates and ANSI control
-# sequences render in real time without a lossy line-prefix filter.
+# Inherit stdout/stderr so native updater progress keeps terminal rendering.
 function Invoke-SetupLiveProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
   $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments

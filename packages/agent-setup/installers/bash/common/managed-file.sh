@@ -49,13 +49,14 @@ _merge_provider_extension() {
     out_error 'the extension has an invalid provider configuration'
     return 1
   fi
-  {
-    printf '%s\n' '// Managed by Floway Agent Setup.'
-    printf 'const connections = '
-    tr -d '\n' < "$header"
-    printf ';\n'
-    awk 'NR > 2' "$stage"
-  } > "$merged" || return 1
+  awk '
+    FILENAME == ARGV[1] {
+      print "// Managed by Floway Agent Setup."
+      print "const connections = " $0 ";"
+      next
+    }
+    FNR > 2
+  ' "$header" "$stage" > "$merged" || return $?
   chmod 600 "$merged" || return 1
   mv "$merged" "$stage"
 }
