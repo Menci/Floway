@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
@@ -60,6 +60,33 @@ test.skipIf(!hasPowerShell).each([
     });
     expect(result.status).not.toBe(0);
     expect(result.stdout + result.stderr).toContain(expected);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(!hasPowerShell)('PowerShell Pi prunes obsolete settings backups after extension-only setup', () => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-backup-cleanup-test-'));
+  try {
+    mkdirSync(join(directory, 'extensions'));
+    writeFileSync(join(directory, 'extensions', 'floway.js'), '// Managed by Floway Agent Setup.\n');
+    const backup = join(directory, 'settings.json.floway-backup.old');
+    writeFileSync(backup, '{}');
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const script = `$ErrorActionPreference='Stop';\n${fragment}\n
+$script:PiExtensionPath=Join-Path $args[0] 'extensions/floway.js'
+$script:PiSettingsPath=Join-Path $args[0] 'settings.json'
+$script:PiExtensionBackup=$null
+$script:PiSettingsBackup=$null
+Remove-SetupPiBackups
+`;
+    const scriptPath = join(directory, 'cleanup.ps1');
+    writeFileSync(scriptPath, script);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(existsSync(backup)).toBe(false);
+    expect(existsSync(join(directory, 'settings.json'))).toBe(false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

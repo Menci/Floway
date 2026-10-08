@@ -58,3 +58,22 @@ test('Pi connections keep authentication and refresh publication isolated by pro
   expect(providers[1]!.getModels()).toBe(workModels);
   expect(fetchCatalog).toHaveBeenCalledTimes(3);
 });
+
+test('Pi delegates an explicit null payload replacement to its native adapter', async () => {
+  const body = readFileSync(new URL('../installers/node/pi-extension.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
+  const model = { id: 'alias', api: 'anthropic-messages', effortOverrides: { high: 'fast' } };
+  const adapter = { streamSimple: vi.fn<(model: object, context: object, options: { onPayload: (payload: object) => unknown }) => void>() };
+  const factory = new Function('connections', 'fetch', 'anthropicMessagesApi', 'openAIResponsesApi', 'VERSION', body)(
+    [{ provider: 'work', endpoint: 'https://gateway.example', apiKey: 'key' }],
+    async () => Response.json({ models: [model] }), () => adapter, () => adapter, '1.1.0',
+  );
+  let provider: { streamSimple: (model: object, context: object, options: object) => void };
+  await factory({ registerProvider: (value: typeof provider) => { provider = value; } });
+  const onPayload = vi.fn(() => null);
+  provider!.streamSimple(model, {}, { reasoning: 'high', onPayload });
+  const payload = { output_config: { effort: 'high' } };
+  expect(await adapter.streamSimple.mock.calls[0]![2].onPayload(payload)).toBeNull();
+  expect(onPayload).toHaveBeenCalledWith(expect.objectContaining({ output_config: { effort: 'fast' } }), model);
+  expect(model.effortOverrides.high).toBe('fast');
+});

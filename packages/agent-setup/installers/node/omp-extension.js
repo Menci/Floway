@@ -25,10 +25,10 @@ export default async pi => {
             ...options, ...streamOptions[model.id], maxInFlightRequests: {},
             onPayload: async (payload, ...args) => {
               for (const path of payloadRemovals[model.id]) {
-                const owner = path.slice(0, -1).reduce((value, key) => value?.[key], payload);
+                const owner = path.slice(0, -1).reduce((value, key) => value[key], payload);
                 if (owner) delete owner[path[path.length - 1]];
               }
-              return options?.onPayload?.(payload, ...args);
+              return options.onPayload?.(payload, ...args);
             },
           },
         ),

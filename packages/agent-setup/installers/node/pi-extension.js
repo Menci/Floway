@@ -36,16 +36,15 @@ export default async pi => {
       stream: (model, context, options) => apis[model.api].stream(model, context, options),
       streamSimple: (model, context, options) => apis[model.api].streamSimple(model, context, {
         ...options,
-        thinkingBudgets: options?.thinkingBudgets ?? model.thinkingBudgets,
+        thinkingBudgets: options.thinkingBudgets ?? model.thinkingBudgets,
         onPayload: async payload => {
-          const effort = model.effortOverrides?.[options?.reasoning];
-          const patched = { ...payload };
-          if (effort !== undefined) patched.output_config = { ...payload.output_config, effort };
+          const effort = model.effortOverrides?.[options.reasoning];
+          if (effort !== undefined) payload.output_config = { ...payload.output_config, effort };
           for (const path of model.payloadRemovals ?? []) {
-            const parent = path.slice(0, -1).reduce((value, key) => value?.[key], patched);
+            const parent = path.slice(0, -1).reduce((value, key) => value[key], payload);
             if (parent) delete parent[path.at(-1)];
           }
-          return await options?.onPayload?.(patched, model) ?? patched;
+          return options.onPayload?.(payload, model);
         },
       }),
     });

@@ -158,13 +158,11 @@ function Remove-SetupPiBackups {
   }
   $script:PiExtensionBackup = $null
 
-  if (Test-Path -LiteralPath $script:PiSettingsPath) {
-    Remove-SetupOlderBackups -Path $script:PiSettingsPath -Keep $script:PiSettingsBackup
-    if ($script:PiSettingsBackup) {
-      Remove-Item -LiteralPath $script:PiSettingsBackup -Force -ErrorAction Stop
-    }
-    $script:PiSettingsBackup = $null
+  Remove-SetupOlderBackups -Path $script:PiSettingsPath -Keep $script:PiSettingsBackup
+  if ($script:PiSettingsBackup) {
+    Remove-Item -LiteralPath $script:PiSettingsBackup -Force -ErrorAction Stop
   }
+  $script:PiSettingsBackup = $null
 }
 
 function Fetch-SetupPiExtension {
