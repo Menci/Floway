@@ -2,39 +2,39 @@ import { expect, test } from 'vitest';
 
 import { createOpenAIChatCompletionsToOpenAIResponsesStreamState, flushOpenAIChatCompletionsToOpenAIResponsesEvents, translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents, translateToSourceEvents } from '../../src/openai-responses-via-openai-chat-completions/events.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-type OpenAIResponsesCompletedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' }>;
+type OpenAIResponsesCompletedEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }>;
 
-type OpenAIResponsesIncompleteEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.incomplete' }>;
+type OpenAIResponsesIncompleteEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
 
-type OpenAIResponsesOutputItemAddedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
+type OpenAIResponsesOutputItemAddedEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
 
-type OpenAIResponsesOutputItemDoneEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>;
+type OpenAIResponsesOutputItemDoneEvent = Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
 
 const chunk = (
-  delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'],
+  delta: OpenAIChatCompletionsAssistantDeltaEx,
   finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
-  usage?: OpenAIChatCompletionsStreamEvent['usage'],
+  usage?: OpenAIChatCompletionsUsageEx,
 ): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_stream_test',
   object: 'chat.completion.chunk',
   created: 1,
   model: 'gpt-test',
-  choices: [{ index: 0, delta, finish_reason: finishReason }],
+  choices: [{  index: 0, delta, finish_reason: finishReason }],
   ...(usage ? { usage } : {}),
 });
 
-const translate = (chunks: OpenAIChatCompletionsStreamEvent[]): OpenAIResponsesStreamEvent[] => {
+const translate = (chunks: OpenAIChatCompletionsStreamEvent[]): OpenAIResponsesStreamEventEx[] => {
   const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
   return [...chunks.flatMap(item => translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(item, state)), ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state)];
 };
 
-const sequenceNumbers = (events: OpenAIResponsesStreamEvent[]): number[] => events.map(event => (event as OpenAIResponsesStreamEvent & { sequence_number: number }).sequence_number);
+const sequenceNumbers = (events: OpenAIResponsesStreamEventEx[]): number[] => events.map(event => (event as OpenAIResponsesStreamEventEx & { sequence_number: number }).sequence_number);
 
-const assertEveryAddedOutputItemIsDone = (events: OpenAIResponsesStreamEvent[]): void => {
+const assertEveryAddedOutputItemIsDone = (events: OpenAIResponsesStreamEventEx[]): void => {
   const added = events
     .filter((event): event is OpenAIResponsesOutputItemAddedEvent => event.type === 'response.output_item.added')
     .map(event => event.output_index)
@@ -62,7 +62,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves refus
   ]);
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
 
-  assertEquals(events.filter(event => event.type === 'response.refusal.delta').map(event => (event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.delta' }>).delta), ['Cannot ', 'help.']);
+  assertEquals(events.filter(event => event.type === 'response.refusal.delta').map(event => (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.delta' }>).delta), ['Cannot ', 'help.']);
   assertEquals(completed?.response.output, [{
     type: 'message',
     id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
@@ -70,7 +70,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves refus
     role: 'assistant',
     content: [{ type: 'refusal', refusal: 'Cannot help.' }],
   }]);
-  assertEquals(completed?.response.output_text, '');
+  assertEquals(Object.hasOwn(completed!.response, 'output_text'), false);
 });
 
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves an empty refusal item', () => {
@@ -113,7 +113,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves tool 
     chunk({}, 'tool_calls'),
   ]);
 
-  const argumentDeltas = events.filter(event => event.type === 'response.function_call_arguments.delta') as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>[];
+  const argumentDeltas = events.filter(event => event.type === 'response.function_call_arguments.delta') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.function_call_arguments.delta' }>[];
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
 
   assertEquals(
@@ -175,7 +175,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   // Scalar reasoning arrives as `reasoning_content`; the translated Responses
   // stream must surface it as a reasoning item regardless of the field name.
   const events = translate([
-    chunk({ role: 'assistant', reasoning_content: null }),
+    chunk({ role: 'assistant', reasoning_content: null } as OpenAIChatCompletionsAssistantDeltaEx),
     chunk({ reasoning_content: 'We need ' }),
     chunk({ reasoning_content: 'answer poem' }),
     chunk({ content: 'The sky is grey.' }),
@@ -198,7 +198,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   // Scalar reasoning arrives as `reasoning`; the translated Responses stream
   // must surface it as a reasoning item regardless of the field name.
   const events = translate([
-    chunk({ role: 'assistant', reasoning: null }),
+    chunk({ role: 'assistant', reasoning: null } as OpenAIChatCompletionsAssistantDeltaEx),
     chunk({ reasoning: 'Let me ' }),
     chunk({ reasoning: 'think.' }),
     chunk({ content: 'Done.' }),
@@ -219,7 +219,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
 
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoning_text over dialect when both are present', () => {
   const events = translate([
-    chunk({ role: 'assistant', reasoning_text: 'canonical', reasoning_content: 'dialect' }),
+    chunk({ role: 'assistant', reasoning_text: 'canonical', reasoning_content: 'dialect' } as OpenAIChatCompletionsAssistantDeltaEx),
     chunk({ content: 'answer' }),
     chunk({}, 'stop'),
   ]);
@@ -362,7 +362,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
     startEvents.map(e => e.type),
     ['response.created', 'response.in_progress', 'response.output_item.added'],
   );
-  const added = startEvents.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
+  const added = startEvents.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
   if (!added) throw new Error('expected output_item.added');
   assertEquals(added.item.type, 'custom_tool_call');
 
@@ -397,7 +397,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
   assertEquals(types.includes('response.custom_tool_call_input.delta'), true);
   assertEquals(types.includes('response.custom_tool_call_input.done'), true);
 
-  const itemDone = finalEvents.find((e): e is Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+  const itemDone = finalEvents.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
   if (!itemDone) throw new Error('expected output_item.done');
   assertEquals(itemDone.item.type, 'custom_tool_call');
   if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
@@ -408,7 +408,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps late opaque with prior scalar reasoning text', () => {
   const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
   const events = [
-    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' } as OpenAIChatCompletionsAssistantDeltaEx), state),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ content: 'answer' }), state),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'stop'), state),

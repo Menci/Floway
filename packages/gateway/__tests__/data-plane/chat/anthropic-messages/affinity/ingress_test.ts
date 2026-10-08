@@ -36,7 +36,7 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
       content: [
         { type: 'thinking', thinking: 'visible reasoning', signature },
         { type: 'redacted_thinking', data: synthetic },
-        { type: 'text', text: 'answer' },
+        { citations: null, type: 'text', text: 'answer' },
       ],
     }],
   }, codec);
@@ -45,13 +45,13 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'visible reasoning', signature: 'signature' },
-      { type: 'text', text: 'answer' },
+      { citations: null, type: 'text', text: 'answer' },
     ],
   });
   expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
-      { type: 'text', text: 'answer' },
+      { citations: null, type: 'text', text: 'answer' },
     ],
   });
 });

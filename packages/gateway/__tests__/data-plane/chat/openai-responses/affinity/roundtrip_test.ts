@@ -12,7 +12,7 @@ import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesInputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const modelCandidate = (upstream: string) => {
@@ -45,7 +45,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
     result: 'done',
     status: 'completed' as const,
   };
-  const upstreamResponse: OpenAIResponsesResult = {
+  const upstreamResponse: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
     model: 'model-a',
@@ -54,7 +54,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
     error: null,
     incomplete_details: null,
   };
-  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: programOutput });
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: programOutput });
     yield eventFrame({ type: 'response.completed', response: upstreamResponse });
@@ -72,7 +72,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
     responseId: 'resp_public',
   });
 
-  let clientResponse: OpenAIResponsesResult | undefined;
+  let clientResponse: OpenAIResponsesResultEx | undefined;
   for await (const frame of client) {
     if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   }
@@ -81,7 +81,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   if (publicProgram.type !== 'program_output') throw new Error('Expected program output');
   expect(publicProgram.id).toBe(programOutput.id);
 
-  const input = clientResponse.output as unknown as OpenAIResponsesInputItem[];
+  const input = clientResponse.output as unknown as CanonicalOpenAIResponsesInputItem[];
   await store.loadInputItems(input, input);
   const hydrated = hydrateOpenAIResponsesPayload({ model: 'model-a', input }, store);
   const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, codec);
@@ -117,11 +117,11 @@ test('agent-message natural and originless nested carriers round-trip without ch
     output: [empty, natural],
     error: null,
     incomplete_details: null,
-  } as unknown as OpenAIResponsesResult;
-  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  } as unknown as OpenAIResponsesResultEx;
+  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.completed', response });
   };
-  let clientResponse: OpenAIResponsesResult | undefined;
+  let clientResponse: OpenAIResponsesResultEx | undefined;
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
     affinity: {
@@ -134,7 +134,7 @@ test('agent-message natural and originless nested carriers round-trip without ch
 
   const prepared = await analyzeOpenAIResponsesAffinity({
     model: 'model-a',
-    input: clientResponse.output as unknown as OpenAIResponsesInputItem[],
+    input: clientResponse.output as unknown as CanonicalOpenAIResponsesInputItem[],
   }, codec);
   const evaluation = prepared.evaluateCandidate(candidate);
   if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
@@ -148,8 +148,8 @@ test('compaction_summary carrier authenticates after alias canonicalization with
     type: 'compaction_summary',
     id: 'cmp_upstream',
     encrypted_content: 'opaque',
-  } as unknown as OpenAIResponsesResult['output'][number];
-  const response: OpenAIResponsesResult = {
+  } as unknown as OpenAIResponsesResultEx['output'][number];
+  const response: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
     model: 'model-a',
@@ -158,7 +158,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
     error: null,
     incomplete_details: null,
   };
-  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.completed', response });
   };
   let wrapped: string | undefined;
@@ -176,7 +176,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   }
   if (wrapped === undefined) throw new Error('Expected wrapped compaction summary');
 
-  const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as OpenAIResponsesInputItem;
+  const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as CanonicalOpenAIResponsesInputItem;
   const prepared = await analyzeOpenAIResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
   expect(prepared.requiredTargets).toEqual([{
     upstreamId: candidate.provider.upstreamId,
@@ -215,7 +215,7 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
     id: 'cmp_portable',
     encrypted_content: encryptedContent,
   };
-  const upstreamResponse: OpenAIResponsesResult = {
+  const upstreamResponse: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response.compaction',
     model: 'model-a',
@@ -224,14 +224,14 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
     error: null,
     incomplete_details: null,
   };
-  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...upstreamResponse, status: 'in_progress' } });
     yield eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: compaction });
     yield eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item: compaction });
     yield eventFrame({ type: 'response.completed', sequence_number: 3, response: upstreamResponse });
   };
 
-  const events: OpenAIResponsesStreamEvent[] = [];
+  const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
     affinity: {
@@ -259,7 +259,7 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
 
   const prepared = await analyzeOpenAIResponsesAffinity({
     model: 'model-a',
-    input: terminal.response.output as unknown as OpenAIResponsesInputItem[],
+    input: terminal.response.output as unknown as CanonicalOpenAIResponsesInputItem[],
   }, codec);
   expect(prepared.requiredTargets).toEqual([]);
   const evaluation = prepared.evaluateCandidate(candidateB);

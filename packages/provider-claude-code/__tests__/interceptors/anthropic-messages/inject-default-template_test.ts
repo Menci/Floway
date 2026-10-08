@@ -3,11 +3,11 @@ import { test } from 'vitest';
 import { injectDefaultTemplate } from '../../../src/interceptors/anthropic-messages/inject-default-template.ts';
 import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
@@ -16,7 +16,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   upstreamId: 'up_test',
 });
 
-const billingBlock: AnthropicMessagesTextBlock = { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.280.abc;' };
+const billingBlock: AnthropicMessagesTextBlockParam = { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.280.abc;' };
 
 test('appends DEFAULT_TEMPLATE_BLOCK as system[2] with ephemeral cache_control intact', async () => {
   const ctx = invocation({
@@ -39,12 +39,14 @@ test('preserves ephemeral cache_control when caller already holds 3 breakpoints 
     input_schema: { type: 'object' },
     cache_control: { type: 'ephemeral' },
   };
-  const cachedSystemBlock: AnthropicMessagesTextBlock = {
+  const cachedSystemBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'caller-supplied cached system fragment',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlock: AnthropicMessagesTextBlock = {
+  const cachedUserBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached prior turn',
     cache_control: { type: 'ephemeral' },
@@ -71,17 +73,20 @@ test('demotes our cache_control when caller already holds 4 breakpoints (would b
     input_schema: { type: 'object' },
     cache_control: { type: 'ephemeral' },
   };
-  const cachedSystemBlock: AnthropicMessagesTextBlock = {
+  const cachedSystemBlock: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'caller-supplied cached system fragment',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlockA: AnthropicMessagesTextBlock = {
+  const cachedUserBlockA: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached turn A',
     cache_control: { type: 'ephemeral' },
   };
-  const cachedUserBlockB: AnthropicMessagesTextBlock = {
+  const cachedUserBlockB: AnthropicMessagesTextBlockParam = {
+    citations: null,
     type: 'text',
     text: 'cached turn B',
     cache_control: { type: 'ephemeral' },
@@ -109,7 +114,7 @@ test('demotes our cache_control when caller already exceeds the cap', async () =
     input_schema: { type: 'object' },
     cache_control: { type: 'ephemeral' },
   };
-  const cachedBlock = (text: string): AnthropicMessagesTextBlock => ({
+  const cachedBlock = (text: string): AnthropicMessagesTextBlockParam => ({
     type: 'text',
     text,
     cache_control: { type: 'ephemeral' },

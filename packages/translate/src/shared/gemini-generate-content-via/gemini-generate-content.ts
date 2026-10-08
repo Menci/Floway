@@ -1,4 +1,4 @@
-import type { GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentThinkingConfig, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPartData, GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentThinkingConfig, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -25,9 +25,9 @@ export type GeminiGenerateContentSupportedImageMimeType = (typeof GEMINI_GENERAT
 
 export const geminiGenerateContentToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
-export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result';
+export type GeminiGenerateContentPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result' | 'tool_call' | 'tool_response';
 
-type GeminiGenerateContentPartDataField = keyof Omit<GeminiGenerateContentPart, 'thought' | 'thoughtSignature'>;
+type GeminiGenerateContentPartDataField = keyof GeminiGenerateContentPartData;
 
 // Source of truth for "what counts as a content-bearing field on a part".
 // Record<GeminiGenerateContentPartDataField, _> forces a matching entry whenever a new field
@@ -41,6 +41,8 @@ const GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND: Record<GeminiGenerateContentPa
   fileData: 'file_data',
   executableCode: 'executable_code',
   codeExecutionResult: 'code_execution_result',
+  toolCall: 'tool_call',
+  toolResponse: 'tool_response',
 };
 
 const GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS = Object.keys(GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND) as GeminiGenerateContentPartDataField[];
@@ -68,7 +70,7 @@ export const geminiGenerateContentThoughtText = (part: GeminiGenerateContentPart
 export const geminiGenerateContentVisibleText = (part: GeminiGenerateContentPart): string | null => (part.thought === true ? null : geminiGenerateContentPartText(part));
 
 export const geminiGenerateContentText = (content?: GeminiGenerateContentContent): string | null => {
-  const texts = content?.parts.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
+  const texts = content?.parts?.map(geminiGenerateContentPartText).filter((text): text is string => text !== null);
 
   return texts?.length ? texts.join('\n\n') : null;
 };

@@ -8,7 +8,7 @@ export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentSt
 
 const isGeminiGenerateContentFinishedEvent = (event: GeminiGenerateContentStreamEvent): boolean => 'candidates' in event && event.candidates?.some(candidate => candidate.finishReason !== undefined) === true;
 
-export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || isGeminiGenerateContentFinishedEvent(event);
+export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || isGeminiGenerateContentFinishedEvent(event) || ('promptFeedback' in event && event.promptFeedback?.blockReason !== undefined);
 
 const geminiGenerateContentEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<GeminiGenerateContentStreamEvent> {
   for await (const frame of frames) {

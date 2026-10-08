@@ -6,7 +6,7 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
@@ -23,7 +23,7 @@ export interface AnthropicMessagesServeCountTokensArgs {
 }
 
 export const anthropicMessagesServe = {
-  generate: async (args: AnthropicMessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> => {
+  generate: async (args: AnthropicMessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -58,7 +58,7 @@ export const anthropicMessagesServe = {
     );
   },
 
-  countTokens: async (args: AnthropicMessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> | PlainResult> => {
+  countTokens: async (args: AnthropicMessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> | PlainResult> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({

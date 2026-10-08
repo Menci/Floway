@@ -1,5 +1,5 @@
 import { TranslatorInputError } from './translator-input-error.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessage, OpenAIResponsesInputItem, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 // Wire `OpenAIResponsesRequestPayload.input` accepts a bare string and EasyInputMessage
 // objects whose `type: "message"` discriminator is omitted. The gateway's
@@ -18,7 +18,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
       && typeof (breakpoint as Record<string, unknown>).mode === 'string';
   };
 
-  const isImplicitEasyInputMessage = (item: unknown): item is OpenAIResponsesEasyInputMessage & { type?: undefined } => {
+  const isImplicitEasyInputMessage = (item: unknown): item is OpenAIResponsesEasyInputMessageEx & { type?: undefined } => {
     if (typeof item !== 'object' || item === null) return false;
     const message = item as Record<string, unknown>;
     if (message.type !== undefined) return false;
@@ -46,7 +46,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
   if (typeof value !== 'object' || value === null) {
     throw new TranslatorInputError('OpenAI Responses payload must be an object.');
   }
-  const payload = value as OpenAIResponsesRequestPayload;
+  const payload = value as OpenAIResponsesRequestPayloadEx;
   // Resolution binds `model` straight into a SQL lookup, so the wire boundary is
   // the only place a missing id can still become a caller-facing 400; message
   // and code reproduce OpenAI's own rejection verbatim.
@@ -60,6 +60,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
   }
   return {
     ...payload,
+    model: payload.model,
     input: typeof input === 'string'
       ? [{ type: 'message', role: 'user', content: input }]
       : input.map((item, index) => {
@@ -67,7 +68,7 @@ export function canonicalizeOpenAIResponsesPayload(value: unknown): CanonicalOpe
           if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
             throw new TranslatorInputError('Untyped OpenAI Responses input items require a valid role and content.', { param: `input[${index}]` });
           }
-          return item as OpenAIResponsesInputItem;
+          return item as CanonicalOpenAIResponsesInputItem;
         }),
   };
 }

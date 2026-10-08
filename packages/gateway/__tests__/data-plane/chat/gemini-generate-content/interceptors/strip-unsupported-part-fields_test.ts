@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { stripUnsupportedPartFields } from '../../../../../src/data-plane/chat/gemini-generate-content/interceptors/strip-unsupported-part-fields.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ExecuteResult, eventResult, type GeminiGenerateContentInvocation } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -35,7 +35,7 @@ test('strips fileData, executableCode, and codeExecutionResult while preserving 
             fileData: { mimeType: 'text/plain', fileUri: 'gs://bucket/file.txt' },
             executableCode: { language: 'python', code: 'print(1)' },
             codeExecutionResult: { outcome: 'OUTCOME_OK', output: '1' },
-          },
+          } as unknown as GeminiGenerateContentPart,
         ],
       },
     ],
@@ -44,7 +44,7 @@ test('strips fileData, executableCode, and codeExecutionResult while preserving 
         {
           text: 'system',
           fileData: { mimeType: 'text/plain', fileUri: 'gs://bucket/system.txt' },
-        },
+        } as unknown as GeminiGenerateContentPart,
       ],
     },
   });
@@ -63,7 +63,7 @@ test('strips fileData, executableCode, and codeExecutionResult while preserving 
             inlineData: { mimeType: 'image/png', data: 'aW1hZ2U=' },
             functionCall: { id: 'call-1', name: 'lookup', args: { query: 'docs' } },
             functionResponse: { id: 'call-1', name: 'lookup', response: { ok: true } },
-          },
+          } as unknown as GeminiGenerateContentPart,
         ],
       },
     ],
@@ -84,7 +84,7 @@ test('removes parts that only contain unsupported file or code fields', async ()
           {
             executableCode: { language: 'python', code: 'print(1)' },
             codeExecutionResult: { outcome: 'OUTCOME_OK', output: '1' },
-          },
+          } as unknown as GeminiGenerateContentPart,
         ],
       },
     ],

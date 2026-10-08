@@ -69,7 +69,7 @@ test('passes a normal stream through unchanged', async () => {
         ],
       }),
     ),
-    eventFrame(baseChunk({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })),
+    eventFrame(baseChunk({ choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] })),
     doneFrame(),
   ];
 
@@ -94,7 +94,7 @@ test('throws when whitespace exceeds the threshold', async () => {
       }),
     ),
     // Subsequent frames should not be observed.
-    eventFrame(baseChunk({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '\n\n\n' } }] }, finish_reason: null }] })),
+    eventFrame(baseChunk({ choices: [{  index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '\n\n\n' } }] }, finish_reason: null }] })),
     doneFrame(),
   ];
 
@@ -110,25 +110,25 @@ test('continues streaming when whitespace is broken by non-whitespace characters
     eventFrame(
       baseChunk({
         choices: [
-          { index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'noop', arguments: half } }] }, finish_reason: null },
+          {  index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'noop', arguments: half } }] }, finish_reason: null },
         ],
       }),
     ),
     eventFrame(
       baseChunk({
         choices: [
-          { index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: 'x' } }] }, finish_reason: null },
+          {  index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: 'x' } }] }, finish_reason: null },
         ],
       }),
     ),
     eventFrame(
       baseChunk({
         choices: [
-          { index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: half } }] }, finish_reason: null },
+          {  index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: half } }] }, finish_reason: null },
         ],
       }),
     ),
-    eventFrame(baseChunk({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })),
+    eventFrame(baseChunk({ choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] })),
     doneFrame(),
   ];
 

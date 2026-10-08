@@ -18,9 +18,9 @@ import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
@@ -75,10 +75,10 @@ declare const WebSocketPair: {
 // `response.create`; the nested `response` envelope of Realtime-style clients
 // is an extension we also accept, and prefer when present.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L99-L115
-type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayload> & {
+type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayloadEx> & {
   type: string;
   event_id?: string;
-  response?: Partial<OpenAIResponsesRequestPayload>;
+  response?: Partial<OpenAIResponsesRequestPayloadEx>;
   [key: string]: unknown;
 };
 
@@ -366,14 +366,14 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
 
 // The transport always streams, whatever the client sent.
 const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
-  ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
+  ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayloadEx), stream: true });
 
 const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
-  readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+  readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalOpenAIResponsesPayload;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
@@ -578,10 +578,10 @@ const respondOpenAIResponsesWebSocket = async (input: {
 };
 
 const observeOpenAIResponsesWebSocketFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   state: SourceStreamState,
   ctx: ChatGatewayCtx,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     if (frame.type === 'event') {
@@ -670,20 +670,14 @@ const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   }
 };
 
-const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
+const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
   type: error.type,
   code: error.type,
-  name: error.name,
   message: error.message,
-  stack: error.stack,
-  cause: error.cause,
-  target_api: error.target_api,
+  provider_specific_fields: internalDebugErrorFields(error),
 });
 
-const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
-  ...toInternalDebugError(error),
-  code: 'internal_error',
-});
+const serverErrorEnvelope = (error: unknown): Record<string, unknown> => internalErrorEnvelope(toInternalDebugError(error));
 
 const normalizeErrorBody = (body: unknown, status: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'

@@ -44,7 +44,7 @@ const resolveRemoteImage = async (url: string, loadRemoteImage: RemoteImageLoade
     type: 'image',
     source: {
       type: 'base64',
-      media_type: mediaType as AnthropicMessagesImageBlock['source']['media_type'],
+      media_type: mediaType as Extract<AnthropicMessagesImageBlock['source'], { type: 'base64' }>['media_type'],
       data: encodeBase64(image.data),
     },
   };
@@ -60,7 +60,7 @@ export const resolveImageUrlToAnthropicMessagesImage = async (url: string, loadR
       type: 'image',
       source: {
         type: 'base64',
-        media_type: dataUrl.mediaType as AnthropicMessagesImageBlock['source']['media_type'],
+        media_type: dataUrl.mediaType as Extract<AnthropicMessagesImageBlock['source'], { type: 'base64' }>['media_type'],
         data: dataUrl.data,
       },
     };

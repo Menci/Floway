@@ -1,11 +1,11 @@
 import { flushGeminiGenerateContentThoughtSignature, type GeminiGenerateContentThoughtSignatureState, geminiGenerateContentCandidateEvent, parseStrictJsonObject, setGeminiGenerateContentThoughtSignature, signGeminiGenerateContentPart } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { anthropicMessagesRefusalExplanation } from '../shared/via-anthropic-messages/refusal.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
-import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsageSnapshot } from '@floway-dev/protocols/anthropic-messages';
+import { billableServiceTier, isJsonObject, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFinishReason, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
-const anthropicMessagesStopReasonToGeminiGenerateContent = (stopReason: Extract<AnthropicMessagesStreamEvent, { type: 'message_delta' }>['delta']['stop_reason']): GeminiGenerateContentFinishReason => {
+const anthropicMessagesStopReasonToGeminiGenerateContent = (stopReason: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }>['delta']['stop_reason']): GeminiGenerateContentFinishReason => {
   switch (stopReason) {
   case 'end_turn':
   case 'tool_use':
@@ -22,7 +22,7 @@ const anthropicMessagesStopReasonToGeminiGenerateContent = (stopReason: Extract<
 
 const UPSTREAM_ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Anthropic Messages stream ended without a message_stop event.';
 
-const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<AnthropicMessagesStreamEvent> {
+const upstreamAnthropicMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<AnthropicMessagesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -39,7 +39,7 @@ interface AnthropicMessagesToolUseDraft {
   id?: string;
   name?: string;
   argsJson: string;
-  args?: Record<string, unknown>;
+  args: unknown;
 }
 
 interface AnthropicMessagesToGeminiGenerateContentStreamState extends GeminiGenerateContentThoughtSignatureState {
@@ -68,13 +68,13 @@ const mapUsage = (state: AnthropicMessagesToGeminiGenerateContentStreamState, ha
   };
 };
 
-const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEvent): void => {
+const throwOnAnthropicMessagesFatalEvent = (event: AnthropicMessagesStreamEventEx): void => {
   if (event.type !== 'error') return;
 
   throw new Error(`Upstream Anthropic Messages stream error: ${event.error.type}: ${event.error.message}`, { cause: event });
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   const state: AnthropicMessagesToGeminiGenerateContentStreamState = {
     usage: anthropicMessagesUsageSnapshot(),
     toolUses: {},
@@ -154,13 +154,15 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
           throw new Error('Anthropic Messages tool use ended without a name.');
         }
 
+        const args = toolUse.argsJson ? parseStrictJsonObject(toolUse.argsJson, 'Anthropic Messages tool use input') : toolUse.args;
+        if (!isJsonObject(args)) throw new Error('Anthropic Messages tool use input must be a JSON object for Gemini function call arguments.');
         yield eventFrame(
           geminiGenerateContentCandidateEvent([
             signGeminiGenerateContentPart(state, {
               functionCall: {
                 ...(toolUse.id !== undefined ? { id: toolUse.id } : {}),
                 name: toolUse.name,
-                args: toolUse.argsJson ? parseStrictJsonObject(toolUse.argsJson, 'Anthropic Messages tool use input') : toolUse.args ?? {},
+                args,
               },
             }),
           ]),

@@ -28,7 +28,7 @@ import {
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
-import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItem, OpenAIResponsesHostedTool, OpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItemEx, OpenAIResponsesHostedTool, CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -435,7 +435,7 @@ const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
  */
 export interface WebSearchCallPrivatePayload {
   v: 1;
-  functionCallItem: OpenAIResponsesFunctionToolCallItem;
+  functionCallItem: OpenAIResponsesFunctionToolCallItemEx;
   ir: WebSearchCallIR;
 }
 
@@ -507,11 +507,11 @@ const actionToShimCallArgsJson = (action: OpenAIResponsesWebSearchAction): strin
 // `function_call + function_call_output` pair that inlines the raw wire
 // item so the model can see what the client actually sent.
 export const transformInputItemsForWebSearch = (
-  input: OpenAIResponsesInputItem[],
+  input: CanonicalOpenAIResponsesInputItem[],
   toolName: string,
   getPrivatePayload?: (id: string) => unknown,
-): OpenAIResponsesInputItem[] => {
-  const out: OpenAIResponsesInputItem[] = [];
+): CanonicalOpenAIResponsesInputItem[] => {
+  const out: CanonicalOpenAIResponsesInputItem[] = [];
 
   for (const item of input) {
     if (item.type !== 'web_search_call') {
@@ -779,7 +779,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
             dispatcher: ({ intercepted, loopState }) => {
               const commands = intercepted.arguments ?? {};
               const slot = planShimSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
-              const functionCallItem: OpenAIResponsesFunctionToolCallItem = {
+              const functionCallItem: OpenAIResponsesFunctionToolCallItemEx = {
                 type: 'function_call',
                 call_id: intercepted.callId,
                 name: intercepted.name,

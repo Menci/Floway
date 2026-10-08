@@ -93,7 +93,6 @@ it('chains previous_response_id on the Codex OpenAI Responses WebSocket', async 
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `codex ws answer ${turn}`,
           output: [{
             id: `assistant_codex_ws_${turn}`,
             type: 'message',
