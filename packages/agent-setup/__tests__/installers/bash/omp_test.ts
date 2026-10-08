@@ -52,6 +52,13 @@ for (const platform of ['bash', 'powershell'] as const) {
       expect(result.staged).toBe(source.replace('enabled: true', 'enabled: false').replace('maxRetries: 10', 'maxRetries: 0'));
     });
 
+    test.each(['TRUE', 'null', ''])('overwrites an old retry leaf using the explicit new typed value: %s', scalar => {
+      const source = `retry:\n  enabled:${scalar ? ` ${scalar}` : ''} # enabled\n  maxRetries: +3 # attempts\n`;
+      const result = run(source, 'false', '0');
+      expect(result.status, result.output).toBe(0);
+      expect(result.staged).toBe('retry:\n  enabled: false # enabled\n  maxRetries: 0 # attempts\n');
+    });
+
     test('omitted settings preserve existing retry values and another connection default byte for byte', () => {
       const source = "# Model preferences\r\nmodelRoles:\r\n  default: 'personal/alias'\r\nretry:\r\n  enabled: false\r\n  maxRetries: 3";
       const result = run(source, '', '');
@@ -138,7 +145,7 @@ for (const platform of ['bash', 'powershell'] as const) {
       'retry: &shared\n  enabled: true\n',
       'retry:\n  enabled: true\nretry:\n  enabled: false\n',
       'retry:\n  enabled: true\n  enabled: false\n',
-      'retry:\n  enabled: definitely\n',
+      'retry:\n  enabled: [true]\n',
       '"retry":\n  enabled: true\n',
       'retry:\n  "enabled": true\n',
     ])('rejects ambiguous or invalid managed values without touching the original: %s', source => {

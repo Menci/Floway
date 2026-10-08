@@ -163,7 +163,6 @@ function Set-SetupOmpRetryScalar {
   $header = -1
   $field = -1
   $indent = ''
-  $scalar = if ($Key -eq 'enabled') { '(true|false)' } else { '[0-9]+' }
   $quotedKeyPattern = '^ +["'']' + [Regex]::Escape($Key) + '["'']:'
   for ($i = 0; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
@@ -188,7 +187,7 @@ function Set-SetupOmpRetryScalar {
     if (-not $indent -and $line -match '^( +)\S') { $indent = $Matches[1] }
     if ($line -match $quotedKeyPattern) { Stop-Setup "quoted retry.$Key keys cannot be edited safely." }
     if ($line -match "^( +)${Key}:") {
-      if ($Matches[1] -ne $indent -or $field -ne -1 -or $line -notmatch "^( +)${Key}: *$scalar( +(#.*)?)?`$") {
+      if ($Matches[1] -ne $indent -or $field -ne -1 -or $line -notmatch "^( +)${Key}: *[A-Za-z0-9_.+-]*( +(#.*)?)?`$") {
         Stop-Setup "retry.$Key must be a single scalar with a valid value."
       }
       $field = $i

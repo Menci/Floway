@@ -211,14 +211,10 @@ omp_stage_extension() {
 }
 
 omp_set_retry_scalar() {
-  local key=$1 value=$2 header=-1 end indent="" field=-1 i line scalar suffix
+  local key=$1 value=$2 header=-1 end indent="" field=-1 i line suffix
   local quoted_key_pattern="^[ ]+['\"]$key['\"]:"
   local header_pattern='^retry:[ ]*(#.*)?$' ignored_pattern='^[ ]*(#.*)?$' field_pattern
-  case "$key" in
-    enabled) scalar='(true|false)' ;;
-    maxRetries) scalar='[0-9]+' ;;
-  esac
-  field_pattern="^([ ]+)$key:[ ]*$scalar([ ]+(#.*)?)?$"
+  field_pattern="^([ ]+)$key:[ ]*[A-Za-z0-9_.+-]*([ ]+(#.*)?)?$"
   for i in "${!_osc_new_lines[@]}"; do
     line=${_osc_new_lines[$i]}
     case "$line" in

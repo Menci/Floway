@@ -3006,18 +3006,20 @@ for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell',
     t.equal(piBackupFiles(join(piDirFor(ws), 'extensions'), 'floway.js').length, 0, 'backups pruned');
   });
 
-  test('pi', `${label}: rollback restores extension and settings after staging fails`, async t => {
+  test('pi', `${label}: rollback restores extension and settings after the injected configuration failure`, async t => {
     if (label === 'PowerShell' && !hostPwsh) skip('no PowerShell interpreter on this host');
     const ws = makeWorkspace();
     placeFakePi(ws.binDir);
     mkdirSync(join(piDirFor(ws), 'extensions'), { recursive: true });
     const extension = piExtensionPath(ws);
     const settings = piSettingsPath(ws);
-    writeFileSync(extension, '// Managed by Floway Agent Setup.\noriginal extension');
+    const original = renderAgentExtension({ agent: 'pi', provider: 'old', endpoint: 'https://old.example', apiKey: 'old-key' });
+    writeFileSync(extension, original);
     writeFileSync(settings, '{"theme":"dark"}');
     const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'm' }), fakePiFailConfig: true });
     t.notEqual(run.code, 0, 'injected failure aborts');
-    t.equal(readFileSync(extension, 'utf8'), '// Managed by Floway Agent Setup.\noriginal extension');
+    t.includes(run.combined, 'Pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
+    t.equal(readFileSync(extension, 'utf8'), original);
     t.equal(readFileSync(settings, 'utf8'), '{"theme":"dark"}');
     t.equal(piStagedFiles(join(piDirFor(ws), 'extensions')).length, 0);
   });
@@ -3757,11 +3759,11 @@ test('omp', 'rollback restores the original extension and cleans stage files on 
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = '// Managed by Floway Agent Setup.\nproviders:\n  custom:\n    baseUrl: https://custom.com\n';
+  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
   t.ok(run.code !== 0, 'simulated failure should exit nonzero');
-  t.includes(run.combined, 'rolling back configuration', 'rollback warning emitted');
+  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), priorContent, 'extension restored to original content');
   t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
 });
@@ -3770,7 +3772,7 @@ test('omp', 'rollback restore failure preserves backup file and warns operator',
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = '// Managed by Floway Agent Setup.\nproviders:\n  custom:\n    baseUrl: https://custom.com\n';
+  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runShellInstaller({
     workspace: ws,
@@ -3780,6 +3782,7 @@ test('omp', 'rollback restore failure preserves backup file and warns operator',
     fakeRestoreFailure: true,
   });
   t.ok(run.code !== 0, 'should fail');
+  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
   t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
   t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 1, 'backup file preserved for manual recovery');
@@ -4106,11 +4109,11 @@ test('omp', 'PowerShell: rollback restores the original extension and cleans sta
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = '// Managed by Floway Agent Setup.\nproviders:\n  custom:\n    baseUrl: https://custom.com\n';
+  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
   t.ok(run.code !== 0, 'simulated failure should exit nonzero');
-  t.includes(run.combined, 'rolling back configuration', 'rollback warning emitted');
+  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), priorContent, 'extension restored to original content');
   t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
 });
@@ -4120,7 +4123,7 @@ test('omp', 'PowerShell: rollback restore failure preserves backup file and warn
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = '// Managed by Floway Agent Setup.\nproviders:\n  custom:\n    baseUrl: https://custom.com\n';
+  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runPowerShellInstaller({
     workspace: ws,
@@ -4130,6 +4133,7 @@ test('omp', 'PowerShell: rollback restore failure preserves backup file and warn
     failRestore: true,
   });
   t.ok(run.code !== 0, 'should fail');
+  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
   t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
   t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 1, 'backup file preserved for manual recovery');
