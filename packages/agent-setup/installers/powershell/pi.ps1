@@ -213,7 +213,6 @@ function Fetch-SetupPiExtension {
 
 function Invoke-SetupNodeJsonc {
   param(
-    [string]$Mode,
     [string]$InputText,
     [string]$OutputPath,
     [hashtable]$EnvVars
@@ -224,7 +223,7 @@ function Invoke-SetupNodeJsonc {
   $editorPath = Join-Path $script:PiTmpDir 'jsonc-edit.mjs'
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $nodeCmd.Source
-  $startInfo.Arguments = '"' + $editorPath.Replace('"', '\"') + '" ' + $Mode
+  $startInfo.Arguments = '"' + $editorPath.Replace('"', '\"') + '"'
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardInput = $true
@@ -285,7 +284,7 @@ function Stage-SetupPiSettings {
   }
   $envVars['FLOWAY_DEFAULT_MODEL'] = $SetupPiModel
   Write-SetupJsoncEditor
-  Invoke-SetupNodeJsonc -Mode 'settings' -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
+  Invoke-SetupNodeJsonc -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
 }
 
 function Apply-SetupPiStaged {

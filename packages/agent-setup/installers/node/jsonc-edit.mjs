@@ -382,12 +382,6 @@ function removeObjectProperty(src, prop) {
 }
 
 function runCli() {
-  const mode = process.argv[2];
-  if (mode !== 'settings') {
-    process.stderr.write('Usage: node jsonc-edit.mjs settings\n');
-    process.exit(2);
-  }
-
   let input = '';
   try {
     input = readFileSync(0, 'utf8');

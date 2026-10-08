@@ -170,7 +170,7 @@ describe('jsonc-edit CLI contract', () => {
 
   test('edits settings.json via stdin and stdout with FLOWAY_DEFAULT_MODEL', async () => {
     const { spawnSync } = await import('node:child_process');
-    const res = spawnSync(process.execPath, [cliScript, 'settings'], {
+    const res = spawnSync(process.execPath, [cliScript], {
       input: '{\n  "theme": "dark"\n}\n',
       env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'claude-3-7-sonnet' },
       encoding: 'utf8',
@@ -183,7 +183,7 @@ describe('jsonc-edit CLI contract', () => {
 
   test('CLI writes false and zero retry preferences without applying defaults to omitted values', async () => {
     const { spawnSync } = await import('node:child_process');
-    const result = spawnSync(process.execPath, [cliScript, 'settings'], {
+    const result = spawnSync(process.execPath, [cliScript], {
       input: '{"defaultThinkingLevel":"low","retry":{"baseDelayMs":3500}}',
       env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway-work', FLOWAY_PI_THINKING_LEVEL: '', FLOWAY_PI_RETRY_ENABLED: 'false', FLOWAY_PI_MAX_RETRIES: '0' },
       encoding: 'utf8',
@@ -194,7 +194,7 @@ describe('jsonc-edit CLI contract', () => {
 
   test('exits with status 2 and writes error to stderr on refusal', async () => {
     const { spawnSync } = await import('node:child_process');
-    const res = spawnSync(process.execPath, [cliScript, 'settings'], {
+    const res = spawnSync(process.execPath, [cliScript], {
       input: 'invalid_json{',
       env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
       encoding: 'utf8',
@@ -219,7 +219,7 @@ describe('jsonc-edit CLI contract', () => {
 
       for (const script of [copied, linked]) {
         const out = await new Promise<{ code: number | null; stdout: string }>(resolve => {
-          const child = spawn(process.execPath, [script, 'settings'], {
+          const child = spawn(process.execPath, [script], {
             env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
           });
           let stdout = '';
