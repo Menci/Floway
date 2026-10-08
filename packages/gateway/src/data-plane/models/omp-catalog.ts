@@ -1,12 +1,9 @@
 import type { ChatModelInfo, PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { decimalStringToNumber, multiplyDecimalStrings } from '@floway-dev/protocols/common';
 
-// OMP registers these declarations directly; its generic OpenAI discovery drops
-// prices and reasoning controls.
-// https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/coding-agent/src/config/custom-models.ts#L65-L163
-type OmpEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 // https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/catalog/src/effort.ts
-const OMP_EFFORTS: readonly OmpEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const OMP_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+type OmpEffort = typeof OMP_EFFORTS[number];
 
 interface OmpThinking {
   mode: 'effort' | 'budget' | 'anthropic-adaptive' | 'anthropic-budget-effort';
@@ -16,6 +13,9 @@ interface OmpThinking {
   requiresEffort: boolean;
 }
 
+// OMP registers these declarations directly; its generic OpenAI discovery drops
+// prices and reasoning controls.
+// https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/coding-agent/src/config/custom-models.ts#L65-L163
 export interface OmpModel {
   id: string;
   name: string;
@@ -78,7 +78,7 @@ const thinkingFor = (reasoning: ChatModelInfo['reasoning']): OmpThinking | undef
   };
 };
 
-export const toOmpModel = (model: PublicModel, provider = 'floway'): OmpModel | null => {
+export const toOmpModel = (model: PublicModel, provider: string): OmpModel | null => {
   if (model.kind !== 'chat' && model.kind !== 'embedding' && model.kind !== 'image') return null;
   const reasoning = model.chat?.reasoning;
   let thinking: OmpThinking | undefined;
@@ -87,9 +87,9 @@ export const toOmpModel = (model: PublicModel, provider = 'floway'): OmpModel | 
   } catch (error) {
     throw new Error(`Cannot adapt OMP model ${JSON.stringify(model.id)}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  const baseRates = model.pricing?.entries.find(entry => entry.selector === undefined || Object.keys(entry.selector).length === 0)?.rates;
+  const baseRates = model.pricing === undefined ? {} : model.pricing.entries.find(entry => entry.selector === undefined || Object.keys(entry.selector).length === 0)!.rates;
   const rate = (metric: 'input_tokens' | 'output_tokens' | 'input_cache_read_tokens' | 'input_cache_write_tokens'): number =>
-    baseRates?.[metric] === undefined ? 0 : decimalStringToNumber(multiplyDecimalStrings(baseRates[metric], '1000000'));
+    baseRates[metric] === undefined ? 0 : decimalStringToNumber(multiplyDecimalStrings(baseRates[metric], '1000000'));
   return {
     id: model.id,
     name: model.display_name,
@@ -121,7 +121,7 @@ const BUDGET_PRESETS: Record<OmpEffort, number> = { minimal: 1024, low: 4096, me
 // https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/ai/src/stream.ts#L1920-L1928
 const OUTPUT_BUDGET_BUFFER = 4000;
 
-export const toOmpCatalog = (response: PublicModelsResponse, gatewayUrl?: string, provider = 'floway') => {
+export const toOmpCatalog = (response: PublicModelsResponse, gatewayUrl: string, provider: string) => {
   const models: OmpModel[] = [];
   const wireApis: Record<string, 'openai-responses' | 'anthropic-messages'> = Object.create(null) as Record<string, 'openai-responses' | 'anthropic-messages'>;
   const streamOptions: Record<string, { thinkingBudgets?: Record<OmpEffort, number> }> = Object.create(null) as Record<string, { thinkingBudgets?: Record<OmpEffort, number> }>;
@@ -134,7 +134,7 @@ export const toOmpCatalog = (response: PublicModelsResponse, gatewayUrl?: string
     const reasoning = model.chat?.reasoning;
     payloadRemovals[model.id] = reasoning?.adaptive === true && reasoning.effort === undefined ? [['output_config', 'effort']] : [];
     wireApis[model.id] = reasoning?.budget_tokens !== undefined || reasoning?.adaptive === true ? 'anthropic-messages' : 'openai-responses';
-    if (gatewayUrl !== undefined) projected.baseUrl = wireApis[model.id] === 'anthropic-messages' ? gatewayUrl : `${gatewayUrl}/v1`;
+    projected.baseUrl = wireApis[model.id] === 'anthropic-messages' ? gatewayUrl : `${gatewayUrl}/v1`;
     const budget = reasoning?.budget_tokens;
     const budgetMaximum = Math.min(budget?.max ?? Number.POSITIVE_INFINITY, projected.maxTokens - OUTPUT_BUDGET_BUFFER);
     if (budget !== undefined && (budgetMaximum < 1024 || (budget.min !== undefined && budget.min > budgetMaximum))) {
