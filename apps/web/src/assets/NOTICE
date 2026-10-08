@@ -99,9 +99,9 @@ Pi
 --
 
 pi.svg is the Pi logo referenced by the project's README, copied from the
-project's website on 2026-10-08. Only the viewBox was cropped to the artwork's
-bounds with a small margin so the mark is not rendered larger than the other
-icons; the paths are unchanged. The project's source repository is MIT licensed:
+project's website on 2026-10-08. The viewBox sets its optical size and centres
+its asymmetric colour blocks alongside the other agent icons. The paths and
+colours are unchanged. The project's source repository is MIT licensed:
 
 - pi.svg
   https://pi.dev/logo-auto.svg
@@ -111,9 +111,10 @@ oh-my-pi
 --------
 
 omp.svg is the oh-my-pi favicon from the project's website, copied on 2026-10-07.
-The dark rounded background plate was removed and the viewBox cropped around the
-gradient glyph so it fills its box like the other icons; the glyph path and
-gradient are unchanged. The project's source repository is MIT licensed:
+The dark rounded background plate was removed. A square viewBox places the
+gradient glyph's optical centre alongside the other agent icons, accounting for
+its heavy top bar. The glyph path and gradient are unchanged. The project's
+source repository is MIT licensed:
 
 - omp.svg
   https://omp.sh/favicon.svg
