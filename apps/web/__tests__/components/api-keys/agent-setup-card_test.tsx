@@ -122,12 +122,12 @@ describe('Agent Setup card fields', () => {
     renderInApp(<Host models={[model]} piModel={model.id} />);
     act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
     fireEvent.click(screen.getByRole('combobox', { name: 'Default thinking level' }));
-    expect(screen.queryByRole('option', { name: 'off', exact: true })).toBeNull();
-    expect(screen.queryByRole('option', { name: 'medium', exact: true })).toBeNull();
-    fireEvent.click(screen.getByRole('option', { name: 'high', exact: true }));
+    expect(screen.queryByRole('option', { name: 'off' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'medium' })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'high' }));
     expect(screen.getByRole('combobox', { name: 'Default thinking level' }).textContent).toContain('high');
     fireEvent.click(screen.getByRole('combobox', { name: 'Automatic retries' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Disabled', exact: true }));
+    fireEvent.click(screen.getByRole('option', { name: 'Disabled' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum retries' }), { target: { value: '0' } });
     expect(screen.getByRole('combobox', { name: 'Automatic retries' }).textContent).toContain('Disabled');
     expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('0');
