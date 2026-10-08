@@ -16,6 +16,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // https://github.com/Menci/Floway/pull/273
   'openai-responses-collaboration-shim': true,
   'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   // Upstream default is off; Claude models below 4.8 flip it on via the
