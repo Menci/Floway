@@ -7,15 +7,17 @@ pi_check_node() {
     out_error 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.'
     return 1
   fi
-  _node_ver=$(node -v) || return $?
+  _node_ver=$(_run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" node -v) || return $?
+  if [[ ! $_node_ver =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    out_error 'Node.js returned an invalid version.'
+    return 1
+  fi
   _node_ver="${_node_ver#v}"
   _node_major="${_node_ver%%.*}"
   _node_rest="${_node_ver#*.}"
   _node_minor="${_node_rest%%.*}"
-  if [ -n "$_node_major" ] && [ -n "$_node_minor" ]; then
-    if [ "$_node_major" -lt 22 ] 2>/dev/null || { [ "$_node_major" -eq 22 ] && [ "$_node_minor" -lt 19 ]; } 2>/dev/null; then
-      out_warn "Node.js version is v$_node_ver; Pi requires Node.js >= 22.19."
-    fi
+  if [ "$_node_major" -lt 22 ] || { [ "$_node_major" -eq 22 ] && [ "$_node_minor" -lt 19 ]; }; then
+    out_warn "Node.js version is v$_node_ver; Pi requires Node.js >= 22.19."
   fi
   return 0
 }
