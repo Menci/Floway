@@ -1,7 +1,7 @@
 import { anthropicMessagesApi, openAIResponsesApi } from '@earendil-works/pi-ai';
 import { VERSION } from '@earendil-works/pi-coding-agent';
 
-// Pi's model-catalog User-Agent identifies discovery separately from inference.
+// Use Pi's native discovery User-Agent so Floway selects the Pi catalog.
 // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/utils/pi-user-agent.ts#L1-L4
 const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${process.version}`;
 const userAgent = `pi/${VERSION} (${process.platform}; ${runtime}; ${process.arch})`;

@@ -3626,10 +3626,8 @@ test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(configFile), 'config.yml created');
   const expectedConfig1 = [
-    '# floway:begin',
     'modelRoles:',
-    "  default: 'floway/gpt-4o'",
-    '# floway:end',
+    '  default: "floway/gpt-4o"',
     '',
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
@@ -3637,10 +3635,8 @@ test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   const expectedConfig2 = [
-    '# floway:begin',
     'modelRoles:',
-    "  default: 'floway/claude-3-5:special''quote'",
-    '# floway:end',
+    '  default: "floway/claude-3-5:special\'quote"',
     '',
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
@@ -3689,7 +3685,7 @@ test('omp', 'preserves unrelated providers, comments, roles, CRLF, and missing t
   const configText = readFileSync(ompConfigPath(ws), 'utf8');
   t.includes(configText, '# Custom config', 'comments preserved in config.yml');
   t.includes(configText, 'plan: anthropic/claude-3-opus', 'unrelated role preserved');
-  t.includes(configText, "default: 'floway/test-model'", 'managed default inserted');
+  t.includes(configText, 'default: "floway/test-model"', 'managed default inserted');
   t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
 
   // Clear model: user's plan role and comments must stay, only managed default is removed
@@ -3723,7 +3719,7 @@ test('omp', 'refuses flow-style modelRoles mapping in config.yml without modifyi
   writeFileSync(ompConfigPath(ws), badContent);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
   t.ok(run.code !== 0, 'flow-style modelRoles must fail');
-  t.includes(run.combined, "flow-style 'modelRoles:' mapping found", 'error mentions flow-style modelRoles');
+  t.includes(run.combined, 'modelRoles must be a single block-style YAML mapping', 'unsafe mapping is reported');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
 });
 
@@ -3747,20 +3743,19 @@ test('omp', 'refuses YAML anchors, aliases, or merge keys touching modelRoles in
   writeFileSync(ompConfigPath(ws), badContent);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
   t.ok(run.code !== 0, 'anchors in config.yml must fail');
-  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.includes(run.combined, 'without aliases', 'unsafe mapping is reported');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
 });
 
-test('omp', 'refuses existing unmanaged modelRoles.default in config.yml when model is configured', async t => {
+test('omp', 'an explicit default replaces the previous provider while preserving other roles', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(ompDirFor(ws), { recursive: true });
-  const badContent = 'modelRoles:\n  default: openai/gpt-4o\n';
-  writeFileSync(ompConfigPath(ws), badContent);
+  const before = '# Preferences\r\nmodelRoles: # startup\r\n    default: openai/gpt-4o # default choice\r\n    plan: anthropic/claude\r\ntheme: dark';
+  writeFileSync(ompConfigPath(ws), before);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'my-model' }) });
-  t.ok(run.code !== 0, 'unmanaged default must fail when model is set');
-  t.includes(run.combined, "existing unmanaged 'modelRoles.default' found", 'error mentions unmanaged default');
-  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+  t.equal(run.code, 0, run.combined);
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), before.replace('openai/gpt-4o', '"floway/my-model"'));
 });
 
 test('omp', 'rollback restores the original extension and cleans stage files on mid-install failure', async t => {
@@ -3973,10 +3968,8 @@ test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', as
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(configFile), 'config.yml created');
   const expectedConfig1 = [
-    '# floway:begin',
     'modelRoles:',
-    "  default: 'floway/gpt-4o'",
-    '# floway:end',
+    '  default: "floway/gpt-4o"',
     '',
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
@@ -3984,10 +3977,8 @@ test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', as
   const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   const expectedConfig2 = [
-    '# floway:begin',
     'modelRoles:',
-    "  default: 'floway/claude-3-5:special''quote'",
-    '# floway:end',
+    '  default: "floway/claude-3-5:special\'quote"',
     '',
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
@@ -4038,7 +4029,7 @@ test('omp', 'PowerShell: preserves unrelated providers, comments, roles, CRLF, a
   const configText = readFileSync(ompConfigPath(ws), 'utf8');
   t.includes(configText, '# Custom config', 'comments preserved in config.yml');
   t.includes(configText, 'plan: anthropic/claude-3-opus', 'unrelated role preserved');
-  t.includes(configText, "default: 'floway/test-model'", 'managed default inserted');
+  t.includes(configText, 'default: "floway/test-model"', 'managed default inserted');
   t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
 
   // Clear model: user's plan role and comments must stay, only managed default is removed
@@ -4074,7 +4065,7 @@ test('omp', 'PowerShell: refuses flow-style modelRoles mapping in config.yml wit
   writeFileSync(ompConfigPath(ws), badContent);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
   t.ok(run.code !== 0, 'flow-style modelRoles must fail');
-  t.includes(run.combined, "flow-style 'modelRoles:' mapping found", 'error mentions flow-style modelRoles');
+  t.includes(run.combined, 'modelRoles must be a single block-style YAML mapping', 'unsafe mapping is reported');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
 });
 
@@ -4100,21 +4091,20 @@ test('omp', 'PowerShell: refuses YAML anchors, aliases, or merge keys touching m
   writeFileSync(ompConfigPath(ws), badContent);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'foo' }) });
   t.ok(run.code !== 0, 'anchors in config.yml must fail');
-  t.includes(run.combined, 'YAML anchors, aliases, or merge keys found', 'error mentions anchors/aliases');
+  t.includes(run.combined, 'without aliases', 'unsafe mapping is reported');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
 });
 
-test('omp', 'PowerShell: refuses existing unmanaged modelRoles.default in config.yml when model is configured', async t => {
+test('omp', 'PowerShell: an explicit default replaces the previous provider while preserving other roles', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(ompDirFor(ws), { recursive: true });
-  const badContent = 'modelRoles:\n  default: openai/gpt-4o\n';
-  writeFileSync(ompConfigPath(ws), badContent);
+  const before = '# Preferences\r\nmodelRoles: # startup\r\n    default: openai/gpt-4o # default choice\r\n    plan: anthropic/claude\r\ntheme: dark';
+  writeFileSync(ompConfigPath(ws), before);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'my-model' }) });
-  t.ok(run.code !== 0, 'unmanaged default must fail when model is set');
-  t.includes(run.combined, "existing unmanaged 'modelRoles.default' found", 'error mentions unmanaged default');
-  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), badContent, 'file unmodified');
+  t.equal(run.code, 0, run.combined);
+  t.equal(readFileSync(ompConfigPath(ws), 'utf8'), before.replace('openai/gpt-4o', '"floway/my-model"'));
 });
 
 test('omp', 'PowerShell: rollback restores the original extension and cleans stage files on mid-install failure', async t => {

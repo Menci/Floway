@@ -91,13 +91,13 @@ function Restore-SetupOmpFiles {
 
 function Remove-SetupOmpBackups {
   Remove-SetupOlderBackups -Path $script:OmpExtensionPath -Keep $script:OmpExtensionBackup
-  if ($script:OmpExtensionBackup -and (Test-Path -LiteralPath $script:OmpExtensionBackup)) {
+  if ($script:OmpExtensionBackup) {
     Remove-Item -LiteralPath $script:OmpExtensionBackup -Force -ErrorAction Stop
   }
   $script:OmpExtensionBackup = $null
 
   Remove-SetupOlderBackups -Path $script:OmpConfigPath -Keep $script:OmpConfigBackup
-  if ($script:OmpConfigBackup -and (Test-Path -LiteralPath $script:OmpConfigBackup)) {
+  if ($script:OmpConfigBackup) {
     Remove-Item -LiteralPath $script:OmpConfigBackup -Force -ErrorAction Stop
   }
   $script:OmpConfigBackup = $null
@@ -168,7 +168,7 @@ function Set-SetupOmpRetryScalar {
   $field = -1
   $indent = ''
   $scalar = if ($Key -eq 'enabled') { '(true|false)' } else { '[0-9]+' }
-  $quotedKeyPattern = '["'']' + [Regex]::Escape($Key) + '["'']:'
+  $quotedKeyPattern = '^ +["'']' + [Regex]::Escape($Key) + '["'']:'
   for ($i = 0; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
     if ($line -match '^["'']retry["'']:') { Stop-Setup 'quoted retry mapping keys cannot be edited safely.' }
@@ -208,6 +208,85 @@ function Set-SetupOmpRetryScalar {
   }
 }
 
+function Set-SetupOmpDefaultRole {
+  param([System.Collections.Generic.List[string]]$Lines)
+  $header = -1
+  $field = -1
+  $indent = ''
+  $prefix = ''
+  $suffix = ''
+  $scalar = ''
+  $kind = ''
+  for ($i = 0; $i -lt $Lines.Count; $i++) {
+    $line = $Lines[$i]
+    if ($line -match '^["'']modelRoles["'']:') { Stop-Setup 'quoted modelRoles mapping keys cannot be edited safely.' }
+    if ($line.StartsWith('modelRoles:')) {
+      if ($header -ne -1 -or $line -notmatch '^modelRoles: *(#.*)?$') { Stop-Setup 'modelRoles must be a single block-style YAML mapping without aliases.' }
+      $header = $i
+    }
+  }
+  $target = if ([string]::IsNullOrEmpty($SetupOmpModel)) { '' } else {
+    [Regex]::Replace((ConvertTo-Json -InputObject "$SetupOmpProvider/$SetupOmpModel" -Compress), '[\x7f-\uffff]', { param($match) '\u{0:x4}' -f [int][char]$match.Value[0] })
+  }
+  if ($header -eq -1) {
+    if ($target) { $Lines.Add('modelRoles:'); $Lines.Add("  default: $target") }
+    return
+  }
+  $end = $Lines.Count
+  for ($i = $header + 1; $i -lt $Lines.Count; $i++) {
+    $line = $Lines[$i]
+    if ($line -match '^ *(#.*)?$') { continue }
+    if (-not $line.StartsWith(' ')) { $end = $i; break }
+    if (-not $indent -and $line -match '^( +)\S') { $indent = $Matches[1] }
+    if ($line -match '^ +["'']default["'']:') { Stop-Setup 'quoted modelRoles.default keys cannot be edited safely.' }
+    if ($line -match '^( +)default: *(.*)$') {
+      if ($field -ne -1 -or $Matches[1] -ne $indent) { Stop-Setup 'modelRoles.default must be a single direct scalar.' }
+      $field = $i
+      $prefix = $Matches[1]
+      $value = $Matches[2]
+      $suffix = ''
+      if ($value.StartsWith('#')) {
+        $scalar = ''; $suffix = " $value"; $kind = 'plain'
+      } elseif ($value.StartsWith("'")) {
+        if ($value -notmatch '^(''([^'']|'''')*'')( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        $scalar = $Matches[1]; $suffix = $Matches[3]; $kind = 'single'
+      } elseif ($value.StartsWith('"')) {
+        if ($value -notmatch '^("([^"\\]|\\.)*")( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        $scalar = $Matches[1]; $suffix = $Matches[3]; $kind = 'double'
+      } else {
+        if ($value -match '^[\[{&*!|>]') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        $comment = $value.IndexOf(' #')
+        $raw = if ($comment -eq -1) { $value } else { $value.Substring(0, $comment) }
+        $scalar = $raw.TrimEnd(' ')
+        $suffix = $value.Substring($scalar.Length)
+        $kind = 'plain'
+      }
+    } elseif ($line -match '^ +<<:' -or $line.Substring($line.IndexOf(':') + 1) -match '^ *[&*]') {
+      Stop-Setup 'YAML anchors, aliases, or merge keys touching modelRoles cannot be edited safely.'
+    }
+  }
+  if ($target) {
+    if ($field -ne -1) { $Lines[$field] = "${prefix}default: $target$suffix" }
+    else { if (-not $indent) { $indent = '  ' }; $Lines.Insert($end, "${indent}default: $target") }
+  } elseif ($field -ne -1) {
+    $value = switch ($kind) {
+      { $_ -eq 'single' -or $_ -eq 'double' } { $scalar.Substring(1) }
+      plain { $scalar }
+    }
+    if (-not $value.StartsWith("$SetupOmpProvider/", [StringComparison]::Ordinal)) { return }
+    if ($suffix.Contains('#')) { $Lines[$field] = "$prefix$suffix" }
+    else { $Lines.RemoveAt($field); $end-- }
+    $other = $false
+    for ($i = $header + 1; $i -lt $end; $i++) {
+      if ($Lines[$i] -notmatch '^ *(#.*)?$') { $other = $true; break }
+    }
+    if (-not $other) {
+      if ($Lines[$header].Contains('#')) { $Lines[$header] = $Lines[$header].Substring('modelRoles:'.Length) }
+      else { $Lines.RemoveAt($header) }
+    }
+  }
+}
+
 function Stage-SetupOmpConfig {
   $retryEnabled = if ($null -eq $SetupOmpRetryEnabled) { '' } elseif ($SetupOmpRetryEnabled) { 'true' } else { 'false' }
   $script:OmpConfigStage = $null
@@ -232,122 +311,11 @@ function Stage-SetupOmpConfig {
   $hasTrailingNl = $doc.HasTrailingNl
   $hasBom = $doc.HasBom
 
-  $beginIdx = -1
-  $endIdx = -1
-  $rolesIdx = -1
-
-  for ($i = 0; $i -lt $lines.Count; $i++) {
-    $l = $lines[$i]
-    if ($l.Contains("`t")) {
-      Stop-Setup "tabs found in $($script:OmpConfigPath); YAML disallows tab indentation. Convert tabs to spaces and re-run."
-    }
-    if ($l -match '(?:^|\s)modelRoles:.*\{') {
-      Stop-Setup "flow-style 'modelRoles:' mapping found in $($script:OmpConfigPath); Floway Agent Setup only manages block-style YAML mappings."
-    }
-    if ($l -match '#\s*floway:begin') {
-      if ($beginIdx -ne -1) {
-        Stop-Setup "multiple '# floway:begin' markers found in $($script:OmpConfigPath); repair or remove them and re-run."
-      }
-      $beginIdx = $i
-    }
-    if ($l -match '#\s*floway:end') {
-      if ($endIdx -ne -1) {
-        Stop-Setup "multiple '# floway:end' markers found in $($script:OmpConfigPath); repair or remove them and re-run."
-      }
-      $endIdx = $i
-    }
-    if ($l -match '^modelRoles:(?:\s|#|$)') {
-      $rolesIdx = $i
-    }
+  $newLines = $lines
+  foreach ($line in $newLines) {
+    if ($line -match "^ *`t") { Stop-Setup "tabs found in $($script:OmpConfigPath); YAML disallows tab indentation." }
   }
-
-  if (($beginIdx -ne -1 -and $endIdx -eq -1) -or ($beginIdx -eq -1 -and $endIdx -ne -1) -or ($beginIdx -gt $endIdx)) {
-    Stop-Setup "mismatched or malformed Floway markers in $($script:OmpConfigPath); repair or remove them and re-run."
-  }
-
-  if ($rolesIdx -ne -1) {
-    if ($lines[$rolesIdx] -match '[&*]|<<:') {
-      Stop-Setup "YAML anchors, aliases, or merge keys found touching managed keys in $($script:OmpConfigPath); Floway Agent Setup cannot safely edit YAML aliases."
-    }
-    for ($j = $rolesIdx + 1; $j -lt $lines.Count; $j++) {
-      $cur = $lines[$j]
-      if ($cur -match '^[ \t]') {
-        if ($cur -match '[&*]|<<:') {
-          Stop-Setup "YAML anchors, aliases, or merge keys found touching managed keys in $($script:OmpConfigPath); Floway Agent Setup cannot safely edit YAML aliases."
-        }
-      } elseif ($cur -match '^#' -or [string]::IsNullOrWhiteSpace($cur)) {
-      } else {
-        break
-      }
-    }
-  }
-
-  if ((-not [string]::IsNullOrEmpty($SetupOmpModel)) -and $rolesIdx -ne -1) {
-    for ($j = $rolesIdx + 1; $j -lt $lines.Count; $j++) {
-      $cur = $lines[$j]
-      if ($cur -match '^[ \t]') {
-        if ($cur -match '^[ ]{1,2}default:') {
-          if ($beginIdx -eq -1 -or $j -lt $beginIdx -or $j -gt $endIdx) {
-            Stop-Setup "existing unmanaged 'modelRoles.default' found in $($script:OmpConfigPath) without Floway markers; remove it and re-run."
-          }
-        }
-      } elseif ($cur -match '^#' -or [string]::IsNullOrWhiteSpace($cur)) {
-      } else {
-        break
-      }
-    }
-  }
-
-  $managedSelected = $false
-  if ($beginIdx -ne -1) {
-    for ($j = $beginIdx + 1; $j -lt $endIdx; $j++) {
-      if ($lines[$j].StartsWith("  default: '$SetupOmpProvider/")) { $managedSelected = $true }
-    }
-  }
-  $newLines = New-Object System.Collections.Generic.List[string]
-
-  if ([string]::IsNullOrEmpty($SetupOmpModel)) {
-    if (-not $managedSelected) {
-      for ($j = 0; $j -lt $lines.Count; $j++) { $newLines.Add($lines[$j]) }
-    } else {
-      for ($j = 0; $j -lt $beginIdx; $j++) { $newLines.Add($lines[$j]) }
-      for ($j = $endIdx + 1; $j -lt $lines.Count; $j++) { $newLines.Add($lines[$j]) }
-    }
-  } else {
-    $escaped = $SetupOmpModel.Replace("'", "''")
-    $target = "'$SetupOmpProvider/$escaped'"
-    if ($beginIdx -ne -1) {
-      $wrapsRoles = $false
-      if (($beginIdx + 1) -eq $rolesIdx) { $wrapsRoles = $true }
-      for ($j = 0; $j -lt $beginIdx; $j++) { $newLines.Add($lines[$j]) }
-      if ($wrapsRoles) {
-        $newLines.Add('# floway:begin')
-        $newLines.Add('modelRoles:')
-        $newLines.Add("  default: $target")
-        $newLines.Add('# floway:end')
-      } else {
-        $newLines.Add('  # floway:begin')
-        $newLines.Add("  default: $target")
-        $newLines.Add('  # floway:end')
-      }
-      for ($j = $endIdx + 1; $j -lt $lines.Count; $j++) { $newLines.Add($lines[$j]) }
-    } elseif ($rolesIdx -ne -1) {
-      for ($j = 0; $j -le $rolesIdx; $j++) { $newLines.Add($lines[$j]) }
-      $newLines.Add('  # floway:begin')
-      $newLines.Add("  default: $target")
-      $newLines.Add('  # floway:end')
-      for ($j = $rolesIdx + 1; $j -lt $lines.Count; $j++) { $newLines.Add($lines[$j]) }
-    } else {
-      if ($lines.Count -gt 0) {
-        for ($j = 0; $j -lt $lines.Count; $j++) { $newLines.Add($lines[$j]) }
-      }
-      $newLines.Add('# floway:begin')
-      $newLines.Add('modelRoles:')
-      $newLines.Add("  default: $target")
-      $newLines.Add('# floway:end')
-      $hasTrailingNl = $true
-    }
-  }
+  Set-SetupOmpDefaultRole -Lines $newLines
 
   if (-not [string]::IsNullOrEmpty($retryEnabled)) {
     Set-SetupOmpRetryScalar -Lines $newLines -Key enabled -Value $retryEnabled
@@ -382,8 +350,8 @@ function Apply-SetupOmpStaged {
   $script:OmpExtensionStage = $null
 
   if ($script:OmpConfigStage) {
-    $stageItem = Get-Item -LiteralPath $script:OmpConfigStage -ErrorAction SilentlyContinue
-    if ($stageItem -and $stageItem.Length -gt 0) {
+    $stageItem = Get-Item -LiteralPath $script:OmpConfigStage -ErrorAction Stop
+    if ($stageItem.Length -gt 0) {
       if ($script:OmpConfigExisted -and $runningOnWindows) {
         Protect-SetupFile $script:OmpConfigPath
         [System.IO.File]::Replace($script:OmpConfigStage, $script:OmpConfigPath, [System.Management.Automation.Language.NullString]::Value)
@@ -392,11 +360,9 @@ function Apply-SetupOmpStaged {
       }
       Protect-SetupFile $script:OmpConfigPath
     } else {
-      if (Test-Path -LiteralPath $script:OmpConfigStage) {
-        Remove-Item -LiteralPath $script:OmpConfigStage -Force -ErrorAction SilentlyContinue
-      }
+      Remove-Item -LiteralPath $script:OmpConfigStage -Force -ErrorAction Stop
       if (Test-Path -LiteralPath $script:OmpConfigPath) {
-        Remove-Item -LiteralPath $script:OmpConfigPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $script:OmpConfigPath -Force -ErrorAction Stop
       }
     }
     $script:OmpConfigStage = $null

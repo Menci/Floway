@@ -42,7 +42,9 @@ Pi and OMP setup installs a private provider extension and automatically updates
 older clients to the required version (Pi 1.1.0 or OMP 18.8.4). Choose a provider
 ID such as `floway-home` or `floway-work` to connect multiple Floway instances
 through one extension. Repeating setup updates that provider and preserves the
-other connections and manual model configuration. A default model is optional.
+other connections and manual model configuration. Selecting a default model
+sets the agent-wide startup default; leaving it unset clears that default only
+when it belongs to the selected provider. Other OMP model roles are preserved.
 Pi thinking level and both clients' retry settings are optional agent-wide
 preferences; leaving them unset preserves the existing settings.
 

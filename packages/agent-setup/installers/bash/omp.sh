@@ -212,6 +212,7 @@ omp_stage_extension() {
 
 omp_set_retry_scalar() {
   local key=$1 value=$2 header=-1 end indent="" field=-1 i line scalar suffix
+  local quoted_key_pattern="^[ ]+['\"]$key['\"]:"
   local header_pattern='^retry:[ ]*(#.*)?$' ignored_pattern='^[ ]*(#.*)?$' field_pattern
   case "$key" in
     enabled) scalar='(true|false)' ;;
@@ -247,12 +248,10 @@ omp_set_retry_scalar() {
       *) end=$i; break ;;
     esac
     if [ -z "$indent" ] && [[ $line =~ ^([ ]+)[^[:space:]] ]]; then indent=${BASH_REMATCH[1]}; fi
-    case "$line" in
-      *"\"$key\":"* | *"'$key':"*)
-        out_error "quoted retry.$key keys cannot be edited safely."
-        return 1
-        ;;
-    esac
+    if [[ $line =~ $quoted_key_pattern ]]; then
+      out_error "quoted retry.$key keys cannot be edited safely."
+      return 1
+    fi
     if [[ $line =~ ^([ ]+)$key: ]]; then
       if [ "${BASH_REMATCH[1]}" != "$indent" ] || [ "$field" -ne -1 ] || [[ ! $line =~ $field_pattern ]]; then
         out_error "retry.$key must be a single scalar with a valid value."
@@ -272,6 +271,96 @@ omp_set_retry_scalar() {
   fi
 }
 
+omp_set_default_role() {
+  local header=-1 field=-1 end indent="" i line value scalar suffix prefix kind target other
+  local header_pattern='^modelRoles:[ ]*(#.*)?$' field_pattern='^([ ]+)default:[ ]*(.*)$' quoted_key_pattern="^[ ]+['\"]default['\"]:"
+  local single_pattern="^('([^']|'')*')([ ]*(#.*)?)$" double_pattern='^("([^"\\]|\\.)*")([ ]*(#.*)?)$'
+  for i in "${!_osc_new_lines[@]}"; do
+    line=${_osc_new_lines[$i]}
+    case "$line" in
+      '"modelRoles":'* | "'modelRoles':"*) out_error 'quoted modelRoles mapping keys cannot be edited safely.'; return 1 ;;
+      modelRoles:*)
+        if [ "$header" -ne -1 ] || [[ ! $line =~ $header_pattern ]]; then
+          out_error 'modelRoles must be a single block-style YAML mapping without aliases.'
+          return 1
+        fi
+        header=$i
+        ;;
+    esac
+  done
+  if [ "$header" -eq -1 ]; then
+    if [ -n "$SETUP_OMP_MODEL" ]; then
+      target=$("$JQ" -can --arg value "$SETUP_OMP_PROVIDER/$SETUP_OMP_MODEL" '$value') || return $?
+      _osc_new_lines+=("modelRoles:" "  default: $target")
+    fi
+    return 0
+  fi
+  end=${#_osc_new_lines[@]}
+  for ((i = header + 1; i < ${#_osc_new_lines[@]}; i++)); do
+    line=${_osc_new_lines[$i]}
+    if [[ $line =~ ^[\ ]*(#.*)?$ ]]; then continue; fi
+    case "$line" in ' '*) ;; *) end=$i; break ;; esac
+    if [ -z "$indent" ] && [[ $line =~ ^([\ ]+)[^[:space:]] ]]; then indent=${BASH_REMATCH[1]}; fi
+    if [[ $line =~ $quoted_key_pattern ]]; then out_error 'quoted modelRoles.default keys cannot be edited safely.'; return 1; fi
+    if [[ $line =~ $field_pattern ]]; then
+      if [ "$field" -ne -1 ] || [ "${BASH_REMATCH[1]}" != "$indent" ]; then
+        out_error 'modelRoles.default must be a single direct scalar.'
+        return 1
+      fi
+      field=$i
+      prefix=${BASH_REMATCH[1]}
+      value=${BASH_REMATCH[2]}
+      suffix=""
+      case "$value" in
+        '#'*) scalar=""; suffix=" $value"; kind=plain ;;
+        "'"*)
+          if [[ ! $value =~ $single_pattern ]]; then out_error 'modelRoles.default cannot be edited safely.'; return 1; fi
+          scalar=${BASH_REMATCH[1]}; suffix=${BASH_REMATCH[3]}; kind=single
+          ;;
+        '"'*)
+          if [[ ! $value =~ $double_pattern ]]; then out_error 'modelRoles.default cannot be edited safely.'; return 1; fi
+          scalar=${BASH_REMATCH[1]}; suffix=${BASH_REMATCH[3]}; kind=double
+          ;;
+        *)
+          case "$value" in '['* | '{'* | '&'* | '*'* | '!'* | '|'* | '>'*) out_error 'modelRoles.default cannot be edited safely.'; return 1 ;; esac
+          scalar=${value%%' #'*}; suffix=${value#"$scalar"}
+          target=${scalar%"${scalar##*[! ]}"}; suffix=${scalar#"$target"}$suffix; scalar=$target; kind=plain
+          ;;
+      esac
+    else
+      if [[ $line =~ ^[\ ]+\<\<: ]] || [[ ${line#*:} =~ ^[\ ]*[\&\*] ]]; then
+        out_error 'YAML anchors, aliases, or merge keys touching modelRoles cannot be edited safely.'
+        return 1
+      fi
+    fi
+  done
+  if [ -n "$SETUP_OMP_MODEL" ]; then
+    target=$("$JQ" -can --arg value "$SETUP_OMP_PROVIDER/$SETUP_OMP_MODEL" '$value') || return $?
+    if [ "$field" -ne -1 ]; then _osc_new_lines[$field]="$prefix""default: $target$suffix"
+    else
+      if [ -z "$indent" ]; then indent="  "; fi
+      _osc_new_lines=("${_osc_new_lines[@]:0:$end}" "$indent""default: $target" "${_osc_new_lines[@]:$end}")
+    fi
+  elif [ "$field" -ne -1 ]; then
+    case "$kind" in
+      single | double) value=${scalar:1} ;;
+      plain) value=$scalar ;;
+    esac
+    case "$value" in "$SETUP_OMP_PROVIDER/"*) ;; *) return 0 ;; esac
+    if [[ $suffix =~ \# ]]; then _osc_new_lines[$field]="$prefix$suffix"
+    else _osc_new_lines=("${_osc_new_lines[@]:0:$field}" "${_osc_new_lines[@]:$((field + 1))}"); end=$((end - 1)); fi
+    other=0
+    for ((i = header + 1; i < end; i++)); do
+      if [[ ! ${_osc_new_lines[$i]} =~ ^[\ ]*(#.*)?$ ]]; then other=1; break; fi
+    done
+    if [ "$other" -eq 0 ]; then
+      line=${_osc_new_lines[$header]}
+      if [[ $line =~ \# ]]; then _osc_new_lines[$header]=${line#modelRoles:}
+      else _osc_new_lines=("${_osc_new_lines[@]:0:$header}" "${_osc_new_lines[@]:$((header + 1))}"); fi
+    fi
+  fi
+}
+
 omp_stage_config() {
   OMP_CONFIG_STAGE=""
   if [ -z "$SETUP_OMP_MODEL$SETUP_OMP_RETRY_ENABLED$SETUP_OMP_MAX_RETRIES" ] && [ ! -f "$OMP_CONFIG_PATH" ]; then
@@ -284,8 +373,9 @@ omp_stage_config() {
     return 1
   fi
 
-  _osc_lines=()
+  _osc_new_lines=()
   _osc_eol=$'\n'
+  _osc_bom=""
   _osc_has_nl=1
 
   if [ -f "$OMP_CONFIG_PATH" ]; then
@@ -298,165 +388,20 @@ omp_stage_config() {
       if [ -n "$_osc_last" ]; then _osc_has_nl=0; fi
     fi
     while IFS= read -r _osc_line || [ -n "$_osc_line" ]; do
-      _osc_lines+=("${_osc_line%$'\r'}")
+      _osc_new_lines+=("${_osc_line%$'\r'}")
     done < "$OMP_CONFIG_PATH"
   fi
 
-  _osc_begin_idx=-1
-  _osc_end_idx=-1
-  _osc_roles_idx=-1
-
-  for _osc_i in "${!_osc_lines[@]}"; do
-    _osc_l="${_osc_lines[$_osc_i]}"
-    case "$_osc_l" in
-      *$'\t'*)
-        out_error "tabs found in $OMP_CONFIG_PATH; YAML disallows tab indentation. Convert tabs to spaces and re-run."
-        rm -f "$OMP_CONFIG_STAGE"
-        return 1
-        ;;
+  if [ "${#_osc_new_lines[@]}" -gt 0 ]; then
+    case "${_osc_new_lines[0]}" in
+      $'\357\273\277'*) _osc_bom=$'\357\273\277'; _osc_new_lines[0]=${_osc_new_lines[0]#"$_osc_bom"} ;;
     esac
-    case "$_osc_l" in
-      modelRoles:*{* | *" modelRoles:"*{*)
-        out_error "flow-style 'modelRoles:' mapping found in $OMP_CONFIG_PATH; Floway Agent Setup only manages block-style YAML mappings."
-        rm -f "$OMP_CONFIG_STAGE"
-        return 1
-        ;;
-    esac
-    case "$_osc_l" in
-      *"# floway:begin"* | *"#floway:begin"*)
-        if [ "$_osc_begin_idx" -ne -1 ]; then
-          out_error "multiple '# floway:begin' markers found in $OMP_CONFIG_PATH; repair or remove them and re-run."
-          rm -f "$OMP_CONFIG_STAGE"
-          return 1
-        fi
-        _osc_begin_idx=$_osc_i
-        ;;
-      *"# floway:end"* | *"#floway:end"*)
-        if [ "$_osc_end_idx" -ne -1 ]; then
-          out_error "multiple '# floway:end' markers found in $OMP_CONFIG_PATH; repair or remove them and re-run."
-          rm -f "$OMP_CONFIG_STAGE"
-          return 1
-        fi
-        _osc_end_idx=$_osc_i
-        ;;
-    esac
-    case "$_osc_l" in
-      "modelRoles:" | "modelRoles:"[[:space:]]* | "modelRoles:"#*)
-        _osc_roles_idx=$_osc_i
-        ;;
-    esac
+  fi
+  for ((_osc_i = 0; _osc_i < ${#_osc_new_lines[@]}; _osc_i++)); do
+    _osc_l=${_osc_new_lines[$_osc_i]}
+    if [[ $_osc_l =~ ^[\ ]*$'\t' ]]; then out_error "tabs found in $OMP_CONFIG_PATH; YAML disallows tab indentation."; return 1; fi
   done
-
-  if { [ "$_osc_begin_idx" -ne -1 ] && [ "$_osc_end_idx" -eq -1 ]; } || \
-     { [ "$_osc_begin_idx" -eq -1 ] && [ "$_osc_end_idx" -ne -1 ]; } || \
-     [ "$_osc_begin_idx" -gt "$_osc_end_idx" ]; then
-    out_error "mismatched or malformed Floway markers in $OMP_CONFIG_PATH; repair or remove them and re-run."
-    rm -f "$OMP_CONFIG_STAGE"
-    return 1
-  fi
-
-  if [ "$_osc_roles_idx" -ne -1 ]; then
-    case "${_osc_lines[$_osc_roles_idx]}" in
-      *'&'* | *'*'* | *'<<:'*)
-        out_error "YAML anchors, aliases, or merge keys found touching managed keys in $OMP_CONFIG_PATH; Floway Agent Setup cannot safely edit YAML aliases."
-        rm -f "$OMP_CONFIG_STAGE"
-        return 1
-        ;;
-    esac
-    for ((_osc_j = _osc_roles_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do
-      _osc_l="${_osc_lines[$_osc_j]}"
-      case "$_osc_l" in
-        " "* | "	"*)
-          case "$_osc_l" in
-            *'&'* | *'*'* | *'<<:'*)
-              out_error "YAML anchors, aliases, or merge keys found touching managed keys in $OMP_CONFIG_PATH; Floway Agent Setup cannot safely edit YAML aliases."
-              rm -f "$OMP_CONFIG_STAGE"
-              return 1
-              ;;
-          esac
-          ;;
-        "#"*) ;;
-        "") ;;
-        *) break ;;
-      esac
-    done
-  fi
-
-  if [ -n "$SETUP_OMP_MODEL" ] && [ "$_osc_roles_idx" -ne -1 ]; then
-    for ((_osc_j = _osc_roles_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do
-      _osc_l="${_osc_lines[$_osc_j]}"
-      case "$_osc_l" in
-        " "* | "	"*)
-          case "$_osc_l" in
-            "  default:"* | " default:"*)
-              if [ "$_osc_begin_idx" -eq -1 ] || [ "$_osc_j" -lt "$_osc_begin_idx" ] || [ "$_osc_j" -gt "$_osc_end_idx" ]; then
-                out_error "existing unmanaged 'modelRoles.default' found in $OMP_CONFIG_PATH without Floway markers; remove it and re-run."
-                rm -f "$OMP_CONFIG_STAGE"
-                return 1
-              fi
-              ;;
-          esac
-          ;;
-        "#"*) ;;
-        "") ;;
-        *) break ;;
-      esac
-    done
-  fi
-
-  _osc_managed_selected=0
-  if [ "$_osc_begin_idx" -ne -1 ]; then
-    for ((_osc_j = _osc_begin_idx + 1; _osc_j < _osc_end_idx; _osc_j++)); do
-      case "${_osc_lines[$_osc_j]}" in
-        "  default: '$SETUP_OMP_PROVIDER/"*) _osc_managed_selected=1 ;;
-      esac
-    done
-  fi
-  _osc_new_lines=()
-
-  if [ -z "$SETUP_OMP_MODEL" ]; then
-    if [ "$_osc_managed_selected" -eq 0 ]; then
-      for ((_osc_j = 0; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-    else
-      for ((_osc_j = 0; _osc_j < _osc_begin_idx; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-      for ((_osc_j = _osc_end_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-    fi
-  else
-    _osc_quote="'"
-    _osc_escaped="${SETUP_OMP_MODEL//$_osc_quote/$_osc_quote$_osc_quote}"
-    _osc_target="'$SETUP_OMP_PROVIDER/$_osc_escaped'"
-    if [ "$_osc_begin_idx" -ne -1 ]; then
-      _osc_wraps_roles=0
-      if [ "$((_osc_begin_idx + 1))" -eq "$_osc_roles_idx" ]; then _osc_wraps_roles=1; fi
-      for ((_osc_j = 0; _osc_j < _osc_begin_idx; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-      if [ "$_osc_wraps_roles" -eq 1 ]; then
-        _osc_new_lines+=("# floway:begin")
-        _osc_new_lines+=("modelRoles:")
-        _osc_new_lines+=("  default: $_osc_target")
-        _osc_new_lines+=("# floway:end")
-      else
-        _osc_new_lines+=("  # floway:begin")
-        _osc_new_lines+=("  default: $_osc_target")
-        _osc_new_lines+=("  # floway:end")
-      fi
-      for ((_osc_j = _osc_end_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-    elif [ "$_osc_roles_idx" -ne -1 ]; then
-      for ((_osc_j = 0; _osc_j <= _osc_roles_idx; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-      _osc_new_lines+=("  # floway:begin")
-      _osc_new_lines+=("  default: $_osc_target")
-      _osc_new_lines+=("  # floway:end")
-      for ((_osc_j = _osc_roles_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-    else
-      if [ "${#_osc_lines[@]}" -gt 0 ]; then
-        for ((_osc_j = 0; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
-      fi
-      _osc_new_lines+=("# floway:begin")
-      _osc_new_lines+=("modelRoles:")
-      _osc_new_lines+=("  default: $_osc_target")
-      _osc_new_lines+=("# floway:end")
-      _osc_has_nl=1
-    fi
-  fi
+  omp_set_default_role || return $?
 
   if [ -n "$SETUP_OMP_RETRY_ENABLED" ]; then
     omp_set_retry_scalar enabled "$SETUP_OMP_RETRY_ENABLED" || return 1
@@ -465,6 +410,7 @@ omp_stage_config() {
     omp_set_retry_scalar maxRetries "$SETUP_OMP_MAX_RETRIES" || return 1
   fi
 
+  if [ -n "$_osc_bom" ]; then printf '%s' "$_osc_bom" >> "$OMP_CONFIG_STAGE" || return $?; fi
   for ((_osc_j = 0; _osc_j < ${#_osc_new_lines[@]}; _osc_j++)); do
     if [ "$_osc_j" -eq $((${#_osc_new_lines[@]} - 1)) ] && [ "$_osc_has_nl" -eq 0 ]; then
       printf '%s' "${_osc_new_lines[$_osc_j]}" >> "$OMP_CONFIG_STAGE" || return $?
