@@ -7,6 +7,7 @@ import type { Context } from 'hono';
 
 import { loadModels } from './load.ts';
 import { isOmpUserAgent, toOmpCatalog } from './omp-catalog.ts';
+import { isPiUserAgent, toPiCatalog } from './pi-catalog.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -14,7 +15,6 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { isCodexUserAgent } from '../codex/catalog.ts';
 import { loadCodexCatalog } from '../codex/models.ts';
-import { isPiUserAgent, toPiCatalog } from '../pi/catalog.ts';
 import { agentSetupProviderSchema, InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from '@floway-dev/agent-setup';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
 import { toInternalDebugError } from '@floway-dev/provider';
@@ -108,13 +108,8 @@ export const serveModels = async (c: Context): Promise<Response> => {
       return Response.json(toOmpCatalog(publicCatalog, configuredEndpoint ?? `${url.origin}${root}`, provider));
     }
 
-    // The Claude Code CLI's model discovery request identifies itself with
-    // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
-    // helper — verified in the v2.1.206 binary). The CLI's other request
-    // paths use the Anthropic SDK's `claude-cli/*` UA, so match on the
-    // discovery UA specifically. Every other caller (OpenAI SDKs,
-    // Anthropic SDKs, dashboards) receives the standard PublicModel
-    // superset.
+    // Model discovery uses claude-code/<version>; inference uses claude-cli/*.
+    // Match the discovery UA when selecting Claude Code's catalog format.
     return Response.json(isClaudeCodeUserAgent(userAgent)
       ? toClaudeCodeCatalog(publicCatalog)
       : publicCatalog);

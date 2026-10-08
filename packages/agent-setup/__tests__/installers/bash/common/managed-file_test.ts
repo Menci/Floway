@@ -70,6 +70,14 @@ for (const platform of ['bash', 'powershell'] as const) {
       });
     });
 
+    test('rejects a missing connection header without discarding installed providers', () => {
+      const missing = `${marker}\nconst unrelated = [];\n${body}`;
+      run(missing, (result, staged) => {
+        expect(result.status).not.toBe(0);
+        expect(staged).toBe(source([nextWork]));
+      });
+    });
+
     test('rejects malformed installed JSON without printing credentials', () => {
       const malformed = `${marker}\nconst connections = [{"provider":"personal","apiKey":"${secret}","endpoint":INVALID}];\n${body}`;
       run(malformed, (result, staged) => {

@@ -13,6 +13,17 @@ describe('jsonc-edit settings.json', () => {
     expect(JSON.parse(out)).toEqual({});
   });
 
+  test.each(['// Keep this comment', '/* Keep this comment */\r\n', '\uFEFF// Keep this comment\r\n', '  \n'])('preserves existing trivia while initializing settings: %j', source => {
+    const output = updateDefaultModel(source, 'model', 'floway');
+    expect(output.startsWith(source)).toBe(true);
+    expect(output).toContain('"defaultModel": "model"');
+  });
+
+  test('clearing the only managed property preserves unrelated comments', () => {
+    const source = '{\n  // Keep this comment\n  "defaultProvider": "floway"\n}';
+    expect(updateDefaultModel(source, null, 'floway')).toBe('{\n  // Keep this comment\n}');
+  });
+
   test('sets defaultProvider and defaultModel into existing settings', () => {
     const src = `{
   // User setting
@@ -183,10 +194,6 @@ describe('jsonc-edit CLI contract', () => {
     expect(res.stderr).toContain('Refusal:');
   });
 
-  // Regression: the CLI guard once compared import.meta.url with
-  // `file://${argv[1]}`, which never matches on Windows (file:///C:/ vs C:\)
-  // or for a path with spaces (percent-encoded). runCli() was then skipped and
-  // the process exited 0 with empty stdout, so the installer wrote empty files.
   test('runs the CLI from a path that is percent-encoded in its file URL', async () => {
     const { mkdtempSync, copyFileSync, mkdirSync, symlinkSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');

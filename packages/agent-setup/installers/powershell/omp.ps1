@@ -1,10 +1,6 @@
-# oh-my-pi (omp) Agent Setup fragment.
-
-# Track upstream's maintained installer so release-metadata fixes arrive without
-# waiting for a Floway update. Reviewed sources:
-# https://github.com/can1357/oh-my-pi
+# Use the maintained upstream installer so release discovery follows upstream.
 # https://omp.sh/install.ps1
-# https://omp.sh/install
+
 function Install-SetupOmp {
   if ($env:AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT) {
     Write-SetupInfo 'oh-my-pi CLI not found; running the test installer'
@@ -47,27 +43,11 @@ function Write-SetupOmpVersion {
 
 function Get-SetupOmpAgentDir {
   param([string]$Exe)
-  if ($Exe) {
-    try {
-      $timeoutSeconds = Get-SetupTimeoutSeconds 10
-      $proc = Invoke-SetupProcess -Exe $Exe -Arguments @('config', 'path') -TimeoutSeconds $timeoutSeconds
-      if ($proc.ExitCode -eq 0 -and (-not [string]::IsNullOrWhiteSpace($proc.Output))) {
-        $reader = New-Object System.IO.StringReader($proc.Output)
-        $firstLine = $reader.ReadLine()
-        if (-not [string]::IsNullOrWhiteSpace($firstLine)) {
-          return $firstLine.Trim()
-        }
-      }
-    } catch { }
-  }
-  $root = if ($env:PI_CONFIG_DIR) { $env:PI_CONFIG_DIR } else { '.omp' }
-  if ($env:OMP_PROFILE) {
-    return (Join-Path (Join-Path (Join-Path (Join-Path $HOME $root) 'profiles') $env:OMP_PROFILE) 'agent')
-  }
-  if ($env:PI_CODING_AGENT_DIR) {
-    return $env:PI_CODING_AGENT_DIR
-  }
-  return (Join-Path (Join-Path $HOME $root) 'agent')
+  $proc = Invoke-SetupProcess -Exe $Exe -Arguments @('config', 'path') -TimeoutSeconds (Get-SetupTimeoutSeconds 10)
+  if ($proc.ExitCode -ne 0) { Stop-Setup ('`omp config path` failed. ' + $proc.Output) }
+  $path = $proc.Output.Trim()
+  if ([string]::IsNullOrEmpty($path)) { Stop-Setup '`omp config path` returned an empty path.' }
+  return $path
 }
 
 function Backup-SetupOmpFiles {
@@ -108,7 +88,7 @@ function Restore-SetupOmpFiles {
   Restore-SetupManagedFile -Existed $script:OmpConfigExisted -Backup $script:OmpConfigBackup -Path $script:OmpConfigPath -OriginalLabel 'config file' -CreatedLabel 'oh-my-pi config file'
 }
 
-function Complete-SetupOmpFiles {
+function Remove-SetupOmpBackups {
   Remove-SetupOlderBackups -Path $script:OmpExtensionPath -Keep $script:OmpExtensionBackup
   if ($script:OmpExtensionBackup -and (Test-Path -LiteralPath $script:OmpExtensionBackup)) {
     Remove-Item -LiteralPath $script:OmpExtensionBackup -Force -ErrorAction Stop
@@ -447,7 +427,7 @@ function Set-SetupAgent {
   $version = Write-SetupOmpVersion -Exe $exe
   if ($version -lt [Version]'18.8.4') {
     Write-SetupInfo 'Updating oh-my-pi to the latest stable version.'
-    # The official updater selects the installation's owning package manager.
+    # The official updater resolves the active installation and update method.
     # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2272-L2331
     Invoke-SetupLiveProcess -Exe $exe -Arguments @('update', '--stable') -TimeoutSeconds (Get-SetupTimeoutSeconds 120)
     $exe = Get-SetupCliExe -Name omp -Label 'oh-my-pi' -Candidates $candidates
@@ -512,13 +492,7 @@ function Set-SetupAgent {
     throw
   }
 
-  try {
-    Complete-SetupOmpFiles
-  } catch {
-    Write-SetupWarn 'oh-my-pi backup cleanup failed; rolling back configuration.'
-    Restore-SetupOmpFiles
-    throw
-  }
+  Remove-SetupOmpBackups
 
   Write-SetupInfo ('Written to `' + $script:OmpExtensionPath + '`.')
   if (Test-Path -LiteralPath $script:OmpConfigPath) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { isPiUserAgent, toPiCatalog } from '../../../src/data-plane/pi/catalog.ts';
+import { isPiUserAgent, toPiCatalog } from '../../../src/data-plane/models/pi-catalog.ts';
 import type { PublicModel } from '@floway-dev/protocols/common';
 
 const model = (overrides: Partial<PublicModel> = {}): PublicModel => ({

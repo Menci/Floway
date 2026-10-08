@@ -28,7 +28,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
-import { piThinkingLevelMap, piThinkingLevels } from '@floway-dev/agent-setup/pi-thinking';
+import { type PiThinkingLevel, piThinkingLevelMap, piThinkingLevels } from '@floway-dev/agent-setup/pi-thinking';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex' | 'pi' | 'omp';
@@ -215,9 +215,9 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     const thinking = selectedModel ? piThinkingLevelMap(selectedModel.chat?.reasoning, selectedModel.id) : null;
     const levels = thinking === null ? piThinkingLevels : thinking.supported ? piThinkingLevels.filter(level => thinking.map[level] !== null) : [];
     const patchConnection = agent === 'pi' ? patchPi : patchOmp;
-    const patchRetry = (update: (current: typeof connection.retry) => typeof connection.retry) => onChange(current => agent === 'pi'
-      ? { ...current, pi: { ...current.pi, retry: update(current.pi.retry) } }
-      : { ...current, omp: { ...current.omp, retry: update(current.omp.retry) } });
+    const patchRetry = (update: (current: typeof connection.retry) => typeof connection.retry) => onChange(current => ({
+      ...current, [agent]: { ...current[agent], retry: update(current[agent].retry) },
+    }));
     return <div className="grid gap-3">
       <div className={FIELD_GRID_CLASS}>
         <Field label={t('dashboard.apiKeys.agentSetup.providerName')} hint={t('dashboard.apiKeys.agentSetup.providerHint')}>
@@ -240,11 +240,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
             selectedOptions={[configuration.pi.thinkingLevel ?? MODEL_DEFAULT]}
             value={configuration.pi.thinkingLevel ?? t('dashboard.apiKeys.agentSetup.keepExisting')}
             onOptionSelect={(_, data) => {
-              if (data.optionValue === MODEL_DEFAULT) patchPi({ thinkingLevel: null });
-              else {
-                const thinkingLevel = levels.find(level => level === data.optionValue);
-                if (thinkingLevel !== undefined) patchPi({ thinkingLevel });
-              }
+              patchPi({ thinkingLevel: data.optionValue === MODEL_DEFAULT ? null : data.optionValue as PiThinkingLevel });
             }}
           >
             <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>

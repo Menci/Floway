@@ -1,9 +1,6 @@
-# oh-my-pi (omp) Agent Setup fragment.
-
-# Track upstream's maintained installer so release-metadata fixes arrive without
-# waiting for a Floway update. Reviewed sources:
-# https://github.com/can1357/oh-my-pi
+# Use the maintained upstream installer so release discovery follows upstream.
 # https://omp.sh/install
+
 omp_ensure_installed() {
   _discover_cli omp \
     "$HOME/.local/bin/omp" \
@@ -42,7 +39,7 @@ omp_ensure_installed() {
       _download_and_run_installer 'https://omp.sh/install' || return 1
     fi
   fi
-  hash -r 2>/dev/null || true
+  hash -r
   _discover_cli omp \
     "$HOME/.local/bin/omp" \
     "$HOME/.bun/bin/omp" \
@@ -87,14 +84,14 @@ omp_write_version() {
   omp_probe_version || return 1
   if omp_version_is_supported; then return 0; fi
   out_info 'Updating oh-my-pi to the latest stable version.'
-  # The official updater selects the installation's owning package manager.
+  # The official updater resolves the active installation and update method.
   # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2272-L2331
   _ov_update_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
   if ! _run_with_timeout "$_ov_update_timeout" env -u SETUP_API_KEY "$OMP_BIN" update --stable </dev/null; then
     out_error 'could not update oh-my-pi to a supported version.'
     return 1
   fi
-  hash -r 2>/dev/null || true
+  hash -r
   _discover_cli omp "$HOME/.local/bin/omp" "$HOME/.bun/bin/omp" "/opt/homebrew/bin/omp" "/usr/local/bin/omp"
   OMP_BIN=$DISCOVERED_BIN
   if [ "$DISCOVERED_COUNT" -lt 1 ]; then
@@ -109,26 +106,12 @@ omp_write_version() {
 }
 
 omp_resolve_agent_dir() {
-  _or_dir=""
-  if [ -n "$OMP_BIN" ]; then
-    _or_dir=$("$OMP_BIN" config path 2>/dev/null || true)
-    _or_dir="${_or_dir%%$'\n'*}"
-    _or_dir="${_or_dir%$'\r'}"
+  OMP_AGENT_DIR=$("$OMP_BIN" config path) || return $?
+  OMP_AGENT_DIR="${OMP_AGENT_DIR%$'\r'}"
+  if [ -z "$OMP_AGENT_DIR" ]; then
+    out_error '`omp config path` returned an empty path.'
+    return 1
   fi
-  if [ -n "$_or_dir" ]; then
-    OMP_AGENT_DIR="$_or_dir"
-    return 0
-  fi
-
-  _or_root="${PI_CONFIG_DIR:-.omp}"
-  if [ -n "${OMP_PROFILE:-}" ]; then
-    OMP_AGENT_DIR="$HOME/$_or_root/profiles/$OMP_PROFILE/agent"
-  elif [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
-    OMP_AGENT_DIR="$PI_CODING_AGENT_DIR"
-  else
-    OMP_AGENT_DIR="$HOME/$_or_root/agent"
-  fi
-  return 0
 }
 
 omp_backup_files() {
@@ -170,15 +153,15 @@ omp_rollback() {
   fi
   _obr_rc=0
   _restore_managed_file \
-    "${OMP_EXTENSION_EXISTED:-0}" "${OMP_EXTENSION_BACKUP:-}" "$OMP_EXTENSION_PATH" \
+    "$OMP_EXTENSION_EXISTED" "$OMP_EXTENSION_BACKUP" "$OMP_EXTENSION_PATH" \
     "extension file" "oh-my-pi extension file" || _obr_rc=1
   _restore_managed_file \
-    "${OMP_CONFIG_EXISTED:-0}" "${OMP_CONFIG_BACKUP:-}" "$OMP_CONFIG_PATH" \
+    "$OMP_CONFIG_EXISTED" "$OMP_CONFIG_BACKUP" "$OMP_CONFIG_PATH" \
     "config file" "oh-my-pi config file" || _obr_rc=1
   return "$_obr_rc"
 }
 
-omp_commit_files() {
+omp_cleanup_backups() {
   if [ -n "$OMP_EXTENSION_BACKUP" ]; then
     _prune_managed_backups "$OMP_EXTENSION_PATH" "$OMP_EXTENSION_BACKUP" || return 1
     if ! rm -f "$OMP_EXTENSION_BACKUP"; then
@@ -288,7 +271,7 @@ omp_set_retry_scalar() {
 
 omp_stage_config() {
   OMP_CONFIG_STAGE=""
-  if [ -z "${SETUP_OMP_MODEL:-}${SETUP_OMP_RETRY_ENABLED:-}${SETUP_OMP_MAX_RETRIES:-}" ] && [ ! -f "$OMP_CONFIG_PATH" ]; then
+  if [ -z "$SETUP_OMP_MODEL$SETUP_OMP_RETRY_ENABLED$SETUP_OMP_MAX_RETRIES" ] && [ ! -f "$OMP_CONFIG_PATH" ]; then
     return 0
   fi
 
@@ -396,7 +379,7 @@ omp_stage_config() {
     done
   fi
 
-  if [ -n "${SETUP_OMP_MODEL:-}" ] && [ "$_osc_roles_idx" -ne -1 ]; then
+  if [ -n "$SETUP_OMP_MODEL" ] && [ "$_osc_roles_idx" -ne -1 ]; then
     for ((_osc_j = _osc_roles_idx + 1; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do
       _osc_l="${_osc_lines[$_osc_j]}"
       case "$_osc_l" in
@@ -428,7 +411,7 @@ omp_stage_config() {
   fi
   _osc_new_lines=()
 
-  if [ -z "${SETUP_OMP_MODEL:-}" ]; then
+  if [ -z "$SETUP_OMP_MODEL" ]; then
     if [ "$_osc_managed_selected" -eq 0 ]; then
       for ((_osc_j = 0; _osc_j < ${#_osc_lines[@]}; _osc_j++)); do _osc_new_lines+=("${_osc_lines[$_osc_j]}"); done
     else
@@ -472,18 +455,18 @@ omp_stage_config() {
     fi
   fi
 
-  if [ -n "${SETUP_OMP_RETRY_ENABLED:-}" ]; then
+  if [ -n "$SETUP_OMP_RETRY_ENABLED" ]; then
     omp_set_retry_scalar enabled "$SETUP_OMP_RETRY_ENABLED" || return 1
   fi
-  if [ -n "${SETUP_OMP_MAX_RETRIES:-}" ]; then
+  if [ -n "$SETUP_OMP_MAX_RETRIES" ]; then
     omp_set_retry_scalar maxRetries "$SETUP_OMP_MAX_RETRIES" || return 1
   fi
 
   for ((_osc_j = 0; _osc_j < ${#_osc_new_lines[@]}; _osc_j++)); do
     if [ "$_osc_j" -eq $((${#_osc_new_lines[@]} - 1)) ] && [ "$_osc_has_nl" -eq 0 ]; then
-      printf '%s' "${_osc_new_lines[$_osc_j]}" >> "$OMP_CONFIG_STAGE"
+      printf '%s' "${_osc_new_lines[$_osc_j]}" >> "$OMP_CONFIG_STAGE" || return $?
     else
-      printf '%s%s' "${_osc_new_lines[$_osc_j]}" "$_osc_eol" >> "$OMP_CONFIG_STAGE"
+      printf '%s%s' "${_osc_new_lines[$_osc_j]}" "$_osc_eol" >> "$OMP_CONFIG_STAGE" || return $?
     fi
   done
   return 0
@@ -507,8 +490,7 @@ omp_apply_staged() {
       fi
       chmod 600 "$OMP_CONFIG_PATH" || return 1
     else
-      rm -f "$OMP_CONFIG_STAGE"
-      rm -f "$OMP_CONFIG_PATH"
+      rm -f "$OMP_CONFIG_STAGE" "$OMP_CONFIG_PATH" || return $?
     fi
     OMP_CONFIG_STAGE=""
   fi
@@ -576,11 +558,7 @@ configure_agent() {
     return 1
   fi
 
-  if ! omp_commit_files; then
-    out_warn 'oh-my-pi backup cleanup failed; rolling back configuration.'
-    omp_rollback
-    return 1
-  fi
+  omp_cleanup_backups || return 1
 
   out_info "Written to \`$OMP_EXTENSION_PATH\`."
   if [ -e "$OMP_CONFIG_PATH" ]; then

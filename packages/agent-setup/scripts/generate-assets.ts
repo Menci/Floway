@@ -78,11 +78,12 @@ const scriptSources = {
   },
 } as const satisfies Record<string, PlatformSources>;
 
-// Embedded as source only: the Pi installers write the Node helper next to the
-// config files they edit, so it is not part of any platform's common body.
+// These assets are materialized by installers or served as extensions; they are
+// not executed as part of a platform's common body.
 const extraSections: readonly SourceSection[] = [
   { name: 'SETUP_NODE_JSONC_EDIT', file: 'installers/node/jsonc-edit.mjs' },
   { name: 'SETUP_NODE_PI_INSTALLATION', file: 'installers/node/pi-installation.mjs' },
+  { name: 'SETUP_NODE_OMP_EXTENSION', file: 'installers/node/omp-extension.js' },
   { name: 'SETUP_NODE_PI_EXTENSION', file: 'installers/node/pi-extension.js' },
 ];
 

@@ -2,14 +2,13 @@ import { readFileSync } from 'node:fs';
 
 import { expect, test, vi } from 'vitest';
 
-import { renderPiExtension } from '../src/pi-extension.ts';
+import { renderAgentExtension } from '../src/render-extension.ts';
 
-// Executing only the literal prefix proves shell/JS metacharacters stay data.
-// The host imports and native lifecycle are covered by the real Pi harness.
+// The installer harness exercises host imports and lifecycle; this test isolates serialization.
 test('Pi extension source safely serializes opaque credentials and endpoint paths', () => {
   const apiKey = "key'\"\\\n</script>\u2028\u2029` ${process.exit(1)}";
   const endpoint = 'https://gateway.example/a%20path/';
-  const source = renderPiExtension({ provider: 'floway-work', endpoint, apiKey });
+  const source = renderAgentExtension({ agent: 'pi', provider: 'floway-work', endpoint, apiKey });
   const prefix = source.slice(0, source.indexOf('import '));
   const value = new Function(`${prefix}\nreturn connections;`)() as { provider: string; endpoint: string; apiKey: string }[];
   expect(value).toEqual([{ provider: 'floway-work', endpoint: 'https://gateway.example/a%20path', apiKey }]);
@@ -19,7 +18,7 @@ test('Pi extension source safely serializes opaque credentials and endpoint path
 
 test('Pi extension rendering rejects non-HTTP and credential-bearing URLs', () => {
   for (const endpoint of ['file:///tmp/file', 'ftp://example.com', 'https://user:password@example.com', 'https://example.com?a=1', 'https://example.com/#fragment']) {
-    expect(() => renderPiExtension({ provider: 'floway', endpoint, apiKey: 'key' })).toThrow();
+    expect(() => renderAgentExtension({ agent: 'pi', provider: 'floway', endpoint, apiKey: 'key' })).toThrow();
   }
 });
 

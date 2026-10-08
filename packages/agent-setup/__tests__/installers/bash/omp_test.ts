@@ -100,3 +100,35 @@ for (const platform of ['bash', 'powershell'] as const) {
     });
   });
 }
+
+for (const failure of ['serialization', 'deletion'] as const) {
+  test(`OMP propagates ${failure} failure before reporting successful configuration`, () => {
+    const directory = mkdtempSync(join(packageRoot, '.omp-write-failure-'));
+    try {
+      const config = join(directory, 'config.yml');
+      writeFileSync(config, 'unrelated: preserved\n');
+      const script = [
+        'set +e; main() { :; }; out_error() { echo "$*" >&2; };',
+        `source ${shellQuote(join(packageRoot, 'installers/bash/omp.sh'))};`,
+        `OMP_CONFIG_PATH=${shellQuote(config)}; SETUP_OMP_PROVIDER=floway; SETUP_OMP_MODEL=model; SETUP_OMP_RETRY_ENABLED=; SETUP_OMP_MAX_RETRIES=;`,
+        failure === 'serialization'
+          ? [
+              'writes=0; printf() { writes=$((writes + 1)); if [ "$writes" -eq 2 ]; then echo "test serialization failure" >&2; return 73; fi; builtin printf "$@"; };',
+              'omp_stage_config; exit $?;',
+            ].join('\n')
+          : [
+              `OMP_EXTENSION_STAGE=${shellQuote(join(directory, 'extension-stage'))}; OMP_EXTENSION_PATH=${shellQuote(join(directory, 'extension.js'))};`,
+              ': > "$OMP_EXTENSION_STAGE"; OMP_CONFIG_STAGE="$OMP_CONFIG_PATH.stage"; : > "$OMP_CONFIG_STAGE";',
+              'rm() { echo "test deletion failure" >&2; return 73; };',
+              'omp_apply_staged; exit $?;',
+            ].join('\n'),
+      ].join('\n');
+      const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
+      expect(result.status).toBe(73);
+      expect(result.stderr).toContain(`test ${failure} failure`);
+      expect(readFileSync(config, 'utf8')).toBe('unrelated: preserved\n');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}

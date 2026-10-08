@@ -1,11 +1,3 @@
-import jsesc from 'jsesc';
-
-import { normalizeAgentSetupEndpoint } from './extension-endpoint.ts';
-
-export const renderOmpExtension = (input: { provider: string; endpoint: string; apiKey: string }): string => {
-  const connections = jsesc([{ provider: input.provider, endpoint: normalizeAgentSetupEndpoint(input.endpoint), apiKey: input.apiKey }], { json: true, isScriptContext: true });
-  return `// Managed by Floway Agent Setup.
-const connections = ${connections};
 import { USER_AGENT } from '@oh-my-pi/pi-utils';
 import { streamSimple } from '@oh-my-pi/pi-ai';
 import { buildModel } from '@oh-my-pi/pi-catalog/build';
@@ -45,6 +37,4 @@ export default async pi => {
   };
   await refresh();
   pi.registerCommand('floway-refresh', { description: 'Refresh Floway models', handler: refresh });
-};
-`;
 };

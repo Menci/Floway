@@ -21,9 +21,8 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
-import { InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from './extension-endpoint.ts';
-import { renderOmpExtension } from './omp-extension.ts';
-import { renderPiExtension } from './pi-extension.ts';
+import { InvalidAgentSetupEndpointError } from './extension-endpoint.ts';
+import { renderAgentExtension } from './render-extension.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
@@ -173,10 +172,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       if (endpoint === undefined) return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);
       let source: string;
       try {
-        const normalizedEndpoint = normalizeAgentSetupEndpoint(endpoint);
-        source = agent === 'pi'
-          ? renderPiExtension({ endpoint: normalizedEndpoint, apiKey: resolved.apiKey, provider: resolved.configuration.pi.provider })
-          : renderOmpExtension({ endpoint: normalizedEndpoint, apiKey: resolved.apiKey, provider: resolved.configuration.omp.provider });
+        source = renderAgentExtension({ agent, endpoint, apiKey: resolved.apiKey, provider: resolved.configuration[agent].provider });
       } catch (error) {
         if (!(error instanceof InvalidAgentSetupEndpointError)) throw error;
         return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);

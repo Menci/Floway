@@ -32,35 +32,22 @@ _prune_managed_backups() {
 }
 
 _merge_provider_extension() {
-  local existing=$1 stage=$2 header merged
+  local existing=$1 stage=$2 old=/dev/null exists=false header merged
   ensure_jq || return 1
   header="$SETUP_TMPDIR/provider-connections.json"
   merged="$SETUP_TMPDIR/provider-extension.js"
-  if ! "$JQ" -Rsc '
+  if [ -f "$existing" ]; then old=$existing; exists=true; fi
+  if ! "$JQ" -cen --rawfile old "$old" --rawfile new "$stage" --argjson exists "$exists" '
     def connections:
       split("\n") | .[1] | capture("^const connections = (?<json>.*);$").json | fromjson
-      | if type != "array" or length == 0 then error("invalid Floway connections") else . end
-      | if all(.[]; type == "object" and (.provider | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and (.endpoint | type == "string") and (.apiKey | type == "string"))
-        and (map(.provider) | length == (unique | length)) then . else error("invalid Floway connection") end;
-    connections
-  ' "$stage" > "$header" 2> "$SETUP_TMPDIR/provider-parse.err"; then
+      | if type == "array" and length > 0
+        and all(.[]; type == "object" and (.provider | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and (.endpoint | type == "string") and (.apiKey | type == "string"))
+        and (map(.provider) | length == (unique | length)) then . else error("invalid Floway connections") end;
+    (($old | if $exists then connections else [] end) + ($new | connections))
+    | reduce .[] as $connection ([]; map(select(.provider != $connection.provider)) + [$connection])
+  ' > "$header" 2> "$SETUP_TMPDIR/provider-parse.err"; then
     out_error 'the extension has an invalid provider configuration'
     return 1
-  fi
-  if [ -f "$existing" ]; then
-    if ! "$JQ" -Rsc 'split("\n") | .[1] | capture("^const connections = (?<json>.*);$").json | fromjson' "$existing" > "$SETUP_TMPDIR/existing-connections.json" 2> "$SETUP_TMPDIR/provider-parse.err"; then
-      out_error 'the installed extension has an invalid provider configuration'
-      return 1
-    fi
-    if ! "$JQ" -c -s '
-      if all(.[]; type == "array" and length > 0 and all(.[]; type == "object" and (.provider | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and (.endpoint | type == "string") and (.apiKey | type == "string")) and (map(.provider) | length == (unique | length)))
-      then reduce .[][] as $connection ([]; map(select(.provider != $connection.provider)) + [$connection])
-      else error("invalid Floway connections") end
-    ' "$SETUP_TMPDIR/existing-connections.json" "$header" > "$SETUP_TMPDIR/merged-connections.json" 2> "$SETUP_TMPDIR/provider-parse.err"; then
-      out_error 'could not merge installed provider configurations'
-      return 1
-    fi
-    header="$SETUP_TMPDIR/merged-connections.json"
   fi
   {
     printf '%s\n' '// Managed by Floway Agent Setup.'

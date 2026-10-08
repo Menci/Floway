@@ -1,9 +1,3 @@
-/**
- * Pure, dependency-free, ES2020-safe JSONC textual editor for Pi agent setup.
- * Edits only targeted byte ranges in settings.json while preserving
- * comments, indentation, trailing commas, line endings (LF/CRLF), and UTF-8 BOM byte-for-byte.
- */
-
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -14,12 +8,7 @@ export class JsoncRefusalError extends Error {
   }
 }
 
-/**
- * Tokenize a JSONC string into structured tokens.
- * @param {string} src
- * @returns {Array<{ type: string, start: number, end: number, raw: string, value?: any }>}
- */
-export function tokenizeJsonc(src) {
+function tokenizeJsonc(src) {
   const tokens = [];
   let i = 0;
   const len = src.length;
@@ -27,7 +16,6 @@ export function tokenizeJsonc(src) {
   while (i < len) {
     const ch = src[i];
 
-    // Whitespace
     if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') {
       const start = i;
       while (i < len && (src[i] === ' ' || src[i] === '\t' || src[i] === '\r' || src[i] === '\n')) {
@@ -37,7 +25,6 @@ export function tokenizeJsonc(src) {
       continue;
     }
 
-    // Line comment
     if (ch === '/' && src[i + 1] === '/') {
       const start = i;
       i += 2;
@@ -48,7 +35,6 @@ export function tokenizeJsonc(src) {
       continue;
     }
 
-    // Block comment
     if (ch === '/' && src[i + 1] === '*') {
       const start = i;
       i += 2;
@@ -68,7 +54,6 @@ export function tokenizeJsonc(src) {
       continue;
     }
 
-    // String literal
     if (ch === '"') {
       const start = i;
       i++;
@@ -106,14 +91,12 @@ export function tokenizeJsonc(src) {
       continue;
     }
 
-    // Punctuation
     if (ch === '{' || ch === '}' || ch === '[' || ch === ']' || ch === ':' || ch === ',') {
       tokens.push({ type: ch, start: i, end: i + 1, raw: ch });
       i++;
       continue;
     }
 
-    // Literals: true, false, null
     if (src.startsWith('true', i)) {
       tokens.push({ type: 'boolean', start: i, end: i + 4, raw: 'true', value: true });
       i += 4;
@@ -130,7 +113,6 @@ export function tokenizeJsonc(src) {
       continue;
     }
 
-    // Numbers: -?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?
     if (ch === '-' || (ch >= '0' && ch <= '9')) {
       const start = i;
       if (src[i] === '-') i++;
@@ -172,11 +154,7 @@ export function tokenizeJsonc(src) {
   return tokens;
 }
 
-/**
- * Parse tokens into an AST that tracks offsets and properties.
- */
-export function parseJsoncAst(src) {
-  // Strip BOM from scan offset but remember it
+function parseJsoncAst(src) {
   let content = src;
   let bomOffset = 0;
   if (src.startsWith('\uFEFF')) {
@@ -185,7 +163,6 @@ export function parseJsoncAst(src) {
   }
 
   const allTokens = tokenizeJsonc(content);
-  // Shift offsets if BOM was present
   if (bomOffset > 0) {
     for (const t of allTokens) {
       t.start += bomOffset;
@@ -195,7 +172,7 @@ export function parseJsoncAst(src) {
 
   const semanticTokens = allTokens.filter(t => t.type !== 'whitespace' && t.type !== 'line-comment' && t.type !== 'block-comment');
   if (semanticTokens.length === 0) {
-    return { kind: 'empty', allTokens };
+    return { kind: 'empty' };
   }
 
   let index = 0;
@@ -213,7 +190,7 @@ export function parseJsoncAst(src) {
     if (token.type === '[') return parseArray();
     if (token.type === 'string' || token.type === 'number' || token.type === 'boolean' || token.type === 'null') {
       next();
-      return { kind: 'primitive', token, start: token.start, end: token.end, value: token.value };
+      return { kind: 'primitive', start: token.start, end: token.end, value: token.value };
     }
     throw new JsoncRefusalError(`Unexpected token '${token.raw}' at offset ${token.start}`);
   }
@@ -239,7 +216,6 @@ export function parseJsoncAst(src) {
       }
       properties.push({
         keyToken,
-        colonToken,
         value: val,
         commaToken,
         start: keyToken.start,
@@ -262,10 +238,8 @@ export function parseJsoncAst(src) {
 
   function parseArray() {
     const openBracket = next();
-    const elements = [];
     while (peek() && peek().type !== ']') {
       const el = parseValue();
-      elements.push(el);
       if (peek()?.type === ',') {
         next();
       } else if (peek() && peek().type !== ']') {
@@ -278,9 +252,6 @@ export function parseJsoncAst(src) {
     }
     return {
       kind: 'array',
-      openBracket,
-      closeBracket,
-      elements,
       start: openBracket.start,
       end: closeBracket.end,
     };
@@ -291,7 +262,7 @@ export function parseJsoncAst(src) {
     throw new JsoncRefusalError(`Unexpected content after root value at offset ${semanticTokens[index].start}`);
   }
 
-  return { kind: 'root', root, allTokens };
+  return { kind: 'root', root };
 }
 
 function detectLineEnding(src) {
@@ -309,26 +280,15 @@ function detectIndent(src) {
   return '  ';
 }
 
-/**
- * Set or remove defaultProvider/defaultModel in settings.json.
- * @param {string} src Existing file content
- * @param {string|null} modelId Model ID to set as default, or null to remove managed default
- * @param {string} provider Managed provider ID
- * @returns {string} Modified file content
- */
 export function updateDefaultModel(src, modelId, provider) {
   if (typeof provider !== 'string' || !provider) throw new JsoncRefusalError('A provider ID is required');
-  const hasBom = src.startsWith('\uFEFF');
   const eol = detectLineEnding(src);
-  const indentStep = detectIndent(src);
 
   const ast = parseJsoncAst(src);
   if (ast.kind === 'empty') {
-    if (modelId === null) {
-      return `${hasBom ? '\uFEFF' : ''  }{}${eol}`;
-    }
-    const out = JSON.stringify({ defaultProvider: provider, defaultModel: modelId }, null, 2).split('\n').join(eol) + eol;
-    return (hasBom ? '\uFEFF' : '') + out;
+    const value = modelId === null ? {} : { defaultProvider: provider, defaultModel: modelId };
+    const separator = src === '' || src === '\uFEFF' || src.endsWith('\n') ? '' : eol;
+    return src + separator + JSON.stringify(value, null, 2).split('\n').join(eol) + eol;
   }
 
   if (ast.root.kind !== 'object') {
@@ -353,10 +313,7 @@ export function updateDefaultModel(src, modelId, provider) {
       return src;
     }
 
-    // Remove existingProvider and existingModel if present
     const propsToRemove = [existingProvider, modelProps[0]].filter(Boolean);
-    // Sort descending by start offset so removing one doesn't affect earlier offsets
-    propsToRemove.sort((a, b) => b.start - a.start);
 
     let result = src;
     for (const prop of propsToRemove) {
@@ -366,34 +323,12 @@ export function updateDefaultModel(src, modelId, provider) {
       const target = currentAst.root.properties.find(p => p.keyToken.value === prop.keyToken.value);
       if (!target) continue;
 
-      result = removeObjectProperty(result, target, currentAst.root, eol);
+      result = removeObjectProperty(result, target);
     }
     return result;
   }
 
-  // Upsert the selected provider and its model.
-  let result = src;
-
-  // 1. Update or insert defaultProvider
-  let currentAst = parseJsoncAst(result);
-  const pProp = currentAst.root.properties.find(p => p.keyToken.value === 'defaultProvider');
-  if (pProp) {
-    result = `${result.slice(0, pProp.value.start)  }${JSON.stringify(provider)}${  result.slice(pProp.value.end)}`;
-  } else {
-    result = insertObjectProperty(result, 'defaultProvider', JSON.stringify(provider), currentAst.root, indentStep, eol);
-  }
-
-  // 2. Update or insert defaultModel: JSON.stringify(modelId)
-  currentAst = parseJsoncAst(result);
-  const mProp = currentAst.root.properties.find(p => p.keyToken.value === 'defaultModel');
-  const modelValueStr = JSON.stringify(modelId);
-  if (mProp) {
-    result = result.slice(0, mProp.value.start) + modelValueStr + result.slice(mProp.value.end);
-  } else {
-    result = insertObjectProperty(result, 'defaultModel', modelValueStr, currentAst.root, indentStep, eol);
-  }
-
-  return result;
+  return setSettingsProperty(setSettingsProperty(src, ['defaultProvider'], provider), ['defaultModel'], modelId);
 }
 
 export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry }) {
@@ -438,46 +373,26 @@ function insertObjectProperty(src, key, rawValue, rootNode, indentStep, eol) {
   return result;
 }
 
-function removeObjectProperty(src, prop, rootNode, eol) {
-  if (rootNode.properties.length === 1) {
-    // Only property in root object: clear inside of root
-    const rootLineStart = src.lastIndexOf('\n', rootNode.openBrace.start) + 1;
-    const rootIndent = src.slice(rootLineStart, rootNode.openBrace.start).match(/^[ \t]*/)[0];
-    return src.slice(0, rootNode.openBrace.end) + eol + rootIndent + src.slice(rootNode.closeBrace.start);
-  }
-
-  // Find line range for prop
+function removeObjectProperty(src, prop) {
   const lineStart = src.lastIndexOf('\n', prop.start) + 1;
   let lineEnd = src.indexOf('\n', prop.end);
   if (lineEnd === -1) {
     lineEnd = src.length;
   } else {
-    lineEnd += 1; // Include the newline
+    lineEnd += 1;
   }
 
-  // Check if there is only whitespace on this line before prop.start and after prop.end (excluding comma)
   const beforeText = src.slice(lineStart, prop.start);
   const afterText = src.slice(prop.commaToken ? prop.commaToken.end : prop.value.end, lineEnd).replace(/\r?\n$/, '');
 
   if (/^[ \t]*$/.test(beforeText) && /^[ \t]*$/.test(afterText)) {
-    // Whole line can be deleted
-    // If this was the last property and did not have a comma, we might want to clean up preceding comma
-    const propIndex = rootNode.properties.findIndex(p => p.keyToken.value === prop.keyToken.value);
-    const newSrc = src.slice(0, lineStart) + src.slice(lineEnd);
-    if (propIndex === rootNode.properties.length - 1 && propIndex > 0) {
-      // Preceding property had a comma: in JSONC trailing commas are valid, so keeping or removing is fine.
-    }
-    return newSrc;
+    return src.slice(0, lineStart) + src.slice(lineEnd);
   }
 
-  // Inline removal
   const deleteEnd = prop.commaToken ? prop.commaToken.end : prop.value.end;
   return src.slice(0, prop.start) + src.slice(deleteEnd);
 }
 
-/**
- * CLI runner for stdin/stdout and exit codes.
- */
 function runCli() {
   const mode = process.argv[2];
   if (mode !== 'settings') {
@@ -494,14 +409,7 @@ function runCli() {
   }
 
   try {
-    const modelFile = envOrEmpty('FLOWAY_MODEL_FILE') || getArgValue('--model-file');
-    let defaultModel = process.env.FLOWAY_DEFAULT_MODEL;
-    if (modelFile) {
-      defaultModel = readFileSync(modelFile, 'utf8').trim();
-    }
-    if (process.env.FLOWAY_REMOVE_DEFAULT_MODEL === '1' || defaultModel === '' || defaultModel === undefined) {
-      defaultModel = null;
-    }
+    const defaultModel = envOrEmpty('FLOWAY_DEFAULT_MODEL') || null;
     const thinkingLevel = envOrEmpty('FLOWAY_PI_THINKING_LEVEL') || null;
     // https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/docs/settings.md#model-and-thinking
     if (thinkingLevel !== null && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(thinkingLevel)) throw new JsoncRefusalError('Invalid Pi thinking level');
@@ -524,29 +432,11 @@ function runCli() {
   }
 }
 
-// An empty variable counts as unset, which `??` would not do.
 function envOrEmpty(name) {
   return process.env[name] ?? '';
 }
 
-function getArgValue(prefix) {
-  const arg = process.argv.find(a => a.startsWith(`${prefix  }=`));
-  return arg ? arg.slice(prefix.length + 1) : null;
-}
-
-// Compare filesystem paths, not URL strings: on Windows import.meta.url is
-// file:///C:/... while argv[1] is C:\Users\..., and on any platform a path with spaces
-// is percent-encoded in the URL. A string comparison silently skips runCli()
-// and the process exits 0 with empty output.
-const isMainModule = () => {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
-  } catch {
-    return false;
-  }
-};
-
-if (isMainModule()) {
+// Resolve both paths so URL encoding and executable symlinks do not skip the CLI entrypoint.
+if (process.argv[1] !== undefined && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   runCli();
 }

@@ -25,8 +25,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
-import { renderOmpExtension } from '../src/omp-extension.ts';
-import { renderPiExtension } from '../src/pi-extension.ts';
+import { renderAgentExtension } from '../src/render-extension.ts';
 import { type RenderPrefixInput, renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 import {
   SETUP_BASH_CLAUDE,
@@ -355,7 +354,8 @@ case "$1" in
   config)
     if [ "$2" = "path" ]; then
       if [ "\${FAKE_OMP_NO_CONFIG_PATH:-0}" = "1" ]; then
-        exit 1
+        printf 'test config path failure\\n' >&2
+        exit 73
       elif [ -n "\${FAKE_OMP_CONFIG_PATH:-}" ]; then
         printf '%s\\n' "$FAKE_OMP_CONFIG_PATH"
       else
@@ -602,7 +602,7 @@ const startModelServer = async (): Promise<ModelServer> => {
     if (pathname.endsWith('/pi.js')) {
       const endpoint = new URL(req.url!, 'http://localhost').searchParams.get('endpoint')!;
       res.writeHead(200, { 'content-type': 'text/javascript' });
-      res.end(renderPiExtension({ endpoint, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
+      res.end(renderAgentExtension({ agent: 'pi', endpoint, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
       return;
     }
     if (pathname === '/test/pi/fail') {
@@ -625,7 +625,7 @@ const startModelServer = async (): Promise<ModelServer> => {
     if (pathname === '/omp.js') {
       res.writeHead(200, { 'content-type': 'text/plain' });
       if (state.mode === 'empty-extension') { res.end(''); return; }
-      res.end(renderOmpExtension({ endpoint: new URL(req.url!, 'http://localhost').searchParams.get('endpoint')!, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
+      res.end(renderAgentExtension({ agent: 'omp', endpoint: new URL(req.url!, 'http://localhost').searchParams.get('endpoint')!, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
       return;
     }
     if (pathname === '/v1/models' || pathname === '/models') {
@@ -826,6 +826,7 @@ interface RunOptions {
   // Shadows `mv` with a shim that fails only the rollback's restore-from-backup
   // rename, to exercise the installer's rollback-failure path.
   fakeRestoreFailure?: boolean;
+  fakeBackupCleanupFailure?: boolean;
   // Group-signals the running installer once it is mid Claude install (the fake
   // installer's child-pid file has appeared), to exercise the INT/TERM traps.
   signalDuringInstall?: 'SIGINT' | 'SIGTERM';
@@ -968,7 +969,23 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
-  const script = renderShellPrefix(prefixInput(agent, configuration)) + shellBody(agent);
+  const canonicalBody = shellBody(agent);
+  const cleanupFailure = options.fakeBackupCleanupFailure ? `
+_prune_managed_backups() {
+  case "$1" in
+    */settings.json|*/config.yml)
+      [ -z "$${agent === 'pi' ? 'PI' : 'OMP'}_EXTENSION_BACKUP" ] || { out_error 'extension backup was not removed'; return 74; }
+      printf 'committed' > '${join(workspace.root, 'cleanup-after-commit').replaceAll("'", "'\\''")}'
+      out_error 'test backup cleanup failure'
+      return 73
+      ;;
+  esac
+}
+` : '';
+  const body = options.fakeBackupCleanupFailure
+    ? `${canonicalBody.slice(0, canonicalBody.lastIndexOf(shellEntry(agent)))}${cleanupFailure}${shellEntry(agent)}\n`
+    : canonicalBody;
+  const script = renderShellPrefix(prefixInput(agent, configuration)) + body;
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -1200,7 +1217,20 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
         .replace('if ($script:PiExtensionExisted -and $runningOnWindows)', 'if ($script:PiExtensionExisted)')
         .replace('if ($script:PiSettingsExisted -and $runningOnWindows)', 'if ($script:PiSettingsExisted)')
     : canonicalBody;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix(prefixInput(agent, configuration)) + culturePrelude + body;
+  const cleanupFailure = options.fakeBackupCleanupFailure ? `
+function Remove-SetupOlderBackups {
+  param([string]$Path, [string]$Keep)
+  if ($Path -match '(settings\\.json|config\\.yml)$') {
+    if ($script:${agent === 'pi' ? 'Pi' : 'Omp'}ExtensionBackup) { throw 'extension backup was not removed' }
+    [System.IO.File]::WriteAllText(${powerShellLiteral(join(workspace.root, 'cleanup-after-commit'))}, 'committed')
+    throw 'test backup cleanup failure'
+  }
+}
+` : '';
+  const executionBody = options.fakeBackupCleanupFailure
+    ? `${body.slice(0, body.lastIndexOf(powerShellEntry(agent)))}${cleanupFailure}${powerShellEntry(agent)}\n`
+    : body;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix(prefixInput(agent, configuration)) + culturePrelude + executionBody;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
   writeFileSync(scriptPath, script);
@@ -3612,7 +3642,7 @@ test('omp', 'fresh install downloads a protected JS extension without model or r
   const modelsFile = ompExtensionPath(ws);
   t.ok(existsSync(modelsFile), 'extension exists');
   t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), renderOmpExtension({ provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
+  t.equal(readFileSync(modelsFile, 'utf8'), renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
 
@@ -3813,7 +3843,7 @@ test('omp', 'resolves agent directory from omp config path when omp CLI provides
   t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under directory returned by omp config path');
 });
 
-test('omp', 'resolves agent directory from PI_CODING_AGENT_DIR when omp does not provide config path', async t => {
+test('omp', 'propagates config path failure without guessing the agent directory', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   const customDir = join(ws.home, 'from-pi-env-dir');
@@ -3824,8 +3854,9 @@ test('omp', 'resolves agent directory from PI_CODING_AGENT_DIR when omp does not
     fakeOmpNoConfigPath: true,
     piCodingAgentDir: customDir,
   });
-  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under PI_CODING_AGENT_DIR');
+  t.notEqual(run.code, 0);
+  t.includes(run.combined, 'test config path failure');
+  t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
 });
 
 test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -3836,7 +3867,7 @@ test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGE
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpNoConfigPath: true,
+    fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,
   });
@@ -3960,7 +3991,7 @@ test('omp', 'PowerShell: fresh install downloads a protected JS extension withou
   const modelsFile = ompExtensionPath(ws);
   t.ok(existsSync(modelsFile), 'extension exists');
   t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), renderOmpExtension({ provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
+  t.equal(readFileSync(modelsFile, 'utf8'), renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
 
@@ -4172,7 +4203,7 @@ test('omp', 'PowerShell: resolves agent directory from omp config path when omp 
   t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under directory returned by omp config path');
 });
 
-test('omp', 'PowerShell: resolves agent directory from PI_CODING_AGENT_DIR when omp does not provide config path', async t => {
+test('omp', 'PowerShell: propagates config path failure without guessing the agent directory', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
@@ -4184,8 +4215,9 @@ test('omp', 'PowerShell: resolves agent directory from PI_CODING_AGENT_DIR when 
     fakeOmpNoConfigPath: true,
     piCodingAgentDir: customDir,
   });
-  t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under PI_CODING_AGENT_DIR');
+  t.notEqual(run.code, 0);
+  t.includes(run.combined, 'test config path failure');
+  t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
 });
 
 test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -4197,7 +4229,7 @@ test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores P
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpNoConfigPath: true,
+    fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,
   });
@@ -4601,6 +4633,28 @@ for (const agent of ['pi', 'omp'] as const) {
       const preserved = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config({ provider: 'another-floway' }) });
       t.equal(preserved.code, 0, preserved.combined);
       t.equal(readFileSync(settingsPath, 'utf8'), before, 'unspecified global preferences retain their original bytes');
+    });
+  }
+}
+
+for (const agent of ['pi', 'omp'] as const) {
+  const config = agent === 'pi' ? piConfig : ompConfig;
+  const place = agent === 'pi' ? placeFakePi : placeFakeOmp;
+  const extension = agent === 'pi' ? piExtensionPath : ompExtensionPath;
+  const settings = agent === 'pi' ? piSettingsPath : ompConfigPath;
+  for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
+    test(agent, `${platform}: cleanup failure preserves both committed files`, async t => {
+      const ws = makeWorkspace();
+      place(ws.binDir);
+      const initial = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config({ model: 'old-model' }) });
+      t.equal(initial.code, 0, initial.combined);
+      const updated = await install({ workspace: ws, baseUrl: `${modelServer.url}/updated`, configuration: config({ model: 'new-model' }), fakeBackupCleanupFailure: true });
+      t.notEqual(updated.code, 0);
+      t.includes(updated.combined, 'test backup cleanup failure');
+      t.ok(existsSync(join(ws.root, 'cleanup-after-commit')), 'failure occurs after removing the extension backup');
+      t.includes(readFileSync(extension(ws), 'utf8'), `${modelServer.url}/updated`, 'new extension remains committed');
+      t.includes(readFileSync(settings(ws), 'utf8'), 'new-model', 'new preferences remain committed');
+      t.excludes(updated.combined, 'rolling back', 'committed data does not enter rollback');
     });
   }
 }

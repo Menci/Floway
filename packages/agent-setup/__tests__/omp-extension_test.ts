@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { renderOmpExtension } from '../src/omp-extension.ts';
+import { renderAgentExtension } from '../src/render-extension.ts';
 
 const evaluateExtension = async (source: string, api: Record<string, unknown>) => {
   const executable = source.replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
@@ -11,7 +11,7 @@ const evaluateExtension = async (source: string, api: Record<string, unknown>) =
 
 test('the short extension safely embeds connection credentials and forwards native declarations', async () => {
   const key = "key'\n\\quote";
-  const source = renderOmpExtension({ provider: 'floway', endpoint: 'https://gateway.example/gateway', apiKey: key });
+  const source = renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: 'https://gateway.example/gateway', apiKey: key });
   const configuration = { api: 'floway:floway', models: [{ id: 'alias', thinking: { mode: 'effort', efforts: ['low', 'high'] } }], wireApis: { alias: 'anthropic-messages' }, streamOptions: { alias: { thinkingBudgets: { low: 1100 } } }, payloadRemovals: { alias: [['output_config', 'effort']] } };
   const fetch = vi.fn().mockResolvedValue(Response.json(configuration));
   vi.stubGlobal('fetch', fetch);
@@ -52,7 +52,7 @@ test.each([new Response(null, { status: 503 }), Response.json({ data: [] })])('a
   const unregisterProvider = vi.fn();
   const registerCommand = vi.fn();
   try {
-    await evaluateExtension(renderOmpExtension({ provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' }), { registerProvider, unregisterProvider, registerCommand });
+    await evaluateExtension(renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' }), { registerProvider, unregisterProvider, registerCommand });
     await expect(registerCommand.mock.calls[0][1].handler()).rejects.toThrow();
     expect(registerProvider).toHaveBeenCalledTimes(1);
     expect(unregisterProvider).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ test('one extension preserves independent provider catalogs, credentials and str
     { provider: 'work', endpoint: 'https://work.example/gateway', apiKey: 'work-key' },
     { provider: 'personal', endpoint: 'https://personal.example', apiKey: 'personal-key' },
   ];
-  const source = renderOmpExtension(connections[0]).replace(/^const connections = .*;$/m, `const connections = ${JSON.stringify(connections)};`);
+  const source = renderAgentExtension({ agent: 'omp', ...connections[0] }).replace(/^const connections = .*;$/m, `const connections = ${JSON.stringify(connections)};`);
   const configurations = connections.map(({ provider }, index) => ({
     api: `floway:${provider}`,
     models: [{ id: 'shared-alias', api: `floway:${provider}` }],

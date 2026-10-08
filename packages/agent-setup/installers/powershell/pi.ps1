@@ -1,9 +1,4 @@
-# Pi Agent Setup fragment.
-
-# Track upstream's maintained installer so release-metadata fixes arrive without
-# waiting for a Floway update. Reviewed sources:
-# https://pi.dev
-# https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/README.md
+# Use the maintained upstream installer so release discovery follows upstream.
 # https://pi.dev/install.sh
 
 function Test-SetupPiNode {
@@ -60,16 +55,6 @@ function Ensure-PiInstalled {
   Install-SetupPi
 }
 
-function Ensure-SetupPiInstallationChecker {
-  $checker = Join-Path $script:PiTmpDir 'pi-installation.mjs'
-  if (Test-Path -LiteralPath $checker) { return }
-  if (Get-Command Write-SetupPiInstallationChecker -ErrorAction SilentlyContinue) {
-    Write-SetupPiInstallationChecker
-  } else {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\node\pi-installation.mjs') -Destination $checker
-  }
-}
-
 function Install-SetupPi {
   if ($env:AGENT_SETUP_TEST_INSTALL_PI_SCRIPT) {
     Write-SetupInfo 'Installing Pi with the test installer'
@@ -86,7 +71,7 @@ function Install-SetupPi {
       Write-SetupInfo 'Installing Pi with npm'
       $legacyPrefix = $null
       if ($global:PiBin) {
-        Ensure-SetupPiInstallationChecker
+        Write-SetupPiInstallationChecker
         $npmRoot = ''
         if ($platform -eq 'windows') {
           $root = Invoke-SetupProcess -Exe $npm.Source -Arguments @('root', '--global') -TimeoutSeconds (Get-SetupTimeoutSeconds 30) -TimeoutMessage '`npm root --global` timed out.'
@@ -129,8 +114,8 @@ function Write-PiVersion {
     if ([int]$Matches[1] -gt 1 -or ([int]$Matches[1] -eq 1 -and ([int]$Matches[2] -gt 1 -or ([int]$Matches[2] -eq 1 -and ([int]$Matches[3] -gt 0 -or -not $Matches[4]))))) { return }
     if ($attempt -eq 'upgraded') { Stop-Setup 'Pi upgrade did not provide the required version >= 1.1.0.' }
     Write-SetupInfo 'Updating Pi for the Floway provider extension'
-    # Pi selects the owning package manager or managed installation and keeps its scope.
-    # https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/config.ts#L121-L195
+    # Self-update preserves the owning package manager or managed installation.
+    # https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/package-manager-cli.ts#L1048-L1106
     $help = Invoke-SetupProcess -Exe $global:PiBin -Arguments @('update', '--help') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '`pi update --help` timed out.'
     if ($help.ExitCode -ne 0) { Stop-Setup ('`pi update --help` failed. ' + $help.Output) }
     if ($help.Output.Contains('--self')) {
@@ -186,7 +171,7 @@ function Restore-SetupPiFiles {
   }
 }
 
-function Complete-SetupPiFiles {
+function Remove-SetupPiBackups {
   Remove-SetupOlderBackups -Path $script:PiExtensionPath -Keep $script:PiExtensionBackup
   if ($script:PiExtensionBackup -and (Test-Path -LiteralPath $script:PiExtensionBackup)) {
     Remove-Item -LiteralPath $script:PiExtensionBackup -Force -ErrorAction Stop
@@ -200,21 +185,6 @@ function Complete-SetupPiFiles {
     }
     $script:PiSettingsBackup = $null
   }
-}
-
-function Ensure-SetupJsoncEditor {
-  $target = Join-Path $script:PiTmpDir 'jsonc-edit.mjs'
-  if (Test-Path -LiteralPath $target) { return }
-  if (Get-Command Write-SetupJsoncEditor -ErrorAction SilentlyContinue) {
-    Write-SetupJsoncEditor
-    return
-  }
-  $repoPath = Join-Path $PSScriptRoot '..\node\jsonc-edit.mjs'
-  if (Test-Path -LiteralPath $repoPath) {
-    Copy-Item -LiteralPath $repoPath -Destination $target
-    return
-  }
-  Stop-Setup 'JSONC editor asset missing from installer.'
 }
 
 function Fetch-SetupPiExtension {
@@ -290,9 +260,6 @@ function Invoke-SetupNodeJsonc {
     Stop-Setup $err
   }
 
-  # The editor always emits a JSON object. Empty output means it did not run.
-  if ([string]::IsNullOrWhiteSpace($stdout)) { Stop-Setup 'Node.js editor produced no output; refusing to write an empty configuration.' }
-
   [System.IO.File]::WriteAllText($OutputPath, $stdout, $utf8NoBom)
   Protect-SetupFile $OutputPath
 }
@@ -315,13 +282,8 @@ function Stage-SetupPiSettings {
     FLOWAY_PI_RETRY_ENABLED = if ($null -eq $SetupPiRetryEnabled) { '' } else { $SetupPiRetryEnabled.ToString().ToLowerInvariant() }
     FLOWAY_PI_MAX_RETRIES = $SetupPiMaxRetries
   }
-  if (-not [string]::IsNullOrEmpty($SetupPiModel)) {
-    $envVars['FLOWAY_DEFAULT_MODEL'] = $SetupPiModel
-    $envVars['FLOWAY_REMOVE_DEFAULT_MODEL'] = '0'
-  } else {
-    $envVars['FLOWAY_DEFAULT_MODEL'] = ''
-    $envVars['FLOWAY_REMOVE_DEFAULT_MODEL'] = '1'
-  }
+  $envVars['FLOWAY_DEFAULT_MODEL'] = $SetupPiModel
+  Write-SetupJsoncEditor
   Invoke-SetupNodeJsonc -Mode 'settings' -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
 }
 
@@ -385,7 +347,6 @@ function Set-SetupAgent {
     }
 
     Backup-SetupPiFiles
-    Ensure-SetupJsoncEditor
     try {
       Fetch-SetupPiExtension
     } catch {
@@ -415,13 +376,7 @@ function Set-SetupAgent {
       throw
     }
 
-    try {
-      Complete-SetupPiFiles
-    } catch {
-      Write-SetupWarn 'Pi backup cleanup failed; rolling back configuration.'
-      Restore-SetupPiFiles
-      throw
-    }
+    Remove-SetupPiBackups
 
     Write-SetupInfo ('Written to `' + $script:PiExtensionPath + '`.')
     if (Test-Path -LiteralPath $script:PiSettingsPath) {

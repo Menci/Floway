@@ -1,9 +1,4 @@
-# Pi Agent Setup fragment.
-
-# Track upstream's maintained installer so release-metadata fixes arrive without
-# waiting for a Floway update. Reviewed sources:
-# https://pi.dev
-# https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/README.md
+# Use the maintained upstream installer so release discovery follows upstream.
 # https://pi.dev/install.sh
 
 pi_check_node() {
@@ -11,7 +6,7 @@ pi_check_node() {
     out_error 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.'
     return 1
   fi
-  _node_ver=$(node -v 2>/dev/null || true)
+  _node_ver=$(node -v) || return $?
   _node_ver="${_node_ver#v}"
   _node_major="${_node_ver%%.*}"
   _node_rest="${_node_ver#*.}"
@@ -46,16 +41,6 @@ pi_ensure_installed() {
   pi_install
 }
 
-pi_ensure_installation_checker() {
-  _pi_checker="$SETUP_TMPDIR/pi-installation.mjs"
-  if [ -f "$_pi_checker" ]; then return 0; fi
-  if type _write_pi_installation_checker >/dev/null 2>&1; then
-    _write_pi_installation_checker
-  else
-    cp "$(dirname "$0")/../node/pi-installation.mjs" "$_pi_checker"
-  fi
-}
-
 pi_install() {
   if [ -n "${AGENT_SETUP_TEST_INSTALL_PI_SCRIPT:-}" ]; then
     out_info 'Installing Pi with the test installer'
@@ -75,8 +60,8 @@ pi_install() {
     if command -v npm >/dev/null 2>&1; then
       out_info 'Installing Pi with npm'
       _pi_legacy_prefix=""
-      if [ -n "${PI_BIN:-}" ]; then
-        pi_ensure_installation_checker || return 1
+      if [ -n "$PI_BIN" ]; then
+        _write_pi_installation_checker || return 1
         _pi_prefix_json=$(node "$SETUP_TMPDIR/pi-installation.mjs" "$PI_BIN" "") || return 1
         _pi_legacy_prefix=$(node -e 'const prefix = JSON.parse(process.argv[1]); if (prefix !== null) process.stdout.write(prefix)' "$_pi_prefix_json") || return 1
       fi
@@ -91,7 +76,7 @@ pi_install() {
       _download_and_run_installer 'https://pi.dev/install.sh' || return 1
     fi
   fi
-  hash -r 2>/dev/null || true
+  hash -r
   pi_discover_cli
   [ "$DISCOVERED_COUNT" -ge 1 ]
 }
@@ -123,8 +108,8 @@ pi_write_version() {
       return 1
     fi
     out_info 'Updating Pi for the Floway provider extension'
-    # Pi selects the owning package manager or managed installation and keeps its scope.
-    # https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/config.ts#L121-L195
+    # Self-update preserves the owning package manager or managed installation.
+    # https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/package-manager-cli.ts#L1048-L1106
     _pv_help_file="$SETUP_TMPDIR/pi-update-help.out"
     if ! _run_with_timeout "$_pv_timeout" "$PI_BIN" update --help > "$_pv_help_file" 2>&1; then
       cat "$_pv_help_file" >&2
@@ -134,7 +119,7 @@ pi_write_version() {
     if node -e 'process.exit(require("fs").readFileSync(process.argv[1], "utf8").includes("--self") ? 0 : 1)' "$_pv_help_file"; then
       _pv_update_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
       _run_with_timeout "$_pv_update_timeout" env -u SETUP_API_KEY "$PI_BIN" update --self </dev/null || return 1
-      hash -r 2>/dev/null || true
+      hash -r
       pi_discover_cli
     else
       pi_install || return 1
@@ -193,10 +178,10 @@ pi_backup_files() {
 pi_rollback() {
   _prb_rc=0
   _restore_managed_file \
-    "${PI_EXTENSION_EXISTED:-0}" "${PI_EXTENSION_BACKUP:-}" "$PI_EXTENSION_PATH" \
+    "$PI_EXTENSION_EXISTED" "$PI_EXTENSION_BACKUP" "$PI_EXTENSION_PATH" \
     "extension file" "Pi extension" || _prb_rc=1
   _restore_managed_file \
-    "${PI_SETTINGS_EXISTED:-0}" "${PI_SETTINGS_BACKUP:-}" "$PI_SETTINGS_PATH" \
+    "$PI_SETTINGS_EXISTED" "$PI_SETTINGS_BACKUP" "$PI_SETTINGS_PATH" \
     "settings file" "Pi settings configuration" || _prb_rc=1
   if [ -n "${PI_EXTENSION_STAGE:-}" ]; then
     rm -f "$PI_EXTENSION_STAGE"
@@ -209,7 +194,7 @@ pi_rollback() {
   return "$_prb_rc"
 }
 
-pi_commit_files() {
+pi_cleanup_backups() {
   if [ -n "$PI_EXTENSION_BACKUP" ]; then
     _prune_managed_backups "$PI_EXTENSION_PATH" "$PI_EXTENSION_BACKUP" || return 1
     if ! rm -f "$PI_EXTENSION_BACKUP"; then
@@ -234,24 +219,6 @@ pi_commit_files() {
   return 0
 }
 
-pi_ensure_editor() {
-  _editor="$SETUP_TMPDIR/jsonc-edit.mjs"
-  if [ -f "$_editor" ]; then
-    return 0
-  fi
-  if type _write_jsonc_editor >/dev/null 2>&1; then
-    _write_jsonc_editor
-    return 0
-  fi
-  _repo_editor="$(dirname "$0")/../node/jsonc-edit.mjs"
-  if [ -f "$_repo_editor" ]; then
-    cp "$_repo_editor" "$_editor"
-    return 0
-  fi
-  out_error 'JSONC editor asset missing from installer.'
-  return 1
-}
-
 pi_fetch_extension() {
   PI_EXTENSION_STAGE="$PI_EXTENSION_PATH.floway-stage.$$"
   : > "$PI_EXTENSION_STAGE" || return 1
@@ -261,12 +228,8 @@ pi_fetch_extension() {
     out_error 'failed to fetch the Floway Pi extension'
     return 1
   fi
-  if [ ! -s "$PI_EXTENSION_STAGE" ]; then
-    out_error 'the Pi extension download was empty'
-    return 1
-  fi
   IFS= read -r _pi_stage_marker < "$PI_EXTENSION_STAGE" || true
-  if [ "${_pi_stage_marker:-}" != '// Managed by Floway Agent Setup.' ]; then
+  if [ "$_pi_stage_marker" != '// Managed by Floway Agent Setup.' ]; then
     out_error 'the Pi extension download has an invalid ownership marker'
     return 1
   fi
@@ -274,7 +237,7 @@ pi_fetch_extension() {
 }
 
 pi_stage_settings() {
-  if [ -z "${SETUP_PI_MODEL:-}" ] && [ -z "${SETUP_PI_THINKING_LEVEL:-}" ] && [ -z "${SETUP_PI_RETRY_ENABLED:-}" ] && [ -z "${SETUP_PI_MAX_RETRIES:-}" ] && [ ! -f "$PI_SETTINGS_PATH" ]; then
+  if [ -z "$SETUP_PI_MODEL" ] && [ -z "$SETUP_PI_THINKING_LEVEL" ] && [ -z "$SETUP_PI_RETRY_ENABLED" ] && [ -z "$SETUP_PI_MAX_RETRIES" ] && [ ! -f "$PI_SETTINGS_PATH" ]; then
     PI_SETTINGS_STAGE=""
     return 0
   fi
@@ -282,17 +245,12 @@ pi_stage_settings() {
   PI_SETTINGS_STAGE="$PI_SETTINGS_PATH.floway-stage.$$"
   _pss_err="$SETUP_TMPDIR/settings-edit.err"
 
-  if [ -n "${SETUP_PI_MODEL:-}" ]; then
-    _pss_model_env="FLOWAY_DEFAULT_MODEL=$SETUP_PI_MODEL"
-    _pss_remove_env="FLOWAY_REMOVE_DEFAULT_MODEL=0"
-  else
-    _pss_model_env="FLOWAY_DEFAULT_MODEL="
-    _pss_remove_env="FLOWAY_REMOVE_DEFAULT_MODEL=1"
-  fi
+  _write_jsonc_editor || return 1
+  local _pss_rc=0
 
   _pss_node_cmd=(
-    env "FLOWAY_DEFAULT_PROVIDER=$SETUP_PI_PROVIDER" "$_pss_model_env" "$_pss_remove_env"
-    "FLOWAY_PI_THINKING_LEVEL=${SETUP_PI_THINKING_LEVEL:-}" "FLOWAY_PI_RETRY_ENABLED=${SETUP_PI_RETRY_ENABLED:-}" "FLOWAY_PI_MAX_RETRIES=${SETUP_PI_MAX_RETRIES:-}"
+    env "FLOWAY_DEFAULT_PROVIDER=$SETUP_PI_PROVIDER" "FLOWAY_DEFAULT_MODEL=$SETUP_PI_MODEL"
+    "FLOWAY_PI_THINKING_LEVEL=$SETUP_PI_THINKING_LEVEL" "FLOWAY_PI_RETRY_ENABLED=$SETUP_PI_RETRY_ENABLED" "FLOWAY_PI_MAX_RETRIES=$SETUP_PI_MAX_RETRIES"
     node "$SETUP_TMPDIR/jsonc-edit.mjs" settings
   )
 
@@ -301,7 +259,6 @@ pi_stage_settings() {
   else
     "${_pss_node_cmd[@]}" < /dev/null > "$PI_SETTINGS_STAGE" 2> "$_pss_err" || _pss_rc=$?
   fi
-  _pss_rc=${_pss_rc:-0}
 
   if [ "$_pss_rc" -ne 0 ]; then
     _pss_msg=$(cat "$_pss_err" 2>/dev/null || true)
@@ -311,14 +268,6 @@ pi_stage_settings() {
     return 1
   fi
   rm -f "$_pss_err"
-
-  # The editor always emits a JSON object. An empty file means it did not run.
-  if [ ! -s "$PI_SETTINGS_STAGE" ]; then
-    out_error "Node.js editor produced no output; refusing to write an empty configuration"
-    rm -f "$PI_SETTINGS_STAGE"
-    PI_SETTINGS_STAGE=""
-    return 1
-  fi
 
   if ! chmod 600 "$PI_SETTINGS_STAGE"; then
     out_error "could not protect staged settings configuration $PI_SETTINGS_STAGE"
@@ -362,9 +311,7 @@ configure_agent() {
   fi
 
   out_agent_notice 'Configuring' 'Pi'
-  if ! pi_resolve_agent_dir; then
-    return 1
-  fi
+  pi_resolve_agent_dir
   if ! mkdir -p "$PI_AGENT_DIR/extensions"; then
     out_error "could not create $PI_AGENT_DIR"
     return 1
@@ -372,18 +319,13 @@ configure_agent() {
 
   if [ -e "$PI_EXTENSION_PATH" ]; then
     IFS= read -r _pi_existing_marker < "$PI_EXTENSION_PATH" || true
-    if [ "${_pi_existing_marker:-}" != '// Managed by Floway Agent Setup.' ]; then
+    if [ "$_pi_existing_marker" != '// Managed by Floway Agent Setup.' ]; then
       out_error 'an unmanaged floway.js extension already exists; move it before running setup.'
       return 1
     fi
   fi
 
   if ! pi_backup_files; then
-    return 1
-  fi
-
-  if ! pi_ensure_editor; then
-    pi_rollback
     return 1
   fi
 
@@ -410,11 +352,7 @@ configure_agent() {
     return 1
   fi
 
-  if ! pi_commit_files; then
-    out_warn 'Pi backup cleanup failed; rolling back configuration.'
-    pi_rollback
-    return 1
-  fi
+  pi_cleanup_backups || return 1
 
   out_info "Written to \`$PI_EXTENSION_PATH\`."
   if [ -e "$PI_SETTINGS_PATH" ]; then
