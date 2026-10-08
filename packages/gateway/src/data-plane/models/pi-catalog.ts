@@ -43,7 +43,8 @@ const piCostRates = (rates: PriceVector): PiCostRates => ({
 });
 
 const piCost = (model: PublicModel): PiModel['cost'] => {
-  const entries = model.pricing?.entries ?? [];
+  if (model.pricing === undefined) return piCostRates({});
+  const entries = model.pricing.entries;
   const base = entries.find(entry => Object.keys(entry.selector ?? {}).length === 0);
   const tiers = entries.flatMap(entry => {
     const selector = entry.selector;
@@ -55,7 +56,7 @@ const piCost = (model: PublicModel): PiModel['cost'] => {
       inputTokensAbove: inputTokens.value - (inputTokens.operator === 'gte' ? 1 : 0),
     }];
   }).toSorted((a, b) => a.inputTokensAbove - b.inputTokensAbove);
-  return { ...piCostRates(base?.rates ?? {}), ...(tiers.length > 0 ? { tiers } : {}) };
+  return { ...piCostRates(base!.rates), ...(tiers.length > 0 ? { tiers } : {}) };
 };
 
 const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], maxTokens: number): Pick<PiModel, 'reasoning' | 'thinkingLevelMap' | 'thinkingBudgets' | 'effortOverrides' | 'payloadRemovals' | 'compat'> => {
@@ -95,7 +96,7 @@ const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], max
   };
 };
 
-export const toPiCatalog = (models: readonly PublicModel[], baseUrl: string, provider = 'floway'): { models: PiModel[] } => ({
+export const toPiCatalog = (models: readonly PublicModel[], baseUrl: string, provider: string): { models: PiModel[] } => ({
   models: models.filter(model => model.kind === 'chat').map(model => ({
     id: model.id,
     name: model.display_name || model.id,

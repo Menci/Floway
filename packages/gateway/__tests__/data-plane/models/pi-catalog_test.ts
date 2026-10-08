@@ -15,7 +15,7 @@ const model = (overrides: Partial<PublicModel> = {}): PublicModel => ({
   ...overrides,
 });
 
-const catalogModel = (overrides: Partial<PublicModel> = {}) => toPiCatalog([model(overrides)], 'https://gateway.example/v1').models[0]!;
+const catalogModel = (overrides: Partial<PublicModel> = {}) => toPiCatalog([model(overrides)], 'https://gateway.example/v1', 'floway').models[0]!;
 
 describe('Pi model catalog', () => {
   test('recognizes both official Pi User-Agent forms without changing other clients', () => {
@@ -27,7 +27,7 @@ describe('Pi model catalog', () => {
   test('preserves model identity, vision and known token limits in an independent provider', () => {
     const mapped = catalogModel({ chat: { modalities: { input: ['text', 'image'], output: ['text'] } } });
     expect(mapped).toMatchObject({ provider: 'floway', api: 'openai-responses', baseUrl: 'https://gateway.example/v1', contextWindow: 200000, maxTokens: 32000, input: ['text', 'image'], reasoning: false });
-    expect(toPiCatalog([model({ kind: 'embedding' })], 'https://gateway.example/v1').models).toEqual([]);
+    expect(toPiCatalog([model({ kind: 'embedding' })], 'https://gateway.example/v1', 'floway').models).toEqual([]);
   });
 
   test('publishes only advertised named efforts and hides mandatory reasoning off', () => {
