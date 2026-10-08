@@ -80,7 +80,7 @@ const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], max
     level,
     Math.min(budgetCeiling, Math.max(budgetFloor, tokens)),
   ]));
-  // Pi's adaptive adapter always derives an effort from its thinking slot.
+  // When adaptive thinking is enabled, Pi derives an effort from its selected slot.
   // A slot used solely as an on switch must not manufacture an effort or erase
   // the independent output-format configuration.
   // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/ai/src/api/anthropic-messages.ts#L950-L957

@@ -37,7 +37,6 @@ export interface OmpModel {
   };
 }
 
-// The same identity is exported by OMP and applied to its inference transport.
 // https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/utils/src/dirs.ts#L33-L37
 export const isOmpUserAgent = (userAgent: string | undefined): boolean => userAgent?.startsWith('omp/') === true;
 
