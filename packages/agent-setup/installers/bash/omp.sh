@@ -75,8 +75,11 @@ omp_probe_version() {
 
 omp_version_is_supported() {
   awk '
-    { sub(/^omp\//, ""); split($0, version, "."); }
-    END { exit version[1] > 18 || (version[1] == 18 && (version[2] > 8 || (version[2] == 8 && version[3] >= 4))) ? 0 : 1 }
+    { sub(/^omp\//, ""); prerelease = $0 ~ /^[0-9]+\.[0-9]+\.[0-9]+-/; split($0, version, "."); }
+    END {
+      major = version[1] + 0; minor = version[2] + 0; patch = version[3] + 0;
+      exit major > 18 || (major == 18 && (minor > 8 || (minor == 8 && (patch > 4 || (patch == 4 && !prerelease))))) ? 0 : 1
+    }
   ' "$SETUP_TMPDIR/omp-version.out"
 }
 

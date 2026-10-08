@@ -4504,6 +4504,19 @@ for (const agent of ['pi', 'omp'] as const) {
       t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
     });
 
+    if (agent === 'omp') {
+      for (const [version, upgrade] of [['18.8.4-canary.1', true], ['18.8.10-canary.1', false], ['18.8.4+build.1', false]] as const) {
+        test(agent, `${platform}: ${version} respects the numeric minimum and prerelease precedence`, async t => {
+          const ws = makeWorkspace();
+          place(ws.binDir);
+          const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config(), fakeOmpVersion: `omp/${version}` });
+          t.equal(result.code, 0, result.combined);
+          t.equal(existsSync(join(ws.root, 'updated-omp')), upgrade, 'only versions below the required stable release are updated');
+          t.ok(existsSync(extension(ws)), 'configuration is written after the version gate');
+        });
+      }
+    }
+
     for (const mode of ['fail', 'noop', 'sleep'] as const) {
       test(agent, `${platform}: update ${mode} leaves configuration unchanged`, async t => {
         const ws = makeWorkspace();

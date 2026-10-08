@@ -28,17 +28,18 @@ function Install-SetupOmp {
   }
 }
 
-function Write-SetupOmpVersion {
+function Test-SetupOmpVersion {
   param([string]$Exe)
   $timeoutSeconds = Get-SetupTimeoutSeconds 30
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '`omp --version` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``omp --version`` failed." }
   Write-SetupInfo "oh-my-pi version: $($version.Output.Trim())"
   $versionText = $version.Output.Trim() -replace '^omp/', ''
-  if ($versionText -notmatch '^(\d+\.\d+\.\d+)(?:[-+][0-9A-Za-z.-]+)?$') {
+  if ($versionText -notmatch '^(\d+\.\d+\.\d+)([-+][0-9A-Za-z.-]+)?$') {
     Stop-Setup 'oh-my-pi returned an invalid version.'
   }
-  return [Version]$Matches[1]
+  $core = [Version]$Matches[1]
+  return $core -gt [Version]'18.8.4' -or ($core -eq [Version]'18.8.4' -and $Matches[2] -notlike '-*')
 }
 
 function Get-SetupOmpAgentDir {
@@ -424,16 +425,16 @@ function Set-SetupAgent {
   } else {
     Write-SetupInfo 'oh-my-pi is already installed.'
   }
-  $version = Write-SetupOmpVersion -Exe $exe
-  if ($version -lt [Version]'18.8.4') {
+  $supportedVersion = Test-SetupOmpVersion -Exe $exe
+  if (-not $supportedVersion) {
     Write-SetupInfo 'Updating oh-my-pi to the latest stable version.'
     # The official updater resolves the active installation and update method.
     # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2272-L2331
     Invoke-SetupLiveProcess -Exe $exe -Arguments @('update', '--stable') -TimeoutSeconds (Get-SetupTimeoutSeconds 120)
     $exe = Get-SetupCliExe -Name omp -Label 'oh-my-pi' -Candidates $candidates
     if (-not $exe) { Stop-Setup 'oh-my-pi CLI is unavailable after updating.' }
-    $version = Write-SetupOmpVersion -Exe $exe
-    if ($version -lt [Version]'18.8.4') {
+    $supportedVersion = Test-SetupOmpVersion -Exe $exe
+    if (-not $supportedVersion) {
       Stop-Setup 'Floway Agent Setup requires oh-my-pi 18.8.4 or newer; the selected CLI remains older after updating. Check for a shadowing installation.'
     }
   }
