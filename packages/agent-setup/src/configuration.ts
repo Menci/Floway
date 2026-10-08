@@ -1,14 +1,11 @@
-// The persisted Agent Setup preference: which Floway API key a setup URL serves
-// and how each agent CLI is configured. This schema is the single source of
-// truth for the shape stored in `agent_setup.configuration_json` and for the
-// request bodies that carry it across the control plane.
+// This schema owns the selected API key and agent preferences stored in
+// `agent_setup.configuration_json` and carried by control-plane requests.
+// Null model overrides clear managed selections; null Pi thinking and Pi/OMP
+// retry preferences preserve the existing agent-wide settings.
 //
-// Optional model/effort slots are nullable, never empty strings: `null` means
-// "leave this override unset" (the installer removes the managed key), while ""
-// would ambiguously ask to write an empty value. Per the gateway's
-// protocol-opacity rule the schema rejects only the two characters an opaque
-// value cannot survive as a shell/PowerShell literal — empty and NUL — never a
-// vendor family.
+// Model identifiers and Codex effort strings remain vendor-independent opaque
+// values. Empty strings are ambiguous with unset preferences, and NUL cannot
+// pass through the native shell argument boundary.
 
 import { z } from 'zod';
 
