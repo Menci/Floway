@@ -310,9 +310,7 @@ export function updateDefaultModel(src, modelId, provider) {
     for (const prop of propsToRemove) {
       // Re-parse AST to ensure clean token offsets on consecutive deletes
       const currentAst = parseJsoncAst(result);
-      if (currentAst.kind !== 'root' || currentAst.root.kind !== 'object') break;
       const target = currentAst.root.properties.find(p => p.keyToken.value === prop.keyToken.value);
-      if (!target) continue;
 
       result = removeObjectProperty(result, target);
     }
@@ -332,7 +330,6 @@ export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry 
 
 function setSettingsProperty(src, path, value) {
   const ast = parseJsoncAst(src);
-  if (ast.kind !== 'root' || ast.root.kind !== 'object') throw new JsoncRefusalError('Root value in settings.json must be an object');
   let current = ast.root;
   for (let index = 0; index < path.length; index++) {
     const key = path[index];
