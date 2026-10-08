@@ -1,4 +1,4 @@
-import { hasReadableSummary, openAIChatCompletionsScalarReasoningText, toOpenAIResponsesReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { hasReadableSummary, openAIChatCompletionsScalarReasoningText, toOpenAIResponsesOutputReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -418,7 +418,7 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
 
       for (const item of readableReasoningItems) {
         const outputIndex = state.outputIndex++;
-        events.push(...emitCompletedReasoningItem(toOpenAIResponsesReasoningItem<OpenAIResponsesOutputReasoning>(item), outputIndex, state));
+        events.push(...emitCompletedReasoningItem(toOpenAIResponsesOutputReasoningItem(item), outputIndex, state));
       }
 
       if (hadPendingScalarReasoning) {
