@@ -3517,7 +3517,7 @@ test('pi', 'real Pi SDK refresh replaces and removes models while retaining full
     cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
     headers: { 'x-model-capability': id }, compat: { supportsDeveloperRole: false },
   });
-  piFixture.models = [fixture('first-model'), { ...fixture('budget-model'), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingBudgets: { minimal: 4096, low: 4096, medium: 8192, high: 10000 }, payloadPatches: { low: { output_config: { effort: 'fast' } } } }, { ...fixture('mandatory-model'), thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null } }, ...['adaptive-model', 'adaptive-mandatory-model'].map(id => ({ ...fixture(id), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingLevelMap: { off: id === 'adaptive-model' ? 'off' : null, minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null }, compat: { forceAdaptiveThinking: true }, payloadRemovals: [['output_config', 'effort']] }))];
+  piFixture.models = [fixture('first-model'), { ...fixture('budget-model'), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingBudgets: { minimal: 4096, low: 4096, medium: 8192, high: 10000 }, effortOverrides: { low: 'fast' } }, { ...fixture('mandatory-model'), thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null } }, ...['adaptive-model', 'adaptive-mandatory-model'].map(id => ({ ...fixture(id), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingLevelMap: { off: id === 'adaptive-model' ? 'off' : null, minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null }, compat: { forceAdaptiveThinking: true }, payloadRemovals: [['output_config', 'effort']] }))];
   piFixture.catalogs = [[fixture('second-model')], []];
   piFixture.status = 200;
   const install = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
@@ -3538,6 +3538,12 @@ for (const id of ['first-model', 'budget-model', 'mandatory-model', 'adaptive-mo
   const response = await runtime.completeSimple(runtime.getModel('floway', id), context, { reasoning: id.startsWith('adaptive') ? 'high' : 'low', onPayload: payload => { if (id.startsWith('adaptive')) payload.output_config = { ...payload.output_config, format: { type: 'json_schema', schema: { type: 'object' } } }; } });
   assert.equal(response.stopReason, 'stop', response.errorMessage);
 }
+const budgetModel = runtime.getModel('floway', 'budget-model');
+const altered = await runtime.completeSimple(budgetModel, context, { reasoning: 'low', onPayload: payload => { payload.output_config.effort = 'request-only'; } });
+assert.equal(altered.stopReason, 'stop', altered.errorMessage);
+assert.equal(budgetModel.effortOverrides.low, 'fast', 'request customization must not mutate the catalog');
+const repeated = await runtime.completeSimple(budgetModel, context, { reasoning: 'low' });
+assert.equal(repeated.stopReason, 'stop', repeated.errorMessage);
 for (let index = 0; index < 2; index++) {
   await fetch(process.env.PI_FIXTURE_URL + '/test/pi/advance');
   const result = await runtime.refresh({ providers: ['floway'], allowNetwork: true });
@@ -3578,6 +3584,9 @@ process.stdout.write(JSON.stringify(snapshots));
   t.equal(thinking.type, 'enabled', 'budget enables native Anthropic thinking');
   t.equal(thinking.budget_tokens, 4096, 'server-derived budget reaches the native Anthropic adapter');
   t.equal(JSON.stringify(messages?.body?.output_config), JSON.stringify({ effort: 'fast' }), 'combined budget and declared open-string effort survive adapter projection');
+  const budgetRequests = modelServer.requests.filter(request => request.body?.model === 'budget-model');
+  t.equal((budgetRequests[1]?.body?.output_config as { effort: string }).effort, 'request-only', 'the native payload callback can customize one request');
+  t.equal((budgetRequests[2]?.body?.output_config as { effort: string }).effort, 'fast', 'subsequent requests use the unchanged model metadata');
   const mandatory = modelServer.requests.find(request => request.body?.model === 'mandatory-model');
   t.equal(mandatory?.body?.reasoning, undefined, 'uncontrollable mandatory reasoning does not fabricate an effort or off request');
   for (const id of ['adaptive-model', 'adaptive-mandatory-model']) {

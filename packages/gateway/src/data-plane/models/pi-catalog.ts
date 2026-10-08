@@ -18,7 +18,7 @@ export interface PiModel {
   reasoning: boolean;
   thinkingLevelMap: PiThinkingLevelMap;
   thinkingBudgets?: Record<string, number>;
-  payloadPatches?: Partial<Record<PiThinkingLevel, { output_config: { effort: string } }>>;
+  effortOverrides?: Partial<Record<PiThinkingLevel, string>>;
   payloadRemovals?: readonly (readonly string[])[];
   input: readonly ('text' | 'image')[];
   contextWindow: number;
@@ -58,7 +58,7 @@ const piCost = (model: PublicModel): PiModel['cost'] => {
   return { ...piCostRates(base?.rates ?? {}), ...(tiers.length > 0 ? { tiers } : {}) };
 };
 
-const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], maxTokens: number): Pick<PiModel, 'reasoning' | 'thinkingLevelMap' | 'thinkingBudgets' | 'payloadPatches' | 'payloadRemovals' | 'compat'> => {
+const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], maxTokens: number): Pick<PiModel, 'reasoning' | 'thinkingLevelMap' | 'thinkingBudgets' | 'effortOverrides' | 'payloadRemovals' | 'compat'> => {
   const supported = reasoning?.effort?.supported ?? [];
   const hasBudget = reasoning?.budget_tokens !== undefined;
   const enabled = supported.length > 0 || hasBudget || reasoning?.adaptive === true || reasoning?.mandatory === true;
@@ -88,7 +88,7 @@ const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], max
     thinkingLevelMap,
     ...(thinkingBudgets === undefined ? {} : { thinkingBudgets }),
     ...(hasBudget && supported.length > 0 && reasoning?.adaptive !== true ? {
-      payloadPatches: Object.fromEntries(Object.entries(thinkingLevelMap).flatMap(([level, effort]) => level === 'off' || effort === null ? [] : [[level, { output_config: { effort } }]])),
+      effortOverrides: Object.fromEntries(Object.entries(thinkingLevelMap).flatMap(([level, effort]) => level === 'off' || effort === null ? [] : [[level, effort]])),
     } : {}),
     ...(reasoning?.adaptive === true && supported.length === 0 ? { payloadRemovals: [['output_config', 'effort']] } : {}),
     ...(reasoning?.adaptive === true ? { compat: { forceAdaptiveThinking: true } as const } : {}),

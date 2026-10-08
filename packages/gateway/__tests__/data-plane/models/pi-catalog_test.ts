@@ -84,11 +84,11 @@ describe('Pi model catalog', () => {
     expect(Object.values(mapped.thinkingLevelMap)).toEqual([null, null, null, null, null, null, null]);
   });
 
-  test('combined budget and named effort include exact server-derived request patches', () => {
+  test('combined budget and named effort include exact server-derived effort overrides', () => {
     const mapped = catalogModel({ chat: { reasoning: { budget_tokens: { min: 4096, max: 10000 }, effort: { supported: ['fast', 'balanced', 'deep'], default: 'balanced' } } } });
     expect(mapped.api).toBe('anthropic-messages');
     expect(mapped.baseUrl).toBe('https://gateway.example');
-    expect(mapped.payloadPatches).toEqual({ low: { output_config: { effort: 'fast' } }, medium: { output_config: { effort: 'balanced' } }, high: { output_config: { effort: 'deep' } } });
+    expect(mapped.effortOverrides).toEqual({ low: 'fast', medium: 'balanced', high: 'deep' });
     expect(mapped.thinkingBudgets?.low).toBe(4096);
   });
 

@@ -38,7 +38,9 @@ export default async pi => {
         ...options,
         thinkingBudgets: options?.thinkingBudgets ?? model.thinkingBudgets,
         onPayload: async payload => {
-          const patched = { ...payload, ...model.payloadPatches?.[options?.reasoning] };
+          const effort = model.effortOverrides?.[options?.reasoning];
+          const patched = { ...payload };
+          if (effort !== undefined) patched.output_config = { ...payload.output_config, effort };
           for (const path of model.payloadRemovals ?? []) {
             const parent = path.slice(0, -1).reduce((value, key) => value?.[key], patched);
             if (parent) delete parent[path.at(-1)];
