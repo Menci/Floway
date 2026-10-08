@@ -820,7 +820,6 @@ interface RunOptions {
   fakeCodexBatchDelay?: number;
   fakeCodexLargeStderr?: boolean;
   withCodexInstallHook?: boolean;
-  // Pi knobs.
   fakeAgentUpdateMode?: 'ok' | 'fail' | 'noop' | 'sleep';
   fakePiSupportsSelf?: boolean;
   fakePiUpdatedVersion?: string;
@@ -836,7 +835,6 @@ interface RunOptions {
   fakeNodeVersion?: string;
   codexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
-  // omp knobs.
   fakeOmpVersion?: string;
   fakeOmpVersionSleep?: number;
   fakeOmpConfigPath?: string;
@@ -891,8 +889,6 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
   return env;
 };
 
-// Pi fake-binary knobs, the install hook, PI_CODING_AGENT_DIR and the extension
-// artifact URL override, merged like codexEnv.
 const piEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
     FAKE_PI_SRC,
@@ -3688,7 +3684,6 @@ test('omp', 'preserves unrelated providers, comments, roles, CRLF, and missing t
   t.includes(configText, 'default: "floway/test-model"', 'managed default inserted');
   t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
 
-  // Clear model: user's plan role and comments must stay, only managed default is removed
   const runClear = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
   t.equal(runClear.code, 0, `clearing should succeed:\n${runClear.combined}`);
 
@@ -4032,7 +4027,6 @@ test('omp', 'PowerShell: preserves unrelated providers, comments, roles, CRLF, a
   t.includes(configText, 'default: "floway/test-model"', 'managed default inserted');
   t.ok(configText.includes('\r\n'), 'CRLF preserved in config.yml');
 
-  // Clear model: user's plan role and comments must stay, only managed default is removed
   const runClear = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
   t.equal(runClear.code, 0, `clearing should succeed:\n${runClear.combined}`);
 

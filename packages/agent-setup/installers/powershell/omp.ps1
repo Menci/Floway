@@ -149,11 +149,7 @@ function Stage-SetupOmpExtension {
   [System.IO.File]::Create($script:OmpExtensionStage).Dispose()
   Protect-SetupFile $script:OmpExtensionStage
   $uri = $SetupEndpoint.TrimEnd('/') + $SetupExtensionPath + '?endpoint=' + [Uri]::EscapeDataString($SetupEndpoint) + '&provider=' + [Uri]::EscapeDataString($SetupOmpProvider)
-  try {
-    $response = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 30
-  } catch {
-    Stop-Setup 'could not download the oh-my-pi extension.'
-  }
+  $response = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 30
   $source = [string]$response.Content
   if (-not $source.StartsWith("// Managed by Floway Agent Setup.`n")) {
     Stop-Setup 'the gateway did not return a Floway extension.'
