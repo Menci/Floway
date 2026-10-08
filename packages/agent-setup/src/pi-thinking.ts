@@ -15,7 +15,7 @@ export const piThinkingLevelMap = (reasoning: ChatModelInfo['reasoning'], modelI
     for (const level of piThinkingLevels) {
       if (level !== 'off' && supported.includes(level)) map[level] = level;
     }
-    const custom = [...new Set(supported)].filter(level => level !== 'none' && level !== 'off' && !piThinkingLevels.includes(level as PiThinkingLevel));
+    const custom = [...new Set(supported)].filter(level => (reasoning?.mandatory === true || (level !== 'none' && level !== 'off')) && (level === 'off' || !piThinkingLevels.includes(level as PiThinkingLevel)));
     const assignCustom = (value: string, preferred?: PiThinkingLevel): boolean => {
       const slot = preferred !== undefined && map[preferred] === null ? preferred : (['low', 'medium', 'high', 'minimal', 'xhigh', 'max'] as const).find(level => map[level] === null);
       if (slot === undefined) return false;

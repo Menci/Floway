@@ -15,3 +15,10 @@ test('represents unsupported effort counts as an explicit result and keeps uncon
   const adaptive = piThinkingLevelMap({ adaptive: true }, 'model');
   expect(adaptive.supported && adaptive.map.high).toBe('high');
 });
+
+test.each(['none', 'off'])('mandatory reasoning preserves %s as a named effort while hiding the native off switch', effort => {
+  expect(piThinkingLevelMap({ mandatory: true, effort: { supported: [effort], default: effort } }, 'model')).toEqual({
+    supported: true,
+    map: { off: null, minimal: null, low: null, medium: effort, high: null, xhigh: null, max: null },
+  });
+});

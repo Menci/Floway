@@ -39,6 +39,13 @@ describe('Pi model catalog', () => {
     expect(disabled.thinkingLevelMap.max).toBe('max');
   });
 
+  test.each(['none', 'off'])('projects mandatory named %s reasoning without dropping its default', effort => {
+    const mapped = catalogModel({ chat: { reasoning: { mandatory: true, effort: { supported: [effort], default: effort } } } });
+    expect(mapped.reasoning).toBe(true);
+    expect(mapped.thinkingLevelMap.off).toBeNull();
+    expect(mapped.thinkingLevelMap.medium).toBe(effort);
+  });
+
   test('maps open-string efforts into free native slots without losing declared defaults', () => {
     const mapped = catalogModel({ chat: { reasoning: { effort: { supported: ['fast', 'balanced', 'deep'], default: 'balanced' } } } });
     expect(mapped.thinkingLevelMap.low).toBe('fast');
@@ -85,6 +92,12 @@ describe('Pi model catalog', () => {
     expect(mapped.thinkingBudgets?.low).toBe(4096);
   });
 
+  test('retains small token prices when converting the per-million unit', () => {
+    const tiny = `0.${'0'.repeat(324)}1`;
+    const mapped = catalogModel({ pricing: { entries: [{ rates: { input_tokens: tiny } }] } });
+    expect(mapped.cost.input).toBe(1e-319);
+  });
+
   test('converts token prices and input-token thresholds without silently accepting invalid rates', () => {
     const rates = { input_tokens: '0.000003', output_tokens: '0.000015', input_cache_read_tokens: '0.0000003', input_cache_write_tokens: '0.00000375' };
     const mapped = catalogModel({
@@ -103,7 +116,7 @@ describe('Pi model catalog', () => {
         { input: 9, output: 15, cacheRead: 0.3, cacheWrite: 3.75, inputTokensAbove: 299999 },
       ],
     });
-    expect(() => catalogModel({ pricing: { entries: [{ rates: { input_tokens: 'invalid' } }] } })).toThrow('Invalid model token price');
+    expect(() => catalogModel({ pricing: { entries: [{ rates: { input_tokens: 'invalid' } }] } })).toThrow(TypeError);
   });
 });
 

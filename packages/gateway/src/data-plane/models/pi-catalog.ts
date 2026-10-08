@@ -1,5 +1,6 @@
 import { piThinkingLevelMap, type PiThinkingLevel, type PiThinkingLevelMap } from '@floway-dev/agent-setup/pi-thinking';
 import type { ChatModelInfo, PriceVector, PublicModel } from '@floway-dev/protocols/common';
+import { decimalStringToNumber, multiplyDecimalStrings } from '@floway-dev/protocols/common';
 
 interface PiCostRates {
   input: number;
@@ -31,12 +32,8 @@ export interface PiModel {
 const PI_DEFAULT_CONTEXT_WINDOW = 128000;
 const PI_DEFAULT_MAX_TOKENS = 16384;
 
-const ratePerMillion = (value: string | undefined): number => {
-  if (value === undefined) return 0;
-  const rate = Number(value) * 1_000_000;
-  if (!Number.isFinite(rate) || rate < 0) throw new Error('Invalid model token price');
-  return rate;
-};
+const ratePerMillion = (value: string | undefined): number =>
+  value === undefined ? 0 : decimalStringToNumber(multiplyDecimalStrings(value, '1000000'));
 
 const piCostRates = (rates: PriceVector): PiCostRates => ({
   input: ratePerMillion(rates.input_tokens),
