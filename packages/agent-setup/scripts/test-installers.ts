@@ -812,7 +812,6 @@ interface RunOptions {
   // Group-signals the running installer once it is mid Claude install (the fake
   // installer's child-pid file has appeared), to exercise the INT/TERM traps.
   signalDuringInstall?: 'SIGINT' | 'SIGTERM';
-  // Codex knobs.
   codexHome?: string;
   fakeCodexVersion?: string;
   fakeCodexVersionSleep?: number;

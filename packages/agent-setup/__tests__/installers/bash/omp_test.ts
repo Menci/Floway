@@ -59,6 +59,34 @@ for (const platform of ['bash', 'powershell'] as const) {
       expect(result.staged).toBe('retry:\n  enabled: false # enabled\n  maxRetries: 0 # attempts\n');
     });
 
+    test('preserves case-sensitive retry keys while adding canonical settings', () => {
+      const source = 'retry:\n  Enabled: true\n  MaxRetries: 3\n';
+      const result = run(source, 'false', '0');
+      expect(result.status, result.output).toBe(0);
+      expect(result.staged).toBe(`${source}  enabled: false\n  maxRetries: 0\n`);
+    });
+
+    test('preserves an unrelated quoted retry mapping with different casing', () => {
+      const source = '"Retry":\n  enabled: true\n';
+      const result = run(source, 'false', '');
+      expect(result.status, result.output).toBe(0);
+      expect(result.staged).toBe(`${source}retry:\n  enabled: false\n`);
+    });
+
+    test('preserves case-sensitive role keys while selecting the canonical default', () => {
+      const source = 'modelRoles:\n  Default: other/model\n  "DEFAULT": other/quoted\n';
+      const result = run(source, '', '', 'chosen');
+      expect(result.status, result.output).toBe(0);
+      expect(result.staged).toBe(`${source}  default: "work/chosen"\n`);
+    });
+
+    test('preserves an unrelated quoted role mapping with different casing', () => {
+      const source = '"ModelRoles":\n  default: other/model\n';
+      const result = run(source, '', '', 'chosen');
+      expect(result.status, result.output).toBe(0);
+      expect(result.staged).toBe(`${source}modelRoles:\n  default: "work/chosen"\n`);
+    });
+
     test('omitted settings preserve existing retry values and another connection default byte for byte', () => {
       const source = "# Model preferences\r\nmodelRoles:\r\n  default: 'personal/alias'\r\nretry:\r\n  enabled: false\r\n  maxRetries: 3";
       const result = run(source, '', '');

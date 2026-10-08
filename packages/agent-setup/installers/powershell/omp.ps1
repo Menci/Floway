@@ -166,9 +166,9 @@ function Set-SetupOmpRetryScalar {
   $quotedKeyPattern = '^ +["'']' + [Regex]::Escape($Key) + '["'']:'
   for ($i = 0; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
-    if ($line -match '^["'']retry["'']:') { Stop-Setup 'quoted retry mapping keys cannot be edited safely.' }
+    if ($line -cmatch '^["'']retry["'']:') { Stop-Setup 'quoted retry mapping keys cannot be edited safely.' }
     if ($line.StartsWith('retry:')) {
-      if ($header -ne -1 -or $line -notmatch '^retry: *(#.*)?$') {
+      if ($header -ne -1 -or $line -cnotmatch '^retry: *(#.*)?$') {
         Stop-Setup 'retry must be a single block-style YAML mapping without aliases.'
       }
       $header = $i
@@ -182,12 +182,12 @@ function Set-SetupOmpRetryScalar {
   $end = $Lines.Count
   for ($i = $header + 1; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
-    if ($line -match '^ *(#.*)?$') { continue }
+    if ($line -cmatch '^ *(#.*)?$') { continue }
     if (-not $line.StartsWith(' ')) { $end = $i; break }
-    if (-not $indent -and $line -match '^( +)\S') { $indent = $Matches[1] }
-    if ($line -match $quotedKeyPattern) { Stop-Setup "quoted retry.$Key keys cannot be edited safely." }
-    if ($line -match "^( +)${Key}:") {
-      if ($Matches[1] -ne $indent -or $field -ne -1 -or $line -notmatch "^( +)${Key}: *[A-Za-z0-9_.+-]*( +(#.*)?)?`$") {
+    if (-not $indent -and $line -cmatch '^( +)\S') { $indent = $Matches[1] }
+    if ($line -cmatch $quotedKeyPattern) { Stop-Setup "quoted retry.$Key keys cannot be edited safely." }
+    if ($line -cmatch "^( +)${Key}:") {
+      if ($Matches[1] -ne $indent -or $field -ne -1 -or $line -cnotmatch "^( +)${Key}: *[A-Za-z0-9_.+-]*( +(#.*)?)?`$") {
         Stop-Setup "retry.$Key must be a single scalar with a valid value."
       }
       $field = $i
@@ -195,7 +195,7 @@ function Set-SetupOmpRetryScalar {
   }
   if ($field -ne -1) {
     $suffix = ''
-    if ($Lines[$field] -match '( +(#.*)?)$') { $suffix = $Matches[1] }
+    if ($Lines[$field] -cmatch '( +(#.*)?)$') { $suffix = $Matches[1] }
     $Lines[$field] = "$indent${Key}: $Value$suffix"
   } else {
     if (-not $indent) { $indent = '  ' }
@@ -214,9 +214,9 @@ function Set-SetupOmpDefaultRole {
   $kind = ''
   for ($i = 0; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
-    if ($line -match '^["'']modelRoles["'']:') { Stop-Setup 'quoted modelRoles mapping keys cannot be edited safely.' }
+    if ($line -cmatch '^["'']modelRoles["'']:') { Stop-Setup 'quoted modelRoles mapping keys cannot be edited safely.' }
     if ($line.StartsWith('modelRoles:')) {
-      if ($header -ne -1 -or $line -notmatch '^modelRoles: *(#.*)?$') { Stop-Setup 'modelRoles must be a single block-style YAML mapping without aliases.' }
+      if ($header -ne -1 -or $line -cnotmatch '^modelRoles: *(#.*)?$') { Stop-Setup 'modelRoles must be a single block-style YAML mapping without aliases.' }
       $header = $i
     }
   }
@@ -230,11 +230,11 @@ function Set-SetupOmpDefaultRole {
   $end = $Lines.Count
   for ($i = $header + 1; $i -lt $Lines.Count; $i++) {
     $line = $Lines[$i]
-    if ($line -match '^ *(#.*)?$') { continue }
+    if ($line -cmatch '^ *(#.*)?$') { continue }
     if (-not $line.StartsWith(' ')) { $end = $i; break }
-    if (-not $indent -and $line -match '^( +)\S') { $indent = $Matches[1] }
-    if ($line -match '^ +["'']default["'']:') { Stop-Setup 'quoted modelRoles.default keys cannot be edited safely.' }
-    if ($line -match '^( +)default: *(.*)$') {
+    if (-not $indent -and $line -cmatch '^( +)\S') { $indent = $Matches[1] }
+    if ($line -cmatch '^ +["'']default["'']:') { Stop-Setup 'quoted modelRoles.default keys cannot be edited safely.' }
+    if ($line -cmatch '^( +)default: *(.*)$') {
       if ($field -ne -1 -or $Matches[1] -ne $indent) { Stop-Setup 'modelRoles.default must be a single direct scalar.' }
       $field = $i
       $prefix = $Matches[1]
@@ -243,20 +243,20 @@ function Set-SetupOmpDefaultRole {
       if ($value.StartsWith('#')) {
         $scalar = ''; $suffix = " $value"; $kind = 'plain'
       } elseif ($value.StartsWith("'")) {
-        if ($value -notmatch '^(''([^'']|'''')*'')( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        if ($value -cnotmatch '^(''([^'']|'''')*'')( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
         $scalar = $Matches[1]; $suffix = $Matches[3]; $kind = 'single'
       } elseif ($value.StartsWith('"')) {
-        if ($value -notmatch '^("([^"\\]|\\.)*")( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        if ($value -cnotmatch '^("([^"\\]|\\.)*")( *(#.*)?)$') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
         $scalar = $Matches[1]; $suffix = $Matches[3]; $kind = 'double'
       } else {
-        if ($value -match '^[\[{&*!|>]') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
+        if ($value -cmatch '^[\[{&*!|>]') { Stop-Setup 'modelRoles.default cannot be edited safely.' }
         $comment = $value.IndexOf(' #')
         $raw = if ($comment -eq -1) { $value } else { $value.Substring(0, $comment) }
         $scalar = $raw.TrimEnd(' ')
         $suffix = $value.Substring($scalar.Length)
         $kind = 'plain'
       }
-    } elseif ($line -match '^ +<<:' -or $line.Substring($line.IndexOf(':') + 1) -match '^ *[&*]') {
+    } elseif ($line -cmatch '^ +<<:' -or $line.Substring($line.IndexOf(':') + 1) -cmatch '^ *[&*]') {
       Stop-Setup 'YAML anchors, aliases, or merge keys touching modelRoles cannot be edited safely.'
     }
   }
@@ -273,7 +273,7 @@ function Set-SetupOmpDefaultRole {
     else { $Lines.RemoveAt($field); $end-- }
     $other = $false
     for ($i = $header + 1; $i -lt $end; $i++) {
-      if ($Lines[$i] -notmatch '^ *(#.*)?$') { $other = $true; break }
+      if ($Lines[$i] -cnotmatch '^ *(#.*)?$') { $other = $true; break }
     }
     if (-not $other) {
       if ($Lines[$header].Contains('#')) { $Lines[$header] = $Lines[$header].Substring('modelRoles:'.Length) }
