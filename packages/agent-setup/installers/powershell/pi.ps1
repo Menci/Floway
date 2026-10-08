@@ -1,6 +1,7 @@
 # Use the maintained upstream installer so release discovery follows upstream.
 # https://pi.dev/install.sh
 
+# https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/package.json#L107-L109
 function Test-SetupPiNode {
   $nodeCmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $nodeCmd) {

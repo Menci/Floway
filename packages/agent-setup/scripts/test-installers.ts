@@ -1,27 +1,13 @@
-// Isolated integration harness for the fixed Agent Setup installer bodies.
-//
-// The gateway serves each setup script as a language-native assignment prefix
-// (rendered here through the real `render.ts`) plus a fixed checked-in body.
-// This harness executes that exact concatenation inside throwaway HOME,
-// CLAUDE_CONFIG_DIR, CODEX_HOME, and PATH roots against fake Claude Code and
-// Codex CLIs, fake installer hooks, and local HTTP fixtures, then inspects
-// files, protocol records, permissions, rollback, and output.
-// The full host run exercises more than 90 behavior cases across Bash and
-// PowerShell, including a real Codex 0.144.5 app-server smoke when that exact
-// CLI is present.
-// Individual cases skip only when their host prerequisite is absent or blocks
-// isolation: PowerShell, the pinned Codex binary, jq-bootstrap network access,
-// or an actually absent Codex at every known global location. The harness never
-// touches the user's real config or credentials.
-//
-// Run the whole suite with `pnpm run test:installers`, or scope it with
-// `--agent claude` / `--agent codex`.
+// Executes the served installer prefix and body in isolated configuration roots.
+// Fake CLIs cover install, upgrade and rollback; available native Pi, OMP and
+// Codex runtimes verify discovery and inference against the local fixture server.
+// Run `pnpm run test:installers`, optionally selecting `--agent <name>`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
@@ -46,6 +32,7 @@ const prefixInput = (agent: ScriptAgent, configuration: AgentSetupConfiguration)
   return agent === 'pi' || agent === 'omp' ? { ...base, agent, extensionPath: agent === 'pi' ? '/api/setup/test-lease-token/pi.js' : '/omp.js' } : { ...base, agent };
 };
 
+const shellLiteral = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex', pi: 'Pi', omp: 'oh-my-pi' };
@@ -325,9 +312,6 @@ chmod 755 "$target/codex"
 : > "$FAKE_INSTALLER_MARKER"
 `;
 
-// The fake `omp` mirrors the observable CLI surface setup invokes:
-// `--version` prints a version line, and `config path` prints the effective
-// agent directory taking profiles/environment into account.
 const FAKE_OMP = `#!/bin/bash
 if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
   printf 'fake omp inherited the setup API key environment variable\\n' >&2
@@ -401,8 +385,6 @@ writeFileSync(FAKE_OMP_SRC, FAKE_OMP, { mode: 0o755 });
 const FAKE_OMP_INSTALLER_SCRIPT = join(FIXTURES, 'install-omp.sh');
 writeFileSync(FAKE_OMP_INSTALLER_SCRIPT, FAKE_OMP_INSTALLER, { mode: 0o755 });
 
-// The fake `pi` mirrors the observable CLI surface setup invokes:
-// `--version` prints a version line.
 const FAKE_PI = `#!/bin/bash
 if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
   printf 'fake pi inherited the setup API key environment variable\\n' >&2
@@ -975,7 +957,7 @@ _prune_managed_backups() {
   case "$1" in
     */settings.json|*/config.yml)
       [ -z "$${agent === 'pi' ? 'PI' : 'OMP'}_EXTENSION_BACKUP" ] || { out_error 'extension backup was not removed'; return 74; }
-      printf 'committed' > '${join(workspace.root, 'cleanup-after-commit').replaceAll("'", "'\\''")}'
+      printf 'committed' > ${shellLiteral(join(workspace.root, 'cleanup-after-commit'))}
       out_error 'test backup cleanup failure'
       return 73
       ;;
@@ -1158,18 +1140,15 @@ const piBackupFiles = (dir: string, base: string): string[] =>
 const piStagedFiles = (dir: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.includes('.floway-stage.')) : [];
 
-const hostPiBin = ((): string | null => {
-  // PI_BIN points at a specific Pi CLI; otherwise `pi` is looked up on PATH.
-  for (const cmd of [process.env.PI_BIN ?? 'pi']) {
-    try {
-      const probe = spawnSync('/bin/sh', ['-c', `${cmd} --version`], { encoding: 'utf8' });
-      if (probe.status === 0 && probe.stdout.trim().length > 0) return cmd;
-    } catch {
-      // ignore
-    }
-  }
-  return null;
-})();
+const hostAgentBinary = (agent: 'pi' | 'omp'): string | null => {
+  const command = process.env[`${agent.toUpperCase()}_BIN`] ?? agent;
+  const location = spawnSync('/bin/sh', ['-c', 'command -v "$1"', 'sh', command], { encoding: 'utf8' });
+  if (location.status !== 0) return null;
+  const binary = resolve(location.stdout.trim());
+  const probe = spawnSync(binary, ['--version'], { encoding: 'utf8' });
+  return probe.status === 0 && probe.stdout.trim().length > 0 ? binary : null;
+};
+const hostPiBin = hostAgentBinary('pi');
 
 // --- omp inspection helpers -------------------------------------------------
 
@@ -1182,18 +1161,7 @@ const ompBackupFiles = (dir: string, base: string): string[] =>
 const ompStagedFiles = (dir: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.includes('.floway-stage.')) : [];
 
-const hostOmpBin = ((): string | null => {
-  const custom = process.env.OMP_BIN;
-  const resolved = spawnSync('/bin/sh', ['-c', 'command -v omp'], { encoding: 'utf8' }).stdout.trim() || null;
-  const cmd = custom ?? resolved ?? 'omp';
-  try {
-    const probe = spawnSync('/bin/sh', ['-c', `${cmd} --version`], { encoding: 'utf8' });
-    if (probe.status === 0 && probe.stdout.trim().length > 0) return cmd;
-  } catch {
-    // ignore
-  }
-  return null;
-})();
+const hostOmpBin = hostAgentBinary('omp');
 
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
@@ -3120,7 +3088,6 @@ test('pi', 'model set, changed, and cleared updates settings.json', async t => {
   placeFakePi(ws.binDir);
   const settingsFile = piSettingsPath(ws);
 
-  // 1. Model set
   const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(settingsFile), 'settings.json created');
@@ -3129,14 +3096,12 @@ test('pi', 'model set, changed, and cleared updates settings.json', async t => {
   t.equal(settings.defaultProvider, 'floway');
   t.equal(settings.defaultModel, 'floway-pi-model-1');
 
-  // 2. Model changed
   const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'model-2' }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   settings = readPiSettings(settingsFile);
   t.equal(settings.defaultProvider, 'floway');
   t.equal(settings.defaultModel, 'model-2');
 
-  // 3. Model cleared
   const run3 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
   t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
   settings = readPiSettings(settingsFile);
@@ -3277,7 +3242,6 @@ test('pi', 'PowerShell: model set, changed, and cleared updates settings.json', 
   placeFakePi(ws.binDir);
   const settingsFile = piSettingsPath(ws);
 
-  // 1. Model set
   const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(settingsFile), 'settings.json created');
@@ -3286,14 +3250,12 @@ test('pi', 'PowerShell: model set, changed, and cleared updates settings.json', 
   t.equal(settings.defaultProvider, 'floway');
   t.equal(settings.defaultModel, 'floway-pi-model-1');
 
-  // 2. Model changed
   const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'model-2' }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   settings = readPiSettings(settingsFile);
   t.equal(settings.defaultProvider, 'floway');
   t.equal(settings.defaultModel, 'model-2');
 
-  // 3. Model cleared
   const run3 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
   t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
   settings = readPiSettings(settingsFile);
@@ -3499,7 +3461,7 @@ test('pi', 'installer scripts embed expected URLs and command sequences', t => {
 test('pi', 'real Pi loads the installed extension and discovers changed models without setup', async t => {
   if (!hostPiBin) skip('real Pi is not available');
   const ws = makeWorkspace();
-  writeFileSync(join(ws.binDir, 'pi'), `#!/bin/sh\nexec "${hostPiBin}" "$@"\n`, { mode: 0o755 });
+  writeFileSync(join(ws.binDir, 'pi'), `#!/bin/sh\nexec ${shellLiteral(hostPiBin)} "$@"\n`, { mode: 0o755 });
   const fixture = (id: string): Record<string, unknown> => ({
     id, name: id, provider: 'floway', api: 'openai-responses', baseUrl: `${modelServer.url}/v1`,
     reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: null },
@@ -3630,8 +3592,6 @@ process.stdout.write(JSON.stringify(snapshots));
 
 // --- omp test cases ---------------------------------------------------------
 
-// omp agent installer test suite.
-
 test('omp', 'fresh install downloads a protected JS extension without model or role configuration', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
@@ -3653,7 +3613,6 @@ test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   placeFakeOmp(ws.binDir);
   const configFile = ompConfigPath(ws);
 
-  // 1. Model set
   const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(configFile), 'config.yml created');
@@ -3666,7 +3625,6 @@ test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
 
-  // 2. Model changed (with quotes/special characters)
   const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   const expectedConfig2 = [
@@ -3678,7 +3636,6 @@ test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
 
-  // 3. Model cleared
   const run3 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
   t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
   t.ok(!existsSync(configFile) || readFileSync(configFile, 'utf8') === '', 'empty modelRoles cleaned up completely');
@@ -4003,7 +3960,6 @@ test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', as
   placeFakeOmp(ws.binDir);
   const configFile = ompConfigPath(ws);
 
-  // 1. Model set
   const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run1.code, 0, `setting model should succeed:\n${run1.combined}`);
   t.ok(existsSync(configFile), 'config.yml created');
@@ -4016,7 +3972,6 @@ test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', as
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig1, 'exact config shape when set');
 
-  // 2. Model changed (with quotes/special characters)
   const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
   t.equal(run2.code, 0, `changing model should succeed:\n${run2.combined}`);
   const expectedConfig2 = [
@@ -4028,7 +3983,6 @@ test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', as
   ].join('\n');
   t.equal(readFileSync(configFile, 'utf8'), expectedConfig2, 'exact config shape when changed with escaping');
 
-  // 3. Model cleared
   const run3 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
   t.equal(run3.code, 0, `clearing model should succeed:\n${run3.combined}`);
   t.ok(!existsSync(configFile) || readFileSync(configFile, 'utf8') === '', 'empty modelRoles cleaned up completely');
@@ -4445,7 +4399,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   const ws = makeWorkspace();
   const ompHome = ws.home;
   const cmd = hostOmpBin;
-  writeFileSync(join(ws.binDir, 'omp'), `#!/bin/sh\nexec ${cmd} "$@"\n`, { mode: 0o755 });
+  writeFileSync(join(ws.binDir, 'omp'), `#!/bin/sh\nexec ${shellLiteral(cmd)} "$@"\n`, { mode: 0o755 });
   const run = await runShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
@@ -4456,7 +4410,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   // Asynchronous on purpose: the fixture server lives in this process, so a
   // blocking spawnSync would starve it and omp's discovery request would hang.
   const refresh = await new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/sh', ['-c', `${cmd} models refresh`], { env: { ...process.env, HOME: ompHome } });
+    const child = spawn(cmd, ['models', 'refresh'], { env: { ...process.env, HOME: ompHome } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -4471,7 +4425,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   t.equal(req?.headers['user-agent'], 'omp/18.8.4', 'discovery sent User-Agent: omp/18.8.4');
 
   const inference = await new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/sh', ['-c', `${cmd} --model floway/floway-model-1 --thinking high --no-tools --no-lsp --no-session -p hello`], { env: { ...process.env, HOME: ompHome } });
+    const child = spawn(cmd, ['--model', 'floway/floway-model-1', '--thinking', 'high', '--no-tools', '--no-lsp', '--no-session', '-p', 'hello'], { env: { ...process.env, HOME: ompHome } });
     child.stdin.end();
     const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
     child.on('close', () => clearTimeout(timer));
@@ -4490,7 +4444,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   modelServer.reset();
   modelServer.mode = 'adaptive';
   const adaptive = await new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/sh', ['-c', `${cmd} --model floway/floway-model-1 --thinking high --no-tools --no-lsp --no-session -p hello`], { env: { ...process.env, HOME: ompHome } });
+    const child = spawn(cmd, ['--model', 'floway/floway-model-1', '--thinking', 'high', '--no-tools', '--no-lsp', '--no-session', '-p', 'hello'], { env: { ...process.env, HOME: ompHome } });
     child.stdin.end();
     const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
     child.on('close', () => clearTimeout(timer));
@@ -4508,7 +4462,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   if (hostPwsh) {
     const psWs = makeWorkspace();
     const psOmpHome = psWs.home;
-    writeFileSync(join(psWs.binDir, 'omp'), `#!/bin/sh\nexec ${cmd} "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(psWs.binDir, 'omp'), `#!/bin/sh\nexec ${shellLiteral(cmd)} "$@"\n`, { mode: 0o755 });
     modelServer.reset();
     const psRun = await runPowerShellInstaller({
       workspace: psWs,
@@ -4518,7 +4472,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
     });
     t.equal(psRun.code, 0, `omp PowerShell installer should succeed: ${psRun.combined}`);
     const psRefresh = await new Promise<RunResult>(resolve => {
-      const child = spawn('/bin/sh', ['-c', `${cmd} models refresh`], { env: { ...process.env, HOME: psOmpHome } });
+      const child = spawn(cmd, ['models', 'refresh'], { env: { ...process.env, HOME: psOmpHome } });
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', chunk => { stdout += chunk; });

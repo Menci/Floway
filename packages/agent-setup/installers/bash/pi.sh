@@ -1,6 +1,7 @@
 # Use the maintained upstream installer so release discovery follows upstream.
 # https://pi.dev/install.sh
 
+# https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/package.json#L107-L109
 pi_check_node() {
   if ! command -v node >/dev/null 2>&1; then
     out_error 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.'

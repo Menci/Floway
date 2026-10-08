@@ -205,29 +205,33 @@ describe('jsonc-edit CLI contract', () => {
   });
 
   test('runs the CLI from a path that is percent-encoded in its file URL', async () => {
-    const { mkdtempSync, copyFileSync, mkdirSync, symlinkSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
+    const { mkdtempSync, copyFileSync, mkdirSync, rmSync, symlinkSync } = await import('node:fs');
     const { join } = await import('node:path');
     const { spawn } = await import('node:child_process');
-    const dir = join(mkdtempSync(join(tmpdir(), 'jsonc edit ')), 'sub dir');
-    mkdirSync(dir);
-    const copied = join(dir, 'jsonc-edit.mjs');
-    copyFileSync(cliScript, copied);
-    const linked = join(dir, 'linked.mjs');
-    symlinkSync(copied, linked);
+    const root = mkdtempSync(join(process.cwd(), '.jsonc-edit-'));
+    const dir = join(root, 'sub dir');
+    try {
+      mkdirSync(dir);
+      const copied = join(dir, 'jsonc-edit.mjs');
+      copyFileSync(cliScript, copied);
+      const linked = join(dir, 'linked.mjs');
+      symlinkSync(copied, linked);
 
-    for (const script of [copied, linked]) {
-      const out = await new Promise<{ code: number | null; stdout: string }>(resolve => {
-        const child = spawn(process.execPath, [script, 'settings'], {
-          env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
+      for (const script of [copied, linked]) {
+        const out = await new Promise<{ code: number | null; stdout: string }>(resolve => {
+          const child = spawn(process.execPath, [script, 'settings'], {
+            env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
+          });
+          let stdout = '';
+          child.stdout.on('data', chunk => { stdout += chunk; });
+          child.on('close', code => resolve({ code, stdout }));
+          child.stdin.end('');
         });
-        let stdout = '';
-        child.stdout.on('data', chunk => { stdout += chunk; });
-        child.on('close', code => resolve({ code, stdout }));
-        child.stdin.end('');
-      });
-      expect(out.code).toBe(0);
-      expect(JSON.parse(out.stdout).defaultModel).toBe('gpt-4o');
+        expect(out.code).toBe(0);
+        expect(JSON.parse(out.stdout).defaultModel).toBe('gpt-4o');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
