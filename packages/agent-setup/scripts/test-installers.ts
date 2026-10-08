@@ -3138,7 +3138,7 @@ test('pi', 'missing node aborts with clear error message', async t => {
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), omitNode: true });
   t.notEqual(run.code, 0, 'installer should fail when node is missing');
   t.includes(run.combined, 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.');
-  t.ok(!existsSync(piExtensionPath(ws)), 'models.json not created when node check fails');
+  t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when node check fails');
 });
 
 test('pi', 'older node warns but continues', async t => {
@@ -3295,7 +3295,7 @@ test('pi', 'PowerShell: missing node aborts with clear error message', async t =
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), omitNode: true });
   t.notEqual(run.code, 0, 'installer should fail when node is missing');
   t.includes(run.combined, 'Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.');
-  t.ok(!existsSync(piExtensionPath(ws)), 'models.json not created when node check fails');
+  t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when node check fails');
 });
 
 test('pi', 'PowerShell: older node warns but continues', async t => {
@@ -3647,14 +3647,14 @@ test('omp', 'idempotent re-run produces no diff and prunes backups', async t => 
   placeFakeOmp(ws.binDir);
   const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run1.code, 0, `first run should succeed:\n${run1.combined}`);
-  const models1 = readFileSync(ompExtensionPath(ws), 'utf8');
+  const extension1 = readFileSync(ompExtensionPath(ws), 'utf8');
   const config1 = readFileSync(ompConfigPath(ws), 'utf8');
 
   const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
-  t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), models1, 'extension source identical');
+  t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), extension1, 'extension source identical');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no models backups remain');
+  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no extension backups remain');
   t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
 });
 
@@ -3989,14 +3989,14 @@ test('omp', 'PowerShell: idempotent re-run produces no diff and prunes backups',
   placeFakeOmp(ws.binDir);
   const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run1.code, 0, `first run should succeed:\n${run1.combined}`);
-  const models1 = readFileSync(ompExtensionPath(ws), 'utf8');
+  const extension1 = readFileSync(ompExtensionPath(ws), 'utf8');
   const config1 = readFileSync(ompConfigPath(ws), 'utf8');
 
   const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
   t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
-  t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), models1, 'extension source identical');
+  t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), extension1, 'extension source identical');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no models backups remain');
+  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no extension backups remain');
   t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
 });
 
