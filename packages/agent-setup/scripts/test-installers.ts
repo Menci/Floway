@@ -1,6 +1,6 @@
 // Executes the served installer prefix and body in isolated configuration roots.
-// Fake CLIs cover install, upgrade and rollback; available native Pi, OMP and
-// Codex runtimes verify discovery and inference against the local fixture server.
+// Fake CLIs cover install, upgrade and rollback. Native Pi/OMP exercise discovery
+// and inference; pinned Codex checks its app-server configuration.
 // Run `pnpm run test:installers`, optionally selecting `--agent <name>`.
 
 import { spawn, spawnSync } from 'node:child_process';
