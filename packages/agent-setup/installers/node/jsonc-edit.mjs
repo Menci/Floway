@@ -71,8 +71,7 @@ function tokenizeJsonc(src) {
           i++;
           closed = true;
           break;
-        } else if (c === '\n' || c === '\r') {
-          throw new JsoncRefusalError(`Unescaped newline in string literal at offset ${start}`);
+
         } else {
           i++;
         }
@@ -81,12 +80,7 @@ function tokenizeJsonc(src) {
         throw new JsoncRefusalError(`Unterminated string literal at offset ${start}`);
       }
       const raw = src.slice(start, i);
-      let value;
-      try {
-        value = JSON.parse(raw);
-      } catch (err) {
-        throw new JsoncRefusalError(`Invalid string literal escape at offset ${start}: ${err.message}`);
-      }
+      const value = JSON.parse(raw);
       tokens.push({ type: 'string', start, end: i, raw, value });
       continue;
     }
@@ -141,9 +135,6 @@ function tokenizeJsonc(src) {
       }
       const raw = src.slice(start, i);
       const value = Number(raw);
-      if (!Number.isFinite(value)) {
-        throw new JsoncRefusalError(`Invalid finite number at offset ${start}`);
-      }
       tokens.push({ type: 'number', start, end: i, raw, value });
       continue;
     }

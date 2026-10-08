@@ -85,6 +85,16 @@ describe('jsonc-edit settings.json', () => {
     expect(cleared).not.toContain('defaultModel');
   });
 
+  test('preserves unrelated numeric literals beyond the finite binary64 range', () => {
+    const source = '{"pluginLimit":1e400}';
+    expect(updateDefaultModel(source, 'model', 'floway')).toContain('"pluginLimit":1e400');
+  });
+
+  test('propagates the original syntax error from malformed string literals', () => {
+    expect(() => updateDefaultModel('{"theme":"\\q"}', 'model', 'floway')).toThrow(SyntaxError);
+    expect(() => updateDefaultModel('{"theme":"line\nbreak"}', 'model', 'floway')).toThrow(SyntaxError);
+  });
+
   test('serializes the provider as data when updating an existing default', () => {
     const provider = 'instance"\\\n';
     const out = updateDefaultModel('{"defaultProvider":"old","defaultModel":"old"}', 'model', provider);

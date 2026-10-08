@@ -87,12 +87,12 @@ test('the public GET serves the rendered script with hardened headers and no COR
   const piText = await piResponse.text();
   expect(piText).toContain("SETUP_API_KEY='raw-key'");
   expect(piText).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/pi.js'`);
-  expect(piText).toContain('Pi Agent Setup fragment.');
+  expect(piText).toContain("main 'Pi'");
   const ompResponse = await requestApp(lease.scripts.omp.sh, { method: 'GET' });
   assertEquals(ompResponse.status, 200);
   const ompText = await ompResponse.text();
   expect(ompText).toContain("SETUP_API_KEY='raw-key'");
-  expect(ompText).toContain('oh-my-pi (omp) Agent Setup fragment.');
+  expect(ompText).toContain("main 'oh-my-pi'");
 });
 
 test('the leased Pi extension uses the selected key and refuses an expired lease', async () => {
