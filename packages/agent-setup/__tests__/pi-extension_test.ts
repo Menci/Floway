@@ -46,7 +46,7 @@ test('Pi connections keep authentication and refresh publication isolated by pro
     refreshModels: (context: { allowNetwork: boolean; publish: (publication: { update: () => void }) => Promise<void> }) => Promise<void>;
   };
   const providers: Provider[] = [];
-  const factory = new Function('connections', 'fetch', 'anthropicMessagesApi', 'openAIResponsesApi', 'VERSION', body)(connections, fetchCatalog, () => ({}), () => ({}), '1.1.0') as (pi: { registerProvider: (provider: Provider) => void }) => Promise<void>;
+  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', body)(connections, fetchCatalog, () => ({}), '1.1.0') as (pi: { registerProvider: (provider: Provider) => void }) => Promise<void>;
   await factory({ registerProvider: provider => { providers.push(provider); } });
   expect(providers.map(provider => provider.id)).toEqual(['floway-home', 'floway-work']);
   expect(await providers[0]!.auth.apiKey.resolve()).toMatchObject({ auth: { apiKey: 'home-key' } });
@@ -64,9 +64,9 @@ test('Pi delegates an explicit null payload replacement to its native adapter', 
     .replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
   const model = { id: 'alias', api: 'anthropic-messages', effortOverrides: { high: 'fast' } };
   const adapter = { streamSimple: vi.fn<(model: object, context: object, options: { onPayload: (payload: object) => unknown }) => void>() };
-  const factory = new Function('connections', 'fetch', 'anthropicMessagesApi', 'openAIResponsesApi', 'VERSION', body)(
+  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', body)(
     [{ provider: 'work', endpoint: 'https://gateway.example', apiKey: 'key' }],
-    async () => Response.json({ models: [model] }), () => adapter, () => adapter, '1.1.0',
+    async () => Response.json({ models: [model] }), () => adapter, '1.1.0',
   );
   let provider: { streamSimple: (model: object, context: object, options: object) => void };
   await factory({ registerProvider: (value: typeof provider) => { provider = value; } });
@@ -76,4 +76,31 @@ test('Pi delegates an explicit null payload replacement to its native adapter', 
   expect(await adapter.streamSimple.mock.calls[0]![2].onPayload(payload)).toBeNull();
   expect(onPayload).toHaveBeenCalledWith(expect.objectContaining({ output_config: { effort: 'fast' } }), model);
   expect(model.effortOverrides.high).toBe('fast');
+});
+
+test('Pi forwards server-added native metadata and API choices without a client field or API list', async () => {
+  const model = {
+    id: 'server-model', provider: 'openai', api: 'google-generative-ai',
+    inputLimits: { images: { resize: { maxWidth: 1234, jpegQuality: 72 } } },
+    promptCache: { short: 97, long: 193 },
+    samplingParams: { temperature: 0.4 },
+    samplingParamsByThinkingLevel: { high: { top_p: 0.8 } },
+    compat: { supportsStrictMode: true, serverAddedCapability: { nested: ['unchanged'] } },
+    serverAddedMetadata: { version: 2 },
+  };
+  const source = renderAgentExtension({ agent: 'pi', provider: 'work', endpoint: 'https://gateway.example', apiKey: 'key' });
+  const body = source.replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
+  const stream = vi.fn();
+  const streamSimple = vi.fn();
+  const providers: { getModels: () => typeof model[]; stream: typeof stream; streamSimple: (model: object, context: object, options: object) => void }[] = [];
+  const getApiProvider = vi.fn(() => ({ stream, streamSimple }));
+  const factory = new Function('fetch', 'getApiProvider', 'VERSION', body)(async () => Response.json({ models: [model] }), getApiProvider, '1.1.0');
+  await factory({ registerProvider: (provider: typeof providers[number]) => { providers.push(provider); } });
+  const registered = providers[0]!;
+  expect(registered.getModels()).toEqual([model]);
+  registered.stream(registered.getModels()[0], {}, {});
+  registered.streamSimple(registered.getModels()[0]!, {}, {});
+  expect(getApiProvider).toHaveBeenCalledWith('google-generative-ai');
+  expect(stream.mock.calls[0]![0]).toEqual(model);
+  expect(streamSimple.mock.calls[0]![0]).toEqual(model);
 });

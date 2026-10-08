@@ -3515,10 +3515,20 @@ test('pi', 'real Pi SDK refresh replaces and removes models while retaining full
     headers: { 'x-model-capability': id }, compat: { supportsDeveloperRole: false },
   });
   piFixture.models = [fixture('first-model'), { ...fixture('budget-model'), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingBudgets: { minimal: 4096, low: 4096, medium: 8192, high: 10000 }, effortOverrides: { low: 'fast' } }, { ...fixture('mandatory-model'), thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null } }, ...['adaptive-model', 'adaptive-mandatory-model'].map(id => ({ ...fixture(id), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingLevelMap: { off: id === 'adaptive-model' ? 'off' : null, minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null }, compat: { forceAdaptiveThinking: true }, payloadRemovals: [['output_config', 'effort']] }))];
-  piFixture.catalogs = [[fixture('second-model')], []];
+  const refreshedModel = {
+    ...fixture('second-model'),
+    inputLimits: { images: { resize: { maxWidth: 1234, maxHeight: 987, maxBytes: 345678, jpegQuality: 72 } } },
+    promptCache: { short: 97, long: 193 },
+    samplingParams: { temperature: 0.4 },
+    samplingParamsByThinkingLevel: { high: { top_p: 0.8 } },
+    compat: { supportsStrictMode: true, supportsMidConvoSystemMessages: true },
+    serverAddedMetadata: { version: 2, nested: ['unchanged'] },
+  };
+  piFixture.catalogs = [[refreshedModel], []];
   piFixture.status = 200;
   const install = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
   t.equal(install.code, 0, install.combined);
+  const installedExtension = readFileSync(piExtensionPath(ws), 'utf8');
   const runner = join(ws.root, 'pi-sdk.mjs');
   writeFileSync(runner, `
 import { pathToFileURL } from 'node:url';
@@ -3546,6 +3556,11 @@ for (let index = 0; index < 2; index++) {
   const result = await runtime.refresh({ providers: ['floway'], allowNetwork: true });
   assert.equal(result.errors.size, 0);
   snapshots.push(models());
+  if (index === 0) {
+    const expected = ${JSON.stringify(refreshedModel)};
+    const response = await runtime.completeSimple(runtime.getModel('floway', 'second-model'), context, { reasoning: 'high', onPayload: (_payload, model) => { assert.deepEqual(JSON.parse(JSON.stringify(model)), expected); } });
+    assert.equal(response.stopReason, 'stop', response.errorMessage);
+  }
 }
 await fetch(process.env.PI_FIXTURE_URL + '/test/pi/fail');
 const failure = await runtime.refresh({ providers: ['floway'], allowNetwork: true });
@@ -3572,7 +3587,8 @@ process.stdout.write(JSON.stringify(snapshots));
   t.equal(snapshots[1]?.[0]?.id, 'second-model');
   t.equal(snapshots[1]?.length, 1, 'refresh replaces the old catalog');
   t.equal(snapshots[2]?.length, 0, 'empty catalogs remove every model');
-  t.equal(JSON.stringify(snapshots[1]?.[0]), JSON.stringify(fixture('second-model')), 'full native metadata, headers and compat survive refresh');
+  t.equal(JSON.stringify(snapshots[1]?.[0]), JSON.stringify(refreshedModel), 'server-added metadata survives the native registry and request bridge');
+  t.equal(readFileSync(piExtensionPath(ws), 'utf8'), installedExtension, 'metadata refresh does not rewrite the installed extension');
   t.excludes(result.combined, SENTINEL_KEY);
   const responses = modelServer.requests.find(request => request.path === '/v1/responses');
   const messages = modelServer.requests.find(request => request.path === '/v1/messages');

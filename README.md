@@ -52,7 +52,15 @@ Models are discovered at startup, including reasoning controls, vision, token
 limits, and pricing. Pi refreshes them when the model picker opens; OMP refreshes
 them with `/floway-refresh`. The server selects native Responses or Messages
 according to each model's capabilities, so catalog changes take effect without
-rerunning setup.
+rerunning setup. Extensions forward complete native model definitions without a
+Floway metadata field list. Adding metadata accepted by the installed client's
+registration API only requires a server update; startup or model refresh applies
+it to the existing extension. Native client API changes or new client operations
+may require an extension update.
+
+OMP's custom-provider registration accepts a subset of its native model fields.
+Fields outside that API need support in OMP before they can take effect; the
+extension forwards them without adding its own restrictions.
 
 ## Development
 

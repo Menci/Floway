@@ -1,4 +1,4 @@
-import { anthropicMessagesApi, openAIResponsesApi } from '@earendil-works/pi-ai';
+import { getApiProvider } from '@earendil-works/pi-ai/compat';
 import { VERSION } from '@earendil-works/pi-coding-agent';
 
 // Use Pi's native discovery User-Agent so Floway selects the Pi catalog.
@@ -7,7 +7,6 @@ const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${p
 const userAgent = `pi/${VERSION} (${process.platform}; ${runtime}; ${process.arch})`;
 
 export default async pi => {
-  const apis = { 'openai-responses': openAIResponsesApi(), 'anthropic-messages': anthropicMessagesApi() };
   for (const connection of connections) {
     const fetchModels = async (signal = AbortSignal.timeout(15000)) => {
       const response = await fetch(`${connection.endpoint}/v1/models?endpoint=${encodeURIComponent(connection.endpoint)}&provider=${encodeURIComponent(connection.provider)}`, {
@@ -33,8 +32,10 @@ export default async pi => {
           update: () => { models = refreshed; },
         });
       },
-      stream: (model, context, options) => apis[model.api].stream(model, context, options),
-      streamSimple: (model, context, options) => apis[model.api].streamSimple(model, context, {
+      // Resolve the API directly to avoid built-in provider fallback.
+      // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/ai/src/compat.ts#L238-L292
+      stream: (model, context, options) => getApiProvider(model.api).stream(model, context, options),
+      streamSimple: (model, context, options) => getApiProvider(model.api).streamSimple(model, context, {
         ...options,
         thinkingBudgets: options.thinkingBudgets ?? model.thinkingBudgets,
         onPayload: async payload => {

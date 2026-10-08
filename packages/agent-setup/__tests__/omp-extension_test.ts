@@ -12,7 +12,19 @@ const evaluateExtension = async (source: string, api: Record<string, unknown>) =
 test('the short extension safely embeds connection credentials and forwards native declarations', async () => {
   const key = "key'\n\\quote";
   const source = renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: 'https://gateway.example/gateway', apiKey: key });
-  const configuration = { api: 'floway:floway', models: [{ id: 'alias', thinking: { mode: 'effort', efforts: ['low', 'high'] } }], wireApis: { alias: 'anthropic-messages' }, streamOptions: { alias: { thinkingBudgets: { low: 1100 } } }, payloadRemovals: { alias: [['output_config', 'effort']] } };
+  const configuration = {
+    api: 'floway:floway',
+    models: [{
+      id: 'alias',
+      thinking: { mode: 'effort', efforts: ['low', 'high'], supportsDisplay: true, prefixBinding: true },
+      tokenizer: 'qwen3', imageInputDecoder: 'stb', supportsTools: false,
+      promptCache: { short: 97, long: 193 },
+      compat: { supportsSamplingParams: false, supportsStrictMode: true },
+      serverAddedMetadata: { version: 2, nested: ['unchanged'] },
+    }],
+    serverAddedProviderOption: { enabled: true },
+    wireApis: { alias: 'anthropic-messages' }, streamOptions: { alias: { thinkingBudgets: { low: 1100 } } }, payloadRemovals: { alias: [['output_config', 'effort']] },
+  };
   const fetch = vi.fn().mockResolvedValue(Response.json(configuration));
   vi.stubGlobal('fetch', fetch);
   const registerProvider = vi.fn();
@@ -26,6 +38,7 @@ test('the short extension safely embeds connection credentials and forwards nati
     expect(unregisterProvider).not.toHaveBeenCalled();
     const registered = registerProvider.mock.calls[0][1];
     expect(registered.models).toEqual(configuration.models);
+    expect(registered.serverAddedProviderOption).toEqual(configuration.serverAddedProviderOption);
     const model = { id: 'alias', api: 'floway:floway', compatConfig: { supportsReasoningEffort: true }, thinking: configuration.models[0].thinking };
     const onPayload = vi.fn(payload => ({ ...payload, fromHook: true }));
     registered.streamSimple(model, { messages: [] }, { reasoning: 'low', maxInFlightRequests: { floway: 1 }, onPayload });
