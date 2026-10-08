@@ -1075,7 +1075,6 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
   );
 });
 
-// OMP model catalog tailoring and caller precedence.
 test('/v1/models keeps the configured public endpoint when OMP connects through a reverse proxy', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -1196,7 +1195,6 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
         assertEquals(body.data.map(model => model.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
       }
 
-      // 5. Claude Code caller gets Claude Code Anthropic-shaped catalog
       const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
       });
@@ -1205,7 +1203,6 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
       assertEquals(claudeCodeBody.object, undefined);
       assertEquals(claudeCodeBody.data.length, 4);
 
-      // 6. Codex caller gets Codex catalog
       const codexResp = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'codex-tui/0.1.0' },
       });
