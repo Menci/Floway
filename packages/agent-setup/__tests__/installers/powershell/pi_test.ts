@@ -10,6 +10,32 @@ import { SETUP_SCRIPT_BODIES } from '../../../src/script-assets.ts';
 
 const hasPowerShell = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()']).status === 0;
 
+test.skipIf(!hasPowerShell)('PowerShell Pi preserves large settings through the JSONC subprocess pipe', () => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-large-settings-test-'));
+  try {
+    const original = JSON.stringify({ untouched: 'x'.repeat(2 * 1024 * 1024), sentinel: 'complete' });
+    writeFileSync(join(directory, 'settings.json'), original);
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const prefix = renderPowerShellPrefix({ agent: 'pi', extensionPath: '/pi.js', apiKey: 'key', apiKeyName: 'Test', configuration: defaultAgentSetupConfiguration('key-a') });
+    const scriptPath = join(directory, 'large-settings.ps1');
+    writeFileSync(scriptPath, `${prefix}\n$ErrorActionPreference = 'Stop'\n${fragment}\n
+$script:PiTmpDir = $args[0]
+$script:PiSettingsPath = Join-Path $args[0] 'settings.json'
+Stage-SetupPiSettings
+[System.IO.File]::Copy($script:PiSettingsStage, (Join-Path $args[0] 'settings.json.stage'))
+`);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 20000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const staged = readFileSync(join(directory, 'settings.json.stage'), 'utf8');
+    expect(staged.length).toBe(original.length);
+    expect(staged).toBe(original);
+    expect(JSON.parse(staged).sentinel).toBe('complete');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test.skipIf(!hasPowerShell)('PowerShell native boolean prefixes write Pi retry values and preserve null preferences', () => {
   const directory = mkdtempSync(join(process.cwd(), '.pi-settings-test-'));
   try {

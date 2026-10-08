@@ -386,7 +386,8 @@ function runCli() {
     input = readFileSync(0, 'utf8');
   } catch (err) {
     process.stderr.write(`Failed to read stdin: ${err.message}\n`);
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
 
   try {
@@ -401,11 +402,10 @@ function runCli() {
       retry: { enabled: retryEnabled === '' ? null : retryEnabled === 'true', maxRetries: maxRetries === '' ? null : Number(maxRetries) },
     });
     process.stdout.write(output);
-    process.exit(0);
   } catch (err) {
     const message = err instanceof JsoncRefusalError ? `Refusal: ${err.message}` : `Error: ${err.message}`;
     process.stderr.write(`${message  }\n`);
-    process.exit(2);
+    process.exitCode = 2;
   }
 }
 
