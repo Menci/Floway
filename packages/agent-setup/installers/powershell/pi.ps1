@@ -146,9 +146,7 @@ function Restore-SetupPiFiles {
     $script:PiSettingsStage = $null
   }
   Restore-SetupManagedFile -Existed $script:PiExtensionExisted -Backup $script:PiExtensionBackup -Path $script:PiExtensionPath -OriginalLabel 'extension file' -CreatedLabel 'Pi extension file'
-  if ($script:PiSettingsExisted -or (Test-Path -LiteralPath $script:PiSettingsPath)) {
-    Restore-SetupManagedFile -Existed $script:PiSettingsExisted -Backup $script:PiSettingsBackup -Path $script:PiSettingsPath -OriginalLabel 'settings file' -CreatedLabel 'Pi settings file'
-  }
+  Restore-SetupManagedFile -Existed $script:PiSettingsExisted -Backup $script:PiSettingsBackup -Path $script:PiSettingsPath -OriginalLabel 'settings file' -CreatedLabel 'Pi settings file'
 }
 
 function Remove-SetupPiBackups {
@@ -180,7 +178,6 @@ function Fetch-SetupPiExtension {
   if (-not $body.StartsWith("// Managed by Floway Agent Setup.`n")) { Stop-Setup 'the Pi extension download has an invalid ownership marker' }
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllText($script:PiExtensionStage, $body, $utf8NoBom)
-  Protect-SetupFile $script:PiExtensionStage
   Merge-SetupProviderExtension -ExistingPath $script:PiExtensionPath -StagePath $script:PiExtensionStage
 }
 
@@ -262,7 +259,6 @@ function Apply-SetupPiStaged {
   } else {
     Move-Item -LiteralPath $script:PiExtensionStage -Destination $script:PiExtensionPath -Force
   }
-  Protect-SetupFile $script:PiExtensionPath
   $script:PiExtensionStage = $null
 
   if ($script:PiSettingsStage) {
@@ -272,7 +268,6 @@ function Apply-SetupPiStaged {
     } else {
       Move-Item -LiteralPath $script:PiSettingsStage -Destination $script:PiSettingsPath -Force
     }
-    Protect-SetupFile $script:PiSettingsPath
     $script:PiSettingsStage = $null
   }
 }
@@ -301,9 +296,7 @@ function Set-SetupAgent {
     $script:PiExtensionPath = Join-Path $script:PiAgentDir 'extensions/floway.js'
     $script:PiSettingsPath = Join-Path $script:PiAgentDir 'settings.json'
 
-    if (-not (Test-Path -LiteralPath (Join-Path $script:PiAgentDir 'extensions'))) {
-      [void][System.IO.Directory]::CreateDirectory((Join-Path $script:PiAgentDir 'extensions'))
-    }
+    [void][System.IO.Directory]::CreateDirectory((Join-Path $script:PiAgentDir 'extensions'))
 
     if (Test-Path -LiteralPath $script:PiExtensionPath) {
       $marker = [System.IO.File]::ReadLines($script:PiExtensionPath) | Select-Object -First 1

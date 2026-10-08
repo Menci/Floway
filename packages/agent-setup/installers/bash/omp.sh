@@ -56,6 +56,7 @@ omp_probe_version() {
     :
   else
     _ov_status=$?
+    cat "$_ov_version_file" >&2
     if [ "$_ov_status" -eq 124 ]; then
       out_error '`omp --version` timed out.'
     else

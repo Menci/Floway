@@ -32,7 +32,7 @@ function Test-SetupOmpVersion {
   param([string]$Exe)
   $timeoutSeconds = Get-SetupTimeoutSeconds 30
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '`omp --version` timed out.'
-  if ($version.ExitCode -ne 0) { Stop-Setup "``omp --version`` failed." }
+  if ($version.ExitCode -ne 0) { Stop-Setup ('`omp --version` failed. ' + $version.Output) }
   Write-SetupInfo "oh-my-pi version: $($version.Output.Trim())"
   $versionText = $version.Output.Trim() -replace '^omp/', ''
   if ($versionText -notmatch '^(\d+\.\d+\.\d+)([-+][0-9A-Za-z.-]+)?$') {
@@ -341,7 +341,6 @@ function Apply-SetupOmpStaged {
   } else {
     Move-Item -LiteralPath $script:OmpExtensionStage -Destination $script:OmpExtensionPath -Force
   }
-  Protect-SetupFile $script:OmpExtensionPath
   $script:OmpExtensionStage = $null
 
   if ($script:OmpConfigStage) {
@@ -353,7 +352,6 @@ function Apply-SetupOmpStaged {
       } else {
         Move-Item -LiteralPath $script:OmpConfigStage -Destination $script:OmpConfigPath -Force
       }
-      Protect-SetupFile $script:OmpConfigPath
     } else {
       Remove-Item -LiteralPath $script:OmpConfigStage -Force -ErrorAction Stop
       if (Test-Path -LiteralPath $script:OmpConfigPath) {
@@ -402,14 +400,8 @@ function Set-SetupAgent {
 
   Write-SetupAgentNotice 'Configuring' 'oh-my-pi'
   $script:OmpAgentDir = Get-SetupOmpAgentDir -Exe $exe
-  if (-not (Test-Path -LiteralPath $script:OmpAgentDir)) {
-    New-Item -ItemType Directory -Path $script:OmpAgentDir -Force | Out-Null
-  }
-
   $extensionsDir = Join-Path $script:OmpAgentDir 'extensions'
-  if (-not (Test-Path -LiteralPath $extensionsDir)) {
-    New-Item -ItemType Directory -Path $extensionsDir -Force | Out-Null
-  }
+  [void][System.IO.Directory]::CreateDirectory($extensionsDir)
   $script:OmpExtensionPath = Join-Path $extensionsDir 'floway.js'
 
   $configYml = Join-Path $script:OmpAgentDir 'config.yml'

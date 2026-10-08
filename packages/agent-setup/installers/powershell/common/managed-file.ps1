@@ -89,5 +89,4 @@ function Merge-SetupProviderExtension {
   $header = 'const connections = ' + (ConvertTo-Json -InputObject @($connections) -Depth 10 -Compress) + ';'
   $content = @($stageLines[0], $header) + $stageLines[2..($stageLines.Length - 1)]
   [System.IO.File]::WriteAllText($StagePath, ($content -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
-  Protect-SetupFile $StagePath
 }

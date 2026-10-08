@@ -93,6 +93,7 @@ pi_write_version() {
       out_info "Pi version: $_pv_version"
     else
       _pv_version_status=$?
+      cat "$_pv_version_file" >&2
       if [ "$_pv_version_status" -eq 124 ]; then
         out_error '`pi --version` timed out.'
       else
