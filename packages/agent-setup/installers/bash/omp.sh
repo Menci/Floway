@@ -364,8 +364,8 @@ omp_stage_config() {
   fi
 
   OMP_CONFIG_STAGE="$OMP_CONFIG_PATH.floway-stage.$$"
-  if ! (umask 077 && : > "$OMP_CONFIG_STAGE"); then
-    out_error 'could not create the oh-my-pi config stage file.'
+  if ! (umask 077 && : > "$OMP_CONFIG_STAGE") || ! chmod 600 "$OMP_CONFIG_STAGE"; then
+    out_error 'could not create or protect the oh-my-pi config stage file.'
     return 1
   fi
 
@@ -423,7 +423,6 @@ omp_apply_staged() {
     rm -f "$OMP_EXTENSION_STAGE"
     return 1
   fi
-  chmod 600 "$OMP_EXTENSION_PATH" || return 1
   OMP_EXTENSION_STAGE=""
 
   if [ -n "$OMP_CONFIG_STAGE" ]; then
@@ -433,7 +432,6 @@ omp_apply_staged() {
         rm -f "$OMP_CONFIG_STAGE"
         return 1
       fi
-      chmod 600 "$OMP_CONFIG_PATH" || return 1
     else
       rm -f "$OMP_CONFIG_STAGE" "$OMP_CONFIG_PATH" || return $?
     fi

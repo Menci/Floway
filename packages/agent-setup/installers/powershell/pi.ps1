@@ -190,8 +190,7 @@ function Invoke-SetupNodeJsonc {
     [string]$OutputPath,
     [Parameter(Mandatory=$true)][hashtable]$EnvVars
   )
-  $nodeCmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  if (-not $nodeCmd) { Stop-Setup 'Node.js is required but was not found on PATH.' }
+  $nodeCmd = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
 
   $editorPath = Join-Path $script:PiTmpDir 'jsonc-edit.mjs'
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo

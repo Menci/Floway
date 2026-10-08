@@ -246,3 +246,26 @@ test.skipIf(!hasPowerShell)('PowerShell OMP propagates empty-config deletion fai
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Bash OMP protects a reused config stage before writing existing settings', () => {
+  const directory = mkdtempSync(join(packageRoot, '.omp-stage-protection-test-'));
+  try {
+    const config = join(directory, 'config.yml');
+    const source = 'other: private-setting\n';
+    writeFileSync(config, source);
+    const script = [
+      'set +e; JQ=jq; main() { :; }; out_error() { echo "$*" >&2; };',
+      `source ${shellQuote(join(packageRoot, 'installers/bash/omp.sh'))};`,
+      `OMP_CONFIG_PATH=${shellQuote(config)}; SETUP_OMP_PROVIDER=floway; SETUP_OMP_MODEL=; SETUP_OMP_RETRY_ENABLED=; SETUP_OMP_MAX_RETRIES=;`,
+      'reused="$OMP_CONFIG_PATH.floway-stage.$$"; : > "$reused"; chmod 644 "$reused";',
+      `printf() { mode=$(${shellQuote(process.execPath)} -e 'process.stdout.write((require("node:fs").statSync(process.argv[1]).mode & 511).toString(8))' "$OMP_CONFIG_STAGE"); if [ "$mode" != 600 ]; then echo "unprotected stage mode $mode before write" >&2; return 73; fi; builtin printf "$@"; };`,
+      'omp_stage_config || exit $?; cat "$OMP_CONFIG_STAGE";',
+    ].join('\n');
+    const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toBe(source);
+    expect(readFileSync(config, 'utf8')).toBe(source);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
