@@ -10,6 +10,38 @@ import { SETUP_SCRIPT_BODIES } from '../../../src/script-assets.ts';
 
 const hasPowerShell = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()']).status === 0;
 
+test.skipIf(!hasPowerShell)('PowerShell Pi protects a reused settings stage before writing editor output', () => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-stage-protection-test-'));
+  try {
+    const original = '{ "untouched": "private-setting" }';
+    writeFileSync(join(directory, 'settings.json'), original);
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const prefix = renderPowerShellPrefix({ agent: 'pi', extensionPath: '/pi.js', apiKey: 'key', apiKeyName: 'Test', configuration: defaultAgentSetupConfiguration('key-a') });
+    const scriptPath = join(directory, 'stage-protection.ps1');
+    writeFileSync(scriptPath, `${prefix}\n$ErrorActionPreference = 'Stop'\n${fragment}\n
+$script:PiTmpDir = $args[0]
+$script:PiSettingsPath = Join-Path $args[0] 'settings.json'
+$stage = "$($script:PiSettingsPath).floway-stage.$([System.Diagnostics.Process]::GetCurrentProcess().Id)"
+[System.IO.File]::WriteAllText($stage, '')
+& chmod 644 $stage
+function Protect-SetupFile {
+  param([string]$Path)
+  if ([System.IO.File]::ReadAllText($Path).Contains('private-setting')) { throw 'Settings were written before stage protection' }
+  & chmod 600 $Path
+  if ($LASTEXITCODE -ne 0) { throw 'Stage protection failed' }
+}
+Stage-SetupPiSettings
+if ([System.IO.File]::ReadAllText($script:PiSettingsStage) -cne [System.IO.File]::ReadAllText($script:PiSettingsPath)) { throw 'Settings changed' }
+`);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(readFileSync(join(directory, 'settings.json'), 'utf8')).toBe(original);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test.skipIf(!hasPowerShell)('PowerShell Pi preserves large settings through the JSONC subprocess pipe', () => {
   const directory = mkdtempSync(join(process.cwd(), '.pi-large-settings-test-'));
   try {

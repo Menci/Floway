@@ -246,6 +246,8 @@ pi_stage_settings() {
   fi
 
   PI_SETTINGS_STAGE="$PI_SETTINGS_PATH.floway-stage.$$"
+  : > "$PI_SETTINGS_STAGE" || return 1
+  chmod 600 "$PI_SETTINGS_STAGE" || return 1
   _pss_err="$SETUP_TMPDIR/settings-edit.err"
 
   _write_jsonc_editor || return 1
@@ -272,12 +274,6 @@ pi_stage_settings() {
   fi
   rm -f "$_pss_err"
 
-  if ! chmod 600 "$PI_SETTINGS_STAGE"; then
-    out_error "could not protect staged settings configuration $PI_SETTINGS_STAGE"
-    rm -f "$PI_SETTINGS_STAGE"
-    PI_SETTINGS_STAGE=""
-    return 1
-  fi
   return 0
 }
 

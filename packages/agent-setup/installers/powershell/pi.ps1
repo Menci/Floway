@@ -226,8 +226,9 @@ function Invoke-SetupNodeJsonc {
     Stop-Setup $err
   }
 
-  [System.IO.File]::WriteAllText($OutputPath, $stdout, $utf8NoBom)
+  [System.IO.File]::WriteAllText($OutputPath, '')
   Protect-SetupFile $OutputPath
+  [System.IO.File]::WriteAllText($OutputPath, $stdout, $utf8NoBom)
 }
 
 function Stage-SetupPiSettings {
