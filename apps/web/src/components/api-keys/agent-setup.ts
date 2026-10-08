@@ -29,6 +29,8 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
+  pi: { provider: 'floway', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { provider: 'floway', model: null, retry: { enabled: null, maxRetries: null } },
 });
 
 export const cloneAgentSetupConfiguration = (
@@ -46,7 +48,10 @@ export const detectAgentSetupPlatform = (
 
 const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
   for (const key of Object.keys(current) as (keyof T)[]) {
-    if (!Object.is(current[key], baseline[key])) target[key] = current[key];
+    const value = current[key];
+    if (value !== null && typeof value === 'object') {
+      copyChangedFields(target[key] as object, value, baseline[key] as object);
+    } else if (!Object.is(value, baseline[key])) target[key] = value;
   }
 };
 
@@ -58,6 +63,8 @@ export const applyLocalAgentSetupChanges = (
   const merged = cloneAgentSetupConfiguration(server);
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
+  copyChangedFields(merged.pi, local.pi, baseline.pi);
+  copyChangedFields(merged.omp, local.omp, baseline.omp);
   return merged;
 };
 

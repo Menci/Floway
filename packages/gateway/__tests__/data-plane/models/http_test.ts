@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import type { OmpModel } from '../../../src/data-plane/models/omp-catalog.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
@@ -600,6 +601,20 @@ test('/v1/models surfaces the actionable "no upstream configured" hint when no p
   });
 });
 
+test('/v1/models exposes actionable discovery failures and stack traces to OMP', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  const response = await requestAppWithWarmModels('/v1/models', {
+    headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+  });
+  assertEquals(response.status, 502);
+  const body = await response.json() as { error: { message: string; type: string; stack: string } };
+  assertEquals(body.error.message, 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
+  assertEquals(body.error.type, 'internal_error');
+  expect(body.error.stack).toContain('getModelsFromProviders');
+});
+
 test('/v1/models returns the id-sorted union of every connected GitHub account', async () => {
   const { repo, apiKey, githubAccount } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(SECOND_ACCOUNT, { id: 'up_copilot_second', sortOrder: 1 }));
@@ -1056,6 +1071,148 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
       assertEquals(body.data[0].type, 'model');
       assertEquals(body.data[0].max_input_tokens, 200_000);
       assertEquals(body.data[0].capabilities, null);
+    },
+  );
+});
+
+// OMP model catalog tailoring and caller precedence.
+test('/v1/models keeps the configured public endpoint when OMP connects through a reverse proxy', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://upstream.example', authStyle: 'bearer', apiKey: 'upstream-key', ingressHeadersRules: [],
+      endpoints: {}, modelsFetch: { enabled: false },
+      models: [
+        { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
+        { upstreamModelId: 'budget-model', kind: 'chat', endpoints: { anthropicMessages: {} }, chat: { reasoning: { budget_tokens: { min: 1024 } } } },
+      ],
+    },
+  }));
+  await withMockedFetch(() => { throw new Error('configured models require no upstream fetch'); }, async () => {
+    const endpoint = 'https://public.example/gateway';
+    const response = await requestAppWithWarmModels(`http://internal:8788/v1/models?endpoint=${encodeURIComponent(endpoint)}`, {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+    });
+    assertEquals(response.status, 200);
+    const body = await response.json() as { models: OmpModel[] };
+    assertEquals(body.models.find(model => model.id === 'response-model')!.baseUrl, `${endpoint}/v1`);
+    assertEquals(body.models.find(model => model.id === 'budget-model')!.baseUrl, endpoint);
+    for (const userAgent of ['pi/1.1.0 (linux; node/v22.19.0; x64)', 'omp/18.8.4']) {
+      const named = await requestAppWithWarmModels(`/v1/models?provider=personal&endpoint=${encodeURIComponent(endpoint)}`, {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
+      });
+      assertEquals(named.status, 200);
+      const catalog = await named.json() as { api?: string; models: { provider?: string; api: string; id: string }[] };
+      if (userAgent.startsWith('pi/')) assertEquals(catalog.models.map(model => model.provider), ['personal', 'personal']);
+      else assertEquals(catalog.api, 'floway:personal');
+      const invalidProvider = await requestAppWithWarmModels('/v1/models?provider=UPPER', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
+      });
+      assertEquals(invalidProvider.status, 400);
+    }
+
+    const invalid = await requestAppWithWarmModels('/v1/models?endpoint=ftp%3A%2F%2Fpublic.example', {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+    });
+    assertEquals(invalid.status, 400);
+  });
+});
+
+test('/v1/models serves omp-tailored catalog to omp/* callers and preserves precedence for other callers', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_omp_test',
+    name: 'OMP Test Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://omp-test.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-omp-test',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [
+        {
+          upstreamModelId: 'test-chat',
+          publicModelId: 'test-chat',
+          kind: 'chat',
+          endpoints: { openaiChatCompletions: {} },
+          limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 4_096 },
+          chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+        },
+        {
+          upstreamModelId: 'test-embed',
+          publicModelId: 'test-embed',
+          kind: 'embedding',
+          endpoints: { openaiEmbeddings: {} },
+          limits: { max_context_window_tokens: 8_192 },
+        },
+        {
+          upstreamModelId: 'test-image',
+          publicModelId: 'test-image',
+          kind: 'image',
+          endpoints: { openaiImagesGenerations: {} },
+        },
+        {
+          upstreamModelId: 'test-rerank',
+          publicModelId: 'test-rerank',
+          kind: 'rerank',
+          endpoints: { rerank: {} },
+          rerankTarget: { protocol: 'cohere-v1' },
+          limits: { max_context_window_tokens: 4_096 },
+        },
+      ],
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'raw.githubusercontent.com') {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const ompResponse = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+      });
+      assertEquals(ompResponse.status, 200);
+      const ompBody = await ompResponse.json() as { api: string; models: OmpModel[] };
+      assertEquals(ompBody.api, 'floway:floway');
+      assertEquals(ompBody.models.map(model => model.id), ['test-image', 'test-embed', 'test-chat']);
+      const chat = ompBody.models.find(model => model.id === 'test-chat')!;
+      assertEquals(chat.api, 'floway:floway');
+      assertEquals(chat.contextWindow, 128_000);
+      assertEquals(chat.maxTokens, 4_096);
+      assertEquals(chat.input, ['text', 'image']);
+      for (const userAgent of ['not-omp/18.8.4', 'floway-omp/1', 'openai-python/1.42.0']) {
+        const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent } });
+        const body = await response.json() as { data: Array<{ id: string }> };
+        assertEquals(body.data.map(model => model.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
+      }
+
+      // 5. Claude Code caller gets Claude Code Anthropic-shaped catalog
+      const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
+      });
+      assertEquals(claudeCodeResp.status, 200);
+      const claudeCodeBody = (await claudeCodeResp.json()) as { object?: unknown; data: Array<{ id: string; type: string }> };
+      assertEquals(claudeCodeBody.object, undefined);
+      assertEquals(claudeCodeBody.data.length, 4);
+
+      // 6. Codex caller gets Codex catalog
+      const codexResp = await requestAppWithWarmModels('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'codex-tui/0.1.0' },
+      });
+      assertEquals(codexResp.status, 200);
+      const codexBody = (await codexResp.json()) as { object?: unknown; models: Array<{ slug: string }> };
+      assertEquals(codexBody.object, undefined);
+      assertEquals(Array.isArray(codexBody.models), true);
     },
   );
 });

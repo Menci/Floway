@@ -38,6 +38,20 @@ Add an upstream under **Providers → Upstreams**, then create a key under
 **Services → API Keys**. Use the API key in your client code or configure your
 agents to use Floway as provider through **Agent Setup**.
 
+Pi and OMP setup installs a private provider extension and automatically updates
+older clients to the required version (Pi 1.1.0 or OMP 18.8.4). Choose a provider
+ID such as `floway-home` or `floway-work` to connect multiple Floway instances
+through one extension. Repeating setup updates that provider and preserves the
+other connections and manual model configuration. A default model is optional.
+Pi thinking level and both clients' retry settings are optional agent-wide
+preferences; leaving them unset preserves the existing settings.
+
+Models are discovered at startup, including reasoning controls, vision, token
+limits, and pricing. Pi refreshes them when the model picker opens; OMP refreshes
+them with `/floway-refresh`. The server selects native Responses or Messages
+according to each model's capabilities, so catalog changes take effect without
+rerunning setup.
+
 ## Development
 
 ```bash

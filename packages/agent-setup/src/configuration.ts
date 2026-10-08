@@ -12,10 +12,16 @@
 
 import { z } from 'zod';
 
+import { piThinkingLevels } from './pi-thinking.ts';
+
 const opaqueOptionalString = z.string()
   .min(1)
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
+
+export const agentSetupProviderSchema = z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/);
+
+const retrySchema = z.object({ enabled: z.boolean().nullable(), maxRetries: z.number().int().nonnegative().nullable() }).strict();
 
 export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
@@ -50,6 +56,8 @@ export const agentSetupConfigurationSchema = z.object({
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
+  pi: z.object({ model: opaqueOptionalString, provider: agentSetupProviderSchema, thinkingLevel: z.enum(piThinkingLevels).nullable(), retry: retrySchema }).strict(),
+  omp: z.object({ model: opaqueOptionalString, provider: agentSetupProviderSchema, retry: retrySchema }).strict(),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
@@ -75,4 +83,6 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
     model: null,
     reasoningEffort: null,
   },
+  pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } },
 });

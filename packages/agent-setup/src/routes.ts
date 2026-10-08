@@ -21,6 +21,9 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
+import { InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from './extension-endpoint.ts';
+import { renderOmpExtension } from './omp-extension.ts';
+import { renderPiExtension } from './pi-extension.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
@@ -75,6 +78,14 @@ const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string)
     codex: {
       sh: `${publicScriptBasePath}/${record.token}/codex.sh`,
       ps1: `${publicScriptBasePath}/${record.token}/codex.ps1`,
+    },
+    omp: {
+      sh: `${publicScriptBasePath}/${record.token}/omp.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/omp.ps1`,
+    },
+    pi: {
+      sh: `${publicScriptBasePath}/${record.token}/pi.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/pi.ps1`,
     },
   },
 });
@@ -133,7 +144,14 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
+      const baseInput = {
+        apiKey: resolved.apiKey,
+        apiKeyName: resolved.apiKeyName,
+        configuration: resolved.configuration,
+      };
+      const input = agent === 'pi' || agent === 'omp'
+        ? { ...baseInput, agent, extensionPath: c.req.path.replace(/\/(?:pi|omp)\.(?:sh|ps1)$/, `/${agent}.js`) }
+        : { ...baseInput, agent };
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
@@ -141,6 +159,31 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // Keep the unauthenticated response opaque. Operator diagnostics retain the
       // stack frames but omit the error message, which may contain a token or key.
       console.error('Agent Setup: failed to serve a public setup script', publicErrorDiagnostics(error, token));
+      return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
+    }
+  };
+
+  const serveExtension = (agent: 'pi' | 'omp') => async (c: Context) => {
+    const token = c.req.param('token')!;
+    try {
+      const resolved = await resolveServeableLease(deps, token);
+      if (!resolved) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+      if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
+      const endpoint = c.req.query('endpoint');
+      if (endpoint === undefined) return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);
+      let source: string;
+      try {
+        const normalizedEndpoint = normalizeAgentSetupEndpoint(endpoint);
+        source = agent === 'pi'
+          ? renderPiExtension({ endpoint: normalizedEndpoint, apiKey: resolved.apiKey, provider: resolved.configuration.pi.provider })
+          : renderOmpExtension({ endpoint: normalizedEndpoint, apiKey: resolved.apiKey, provider: resolved.configuration.omp.provider });
+      } catch (error) {
+        if (!(error instanceof InvalidAgentSetupEndpointError)) throw error;
+        return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);
+      }
+      return c.body(source, 200, SCRIPT_RESPONSE_HEADERS);
+    } catch (error) {
+      console.error(`Agent Setup: failed to serve the ${agent} extension`, publicErrorDiagnostics(error, token));
       return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
     }
   };
@@ -153,6 +196,12 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/pi.sh', serveSetupScript('pi', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/pi.ps1', serveSetupScript('pi', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/pi.js', serveExtension('pi'))
+    .on(['GET', 'HEAD'], '/:token/omp.sh', serveSetupScript('omp', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/omp.ps1', serveSetupScript('omp', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/omp.js', serveExtension('omp'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

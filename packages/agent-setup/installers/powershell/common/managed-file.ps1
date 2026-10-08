@@ -60,3 +60,34 @@ function Remove-SetupOlderBackups {
     Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
     Remove-Item -Force -ErrorAction Stop
 }
+
+function Merge-SetupProviderExtension {
+  param([string]$ExistingPath, [string]$StagePath)
+  $stageLines = [System.IO.File]::ReadAllLines($StagePath)
+  $connections = @()
+  $paths = @($StagePath)
+  if (Test-Path -LiteralPath $ExistingPath) { $paths = @($ExistingPath, $StagePath) }
+  foreach ($path in $paths) {
+    $lines = [System.IO.File]::ReadAllLines($path)
+    if ($lines.Length -lt 3 -or $lines[1] -notmatch '^const connections = (.*);$') {
+      Stop-Setup "invalid provider configuration in $path"
+    }
+    $json = $Matches[1]
+    if (-not $json.StartsWith('[')) { Stop-Setup "invalid provider configuration in $path" }
+    $incoming = @($json | ConvertFrom-Json -ErrorAction Stop)
+    if ($incoming.Count -eq 0) { Stop-Setup "empty provider configuration in $path" }
+    $ids = @()
+    foreach ($connection in $incoming) {
+      if ($connection.provider -isnot [string] -or $connection.provider -cnotmatch '^[a-z0-9][a-z0-9._-]{0,63}$' -or
+        $connection.endpoint -isnot [string] -or $connection.apiKey -isnot [string] -or $ids -ccontains $connection.provider) {
+        Stop-Setup "invalid provider configuration in $path"
+      }
+      $ids += $connection.provider
+      $connections = @($connections | Where-Object { $_.provider -cne $connection.provider }) + $connection
+    }
+  }
+  $header = 'const connections = ' + (ConvertTo-Json -InputObject @($connections) -Depth 10 -Compress) + ';'
+  $content = @($stageLines[0], $header) + $stageLines[2..($stageLines.Length - 1)]
+  [System.IO.File]::WriteAllText($StagePath, ($content -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+  Protect-SetupFile $StagePath
+}

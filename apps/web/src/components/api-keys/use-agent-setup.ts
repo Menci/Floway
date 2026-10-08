@@ -30,7 +30,7 @@ const clearTimer = (timer: { current: ReturnType<typeof setTimeout> | null }) =>
 
 const isRetryableStatus = (status: number) =>
   status === 0 || status === 408 || status === 429 || status >= 500;
-// A configuration is a closed object of JSON scalars whose key order the
+// A configuration is a closed JSON object whose key order the
 // gateway's schema fixes on both sides of the wire, so it compares by
 // serializing, the way every other draft in this dashboard does.
 const comparableConfiguration = (configuration: AgentSetupConfiguration): string => JSON.stringify(configuration);

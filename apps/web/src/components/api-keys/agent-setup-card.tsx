@@ -15,20 +15,23 @@ import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import ompIconUrl from '../../assets/omp.svg';
+import piIconUrl from '../../assets/pi.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
+import { piThinkingLevelMap, piThinkingLevels } from '@floway-dev/agent-setup/pi-thinking';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex';
+type Agent = 'claude' | 'codex' | 'pi' | 'omp';
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
@@ -65,19 +68,26 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
     ? agentSetupCommand(window.location.origin, scriptPath, platform)
     : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
 
+  const usesExtension = agent === 'pi' || agent === 'omp';
+  const effectiveView = usesExtension ? 'setup' : view;
+
   return <div className="grid gap-[14px] min-w-0">
     <SectionHeader level={2} title={t('dashboard.apiKeys.configuration.title')} actions={
-      <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
-        <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
-        <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
-      </TabList>
+      !usesExtension && (
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
+          <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
+          <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
+        </TabList>
+      )
     } />
 
     <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
-        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' || data.value === 'pi' || data.value === 'omp' ? data.value : 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+          <AgentTab icon={piIconUrl} label={t('dashboard.apiKeys.configuration.pi')} value="pi" />
+          <AgentTab icon={ompIconUrl} label={t('dashboard.apiKeys.configuration.omp')} value="omp" />
         </TabList>
       </nav>
 
@@ -96,9 +106,9 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
         </section>
 
-        {view === 'snippets' && selectedKey
+        {effectiveView === 'snippets' && selectedKey
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
-          : view === 'snippets'
+          : effectiveView === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-divider pt-4">
                 <CodeBlock
@@ -111,7 +121,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
                 />
               </div>}
 
-        {(selectedKey !== null || view === 'setup') && (
+        {(selectedKey !== null || effectiveView === 'setup') && (
           <Text size={200} className="text-fui-fg2">
             {selectedKey && <>
               <Trans
@@ -119,9 +129,9 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
                 i18nKey="dashboard.apiKeys.configuration.usingKey"
                 values={{ name: selectedKey.name }}
               />
-              {view === 'setup' && ' '}
+              {effectiveView === 'setup' && ' '}
             </>}
-            {view === 'setup' && t('dashboard.apiKeys.agentSetup.expires')}
+            {effectiveView === 'setup' && t('dashboard.apiKeys.agentSetup.expires')}
           </Text>
         )}
       </div>
@@ -192,10 +202,59 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const { t } = useTranslation();
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
+  const patchOmp = (patch: Partial<AgentSetupConfiguration['omp']>) => onChange(current => ({ ...current, omp: { ...current.omp, ...patch } }));
   const codexModel = configuration.codex.model
     ? models.find(model => model.id === configuration.codex.model)
     : rankAgentSetupModels(models, { family: 'codex' })[0];
   const effortOptions = codexModel?.chat?.reasoning?.effort?.supported ?? [];
+  const patchPi = (patch: Partial<AgentSetupConfiguration['pi']>) => onChange(current => ({ ...current, pi: { ...current.pi, ...patch } }));
+
+  if (agent === 'pi' || agent === 'omp') {
+    const connection = configuration[agent];
+    const selectedModel = agent === 'pi' && connection.model !== null ? models.find(model => model.id === connection.model) : undefined;
+    const thinking = selectedModel ? piThinkingLevelMap(selectedModel.chat?.reasoning, selectedModel.id) : null;
+    const levels = thinking === null ? piThinkingLevels : thinking.supported ? piThinkingLevels.filter(level => thinking.map[level] !== null) : [];
+    const patchConnection = agent === 'pi' ? patchPi : patchOmp;
+    const patchRetry = (update: (current: typeof connection.retry) => typeof connection.retry) => onChange(current => agent === 'pi'
+      ? { ...current, pi: { ...current.pi, retry: update(current.pi.retry) } }
+      : { ...current, omp: { ...current.omp, retry: update(current.omp.retry) } });
+    return <div className="grid gap-3">
+      <div className={FIELD_GRID_CLASS}>
+        <Field label={t('dashboard.apiKeys.agentSetup.providerName')} hint={t('dashboard.apiKeys.agentSetup.providerHint')}>
+          <Input value={connection.provider} maxLength={64} onChange={event => patchConnection({ provider: event.target.value })} />
+        </Field>
+        <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family={agent} picker="default" value={connection.model} onChange={model => patchConnection({ model })} />
+      </div>
+      <Text size={200} className="text-fui-fg2">
+        {t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piModelHint' : 'dashboard.apiKeys.agentSetup.ompModelHint')}
+      </Text>
+      <section className={SECTION_STACK_CLASS}>
+        <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.globalSettings')} />
+        <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.globalSettingsHint')}</Text>
+        {agent === 'pi' && <Field
+          label={t('dashboard.apiKeys.agentSetup.defaultThinkingLevel')}
+          hint={thinking?.supported === false ? t('dashboard.apiKeys.agentSetup.unsupportedThinking') : t('dashboard.apiKeys.agentSetup.defaultThinkingHint')}
+        >
+          <Dropdown
+            disabled={thinking?.supported === false}
+            selectedOptions={[configuration.pi.thinkingLevel ?? MODEL_DEFAULT]}
+            value={configuration.pi.thinkingLevel ?? t('dashboard.apiKeys.agentSetup.keepExisting')}
+            onOptionSelect={(_, data) => {
+              if (data.optionValue === MODEL_DEFAULT) patchPi({ thinkingLevel: null });
+              else {
+                const thinkingLevel = levels.find(level => level === data.optionValue);
+                if (thinkingLevel !== undefined) patchPi({ thinkingLevel });
+              }
+            }}
+          >
+            <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>
+            {levels.map(level => <Option key={level} value={level}>{level}</Option>)}
+          </Dropdown>
+        </Field>}
+        <AgentRetryFields retry={connection.retry} onChange={patchRetry} />
+      </section>
+    </div>;
+  }
 
   if (agent === 'claude') return <div className="grid gap-5">
     <div className={CLAUDE_MODEL_GRID_CLASS}>
@@ -282,8 +341,38 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   </div>;
 }
 
+function AgentRetryFields({ retry, onChange }: {
+  retry: AgentSetupConfiguration['pi']['retry'];
+  onChange: (update: (current: AgentSetupConfiguration['pi']['retry']) => AgentSetupConfiguration['pi']['retry']) => void;
+}) {
+  const { t } = useTranslation();
+  const enabledValue = retry.enabled === null ? MODEL_DEFAULT : retry.enabled ? 'enabled' : 'disabled';
+  return <div className={FIELD_GRID_CLASS}>
+    <Field label={t('dashboard.apiKeys.agentSetup.automaticRetry')}>
+      <Dropdown
+        selectedOptions={[enabledValue]}
+        value={t(retry.enabled === null ? 'dashboard.apiKeys.agentSetup.keepExisting' : retry.enabled ? 'dashboard.apiKeys.agentSetup.retryEnabled' : 'dashboard.apiKeys.agentSetup.retryDisabled')}
+        onOptionSelect={(_, data) => {
+          const enabled = data.optionValue === MODEL_DEFAULT ? null : data.optionValue === 'enabled';
+          onChange(current => ({ ...current, enabled }));
+        }}
+      >
+        <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>
+        <Option value="enabled">{t('dashboard.apiKeys.agentSetup.retryEnabled')}</Option>
+        <Option value="disabled">{t('dashboard.apiKeys.agentSetup.retryDisabled')}</Option>
+      </Dropdown>
+    </Field>
+    <Field label={t('dashboard.apiKeys.agentSetup.maxRetries')} hint={t('dashboard.apiKeys.agentSetup.maxRetriesHint')}>
+      <Input type="number" min={0} step={1} value={retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
+        const maxRetries = event.target.value === '' ? null : Number(event.target.value);
+        onChange(current => ({ ...current, maxRetries }));
+      }} />
+    </Field>
+  </div>;
+}
+
 function ModelSelect({ family, label, models, onChange, picker, value }: {
-  family: 'claude' | 'codex';
+  family: 'claude' | 'codex' | 'pi' | 'omp';
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;

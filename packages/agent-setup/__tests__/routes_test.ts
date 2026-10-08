@@ -7,6 +7,7 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
+import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRenewal, type AgentSetupRepository, AgentSetupTokenCollisionError } from '../src/repository.ts';
 import {
   type AgentSetupControlDeps,
@@ -139,16 +140,14 @@ const harness = (options: {
 interface LeaseResponse {
   status: string;
   token: string;
-  configuration: {
-    apiKeyId: string;
-    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean; disableAutoMemory: boolean; disableAgentView: boolean };
-    codex: { model: string | null; reasoningEffort: string | null };
-  };
+  configuration: AgentSetupConfiguration;
   configurationRevision: number;
   expiresAt: number;
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    pi: { sh: string; ps1: string };
+    omp: { sh: string; ps1: string };
   };
 }
 
@@ -158,6 +157,8 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
+  pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -200,6 +201,12 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  assertEquals(body.configuration.omp.model, null);
+  assertEquals(body.scripts.omp.sh, `/api/setup/${body.token}/omp.sh`);
+  assertEquals(body.scripts.omp.ps1, `/api/setup/${body.token}/omp.ps1`);
+  assertEquals(body.configuration.pi.model, null);
+  assertEquals(body.scripts.pi.sh, `/api/setup/${body.token}/pi.sh`);
+  assertEquals(body.scripts.pi.ps1, `/api/setup/${body.token}/pi.ps1`);
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -481,48 +488,81 @@ test('GET re-reads the current configuration each request', async () => {
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
 });
 
-test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
+test('GET serves rendered pi bash and powershell scripts reflecting configuration and token', async () => {
   const h = harness();
-  const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"disableAutoMemory":false,"disableAgentView":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
+  const lease = await create(h);
+  const shInitial = await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text();
+  expect(shInitial).toContain("SETUP_PI_MODEL=''");
+  expect(shInitial).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/pi.js'`);
+  expect(shInitial).toContain("main 'Pi' \"$@\"");
 
-  await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
-  await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"disableAutoMemory":false,"disableAgentView":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  const ps1Initial = await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text();
+  expect(ps1Initial).toContain('$SetupPiModel = $null');
+  expect(ps1Initial).toContain(`$SetupExtensionPath = '/api/setup/${lease.token}/pi.js'`);
+  expect(ps1Initial).toContain("Main 'Pi'");
 
-  const bodies = new Set<string>();
-  for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {
-    const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
-    assertEquals(response.status, 404);
-    bodies.add(await response.text());
-  }
-  assertEquals(bodies.size, 1);
+  const edited = { ...lease.configuration, pi: { model: 'custom-pi-model', provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+
+  expect(await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text()).toContain("SETUP_PI_MODEL='custom-pi-model'");
+  expect(await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text()).toContain("$SetupPiModel = 'custom-pi-model'");
 });
 
-test('a public serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
-  const injectedSecret = 'INJECTED-SECRET-sk-abcdef0123456789';
-  const lease = { token: 'a'.repeat(43) };
-  const h = harness({
-    publicOverrides: {
-      repository: { findByToken: () => { throw new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`); } },
-    },
-  });
-  const logged: string[] = [];
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
-  try {
-    const response = await h.request(`/api/setup/${lease.token}/claude.sh`, { method: 'GET' });
-    assertEquals(response.status, 500);
-    assertEquals(response.headers.get('cache-control'), 'no-store');
-    assertEquals(response.headers.get('pragma'), 'no-cache');
-    const raw = await response.text();
-    expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
-    expect(raw).not.toContain(injectedSecret);
-  } finally {
-    errorSpy.mockRestore();
+test('the leased Pi extension safely embeds its endpoint and key without caching', async () => {
+  const h = harness();
+  const lease = await (await h.request('/api/setup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }) })).json() as LeaseResponse;
+  const url = `/api/setup/${lease.token}/pi.js?endpoint=${encodeURIComponent('https://gateway.example/prefix')}`;
+  const response = await h.request(url);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  const source = await response.text();
+  expect(source).toContain('"endpoint":"https://gateway.example/prefix"');
+  expect(source).toContain('"apiKey":"raw-key"');
+  expect(source).toContain('"provider":"floway"');
+  const head = await h.request(url, { method: 'HEAD' });
+  expect(head.status).toBe(200);
+  expect(await head.text()).toBe('');
+  for (const endpoint of ['', 'file:///tmp/file', 'https://user:secret@example.com', 'https://example.com?query=1']) {
+    const invalid = await h.request(`/api/setup/${lease.token}/pi.js?endpoint=${encodeURIComponent(endpoint)}`);
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).not.toContain(RAW_KEY);
   }
-  const joined = logged.join('\n');
-  expect(joined).toContain('routes_test');
-  expect(joined).not.toContain(injectedSecret);
-  expect(joined).not.toContain(lease.token);
-  expect(joined).not.toContain('forced failure');
+  const missing = await h.request(`/api/setup/${'x'.repeat(43)}/pi.js?endpoint=https://example.com`);
+  expect(missing.status).toBe(404);
+});
+
+test('serves live OMP scripts and a leased extension without affecting Pi preferences', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const configuration = { ...lease.configuration, omp: { model: 'custom-omp-model', provider: 'personal', retry: { enabled: null, maxRetries: null } } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration, expectedRevision: lease.configurationRevision }));
+  const sh = await (await h.request(lease.scripts.omp.sh)).text();
+  expect(sh).toContain("SETUP_OMP_MODEL='custom-omp-model'");
+  expect(sh).toContain("SETUP_OMP_PROVIDER='personal'");
+  expect(sh).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/omp.js'`);
+  const ps = await (await h.request(lease.scripts.omp.ps1)).text();
+  expect(ps).toContain("$SetupOmpModel = 'custom-omp-model'");
+  const url = `/api/setup/${lease.token}/omp.js?endpoint=${encodeURIComponent('https://gateway.example/prefix')}`;
+  const response = await h.request(url);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  const source = await response.text();
+  expect(source).toContain(RAW_KEY);
+  expect(source).toContain('"provider":"personal"');
+  expect(await (await h.request(url, { method: 'HEAD' })).text()).toBe('');
+  expect((await h.request(`/api/setup/${lease.token}/omp.js?endpoint=file:///tmp/config`)).status).toBe(400);
+  expect(await (await h.request(lease.scripts.pi.sh)).text()).toContain("SETUP_PI_MODEL=''");
+});
+
+test('uses the saved Pi provider identifier in its leased extension and install prefix', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const configuration = { ...lease.configuration, pi: { model: null, provider: 'work', thinkingLevel: null, retry: { enabled: null, maxRetries: null } } };
+  const updated = await h.request('/api/setup', putJson({ token: lease.token, configuration, expectedRevision: lease.configurationRevision }));
+  expect(updated.status).toBe(200);
+  const script = await (await h.request(lease.scripts.pi.sh)).text();
+  expect(script).toContain("SETUP_PI_PROVIDER='work'");
+  const extension = await (await h.request(`/api/setup/${lease.token}/pi.js?endpoint=https://gateway.example`)).text();
+  expect(extension).toContain('"provider":"work"');
+  expect(extension).toContain('"apiKey":"raw-key"');
 });

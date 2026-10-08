@@ -45,6 +45,8 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_BASH_CLAUDE', file: 'installers/bash/claude.sh' },
       { name: 'SETUP_BASH_CODEX', file: 'installers/bash/codex.sh' },
+      { name: 'SETUP_BASH_OMP', file: 'installers/bash/omp.sh' },
+      { name: 'SETUP_BASH_PI', file: 'installers/bash/pi.sh' },
     ],
   },
   powershell: {
@@ -70,11 +72,24 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
+      { name: 'SETUP_POWERSHELL_OMP', file: 'installers/powershell/omp.ps1' },
+      { name: 'SETUP_POWERSHELL_PI', file: 'installers/powershell/pi.ps1' },
     ],
   },
 } as const satisfies Record<string, PlatformSources>;
 
-const allSections = Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]);
+// Embedded as source only: the Pi installers write the Node helper next to the
+// config files they edit, so it is not part of any platform's common body.
+const extraSections: readonly SourceSection[] = [
+  { name: 'SETUP_NODE_JSONC_EDIT', file: 'installers/node/jsonc-edit.mjs' },
+  { name: 'SETUP_NODE_PI_INSTALLATION', file: 'installers/node/pi-installation.mjs' },
+  { name: 'SETUP_NODE_PI_EXTENSION', file: 'installers/node/pi-extension.js' },
+];
+
+const allSections = [
+  ...Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]),
+  ...extraSections,
+];
 const sourceFiles = new Map<string, string>();
 for (const { name, file } of allSections) {
   const existing = sourceFiles.get(name);

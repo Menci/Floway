@@ -7,14 +7,18 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
-import type { ScriptAgent } from './script-assets.ts';
 
-export interface RenderPrefixInput {
-  agent: ScriptAgent;
+interface RenderPrefixBase {
   apiKey: string;
   apiKeyName: string;
   configuration: AgentSetupConfiguration;
 }
+
+export type RenderPrefixInput = RenderPrefixBase & (
+  | { agent: 'pi' | 'omp'; extensionPath: string }
+  | { agent: 'claude' }
+  | { agent: 'codex' }
+);
 
 const assertNoNul = (value: string): void => {
   if (value.includes('\0')) throw new Error('cannot render a value containing a NUL character');
@@ -45,12 +49,12 @@ const shellOptionalNumber = (value: number | null): string => value?.toString() 
 // assignment to its trace stream; the trailing newline lets the fixed installer
 // body concatenate cleanly beneath.
 export const renderShellPrefix = (input: RenderPrefixInput): string => {
-  const { agent, apiKey, apiKeyName, configuration } = input;
+  const { apiKey, apiKeyName, configuration } = input;
   const assignments: [name: string, value: string][] = [
     ['SETUP_API_KEY', apiKey],
     ['SETUP_API_KEY_NAME', metadataValue(apiKeyName)],
   ];
-  if (agent === 'claude') {
+  if (input.agent === 'claude') {
     const { claudeCode } = configuration;
     assignments.push(
       ['SETUP_CLAUDE_MODEL', shellOptional(claudeCode.model)],
@@ -65,11 +69,19 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_DISABLE_AGENT_VIEW', shellFlag(claudeCode.disableAgentView)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (input.agent === 'codex') {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
       ['SETUP_CODEX_REASONING_EFFORT', shellOptional(configuration.codex.reasoningEffort)],
     );
+  } else {
+    assignments.push([input.agent === 'pi' ? 'SETUP_PI_MODEL' : 'SETUP_OMP_MODEL', shellOptional(configuration[input.agent].model)]);
+    assignments.push(['SETUP_EXTENSION_PATH', input.extensionPath]);
+    assignments.push([input.agent === 'pi' ? 'SETUP_PI_PROVIDER' : 'SETUP_OMP_PROVIDER', configuration[input.agent].provider]);
+    const retry = configuration[input.agent].retry;
+    assignments.push([input.agent === 'pi' ? 'SETUP_PI_RETRY_ENABLED' : 'SETUP_OMP_RETRY_ENABLED', retry.enabled === null ? '' : retry.enabled ? 'true' : 'false']);
+    assignments.push([input.agent === 'pi' ? 'SETUP_PI_MAX_RETRIES' : 'SETUP_OMP_MAX_RETRIES', shellOptionalNumber(retry.maxRetries)]);
+    if (input.agent === 'pi') assignments.push(['SETUP_PI_THINKING_LEVEL', shellOptional(configuration.pi.thinkingLevel)]);
   }
   const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
@@ -91,12 +103,12 @@ const powerShellOptionalNumber = (value: number | null): string => value?.toStri
 
 // `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
 export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
-  const { agent, apiKey, apiKeyName, configuration } = input;
+  const { apiKey, apiKeyName, configuration } = input;
   const assignments: [name: string, value: string][] = [
     ['$SetupApiKey', powerShellLiteral(apiKey)],
     ['$SetupApiKeyName', powerShellLiteral(metadataValue(apiKeyName))],
   ];
-  if (agent === 'claude') {
+  if (input.agent === 'claude') {
     const { claudeCode } = configuration;
     assignments.push(
       ['$SetupClaudeModel', powerShellOptional(claudeCode.model)],
@@ -111,11 +123,19 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeDisableAgentView', powerShellBool(claudeCode.disableAgentView)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
-  } else {
+  } else if (input.agent === 'codex') {
     assignments.push(
       ['$SetupCodexModel', powerShellOptional(configuration.codex.model)],
       ['$SetupCodexReasoningEffort', powerShellOptional(configuration.codex.reasoningEffort)],
     );
+  } else {
+    assignments.push([input.agent === 'pi' ? '$SetupPiModel' : '$SetupOmpModel', powerShellOptional(configuration[input.agent].model)]);
+    assignments.push(['$SetupExtensionPath', powerShellLiteral(input.extensionPath)]);
+    assignments.push([input.agent === 'pi' ? '$SetupPiProvider' : '$SetupOmpProvider', powerShellLiteral(configuration[input.agent].provider)]);
+    const retry = configuration[input.agent].retry;
+    assignments.push([input.agent === 'pi' ? '$SetupPiRetryEnabled' : '$SetupOmpRetryEnabled', retry.enabled === null ? '$null' : powerShellBool(retry.enabled)]);
+    assignments.push([input.agent === 'pi' ? '$SetupPiMaxRetries' : '$SetupOmpMaxRetries', powerShellOptionalNumber(retry.maxRetries)]);
+    if (input.agent === 'pi') assignments.push(['$SetupPiThinkingLevel', powerShellOptional(configuration.pi.thinkingLevel)]);
   }
   const lines = assignments.map(([name, value]) => `${name} = ${value}`);
   return `Set-PSDebug -Off\n${lines.join('\n')}\n`;
