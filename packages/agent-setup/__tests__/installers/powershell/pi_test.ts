@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
@@ -200,6 +200,53 @@ try { Apply-SetupPiStaged; throw 'Failure was not reached' } catch { if ($_.Exce
     expect(readFileSync(join(directory, 'auth.json'), 'utf8')).toBe(auth);
     expect(readFileSync(join(directory, 'floway.json'), 'utf8')).toBe(connections);
     expect(readFileSync(join(directory, 'floway.js'), 'utf8')).toBe('original extension');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test.skipIf(!hasPowerShell).each([false, true])('PowerShell Pi protects the native auth backup before writing credentials (protection failure: %s)', failProtection => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-auth-backup-test-'));
+  try {
+    const original = '\uFEFF{"floway":{"type":"api_key","key":"synthetic-native-key"},"other":{"type":"api_key","key":"synthetic-other-key"}}\r\n';
+    const authPath = join(directory, 'auth.json');
+    writeFileSync(authPath, original, { mode: 0o600 });
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const scriptPath = join(directory, 'backup.ps1');
+    writeFileSync(scriptPath, `$ErrorActionPreference='Stop'\n${fragment}\n
+$script:PiExtensionPath=Join-Path $args[0] 'floway.js'
+$script:PiConnectionsPath=Join-Path $args[0] 'floway.json'
+$script:PiSettingsPath=Join-Path $args[0] 'settings.json'
+$script:PiAuthPath=Join-Path $args[0] 'auth.json'
+$script:FailProtection=$${failProtection}
+$script:ProtectionObserved=$false
+$script:NativeProtection=(Get-Command Protect-SetupFile).ScriptBlock
+function Protect-SetupFile {
+  param([string]$Path)
+  if ($Path -ne $script:PiAuthBackup) { throw 'Unexpected protection target' }
+  if ([IO.File]::ReadAllBytes($Path).Length -ne 0) { throw 'Credentials were written before backup protection' }
+  $script:ProtectionObserved=$true
+  if ($script:FailProtection) { throw 'injected protection failure' }
+  & $script:NativeProtection $Path
+}
+try {
+  Backup-SetupPiFiles
+  if ($script:FailProtection) { throw 'Protection failure was not reached' }
+} catch {
+  if (-not $script:FailProtection -or $_.Exception.Message -ne 'injected protection failure') { throw }
+}
+if (-not $script:ProtectionObserved) { throw 'Protection was not reached' }
+[PSCustomObject]@{ BackupFile=[IO.Path]::GetFileName($script:PiAuthBackup) } | ConvertTo-Json -Compress
+`);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const { BackupFile } = JSON.parse(result.stdout) as { BackupFile: string };
+    const backup = join(directory, BackupFile);
+    expect(readFileSync(authPath, 'utf8')).toBe(original);
+    expect(readFileSync(backup, 'utf8')).toBe(failProtection ? '' : original);
+    if (!failProtection && process.platform !== 'win32') expect(statSync(backup).mode & 0o777).toBe(0o600);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

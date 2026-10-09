@@ -145,8 +145,11 @@ function Backup-SetupPiFiles {
   }
   if ($script:PiAuthExisted) {
     $script:PiAuthBackup = "$($script:PiAuthPath).floway-backup.$stamp"
-    Copy-Item -LiteralPath $script:PiAuthPath -Destination $script:PiAuthBackup -Force
+    # On Windows, a new backup inherits its directory's DACL; protect it before writing credentials.
+    # https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights
+    [System.IO.File]::Create($script:PiAuthBackup).Dispose()
     Protect-SetupFile $script:PiAuthBackup
+    [System.IO.File]::WriteAllBytes($script:PiAuthBackup, [System.IO.File]::ReadAllBytes($script:PiAuthPath))
   }
 }
 
