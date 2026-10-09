@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,4 +36,26 @@ describe.skipIf(!hasPowerShell)('PowerShell captured and live process launch bou
       });
     }
   }
+
+  test('a captured probe receives EOF while its PowerShell caller input stays open', async () => {
+    const helper = readFileSync(join(packageRoot, 'installers/powershell/common/process.ps1'), 'utf8');
+    const nodeProbe = 'process.stdin.resume(); process.stdin.on("end", () => process.stdout.write("probe-eof"));';
+    const script = [
+      "$ErrorActionPreference='Stop'; function Test-SetupIsWindows { $false }; function Stop-Setup { param([string]$Message) throw $Message };",
+      helper,
+      `$result = Invoke-SetupProcess -Exe ${quote(process.execPath)} -Arguments @('-e', ${quote(nodeProbe)}) -TimeoutSeconds 2 -CloseInput;`,
+      'if ($result.ExitCode -ne 0) { throw $result.Output }; [Console]::Write($result.Output);',
+    ].join('\n');
+    const child = spawn('pwsh', ['-NoProfile', '-Command', script]);
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    const status = await new Promise<number | null>((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', resolve);
+    });
+    child.stdin.destroy();
+    expect(status, stderr).toBe(0);
+    expect(stdout).toBe('probe-eof');
+  });
 });
