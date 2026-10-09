@@ -61,9 +61,13 @@ export const calendarCss = `
 .floway-calendar-measure { visibility: hidden; }
 .floway-calendar-month-measure { height: calc(6 * var(--floway-calendar-row-size)); margin: 2px; }
 .floway-calendar-background, .floway-calendar-view { position: absolute; inset: 0; transform-origin: center; }
-.floway-calendar-background { background-color: var(--winui-control-fill-input-active); }
+.floway-calendar-background { background-color: transparent; }
 .floway-calendar-outgoing { pointer-events: none; }
-.floway-calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin: 2px 2px 0; }
+/* WeekDayNames inherits the calendar background again; BackgroundLayer has
+   no brush. With the translucent dark brush, only the weekday strip receives
+   the second layer.
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/CommonStyles/CalendarViewStyle.xaml#L458-L490 */
+.floway-calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin: 2px 2px 0; background-color: var(--winui-control-fill-input-active); }
 .floway-calendar-weekdays > span { box-sizing: border-box; justify-self: center; align-self: center; white-space: nowrap; text-align: center; margin: 1px; padding: 12px; font-size: 12px; font-weight: 600; line-height: normal; }
 /* ScrollViewer owns month navigation, not a fade on each row. Its native
    manipulation API takes bounds and an animate flag rather than a duration.
