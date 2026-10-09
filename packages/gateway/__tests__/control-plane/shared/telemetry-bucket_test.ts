@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createTelemetryBucket } from '../../../src/control-plane/shared/telemetry-bucket.ts';
+import { createTelemetryBucket } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('hour buckets retain the caller-requested local wall clock', () => {

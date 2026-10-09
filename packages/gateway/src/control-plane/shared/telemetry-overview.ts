@@ -1,10 +1,9 @@
 import type { Context } from 'hono';
 
-import type { TelemetryBucketGranularity } from './telemetry-bucket.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
-import { parseTelemetryHour } from '@floway-dev/protocols/common';
+import { parseTelemetryHour, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 interface TelemetryOverviewQuery {
   start?: string;

@@ -3,6 +3,7 @@
 // Fluent's CommonJS entrypoints. The guard is what turns a regression in that
 // wiring into a crash here instead of an undefined component deep in a tree.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-components/package.json#L89-L102
+import { Calendar } from '@fluentui/react-calendar-compat';
 import * as fluentNamespace from '@fluentui/react-components';
 
 import { withWinuiAppearance } from './winui/appearance';
@@ -21,6 +22,7 @@ if (!(fluentNamespace as Partial<FluentComponents>).FluentProvider) {
 // the toast's component layer, so the state and hook layers the toaster is
 // rebuilt from are imported from `@fluentui/react-toast` in ./winui/toaster,
 // which is the app's only value import of that package.
-export const fluentComponents = withWinuiToaster(withWinuiDrag(
-  withWinuiMotion(withWinuiAppearance(fluentNamespace)),
-));
+export const fluentComponents = {
+  ...withWinuiToaster(withWinuiDrag(withWinuiMotion(withWinuiAppearance(fluentNamespace)))),
+  Calendar,
+};

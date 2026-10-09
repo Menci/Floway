@@ -7,6 +7,7 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
+import { sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
@@ -27,6 +28,7 @@ import { buildPerformanceChart, performanceBuckets } from '../components/perform
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -219,7 +221,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     onQueryCommit,
   );
 
-  usePollWhileVisible(poll);
+  const [editingRange, setEditingRange] = useState(false);
+  usePollWhileVisible(poll, 60_000, !editingRange);
 
   const urlState = useMemo<PerformanceUrlState>(
     () => ({ ...loadedQuery, metric, percentile, hidden: [...hiddenSeries] }),
@@ -246,7 +249,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }));
   };
   const changeRange = (next: PerformanceRange) => {
-    if (next === query.range) return;
+    if (sameDashboardRange(next, query.range)) {
+      void refresh();
+      return;
+    }
     setQuery(current => ({ ...current, range: next }));
   };
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setQuery(current => ({
@@ -333,9 +339,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
             ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
             <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-            <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} disabled={refreshing} items={[
-              { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-            ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
+            <TelemetryTimeRange
+              addressOf={range => addressOf({ range })}
+              ariaLabel={t('dashboard.performance.range.label')}
+              loadedAt={loadedAt}
+              onChange={changeRange}
+              onEditingChange={setEditingRange}
+              range={loadedQuery.range}
+            />
           </div>
         </Panel>
         <Panel className="min-w-0">

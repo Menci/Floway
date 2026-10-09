@@ -19,7 +19,6 @@ test('today keeps both repeated local hours as distinct frames', () => {
   expect(new Set(frames.map(frame => frame.key)).size).toBe(24);
 });
 
-
 test('presets preserve their window and bucket counts', () => {
   vi.stubEnv('TZ', 'Asia/Singapore');
   const now = Date.UTC(2026, 9, 10, 6, 37);
@@ -46,8 +45,8 @@ test('first and last natural buckets clip to the exact query interval', () => {
   const frames = dashboardBucketFrames(range, 0);
   expect(frames[0]?.start).toBe(range.start);
   expect(frames.at(-1)?.end).toBe(range.end);
-  expect(frames.every(frame => frame.start! >= range.start && frame.end! <= range.end)).toBe(true);
-  expect(frames.reduce((sum, frame) => sum + frame.end! - frame.start!, 0)).toBe(range.end - range.start);
+  expect(frames.every(frame => frame.start >= range.start && frame.end <= range.end)).toBe(true);
+  expect(frames.reduce((sum, frame) => sum + frame.end - frame.start, 0)).toBe(range.end - range.start);
 });
 
 test('only matching current endpoints enable preset following', () => {
@@ -82,7 +81,7 @@ test('custom bucket keys match the server through DST and fractional offsets', (
     const range = { start: Date.UTC(2026, 9, 25, 14), end: Date.UTC(2026, 10, 10, 16) };
     const frames = dashboardBucketFrames(range, 0);
     const mapper = dashboardBucketMapper(range, 0);
-    for (const frame of frames) expect(mapper(new Date(frame.start!).toISOString().slice(0, 13))).toBe(frame.key);
-    expect(frames.reduce((sum, frame) => sum + frame.end! - frame.start!, 0)).toBe(range.end - range.start);
+    for (const frame of frames) expect(mapper(new Date(frame.start).toISOString().slice(0, 13))).toBe(frame.key);
+    expect(frames.reduce((sum, frame) => sum + frame.end - frame.start, 0)).toBe(range.end - range.start);
   }
 });

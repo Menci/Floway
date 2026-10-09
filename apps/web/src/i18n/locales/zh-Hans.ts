@@ -5,6 +5,12 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      dateTime: {
+        date: '日期', time: '时间', dateFormat: 'YYYY/MM/DD', invalidDate: '请输入 YYYY/MM/DD 格式的有效日期',
+        today: '今天', previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
+        previousDecade: '上一个十年', nextDecade: '下一个十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
+        selectedDate: '已选日期 {0}', todayDate: '今天 {0}', week: '第 {0} 周', markedDate: '标记日期',
+      },
       bodyViewer: {
         options: '正文选项',
         find: '搜索正文',
@@ -1066,7 +1072,14 @@ const zhHansCN = {
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
       },
-      telemetry: { currentUserOnly: '仅自己' },
+      telemetry: {
+        currentUserOnly: '仅自己',
+        range: {
+          to: '到', start: '开始时间', end: '结束时间', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天',
+          invalid: '结束时间必须晚于开始时间',
+          aggregation: { hour: '按小时汇总', '4h': '每 4 小时汇总', '8h': '每 8 小时汇总', day: '按天汇总', week: '按周汇总', month: '按月汇总', year: '按年汇总' },
+        },
+      },
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
@@ -1083,12 +1096,7 @@ const zhHansCN = {
           unknownUser: '未知用户',
           selected_other: '已选择 {{count, number}} 项',
         },
-        range: {
-          label: '使用量范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '使用量范围' },
         actions: { refresh: '刷新使用量' },
         charts: {
           search: '搜索使用量',
@@ -1125,12 +1133,7 @@ const zhHansCN = {
           userId: '用户',
           keyId: 'API 密钥',
         },
-        range: {
-          label: '性能数据范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '性能数据范围' },
         percentile: { label: '百分位' },
         summary: {
           requests: '请求数',

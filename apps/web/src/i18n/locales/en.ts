@@ -7,6 +7,12 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      dateTime: {
+        date: 'Date', time: 'Time', dateFormat: 'YYYY/MM/DD', invalidDate: 'Enter a valid date in YYYY/MM/DD format',
+        today: 'Today', previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
+        previousDecade: 'Previous decade', nextDecade: 'Next decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
+        selectedDate: 'Selected date {0}', todayDate: 'Today {0}', week: 'Week {0}', markedDate: 'Marked date',
+      },
       bodyViewer: {
         options: 'Body options',
         find: 'Find in body',
@@ -1114,7 +1120,14 @@ const en = {
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
       },
-      telemetry: { currentUserOnly: 'Only me' },
+      telemetry: {
+        currentUserOnly: 'Only me',
+        range: {
+          to: 'to', start: 'Start time', end: 'End time', oneDay: '1d', sevenDays: '7d', thirtyDays: '30d',
+          invalid: 'End time must be later than start time',
+          aggregation: { hour: 'Hourly', '4h': 'Every 4 hours', '8h': 'Every 8 hours', day: 'Daily', week: 'Weekly', month: 'Monthly', year: 'Yearly' },
+        },
+      },
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output' },
@@ -1132,12 +1145,7 @@ const en = {
           selected_one: '{{count, number}} selected',
           selected_other: '{{count, number}} selected',
         },
-        range: {
-          label: 'Usage range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Usage range' },
         actions: { refresh: 'Refresh usage' },
         charts: {
           search: 'Search Usage',
@@ -1175,12 +1183,7 @@ const en = {
           userId: 'User',
           keyId: 'API Key',
         },
-        range: {
-          label: 'Performance range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Performance range' },
         percentile: { label: 'Percentile' },
         summary: {
           requests: 'Requests',

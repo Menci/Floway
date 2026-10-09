@@ -1,6 +1,7 @@
 import { accordionCss } from './controls/accordion.css';
 import { badgeTagCss } from './controls/badge-tag.css';
 import { buttonCss } from './controls/button.css';
+import { calendarCss } from './controls/calendar.css';
 import { cardCss } from './controls/card.css';
 import { choiceCss } from './controls/choice.css';
 import { colorPickerCss } from './controls/color-picker.css';
@@ -37,6 +38,7 @@ export const winuiCss = [
   badgeTagCss,
   buttonCss,
   cardCss,
+  calendarCss,
   choiceCss,
   colorPickerCss,
   dialogCss,

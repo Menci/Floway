@@ -13,8 +13,8 @@ export type DashboardGranularity = Exclude<TelemetryBucketGranularity, 'all'>;
 export interface DashboardBucketFrame {
   date: Date;
   key: string;
-  start?: number;
-  end?: number;
+  start: number;
+  end: number;
 }
 
 export interface ChartBucket extends DashboardBucketFrame { label: string }
@@ -141,13 +141,6 @@ export const dashboardRangeQuery = (range: DashboardRange, nowMs: number) => {
   };
 };
 
-export const dashboardBucketKeyForUtcHour = (range: DashboardRange, hour: string): string =>
-  createTelemetryBucket({
-    bucket: typeof range === 'string' ? range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day' : dashboardGranularity(range, 0),
-    timeZone: typeof range === 'string' && range === 'today' || typeof range !== 'string' && dashboardGranularity(range, 0) === 'hour' ? 'UTC' : timeZone(),
-    timezoneOffsetMinutes: 0,
-  })(hour);
-
 export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
   const query = dashboardRangeQuery(range, nowMs);
   return createTelemetryBucket({ bucket: query.bucket, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
@@ -195,7 +188,6 @@ export const formatAxisDate = (date: Date, range: DashboardRange, locale: string
 };
 
 export const formatBucketInterval = (frame: DashboardBucketFrame, locale: string): string => {
-  if (frame.start === undefined || frame.end === undefined) throw new Error('Chart bucket has no interval');
   const formatter = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   return formatter.formatRange(new Date(frame.start), new Date(frame.end));
 };
