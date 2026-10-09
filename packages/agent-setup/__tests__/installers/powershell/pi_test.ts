@@ -135,8 +135,11 @@ test.skipIf(!hasPowerShell)('PowerShell Pi prunes obsolete settings backups afte
     const script = `$ErrorActionPreference='Stop';\n${fragment}\n
 $script:PiExtensionPath=Join-Path $args[0] 'extensions/floway.js'
 $script:PiSettingsPath=Join-Path $args[0] 'settings.json'
+$script:PiAuthPath=Join-Path $args[0] 'auth.json'
+$script:PiConnectionsPath=Join-Path $args[0] 'floway.json'
 $script:PiExtensionBackup=$null
 $script:PiSettingsBackup=$null
+$script:PiAuthBackup=$null
 Remove-SetupPiBackups
 `;
     const scriptPath = join(directory, 'cleanup.ps1');
@@ -145,6 +148,58 @@ Remove-SetupPiBackups
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(existsSync(backup)).toBe(false);
     expect(existsSync(join(directory, 'settings.json'))).toBe(false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(!hasPowerShell)('PowerShell Pi restores credentials after a later extension replacement fails', () => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-auth-rollback-test-'));
+  try {
+    const auth = '{"openai":{"type":"api_key","key":"other-key"},"floway":{"type":"api_key","key":"old-key"}}';
+    writeFileSync(join(directory, 'auth.json'), auth);
+    writeFileSync(join(directory, 'floway.js'), 'original extension');
+    writeFileSync(join(directory, 'settings.json'), '{}');
+    const connections = '{"connections":[{"provider":"floway","endpoint":"https://old.example"}]}';
+    writeFileSync(join(directory, 'floway.json'), connections);
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const prefix = renderPowerShellPrefix({ agent: 'pi', extensionPath: '/pi.js', apiKey: 'new-key', apiKeyName: 'Test', configuration: defaultAgentSetupConfiguration('key-a') });
+    const script = `${prefix}\n$ErrorActionPreference='Stop'\n${fragment}\n
+$SetupEndpoint='https://new.example'
+$script:PiTmpDir=$args[0]
+$script:PiAuthPath=Join-Path $args[0] 'auth.json'
+$script:PiConnectionsPath=Join-Path $args[0] 'floway.json'
+$script:PiExtensionPath=Join-Path $args[0] 'floway.js'
+$script:PiSettingsPath=Join-Path $args[0] 'settings.json'
+Backup-SetupPiFiles
+Stage-SetupPiAuth
+$script:PiConnectionsStage="$($script:PiConnectionsPath).floway-stage"
+Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider -IncludeKey $false
+$script:PiExtensionStage="$($script:PiExtensionPath).floway-stage"
+[IO.File]::WriteAllText($script:PiExtensionStage,'new extension')
+function Move-Item {
+  param([string]$LiteralPath,[string]$Destination,[switch]$Force)
+  if ($LiteralPath -eq $script:PiExtensionStage) {
+    $value=[IO.File]::ReadAllText($script:PiAuthPath)|ConvertFrom-Json
+    if ($value.floway.key -ne 'new-key') { throw 'Auth replacement was not reached' }
+    $connection=[IO.File]::ReadAllText($script:PiConnectionsPath)|ConvertFrom-Json
+    if ($connection.connections[0].endpoint -ne $SetupEndpoint.TrimEnd('/')) { throw 'Connection replacement was not reached' }
+    Write-Output 'auth replacement observed'
+    throw 'test replacement failure'
+  }
+  Microsoft.PowerShell.Management\\Move-Item -LiteralPath $LiteralPath -Destination $Destination -Force:$Force
+}
+try { Apply-SetupPiStaged; throw 'Failure was not reached' } catch { if ($_.Exception.Message -ne 'test replacement failure') { throw }; Restore-SetupPiFiles }
+`;
+    const path = join(directory, 'rollback.ps1');
+    writeFileSync(path, script);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', path, directory], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain('auth replacement observed');
+    expect(readFileSync(join(directory, 'auth.json'), 'utf8')).toBe(auth);
+    expect(readFileSync(join(directory, 'floway.json'), 'utf8')).toBe(connections);
+    expect(readFileSync(join(directory, 'floway.js'), 'utf8')).toBe('original extension');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

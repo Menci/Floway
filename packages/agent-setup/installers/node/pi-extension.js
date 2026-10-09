@@ -1,5 +1,9 @@
+// Managed by Floway Agent Setup.
+import { envApiKeyAuth } from '@earendil-works/pi-ai';
 import { getApiProvider } from '@earendil-works/pi-ai/compat';
-import { VERSION } from '@earendil-works/pi-coding-agent';
+import { ModelRuntime, VERSION } from '@earendil-works/pi-coding-agent';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import * as zlib from 'node:zlib';
 
 // Work around Undici advertising Zstd on runtimes without its decoder.
@@ -17,10 +21,15 @@ const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${p
 const userAgent = `pi/${VERSION} (${process.platform}; ${runtime}; ${process.arch})`;
 
 export default async pi => {
+  const { connections } = JSON.parse(await readFile(new URL('../floway.json', import.meta.url), 'utf8'));
+  // Factory discovery precedes registration in Pi's runtime. Its public SDK
+  // resolves stored keys, including command/environment values, without a model file.
+  // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/core/model-runtime.ts
+  const credentials = await ModelRuntime.create({ authPath: fileURLToPath(new URL('../auth.json', import.meta.url)), modelsPath: null, refreshOnCreate: false });
   for (const connection of connections) {
-    const fetchModels = async (signal = AbortSignal.timeout(15000)) => {
+    const fetchModels = async (apiKey, signal = AbortSignal.timeout(15000)) => {
       const response = await fetch(`${connection.endpoint}/v1/models?endpoint=${encodeURIComponent(connection.endpoint)}&provider=${encodeURIComponent(connection.provider)}`, {
-        headers: { Authorization: `Bearer ${connection.apiKey}`, 'User-Agent': userAgent, 'Accept-Encoding': acceptEncoding },
+        headers: { Authorization: `Bearer ${apiKey}`, 'User-Agent': userAgent, 'Accept-Encoding': acceptEncoding },
         signal,
       });
       if (!response.ok) throw new Error(`Floway model discovery failed: HTTP ${response.status}: ${await response.text()}`);
@@ -28,15 +37,16 @@ export default async pi => {
       if (!Array.isArray(models)) throw new Error('Floway returned an invalid model catalog');
       return models;
     };
-    let models = await fetchModels();
-    pi.registerProvider({
+    let models = [];
+    const provider = {
       id: connection.provider,
       name: connection.provider,
-      auth: { apiKey: { name: 'Floway API key', check: async () => ({ type: 'api_key', source: 'configured API key' }), resolve: async () => ({ auth: { apiKey: connection.apiKey }, source: 'configured API key' }) } },
+      auth: { apiKey: envApiKeyAuth('Floway API key', []) },
       getModels: () => models,
       refreshModels: async context => {
         if (!context.allowNetwork) return;
-        const refreshed = await fetchModels(context.signal);
+        if (context.credential?.type !== 'api_key') throw new Error(`No Pi API key stored for ${connection.provider}`);
+        const refreshed = await fetchModels(context.credential.key, context.signal);
         await context.publish({
           persist: { models: refreshed, checkedAt: Date.now() },
           update: () => { models = refreshed; },
@@ -58,6 +68,10 @@ export default async pi => {
           return options.onPayload?.(payload, model);
         },
       }),
-    });
+    };
+    credentials.registerNativeProvider(provider);
+    const auth = await credentials.getAuth(connection.provider);
+    if (auth !== undefined) models = await fetchModels(auth.auth.apiKey);
+    pi.registerProvider(provider);
   }
 };

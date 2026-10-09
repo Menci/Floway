@@ -16,6 +16,7 @@ import {
   createAgentSetupPublicRoutes,
 } from '../src/routes.ts';
 import {
+  SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION,
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
   SETUP_BASH_COMMON,
@@ -508,7 +509,7 @@ test('GET serves rendered pi bash and powershell scripts reflecting configuratio
   expect(await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text()).toContain("$SetupPiModel = 'custom-pi-model'");
 });
 
-test('the leased Pi extension safely embeds its endpoint and key without caching', async () => {
+test('the leased Pi extension is fixed across configurations and endpoint queries', async () => {
   const h = harness();
   const lease = await (await h.request('/api/setup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }) })).json() as LeaseResponse;
   const url = `/api/setup/${lease.token}/pi.js?endpoint=${encodeURIComponent('https://gateway.example/prefix')}`;
@@ -516,15 +517,16 @@ test('the leased Pi extension safely embeds its endpoint and key without caching
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('no-store');
   const source = await response.text();
-  expect(source).toContain('"endpoint":"https://gateway.example/prefix"');
-  expect(source).toContain('"apiKey":"raw-key"');
-  expect(source).toContain('"provider":"floway"');
+  expect(source).toBe(SETUP_NODE_PI_EXTENSION);
+  expect(source).not.toContain('raw-key');
+
   const head = await h.request(url, { method: 'HEAD' });
   expect(head.status).toBe(200);
   expect(await head.text()).toBe('');
   for (const endpoint of ['', 'file:///tmp/file', 'https://user:secret@example.com', 'https://example.com?query=1']) {
     const invalid = await h.request(`/api/setup/${lease.token}/pi.js?endpoint=${encodeURIComponent(endpoint)}`);
-    expect(invalid.status).toBe(400);
+    expect(invalid.status).toBe(200);
+    expect(await invalid.clone().text()).toBe(source);
     expect(await invalid.text()).not.toContain(RAW_KEY);
   }
   const missing = await h.request(`/api/setup/${'x'.repeat(43)}/pi.js?endpoint=https://example.com`);
@@ -547,14 +549,14 @@ test('serves live OMP scripts and a leased extension without affecting Pi prefer
   expect(response.status).toBe(200);
   expect(response.headers.get('cache-control')).toBe('no-store');
   const source = await response.text();
-  expect(source).toContain(RAW_KEY);
-  expect(source).toContain('"provider":"personal"');
+  expect(source).not.toContain(RAW_KEY);
+  expect(source).toBe(SETUP_NODE_OMP_EXTENSION);
   expect(await (await h.request(url, { method: 'HEAD' })).text()).toBe('');
-  expect((await h.request(`/api/setup/${lease.token}/omp.js?endpoint=file:///tmp/config`)).status).toBe(400);
+  expect((await h.request(`/api/setup/${lease.token}/omp.js?endpoint=file:///tmp/config`)).status).toBe(200);
   expect(await (await h.request(lease.scripts.pi.sh)).text()).toContain("SETUP_PI_MODEL=''");
 });
 
-test('uses the saved Pi provider identifier in its leased extension and install prefix', async () => {
+test('uses the saved Pi provider identifier in its install prefix', async () => {
   const h = harness();
   const lease = await create(h);
   const configuration = { ...lease.configuration, pi: { model: null, provider: 'work', thinkingLevel: null, retry: { enabled: null, maxRetries: null } } };
@@ -563,6 +565,6 @@ test('uses the saved Pi provider identifier in its leased extension and install 
   const script = await (await h.request(lease.scripts.pi.sh)).text();
   expect(script).toContain("SETUP_PI_PROVIDER='work'");
   const extension = await (await h.request(`/api/setup/${lease.token}/pi.js?endpoint=https://gateway.example`)).text();
-  expect(extension).toContain('"provider":"work"');
-  expect(extension).toContain('"apiKey":"raw-key"');
+  expect(extension).toBe(SETUP_NODE_PI_EXTENSION);
+  expect(extension).not.toContain('raw-key');
 });

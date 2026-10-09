@@ -2,8 +2,8 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export class JsoncRefusalError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(message, options) {
+    super(message, options);
     this.name = 'JsoncRefusalError';
   }
 }
@@ -327,20 +327,30 @@ export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry 
   return result;
 }
 
-function setSettingsProperty(src, path, value) {
+export function updatePiAuth(src, provider, key) {
+  let document;
+  try { document = src === '' ? {} : JSON.parse(src); } catch (cause) { throw new JsoncRefusalError('Invalid JSON in auth.json', { cause }); }
+  if (document === null || Array.isArray(document) || typeof document !== 'object') throw new JsoncRefusalError('Root value in auth.json must be an object');
+  // Pi resolves stored keys as config values; escape a literal key on write.
+  // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/docs/custom-provider.md#L74-L81
+  const escaped = key.replaceAll('$', () => '$$');
+  return setSettingsProperty(src === '' ? '{}\n' : src, [provider], { type: 'api_key', key: key.startsWith('!') ? `$${  escaped}` : escaped }, 'auth.json');
+}
+
+function setSettingsProperty(src, path, value, fileName = 'settings.json') {
   const ast = parseJsoncAst(src);
   let current = ast.root;
   for (let index = 0; index < path.length; index++) {
     const key = path[index];
     const properties = current.properties.filter(property => property.keyToken.value === key);
-    if (properties.length > 1) throw new JsoncRefusalError(`Duplicate "${key}" key found in settings.json`);
+    if (properties.length > 1) throw new JsoncRefusalError(`Duplicate "${key}" key found in ${fileName}`);
     const property = properties[0];
     if (!property) {
       const nested = path.slice(index + 1).reduceRight((child, parent) => ({ [parent]: child }), value);
       return insertObjectProperty(src, key, JSON.stringify(nested), current, detectIndent(src), detectLineEnding(src));
     }
     if (index === path.length - 1) return src.slice(0, property.value.start) + JSON.stringify(value) + src.slice(property.value.end);
-    if (property.value.kind !== 'object') throw new JsoncRefusalError(`"${path.slice(0, index + 1).join('.')}" must be an object in settings.json`);
+    if (property.value.kind !== 'object') throw new JsoncRefusalError(`"${path.slice(0, index + 1).join('.')}" must be an object in ${fileName}`);
     current = property.value;
   }
 }
@@ -391,6 +401,11 @@ function runCli() {
   }
 
   try {
+    if (process.argv[2] === 'auth') {
+      process.stdout.write(updatePiAuth(input, process.env.FLOWAY_DEFAULT_PROVIDER, process.env.FLOWAY_PI_AUTH_KEY));
+      return;
+    }
+    if (process.argv[2] !== 'settings') throw new Error(`Unknown JSON editor mode: ${process.argv[2]}`);
     const defaultModel = envOrEmpty('FLOWAY_DEFAULT_MODEL') || null;
     const thinkingLevel = envOrEmpty('FLOWAY_PI_THINKING_LEVEL') || null;
     const retryEnabled = envOrEmpty('FLOWAY_PI_RETRY_ENABLED');

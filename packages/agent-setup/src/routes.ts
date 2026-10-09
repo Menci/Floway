@@ -21,10 +21,9 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
-import { InvalidAgentSetupEndpointError } from './extension-endpoint.ts';
-import { renderAgentExtension } from './render-extension.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
+import { SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION } from './script-assets.generated.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
@@ -168,15 +167,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       const resolved = await resolveServeableLease(deps, token);
       if (!resolved) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
-      const endpoint = c.req.query('endpoint');
-      if (endpoint === undefined) return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);
-      let source: string;
-      try {
-        source = renderAgentExtension({ agent, endpoint, apiKey: resolved.apiKey, provider: resolved.configuration[agent].provider });
-      } catch (error) {
-        if (!(error instanceof InvalidAgentSetupEndpointError)) throw error;
-        return c.json({ error: { type: 'invalid_endpoint' } }, 400, NON_CACHEABLE_HEADERS);
-      }
+      const source = agent === 'pi' ? SETUP_NODE_PI_EXTENSION : SETUP_NODE_OMP_EXTENSION;
       return c.body(source, 200, SCRIPT_RESPONSE_HEADERS);
     } catch (error) {
       console.error(`Agent Setup: failed to serve the ${agent} extension`, publicErrorDiagnostics(error, token));

@@ -1,8 +1,11 @@
+// Managed by Floway Agent Setup.
 import { USER_AGENT } from '@oh-my-pi/pi-utils';
 import { streamSimple } from '@oh-my-pi/pi-ai';
+import { readFile } from 'node:fs/promises';
 import { buildModel } from '@oh-my-pi/pi-catalog/build';
 
 export default async pi => {
+  const { connections } = JSON.parse(await readFile(new URL('../floway.json', import.meta.url), 'utf8'));
   const refresh = async () => {
     for (const { provider, endpoint, apiKey } of connections) {
       const baseUrl = endpoint + '/v1';

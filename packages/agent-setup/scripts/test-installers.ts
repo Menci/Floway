@@ -7,14 +7,15 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import * as zlib from 'node:zlib';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
-import { renderAgentExtension } from '../src/render-extension.ts';
 import { type RenderPrefixInput, renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 import {
+  SETUP_NODE_OMP_EXTENSION,
+  SETUP_NODE_PI_EXTENSION,
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
   SETUP_BASH_COMMON,
@@ -583,9 +584,8 @@ const startModelServer = async (): Promise<ModelServer> => {
       return;
     }
     if (pathname.endsWith('/pi.js')) {
-      const endpoint = new URL(req.url!, 'http://localhost').searchParams.get('endpoint')!;
       res.writeHead(200, { 'content-type': 'text/javascript' });
-      res.end(renderAgentExtension({ agent: 'pi', endpoint, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
+      res.end(SETUP_NODE_PI_EXTENSION);
       return;
     }
     if (pathname === '/test/pi/fail') {
@@ -608,7 +608,7 @@ const startModelServer = async (): Promise<ModelServer> => {
     if (pathname === '/omp.js') {
       res.writeHead(200, { 'content-type': 'text/plain' });
       if (state.mode === 'empty-extension') { res.end(''); return; }
-      res.end(renderAgentExtension({ agent: 'omp', endpoint: new URL(req.url!, 'http://localhost').searchParams.get('endpoint')!, apiKey: SENTINEL_KEY, provider: new URL(req.url!, 'http://localhost').searchParams.get('provider') ?? 'floway' }));
+      res.end(SETUP_NODE_OMP_EXTENSION);
       return;
     }
     if (pathname === '/v1/models' || pathname === '/models') {
@@ -2979,7 +2979,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
 const piFixture: { models: Record<string, unknown>[]; catalogs: Record<string, unknown>[][]; status: number } = { models: [], catalogs: [], status: 200 };
 
 for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell', runPowerShellInstaller]] as const) {
-  test('pi', `${label}: installs a protected dynamic extension and preserves unrelated configuration`, async t => {
+  test('pi', `${label}: installs a protected fixed extension and preserves unrelated configuration`, async t => {
     if (label === 'PowerShell' && !hostPwsh) skip('no PowerShell interpreter on this host');
     const ws = makeWorkspace();
     placeFakePi(ws.binDir);
@@ -2993,8 +2993,13 @@ for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell',
     t.ok(existsSync(extension), 'extension exists');
     t.equal(statSync(extension).mode & 0o777, 0o600, 'extension is private');
     const source = readFileSync(extension, 'utf8');
-    t.includes(source, SENTINEL_KEY, 'selected key embedded privately');
-    t.includes(source, modelServer.url, 'endpoint embedded');
+    t.excludes(source, SENTINEL_KEY, 'the shared extension contains no key');
+    const auth = JSON.parse(readFileSync(join(piDirFor(ws), 'auth.json'), 'utf8'));
+    t.equal(auth.floway.type, 'api_key');
+    t.equal(auth.floway.key, SENTINEL_KEY);
+    t.equal(statSync(join(piDirFor(ws), 'auth.json')).mode & 0o777, 0o600, 'credentials are private');
+    t.equal(source, SETUP_NODE_PI_EXTENSION, 'extension is the fixed resource');
+    t.equal(JSON.parse(readFileSync(join(piDirFor(ws), 'floway.json'), 'utf8')).connections[0].endpoint, modelServer.url);
     t.equal(readFileSync(modelsPath, 'utf8'), unrelated, 'unrelated models.json preserved byte for byte');
     t.ok(!existsSync(piSettingsPath(ws)), 'no settings file when no default is selected');
     t.ok(modelServer.requests.some(request => request.path.endsWith('/pi.js')), 'leased extension downloaded');
@@ -3013,15 +3018,39 @@ for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell',
     mkdirSync(join(piDirFor(ws), 'extensions'), { recursive: true });
     const extension = piExtensionPath(ws);
     const settings = piSettingsPath(ws);
-    const original = renderAgentExtension({ agent: 'pi', provider: 'old', endpoint: 'https://old.example', apiKey: 'old-key' });
+    const original = SETUP_NODE_PI_EXTENSION;
     writeFileSync(extension, original);
     writeFileSync(settings, '{"theme":"dark"}');
+    const connectionPath = join(piDirFor(ws), 'floway.json');
+    const connections = '{"connections":[{"provider":"old","endpoint":"https://old.example"}]}';
+    writeFileSync(connectionPath, connections);
+    const auth = join(piDirFor(ws), 'auth.json');
+    const credentials = '{"openai":{"type":"api_key","key":"original"}}';
+    writeFileSync(auth, credentials);
     const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'm' }), fakePiFailConfig: true });
     t.notEqual(run.code, 0, 'injected failure aborts');
     t.includes(run.combined, 'Pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
     t.equal(readFileSync(extension, 'utf8'), original);
     t.equal(readFileSync(settings, 'utf8'), '{"theme":"dark"}');
+    t.equal(readFileSync(auth, 'utf8'), credentials);
+    t.equal(readFileSync(connectionPath, 'utf8'), connections);
     t.equal(piStagedFiles(join(piDirFor(ws), 'extensions')).length, 0);
+  });
+
+  test('pi', `${label}: malformed native credentials fail without changing files or exposing values`, async t => {
+    if (label === 'PowerShell' && !hostPwsh) skip('no PowerShell interpreter on this host');
+    const ws = makeWorkspace();
+    placeFakePi(ws.binDir);
+    mkdirSync(piDirFor(ws), { recursive: true });
+    const path = join(piDirFor(ws), 'auth.json');
+    const original = '{"openai":{"type":"api_key","key":"existing-private-key"}} trailing';
+    writeFileSync(path, original);
+    const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
+    t.notEqual(run.code, 0);
+    t.includes(run.combined, 'Invalid JSON in auth.json');
+    t.excludes(run.combined, 'existing-private-key');
+    t.equal(readFileSync(path, 'utf8'), original);
+    t.ok(!existsSync(piExtensionPath(ws)));
   });
 
   test('pi', `${label}: settings JSONC comments and line endings survive default changes`, async t => {
@@ -3534,6 +3563,13 @@ test('pi', 'real Pi SDK refresh replaces and removes models while retaining full
   writeFileSync(runner, `
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const authPath = join(process.env.PI_CODING_AGENT_DIR, 'auth.json');
+const credentials = JSON.parse(readFileSync(authPath, 'utf8'));
+process.env.FLOWAY_PI_FIXTURE_KEY = ${JSON.stringify(SENTINEL_KEY)};
+credentials.floway.key = '!printf %s "$FLOWAY_PI_FIXTURE_KEY"';
+writeFileSync(authPath, JSON.stringify(credentials));
 const { createAgentSession, SessionManager } = await import(pathToFileURL(process.env.PI_SDK_PATH).href);
 const { session, extensionsResult } = await createAgentSession({ cwd: process.cwd(), agentDir: process.env.PI_CODING_AGENT_DIR, sessionManager: SessionManager.inMemory(process.cwd()), noTools: 'all' });
 assert.deepEqual(extensionsResult.errors, []);
@@ -3552,6 +3588,13 @@ assert.equal(altered.stopReason, 'stop', altered.errorMessage);
 assert.equal(budgetModel.effortOverrides.low, 'fast', 'request customization must not mutate the catalog');
 const repeated = await runtime.completeSimple(budgetModel, context, { reasoning: 'low' });
 assert.equal(repeated.stopReason, 'stop', repeated.errorMessage);
+credentials.floway.key = '$!literal$$VALUE';
+writeFileSync(authPath, JSON.stringify(credentials));
+assert.equal((await runtime.getAuth('floway')).auth.apiKey, '!literal$VALUE');
+credentials.floway.key = '$FLOWAY_PI_FIXTURE_KEY';
+process.env.FLOWAY_PI_FIXTURE_KEY = 'rotated-key';
+writeFileSync(authPath, JSON.stringify(credentials));
+assert.equal((await runtime.getAuth('floway')).auth.apiKey, 'rotated-key');
 for (let index = 0; index < 2; index++) {
   await fetch(process.env.PI_FIXTURE_URL + '/test/pi/advance');
   const result = await runtime.refresh({ providers: ['floway'], allowNetwork: true });
@@ -3590,6 +3633,7 @@ process.stdout.write(JSON.stringify(snapshots));
   t.equal(snapshots[2]?.length, 0, 'empty catalogs remove every model');
   t.equal(JSON.stringify(snapshots[1]?.[0]), JSON.stringify(refreshedModel), 'server-added metadata survives the native registry and request bridge');
   t.equal(readFileSync(piExtensionPath(ws), 'utf8'), installedExtension, 'metadata refresh does not rewrite the installed extension');
+  t.ok(modelServer.requests.some(request => request.path === '/v1/models' && request.authorization === 'Bearer rotated-key'), 'refresh uses the updated native credential');
   t.excludes(result.combined, SENTINEL_KEY);
   const responses = modelServer.requests.find(request => request.path === '/v1/responses');
   const messages = modelServer.requests.find(request => request.path === '/v1/messages');
@@ -3632,7 +3676,7 @@ test('omp', 'fresh install downloads a protected JS extension without model or r
   const modelsFile = ompExtensionPath(ws);
   t.ok(existsSync(modelsFile), 'extension exists');
   t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
+  t.equal(readFileSync(modelsFile, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
 
@@ -3782,7 +3826,7 @@ test('omp', 'rollback restores the original extension and cleans stage files on 
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
+  const priorContent = SETUP_NODE_OMP_EXTENSION;
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
   t.ok(run.code !== 0, 'simulated failure should exit nonzero');
@@ -3795,7 +3839,7 @@ test('omp', 'rollback restore failure preserves backup file and warns operator',
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
+  const priorContent = SETUP_NODE_OMP_EXTENSION;
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runShellInstaller({
     workspace: ws,
@@ -3973,7 +4017,7 @@ test('omp', 'PowerShell: fresh install downloads a protected JS extension withou
   const modelsFile = ompExtensionPath(ws);
   t.ok(existsSync(modelsFile), 'extension exists');
   t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: modelServer.url, apiKey: SENTINEL_KEY }), 'installed source matches the leased extension');
+  t.equal(readFileSync(modelsFile, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
 
@@ -4132,7 +4176,7 @@ test('omp', 'PowerShell: rollback restores the original extension and cleans sta
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
+  const priorContent = SETUP_NODE_OMP_EXTENSION;
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
   t.ok(run.code !== 0, 'simulated failure should exit nonzero');
@@ -4146,7 +4190,7 @@ test('omp', 'PowerShell: rollback restore failure preserves backup file and warn
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
-  const priorContent = renderAgentExtension({ agent: 'omp', provider: 'custom', endpoint: 'https://custom.example', apiKey: 'old-key' });
+  const priorContent = SETUP_NODE_OMP_EXTENSION;
   writeFileSync(ompExtensionPath(ws), priorContent);
   const run = await runPowerShellInstaller({
     workspace: ws,
@@ -4377,13 +4421,13 @@ test('omp', 'PowerShell: a download that ends before the final Main call perform
 
 test('omp', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', t => {
   const body = powerShellBody('omp');
-  const createIndex = body.indexOf('[System.IO.File]::Create($script:OmpExtensionStage).Dispose()');
-  const protectStageIndex = body.indexOf('Protect-SetupFile $script:OmpExtensionStage', createIndex);
-  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($script:OmpExtensionStage, $source', protectStageIndex);
+  const createIndex = body.indexOf('[System.IO.File]::Create($StagePath).Dispose()');
+  const protectStageIndex = body.indexOf('Protect-SetupFile $StagePath', createIndex);
+  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($StagePath, (ConvertTo-Json', protectStageIndex);
   const protectTargetIndex = body.indexOf('Protect-SetupFile $script:OmpExtensionPath', writeIndex);
   const replaceIndex = body.indexOf('[System.IO.File]::Replace($script:OmpExtensionStage, $script:OmpExtensionPath, [System.Management.Automation.Language.NullString]::Value)', protectTargetIndex);
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
-  t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret YAML is written');
+  t.ok(protectStageIndex < writeIndex, 'stage must be protected before connection credentials is written');
   t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
   t.includes(body, '$runningOnWindows = Test-SetupIsWindows', 'the replacement path uses the shared Windows predicate');
   t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
@@ -4563,7 +4607,16 @@ for (const agent of ['pi', 'omp'] as const) {
       t.equal(first.code, 0, first.combined);
       const second = await install({ workspace: ws, baseUrl: `${modelServer.url  }/work`, configuration: config({ provider: 'floway-work' }) });
       t.equal(second.code, 0, second.combined);
-      const readConnections = () => JSON.parse(readFileSync(extension(ws), 'utf8').split('\n')[1]!.slice('const connections = '.length, -1)) as { provider: string; endpoint: string; apiKey: string }[];
+      const readConnections = () => JSON.parse(readFileSync(join(dirname(dirname(extension(ws))), 'floway.json'), 'utf8')).connections as { provider: string; endpoint: string; apiKey: string }[];
+      t.excludes(readFileSync(extension(ws), 'utf8'), SENTINEL_KEY, 'both fixed resources contain no key');
+      t.equal(statSync(join(dirname(dirname(extension(ws))), 'floway.json')).mode & 0o777, 0o600, 'connection configuration is private');
+      if (agent === 'pi') {
+        const auth = JSON.parse(readFileSync(join(piDirFor(ws), 'auth.json'), 'utf8'));
+        t.equal(auth['floway-home'].key, SENTINEL_KEY);
+        t.equal(auth['floway-work'].key, SENTINEL_KEY);
+        t.excludes(readFileSync(extension(ws), 'utf8'), SENTINEL_KEY);
+      }
+      t.equal(readFileSync(extension(ws), 'utf8'), agent === 'pi' ? SETUP_NODE_PI_EXTENSION : SETUP_NODE_OMP_EXTENSION, 'two providers share the fixed resource');
       const entries = readConnections();
       t.equal(entries.length, 2);
       t.equal(entries[0]!.provider, 'floway-home');
@@ -4575,6 +4628,7 @@ for (const agent of ['pi', 'omp'] as const) {
       else t.equal(settings.defaultProvider, 'floway-home', 'adding a provider preserves another provider default');
       const update = await install({ workspace: ws, baseUrl: `${modelServer.url  }/updated`, configuration: config({ provider: 'floway-home', model: 'new-home-model' }) });
       t.equal(update.code, 0, update.combined);
+      t.equal(readFileSync(extension(ws), 'utf8'), agent === 'pi' ? SETUP_NODE_PI_EXTENSION : SETUP_NODE_OMP_EXTENSION, 'endpoint updates retain fixed extension bytes');
       const updated = readConnections();
       t.equal(updated.length, 2, 'updating a provider replaces its connection');
       t.equal(updated.find(entry => entry.provider === 'floway-work')!.endpoint, `${modelServer.url  }/work`);
@@ -4639,7 +4693,8 @@ for (const agent of ['pi', 'omp'] as const) {
       t.notEqual(updated.code, 0);
       t.includes(updated.combined, 'test backup cleanup failure');
       t.ok(existsSync(join(ws.root, 'cleanup-after-commit')), 'failure occurs after removing the extension backup');
-      t.includes(readFileSync(extension(ws), 'utf8'), `${modelServer.url}/updated`, 'new extension remains committed');
+      t.equal(readFileSync(extension(ws), 'utf8'), agent === 'pi' ? SETUP_NODE_PI_EXTENSION : SETUP_NODE_OMP_EXTENSION, 'fixed extension remains committed');
+      t.equal(JSON.parse(readFileSync(join(dirname(dirname(extension(ws))), 'floway.json'), 'utf8')).connections[0].endpoint, `${modelServer.url}/updated`, 'new connection remains committed');
       t.includes(readFileSync(settings(ws), 'utf8'), 'new-model', 'new preferences remain committed');
       t.excludes(updated.combined, 'rolling back', 'committed data does not enter rollback');
     });

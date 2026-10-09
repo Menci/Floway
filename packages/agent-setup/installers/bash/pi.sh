@@ -138,16 +138,22 @@ pi_write_version() {
 
 pi_resolve_agent_dir() {
   PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+  PI_CONNECTIONS_PATH="$PI_AGENT_DIR/floway.json"
   PI_EXTENSION_PATH="$PI_AGENT_DIR/extensions/floway.js"
   PI_SETTINGS_PATH="$PI_AGENT_DIR/settings.json"
+  PI_AUTH_PATH="$PI_AGENT_DIR/auth.json"
   return 0
 }
 
 pi_backup_files() {
+  PI_CONNECTIONS_EXISTED=0
+  PI_CONNECTIONS_BACKUP=""
   PI_EXTENSION_EXISTED=0
   PI_SETTINGS_EXISTED=0
+  PI_AUTH_EXISTED=0
   PI_EXTENSION_BACKUP=""
   PI_SETTINGS_BACKUP=""
+  PI_AUTH_BACKUP=""
   _pbf_stamp=$(date +%Y%m%d%H%M%S).$$
   if [ -e "$PI_EXTENSION_PATH" ]; then
     PI_EXTENSION_EXISTED=1
@@ -160,6 +166,20 @@ pi_backup_files() {
       rm -f "$PI_EXTENSION_BACKUP"
       PI_EXTENSION_BACKUP=""
       out_error "could not protect the backup of $PI_EXTENSION_PATH"
+      return 1
+    fi
+  fi
+  if [ -e "$PI_CONNECTIONS_PATH" ]; then
+    PI_CONNECTIONS_EXISTED=1
+    PI_CONNECTIONS_BACKUP="$PI_CONNECTIONS_PATH.floway-backup.$_pbf_stamp"
+    if ! cp "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_BACKUP"; then
+      out_error "could not back up $PI_CONNECTIONS_PATH"
+      return 1
+    fi
+    if ! chmod 600 "$PI_CONNECTIONS_BACKUP"; then
+      rm -f "$PI_CONNECTIONS_BACKUP"
+      PI_CONNECTIONS_BACKUP=""
+      out_error "could not protect the backup of $PI_CONNECTIONS_PATH"
       return 1
     fi
   fi
@@ -177,17 +197,42 @@ pi_backup_files() {
       return 1
     fi
   fi
+  if [ -e "$PI_AUTH_PATH" ]; then
+    PI_AUTH_EXISTED=1
+    PI_AUTH_BACKUP="$PI_AUTH_PATH.floway-backup.$_pbf_stamp"
+    if ! cp "$PI_AUTH_PATH" "$PI_AUTH_BACKUP"; then
+      out_error "could not back up $PI_AUTH_PATH"
+      return 1
+    fi
+    if ! chmod 600 "$PI_AUTH_BACKUP"; then
+      rm -f "$PI_AUTH_BACKUP"
+      PI_AUTH_BACKUP=""
+      out_error "could not protect the backup of $PI_AUTH_PATH"
+      return 1
+    fi
+  fi
   return 0
 }
 
 pi_rollback() {
+  if [ -n "${PI_CONNECTIONS_STAGE:-}" ]; then rm -f "$PI_CONNECTIONS_STAGE"; fi
   _prb_rc=0
   _restore_managed_file \
     "$PI_EXTENSION_EXISTED" "$PI_EXTENSION_BACKUP" "$PI_EXTENSION_PATH" \
     "extension file" "Pi extension" || _prb_rc=1
   _restore_managed_file \
+    "$PI_CONNECTIONS_EXISTED" "$PI_CONNECTIONS_BACKUP" "$PI_CONNECTIONS_PATH" \
+    "connection file" "Pi connections" || _prb_rc=1
+  _restore_managed_file \
     "$PI_SETTINGS_EXISTED" "$PI_SETTINGS_BACKUP" "$PI_SETTINGS_PATH" \
     "settings file" "Pi settings configuration" || _prb_rc=1
+  _restore_managed_file \
+    "$PI_AUTH_EXISTED" "$PI_AUTH_BACKUP" "$PI_AUTH_PATH" \
+    "credential file" "Pi credential file" || _prb_rc=1
+  if [ -n "${PI_AUTH_STAGE:-}" ]; then
+    rm -f "$PI_AUTH_STAGE"
+    PI_AUTH_STAGE=""
+  fi
   if [ -n "${PI_EXTENSION_STAGE:-}" ]; then
     rm -f "$PI_EXTENSION_STAGE"
     PI_EXTENSION_STAGE=""
@@ -210,6 +255,16 @@ pi_cleanup_backups() {
   else
     _prune_managed_backups "$PI_EXTENSION_PATH" "" || return 1
   fi
+  if [ -n "$PI_CONNECTIONS_BACKUP" ]; then
+    _prune_managed_backups "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_BACKUP" || return 1
+    if ! rm -f "$PI_CONNECTIONS_BACKUP"; then
+      out_error "could not remove connection backup $PI_CONNECTIONS_BACKUP"
+      return 1
+    fi
+    PI_CONNECTIONS_BACKUP=""
+  else
+    _prune_managed_backups "$PI_CONNECTIONS_PATH" "" || return 1
+  fi
 
   if [ -n "$PI_SETTINGS_BACKUP" ]; then
     _prune_managed_backups "$PI_SETTINGS_PATH" "$PI_SETTINGS_BACKUP" || return 1
@@ -221,6 +276,16 @@ pi_cleanup_backups() {
   else
     _prune_managed_backups "$PI_SETTINGS_PATH" "" || return 1
   fi
+  if [ -n "$PI_AUTH_BACKUP" ]; then
+    _prune_managed_backups "$PI_AUTH_PATH" "$PI_AUTH_BACKUP" || return 1
+    if ! rm -f "$PI_AUTH_BACKUP"; then
+      out_error "could not remove credential backup $PI_AUTH_BACKUP"
+      return 1
+    fi
+    PI_AUTH_BACKUP=""
+  else
+    _prune_managed_backups "$PI_AUTH_PATH" "" || return 1
+  fi
   return 0
 }
 
@@ -229,7 +294,7 @@ pi_fetch_extension() {
   : > "$PI_EXTENSION_STAGE" || return 1
   chmod 600 "$PI_EXTENSION_STAGE" || return 1
   _pfe_url="${AGENT_SETUP_TEST_PI_EXTENSION_URL:-${SETUP_ENDPOINT%/}${SETUP_EXTENSION_PATH}}"
-  if ! curl -fsSL --connect-timeout 10 --max-time 60 --get --data-urlencode "endpoint=$SETUP_ENDPOINT" --data-urlencode "provider=$SETUP_PI_PROVIDER" -o "$PI_EXTENSION_STAGE" "$_pfe_url"; then
+  if ! curl -fsSL --connect-timeout 10 --max-time 60 -o "$PI_EXTENSION_STAGE" "$_pfe_url"; then
     out_error 'failed to fetch the Floway Pi extension'
     return 1
   fi
@@ -238,7 +303,8 @@ pi_fetch_extension() {
     out_error 'the Pi extension download has an invalid ownership marker'
     return 1
   fi
-  _merge_provider_extension "$PI_EXTENSION_PATH" "$PI_EXTENSION_STAGE"
+  PI_CONNECTIONS_STAGE="$PI_CONNECTIONS_PATH.floway-stage.$$"
+  _stage_provider_connections "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_STAGE" "$SETUP_PI_PROVIDER" false
 }
 
 pi_stage_settings() {
@@ -258,7 +324,7 @@ pi_stage_settings() {
   _pss_node_cmd=(
     env "FLOWAY_DEFAULT_PROVIDER=$SETUP_PI_PROVIDER" "FLOWAY_DEFAULT_MODEL=$SETUP_PI_MODEL"
     "FLOWAY_PI_THINKING_LEVEL=$SETUP_PI_THINKING_LEVEL" "FLOWAY_PI_RETRY_ENABLED=$SETUP_PI_RETRY_ENABLED" "FLOWAY_PI_MAX_RETRIES=$SETUP_PI_MAX_RETRIES"
-    node "$SETUP_TMPDIR/jsonc-edit.mjs"
+    node "$SETUP_TMPDIR/jsonc-edit.mjs" settings
   )
 
   if [ -f "$PI_SETTINGS_PATH" ]; then
@@ -279,7 +345,32 @@ pi_stage_settings() {
   return 0
 }
 
+pi_stage_auth() {
+  PI_AUTH_STAGE="$PI_AUTH_PATH.floway-stage.$$"
+  : > "$PI_AUTH_STAGE" || return 1
+  chmod 600 "$PI_AUTH_STAGE" || return 1
+  _write_jsonc_editor || return 1
+  local auth_source=/dev/null
+  if [ -f "$PI_AUTH_PATH" ]; then auth_source=$PI_AUTH_PATH; fi
+  if ! FLOWAY_DEFAULT_PROVIDER="$SETUP_PI_PROVIDER" FLOWAY_PI_AUTH_KEY="$SETUP_API_KEY" \
+    node "$SETUP_TMPDIR/jsonc-edit.mjs" auth < "$auth_source" > "$PI_AUTH_STAGE"; then
+    out_error "failed to update $PI_AUTH_PATH"
+    return 1
+  fi
+}
+
 pi_apply_staged() {
+  if ! mv "$PI_AUTH_STAGE" "$PI_AUTH_PATH"; then
+    out_error "could not replace $PI_AUTH_PATH"
+    return 1
+  fi
+  PI_AUTH_STAGE=""
+  if ! mv "$PI_CONNECTIONS_STAGE" "$PI_CONNECTIONS_PATH"; then
+    out_error "could not replace $PI_CONNECTIONS_PATH"
+    rm -f "$PI_CONNECTIONS_STAGE"
+    return 1
+  fi
+  PI_CONNECTIONS_STAGE=""
   if ! mv "$PI_EXTENSION_STAGE" "$PI_EXTENSION_PATH"; then
     out_error "could not replace $PI_EXTENSION_PATH"
     rm -f "$PI_EXTENSION_STAGE"
@@ -341,8 +432,8 @@ configure_agent() {
     return 1
   fi
 
-  if ! pi_stage_settings; then
-    out_warn 'Pi settings staging failed; rolling back configuration.'
+  if ! pi_stage_auth || ! pi_stage_settings; then
+    out_warn 'Pi credential/settings staging failed; rolling back configuration.'
     pi_rollback
     return 1
   fi
@@ -356,6 +447,7 @@ configure_agent() {
   pi_cleanup_backups || return 1
 
   out_info "Written to \`$PI_EXTENSION_PATH\`."
+  out_info "Written to \`$PI_AUTH_PATH\`."
   if [ -e "$PI_SETTINGS_PATH" ]; then
     out_info "Written to \`$PI_SETTINGS_PATH\`."
   fi

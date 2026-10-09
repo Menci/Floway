@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { JsoncRefusalError, updateDefaultModel, updatePiSettings } from '../../../installers/node/jsonc-edit.mjs';
+import { JsoncRefusalError, updateDefaultModel, updatePiSettings, updatePiAuth } from '../../../installers/node/jsonc-edit.mjs';
 
 describe('jsonc-edit settings.json', () => {
   test('creates fresh settings.json on empty input when model is specified', () => {
@@ -170,9 +170,9 @@ describe('jsonc-edit CLI contract', () => {
 
   test('edits settings.json via stdin and stdout with FLOWAY_DEFAULT_MODEL', async () => {
     const { spawnSync } = await import('node:child_process');
-    const res = spawnSync(process.execPath, [cliScript], {
+    const res = spawnSync(process.execPath, [cliScript, 'settings'], {
       input: '{\n  "theme": "dark"\n}\n',
-      env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'claude-3-7-sonnet' },
+      env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'claude-3-7-sonnet', FLOWAY_PI_AUTH_KEY: 'unrelated-key' },
       encoding: 'utf8',
     });
     expect(res.status).toBe(0);
@@ -183,7 +183,7 @@ describe('jsonc-edit CLI contract', () => {
 
   test('CLI writes false and zero retry preferences without applying defaults to omitted values', async () => {
     const { spawnSync } = await import('node:child_process');
-    const result = spawnSync(process.execPath, [cliScript], {
+    const result = spawnSync(process.execPath, [cliScript, 'settings'], {
       input: '{"defaultThinkingLevel":"low","retry":{"baseDelayMs":3500}}',
       env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway-work', FLOWAY_PI_THINKING_LEVEL: '', FLOWAY_PI_RETRY_ENABLED: 'false', FLOWAY_PI_MAX_RETRIES: '0' },
       encoding: 'utf8',
@@ -194,7 +194,7 @@ describe('jsonc-edit CLI contract', () => {
 
   test('exits with status 2 and writes error to stderr on refusal', async () => {
     const { spawnSync } = await import('node:child_process');
-    const res = spawnSync(process.execPath, [cliScript], {
+    const res = spawnSync(process.execPath, [cliScript, 'settings'], {
       input: 'invalid_json{',
       env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
       encoding: 'utf8',
@@ -202,6 +202,24 @@ describe('jsonc-edit CLI contract', () => {
     expect(res.status).toBe(2);
     expect(res.stdout).toBe('');
     expect(res.stderr).toContain('Refusal:');
+  });
+
+  test('explicit auth mode edits credentials independently of settings data', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(process.execPath, [cliScript, 'auth'], {
+      input: '{}', encoding: 'utf8',
+      env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_PI_AUTH_KEY: 'key', FLOWAY_DEFAULT_MODEL: 'unrelated-model' },
+    });
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ floway: { type: 'api_key', key: 'key' } });
+  });
+
+  test.each([{ args: [] }, { args: ['unknown'] }])('refuses missing or unknown editor modes: %j', async ({ args }) => {
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(process.execPath, [cliScript, ...args], { input: '{}', encoding: 'utf8' });
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unknown JSON editor mode');
   });
 
   test('runs the CLI from a path that is percent-encoded in its file URL', async () => {
@@ -219,7 +237,7 @@ describe('jsonc-edit CLI contract', () => {
 
       for (const script of [copied, linked]) {
         const out = await new Promise<{ code: number | null; stdout: string }>(resolve => {
-          const child = spawn(process.execPath, [script], {
+          const child = spawn(process.execPath, [script, 'settings'], {
             env: { ...process.env, FLOWAY_DEFAULT_PROVIDER: 'floway', FLOWAY_DEFAULT_MODEL: 'gpt-4o' },
           });
           let stdout = '';
@@ -234,4 +252,14 @@ describe('jsonc-edit CLI contract', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+test('Pi auth updates only the selected provider and encodes literal config metacharacters', () => {
+  const original = '{\r\n  "openai": {"type":"api_key","key":"!keep-command"},\r\n  "floway-home": {"type":"api_key","key":"home-key"}\r\n}';
+  const result = updatePiAuth(original, 'floway-work', '!key$VALUE');
+  expect(result).toContain('"openai": {"type":"api_key","key":"!keep-command"}');
+  expect(JSON.parse(result)).toEqual({ openai: { type: 'api_key', key: '!keep-command' }, 'floway-home': { type: 'api_key', key: 'home-key' }, 'floway-work': { type: 'api_key', key: '$!key$$VALUE' } });
+  const updated = updatePiAuth(result, 'floway-work', 'rotated');
+  expect(JSON.parse(updated)['floway-work']).toEqual({ type: 'api_key', key: 'rotated' });
+  for (const input of ['[]', 'null', 'invalid', '{"floway":{},"floway":{}}']) expect(() => updatePiAuth(input, 'floway', 'key')).toThrow();
 });

@@ -95,13 +95,13 @@ test('the public GET serves the rendered script with hardened headers and no COR
   expect(ompText).toContain("main 'oh-my-pi'");
 });
 
-test('the leased Pi extension uses the selected key and refuses an expired lease', async () => {
+test('the leased Pi extension omits credentials and refuses an expired lease', async () => {
   const { apiKey, repo } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey);
   const path = `/api/setup/${lease.token}/pi.js?endpoint=https%3A%2F%2Fgateway.example`;
   const response = await requestApp(path, {});
   assertEquals(response.status, 200);
-  expect(await response.text()).toContain(RAW_KEY);
+  expect(await response.text()).not.toContain(RAW_KEY);
   assertEquals(response.headers.get('cache-control'), 'no-store');
   await repo.agentSetup.renewLease({ userId: apiKey.userId, token: lease.token, expiresAt: 0 });
   assertEquals((await requestApp(path, {})).status, 404);

@@ -119,6 +119,8 @@ omp_resolve_agent_dir() {
 }
 
 omp_backup_files() {
+  OMP_CONNECTIONS_EXISTED=0
+  OMP_CONNECTIONS_BACKUP=""
   OMP_EXTENSION_EXISTED=0
   OMP_CONFIG_EXISTED=0
   OMP_EXTENSION_BACKUP=""
@@ -138,6 +140,20 @@ omp_backup_files() {
       return 1
     fi
   fi
+  if [ -e "$OMP_CONNECTIONS_PATH" ]; then
+    OMP_CONNECTIONS_EXISTED=1
+    OMP_CONNECTIONS_BACKUP="$OMP_CONNECTIONS_PATH.floway-backup.$_obf_stamp"
+    if ! cp "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_BACKUP"; then
+      out_error "could not back up $OMP_CONNECTIONS_PATH"
+      return 1
+    fi
+    if ! chmod 600 "$OMP_CONNECTIONS_BACKUP"; then
+      rm -f "$OMP_CONNECTIONS_BACKUP"
+      OMP_CONNECTIONS_BACKUP=""
+      out_error "could not protect the backup of $OMP_CONNECTIONS_PATH"
+      return 1
+    fi
+  fi
   if [ -e "$OMP_CONFIG_PATH" ]; then
     OMP_CONFIG_EXISTED=1
     OMP_CONFIG_BACKUP="$OMP_CONFIG_PATH.floway-backup.$_obf_stamp"
@@ -149,6 +165,7 @@ omp_backup_files() {
 }
 
 omp_rollback() {
+  if [ -n "${OMP_CONNECTIONS_STAGE:-}" ]; then rm -f "$OMP_CONNECTIONS_STAGE"; fi
   if [ -n "${OMP_EXTENSION_STAGE:-}" ] && [ -e "$OMP_EXTENSION_STAGE" ]; then
     rm -f "$OMP_EXTENSION_STAGE"
   fi
@@ -159,6 +176,9 @@ omp_rollback() {
   _restore_managed_file \
     "$OMP_EXTENSION_EXISTED" "$OMP_EXTENSION_BACKUP" "$OMP_EXTENSION_PATH" \
     "extension file" "oh-my-pi extension file" || _obr_rc=1
+  _restore_managed_file \
+    "$OMP_CONNECTIONS_EXISTED" "$OMP_CONNECTIONS_BACKUP" "$OMP_CONNECTIONS_PATH" \
+    "connection file" "oh-my-pi connection file" || _obr_rc=1
   _restore_managed_file \
     "$OMP_CONFIG_EXISTED" "$OMP_CONFIG_BACKUP" "$OMP_CONFIG_PATH" \
     "config file" "oh-my-pi config file" || _obr_rc=1
@@ -175,6 +195,16 @@ omp_cleanup_backups() {
     OMP_EXTENSION_BACKUP=""
   else
     _prune_managed_backups "$OMP_EXTENSION_PATH" "" || return 1
+  fi
+  if [ -n "$OMP_CONNECTIONS_BACKUP" ]; then
+    _prune_managed_backups "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_BACKUP" || return 1
+    if ! rm -f "$OMP_CONNECTIONS_BACKUP"; then
+      out_error "could not remove connection backup $OMP_CONNECTIONS_BACKUP"
+      return 1
+    fi
+    OMP_CONNECTIONS_BACKUP=""
+  else
+    _prune_managed_backups "$OMP_CONNECTIONS_PATH" "" || return 1
   fi
 
   if [ -n "$OMP_CONFIG_BACKUP" ]; then
@@ -199,7 +229,7 @@ omp_stage_extension() {
     out_error 'could not protect the oh-my-pi extension stage file.'
     return 1
   fi
-  if ! curl -fsSL --connect-timeout 10 --max-time 30 --get --data-urlencode "endpoint=$SETUP_ENDPOINT" --data-urlencode "provider=$SETUP_OMP_PROVIDER" \
+  if ! curl -fsSL --connect-timeout 10 --max-time 30 \
     -o "$OMP_EXTENSION_STAGE" "${SETUP_ENDPOINT%/}${SETUP_EXTENSION_PATH}"; then
     out_error 'could not download the oh-my-pi extension.'
     return 1
@@ -208,7 +238,8 @@ omp_stage_extension() {
     out_error 'the gateway did not return a Floway extension.'
     return 1
   fi
-  _merge_provider_extension "$OMP_EXTENSION_PATH" "$OMP_EXTENSION_STAGE" || return 1
+  OMP_CONNECTIONS_STAGE="$OMP_CONNECTIONS_PATH.floway-stage.$$"
+  _stage_provider_connections "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_STAGE" "$SETUP_OMP_PROVIDER" true
 }
 
 omp_set_retry_scalar() {
@@ -419,6 +450,12 @@ omp_stage_config() {
 }
 
 omp_apply_staged() {
+  if ! mv "$OMP_CONNECTIONS_STAGE" "$OMP_CONNECTIONS_PATH"; then
+    out_error "could not replace $OMP_CONNECTIONS_PATH"
+    rm -f "$OMP_CONNECTIONS_STAGE"
+    return 1
+  fi
+  OMP_CONNECTIONS_STAGE=""
   if ! mv "$OMP_EXTENSION_STAGE" "$OMP_EXTENSION_PATH"; then
     out_error "could not replace $OMP_EXTENSION_PATH"
     rm -f "$OMP_EXTENSION_STAGE"
@@ -464,6 +501,7 @@ configure_agent() {
     out_error 'could not create the oh-my-pi extensions directory.'
     return 1
   fi
+  OMP_CONNECTIONS_PATH="$OMP_AGENT_DIR/floway.json"
   OMP_EXTENSION_PATH="$OMP_AGENT_DIR/extensions/floway.js"
 
   if [ -f "$OMP_AGENT_DIR/config.yml" ]; then

@@ -31,32 +31,18 @@ _prune_managed_backups() {
   done
 }
 
-_merge_provider_extension() {
-  local existing=$1 stage=$2 old=/dev/null exists=false header merged
+_stage_provider_connections() {
+  local existing=$1 stage=$2 provider=$3 include_key=$4 old=/dev/null
   ensure_jq || return 1
-  header="$SETUP_TMPDIR/provider-connections.json"
-  merged="$SETUP_TMPDIR/provider-extension.js"
-  if [ -f "$existing" ]; then old=$existing; exists=true; fi
-  if ! "$JQ" -cen --rawfile old "$old" --rawfile new "$stage" --argjson exists "$exists" '
-    def connections:
-      split("\n") | .[1] | capture("^const connections = (?<json>.*);$").json | fromjson
-      | if type == "array" and length > 0
-        and all(.[]; type == "object" and (.provider | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and (.endpoint | type == "string") and (.apiKey | type == "string"))
-        and (map(.provider) | length == (unique | length)) then . else error("invalid Floway connections") end;
-    (($old | if $exists then connections else [] end) + ($new | connections))
-    | reduce .[] as $connection ([]; map(select(.provider != $connection.provider)) + [$connection])
-  ' > "$header" 2> "$SETUP_TMPDIR/provider-parse.err"; then
-    out_error 'the extension has an invalid provider configuration'
+  if [ -f "$existing" ]; then old=$existing; fi
+  (umask 077 && : > "$stage") || return 1
+  chmod 600 "$stage" || return 1
+  FLOWAY_CONNECTION_KEY="$SETUP_API_KEY" "$JQ" -en --rawfile old "$old" --arg provider "$provider" --arg endpoint "${SETUP_ENDPOINT%/}" --argjson includeKey "$include_key" '
+    ($old | if length == 0 then {connections: []} else fromjson end)
+    | .connections = ((.connections | map(select(.provider != $provider))) +
+      [{provider: $provider, endpoint: $endpoint} + (if $includeKey then {apiKey: env.FLOWAY_CONNECTION_KEY} else {} end)])
+  ' > "$stage" 2> "$SETUP_TMPDIR/provider-parse.err" || {
+    out_error 'could not update the Floway connection configuration'
     return 1
-  fi
-  awk '
-    FILENAME == ARGV[1] {
-      print "// Managed by Floway Agent Setup."
-      print "const connections = " $0 ";"
-      next
-    }
-    FNR > 2
-  ' "$header" "$stage" > "$merged" || return $?
-  chmod 600 "$merged" || return 1
-  mv "$merged" "$stage"
+  }
 }

@@ -1,17 +1,17 @@
 import { expect, test, vi } from 'vitest';
 
-import { renderAgentExtension } from '../src/render-extension.ts';
+import { SETUP_NODE_OMP_EXTENSION } from '../src/script-assets.generated.ts';
 
-const evaluateExtension = async (source: string, api: Record<string, unknown>) => {
-  const executable = source.replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
-  const create = new Function('USER_AGENT', 'streamSimple', 'buildModel', executable);
-  const extension = create('omp/18.8.4', api.streamSimple, api.buildModel);
+const evaluateExtension = async (source: string, api: Record<string, unknown>, connections = [{ provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' }]) => {
+  const executable = source.replace(/^import .*;\n/gm, '').replaceAll('import.meta.url', JSON.stringify('file:///agent/extensions/floway.js')).replace('export default async pi =>', 'return async pi =>');
+  const create = new Function('USER_AGENT', 'streamSimple', 'buildModel', 'readFile', executable);
+  const extension = create('omp/18.8.4', api.streamSimple, api.buildModel, async (url: URL) => { expect(url.href).toBe('file:///agent/floway.json'); return JSON.stringify({ connections }); });
   await extension(api);
 };
 
-test('the short extension safely embeds connection credentials and forwards native declarations', async () => {
+test('the short extension reads external connection credentials and forwards native declarations', async () => {
   const key = "key'\n\\quote";
-  const source = renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: 'https://gateway.example/gateway', apiKey: key });
+  const source = SETUP_NODE_OMP_EXTENSION;
   const configuration = {
     api: 'floway:floway',
     models: [{
@@ -33,7 +33,7 @@ test('the short extension safely embeds connection credentials and forwards nati
   const buildModel = vi.fn(model => model);
   const streamSimple = vi.fn();
   try {
-    await evaluateExtension(source, { registerProvider, unregisterProvider, registerCommand, buildModel, streamSimple });
+    await evaluateExtension(source, { registerProvider, unregisterProvider, registerCommand, buildModel, streamSimple }, [{ provider: 'floway', endpoint: 'https://gateway.example/gateway', apiKey: key }]);
     expect(fetch).toHaveBeenCalledWith('https://gateway.example/gateway/v1/models?endpoint=https%3A%2F%2Fgateway.example%2Fgateway&provider=floway', expect.objectContaining({ headers: { Authorization: `Bearer ${key}`, 'User-Agent': 'omp/18.8.4' } }));
     expect(unregisterProvider).not.toHaveBeenCalled();
     const registered = registerProvider.mock.calls[0][1];
@@ -65,7 +65,7 @@ test.each([new Response(null, { status: 503 }), Response.json({ data: [] })])('a
   const unregisterProvider = vi.fn();
   const registerCommand = vi.fn();
   try {
-    await evaluateExtension(renderAgentExtension({ agent: 'omp', provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' }), { registerProvider, unregisterProvider, registerCommand });
+    await evaluateExtension(SETUP_NODE_OMP_EXTENSION, { registerProvider, unregisterProvider, registerCommand });
     await expect(registerCommand.mock.calls[0][1].handler()).rejects.toThrow();
     expect(registerProvider).toHaveBeenCalledTimes(1);
     expect(unregisterProvider).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ test('one extension preserves independent provider catalogs, credentials and str
     { provider: 'work', endpoint: 'https://work.example/gateway', apiKey: 'work-key' },
     { provider: 'personal', endpoint: 'https://personal.example', apiKey: 'personal-key' },
   ];
-  const source = renderAgentExtension({ agent: 'omp', ...connections[0] }).replace(/^const connections = .*;$/m, `const connections = ${JSON.stringify(connections)};`);
+  const source = SETUP_NODE_OMP_EXTENSION;
   const configurations = connections.map(({ provider }, index) => ({
     api: `floway:${provider}`,
     models: [{ id: 'shared-alias', api: `floway:${provider}` }],
@@ -99,7 +99,7 @@ test('one extension preserves independent provider catalogs, credentials and str
   const buildModel = vi.fn(model => model);
   const streamSimple = vi.fn();
   try {
-    await evaluateExtension(source, { registerProvider, unregisterProvider, registerCommand, buildModel, streamSimple });
+    await evaluateExtension(source, { registerProvider, unregisterProvider, registerCommand, buildModel, streamSimple }, connections);
     expect(registerProvider.mock.calls.map(([provider, configuration]) => [provider, configuration.api, configuration.apiKey])).toEqual([
       ['work', 'floway:work', 'work-key'],
       ['personal', 'floway:personal', 'personal-key'],

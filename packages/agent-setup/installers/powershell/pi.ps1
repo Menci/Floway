@@ -118,9 +118,13 @@ function Write-PiVersion {
 
 function Backup-SetupPiFiles {
   $script:PiExtensionExisted = Test-Path -LiteralPath $script:PiExtensionPath
+  $script:PiConnectionsExisted = Test-Path -LiteralPath $script:PiConnectionsPath
   $script:PiSettingsExisted = Test-Path -LiteralPath $script:PiSettingsPath
+  $script:PiAuthExisted = Test-Path -LiteralPath $script:PiAuthPath
   $script:PiExtensionBackup = $null
+  $script:PiConnectionsBackup = $null
   $script:PiSettingsBackup = $null
+  $script:PiAuthBackup = $null
   $stamp = (Get-Date -Format 'yyyyMMddHHmmss') + '.' + [System.Diagnostics.Process]::GetCurrentProcess().Id
 
   if ($script:PiExtensionExisted) {
@@ -128,25 +132,45 @@ function Backup-SetupPiFiles {
     Copy-Item -LiteralPath $script:PiExtensionPath -Destination $script:PiExtensionBackup -Force
     Protect-SetupFile $script:PiExtensionBackup
   }
+  if ($script:PiConnectionsExisted) {
+    $script:PiConnectionsBackup = "$($script:PiConnectionsPath).floway-backup.$stamp"
+    Copy-Item -LiteralPath $script:PiConnectionsPath -Destination $script:PiConnectionsBackup -Force
+    Protect-SetupFile $script:PiConnectionsBackup
+  }
 
   if ($script:PiSettingsExisted) {
     $script:PiSettingsBackup = "$($script:PiSettingsPath).floway-backup.$stamp"
     Copy-Item -LiteralPath $script:PiSettingsPath -Destination $script:PiSettingsBackup -Force
     Protect-SetupFile $script:PiSettingsBackup
   }
+  if ($script:PiAuthExisted) {
+    $script:PiAuthBackup = "$($script:PiAuthPath).floway-backup.$stamp"
+    Copy-Item -LiteralPath $script:PiAuthPath -Destination $script:PiAuthBackup -Force
+    Protect-SetupFile $script:PiAuthBackup
+  }
 }
 
 function Restore-SetupPiFiles {
+  if ($script:PiAuthStage -and (Test-Path -LiteralPath $script:PiAuthStage)) {
+    Remove-Item -LiteralPath $script:PiAuthStage -Force -ErrorAction SilentlyContinue
+    $script:PiAuthStage = $null
+  }
   if ($script:PiExtensionStage -and (Test-Path -LiteralPath $script:PiExtensionStage)) {
     Remove-Item -LiteralPath $script:PiExtensionStage -Force -ErrorAction SilentlyContinue
     $script:PiExtensionStage = $null
+  }
+  if ($script:PiConnectionsStage -and (Test-Path -LiteralPath $script:PiConnectionsStage)) {
+    Remove-Item -LiteralPath $script:PiConnectionsStage -Force -ErrorAction SilentlyContinue
+    $script:PiConnectionsStage = $null
   }
   if ($script:PiSettingsStage -and (Test-Path -LiteralPath $script:PiSettingsStage)) {
     Remove-Item -LiteralPath $script:PiSettingsStage -Force -ErrorAction SilentlyContinue
     $script:PiSettingsStage = $null
   }
   Restore-SetupManagedFile -Existed $script:PiExtensionExisted -Backup $script:PiExtensionBackup -Path $script:PiExtensionPath -OriginalLabel 'extension file' -CreatedLabel 'Pi extension file'
+  Restore-SetupManagedFile -Existed $script:PiConnectionsExisted -Backup $script:PiConnectionsBackup -Path $script:PiConnectionsPath -OriginalLabel 'connection file' -CreatedLabel 'Pi connection file'
   Restore-SetupManagedFile -Existed $script:PiSettingsExisted -Backup $script:PiSettingsBackup -Path $script:PiSettingsPath -OriginalLabel 'settings file' -CreatedLabel 'Pi settings file'
+  Restore-SetupManagedFile -Existed $script:PiAuthExisted -Backup $script:PiAuthBackup -Path $script:PiAuthPath -OriginalLabel 'credential file' -CreatedLabel 'Pi credential file'
 }
 
 function Remove-SetupPiBackups {
@@ -156,11 +180,23 @@ function Remove-SetupPiBackups {
   }
   $script:PiExtensionBackup = $null
 
+  Remove-SetupOlderBackups -Path $script:PiConnectionsPath -Keep $script:PiConnectionsBackup
+  if ($script:PiConnectionsBackup) {
+    Remove-Item -LiteralPath $script:PiConnectionsBackup -Force -ErrorAction Stop
+  }
+  $script:PiConnectionsBackup = $null
+
   Remove-SetupOlderBackups -Path $script:PiSettingsPath -Keep $script:PiSettingsBackup
   if ($script:PiSettingsBackup) {
     Remove-Item -LiteralPath $script:PiSettingsBackup -Force -ErrorAction Stop
   }
   $script:PiSettingsBackup = $null
+
+  Remove-SetupOlderBackups -Path $script:PiAuthPath -Keep $script:PiAuthBackup
+  if ($script:PiAuthBackup) {
+    Remove-Item -LiteralPath $script:PiAuthBackup -Force -ErrorAction Stop
+  }
+  $script:PiAuthBackup = $null
 }
 
 function Fetch-SetupPiExtension {
@@ -169,7 +205,6 @@ function Fetch-SetupPiExtension {
   } else {
     ($SetupEndpoint.TrimEnd('/')) + $SetupExtensionPath
   }
-  $extensionUrl += '?endpoint=' + [System.Uri]::EscapeDataString($SetupEndpoint) + '&provider=' + [System.Uri]::EscapeDataString($SetupPiProvider)
   $script:PiExtensionStage = "$($script:PiExtensionPath).floway-stage.$([System.Diagnostics.Process]::GetCurrentProcess().Id)"
   [System.IO.File]::WriteAllText($script:PiExtensionStage, '')
   Protect-SetupFile $script:PiExtensionStage
@@ -178,21 +213,23 @@ function Fetch-SetupPiExtension {
   if (-not $body.StartsWith("// Managed by Floway Agent Setup.`n")) { Stop-Setup 'the Pi extension download has an invalid ownership marker' }
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllText($script:PiExtensionStage, $body, $utf8NoBom)
-  Merge-SetupProviderExtension -ExistingPath $script:PiExtensionPath -StagePath $script:PiExtensionStage
+  $script:PiConnectionsStage = "$($script:PiConnectionsPath).floway-stage.$PID"
+  Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider -IncludeKey $false
 }
 
 function Invoke-SetupNodeJsonc {
   param(
     [string]$InputText,
     [string]$OutputPath,
-    [Parameter(Mandatory=$true)][hashtable]$EnvVars
+    [Parameter(Mandatory=$true)][hashtable]$EnvVars,
+    [Parameter(Mandatory=$true)][ValidateSet('auth', 'settings')][string]$Mode
   )
   $nodeCmd = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
 
   $editorPath = Join-Path $script:PiTmpDir 'jsonc-edit.mjs'
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $nodeCmd.Source
-  $startInfo.Arguments = '"' + $editorPath.Replace('"', '\"') + '"'
+  $startInfo.Arguments = '"' + $editorPath.Replace('"', '\"') + '" ' + $Mode
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardInput = $true
@@ -248,11 +285,36 @@ function Stage-SetupPiSettings {
   }
   $envVars['FLOWAY_DEFAULT_MODEL'] = $SetupPiModel
   Write-SetupJsoncEditor
-  Invoke-SetupNodeJsonc -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
+  Invoke-SetupNodeJsonc -Mode settings -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
+}
+
+function Stage-SetupPiAuth {
+  $script:PiAuthStage = "$($script:PiAuthPath).floway-stage.$([System.Diagnostics.Process]::GetCurrentProcess().Id)"
+  $source = if (Test-Path -LiteralPath $script:PiAuthPath) { [System.IO.File]::ReadAllText($script:PiAuthPath) } else { '' }
+  Write-SetupJsoncEditor
+  Invoke-SetupNodeJsonc -Mode auth -InputText $source -OutputPath $script:PiAuthStage -EnvVars @{
+    FLOWAY_DEFAULT_PROVIDER = $SetupPiProvider
+    FLOWAY_PI_AUTH_KEY = $SetupApiKey
+  }
 }
 
 function Apply-SetupPiStaged {
   $runningOnWindows = Test-SetupIsWindows
+  if ($script:PiAuthExisted -and $runningOnWindows) {
+    Protect-SetupFile $script:PiAuthPath
+    [System.IO.File]::Replace($script:PiAuthStage, $script:PiAuthPath, [System.Management.Automation.Language.NullString]::Value)
+  } else {
+    Move-Item -LiteralPath $script:PiAuthStage -Destination $script:PiAuthPath -Force
+  }
+  $script:PiAuthStage = $null
+  if ($script:PiConnectionsExisted -and $runningOnWindows) {
+    Protect-SetupFile $script:PiConnectionsPath
+    [System.IO.File]::Replace($script:PiConnectionsStage, $script:PiConnectionsPath, [System.Management.Automation.Language.NullString]::Value)
+  } else {
+    Move-Item -LiteralPath $script:PiConnectionsStage -Destination $script:PiConnectionsPath -Force
+  }
+  $script:PiConnectionsStage = $null
+
   if ($script:PiExtensionExisted -and $runningOnWindows) {
     Protect-SetupFile $script:PiExtensionPath
     [System.IO.File]::Replace($script:PiExtensionStage, $script:PiExtensionPath, [System.Management.Automation.Language.NullString]::Value)
@@ -293,8 +355,10 @@ function Set-SetupAgent {
     } else {
       Join-Path $homeDir '.pi/agent'
     }
+    $script:PiConnectionsPath = Join-Path $script:PiAgentDir 'floway.json'
     $script:PiExtensionPath = Join-Path $script:PiAgentDir 'extensions/floway.js'
     $script:PiSettingsPath = Join-Path $script:PiAgentDir 'settings.json'
+    $script:PiAuthPath = Join-Path $script:PiAgentDir 'auth.json'
 
     [void][System.IO.Directory]::CreateDirectory((Join-Path $script:PiAgentDir 'extensions'))
 
@@ -320,9 +384,10 @@ function Set-SetupAgent {
     }
 
     try {
+      Stage-SetupPiAuth
       Stage-SetupPiSettings
     } catch {
-      Write-SetupWarn 'Pi settings staging failed; rolling back configuration.'
+      Write-SetupWarn 'Pi credential/settings staging failed; rolling back configuration.'
       Restore-SetupPiFiles
       throw
     }
@@ -338,6 +403,7 @@ function Set-SetupAgent {
     Remove-SetupPiBackups
 
     Write-SetupInfo ('Written to `' + $script:PiExtensionPath + '`.')
+    Write-SetupInfo ('Written to `' + $script:PiAuthPath + '`.' )
     if (Test-Path -LiteralPath $script:PiSettingsPath) {
       Write-SetupInfo ('Written to `' + $script:PiSettingsPath + '`.')
     }

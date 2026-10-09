@@ -1,5 +1,5 @@
 export class JsoncRefusalError extends Error {
-  constructor(message: string);
+  constructor(message: string, options?: ErrorOptions);
 }
 
 export function updateDefaultModel(src: string, modelId: string | null, provider: string): string;
@@ -10,3 +10,5 @@ export function updatePiSettings(src: string, settings: {
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   retry: { enabled: boolean | null; maxRetries: number | null };
 }): string;
+
+export function updatePiAuth(src: string, provider: string, key: string): string;

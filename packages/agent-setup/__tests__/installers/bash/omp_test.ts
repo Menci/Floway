@@ -203,7 +203,8 @@ for (const failure of ['serialization', 'deletion'] as const) {
             ].join('\n')
           : [
               `OMP_EXTENSION_STAGE=${shellQuote(join(directory, 'extension-stage'))}; OMP_EXTENSION_PATH=${shellQuote(join(directory, 'extension.js'))};`,
-              ': > "$OMP_EXTENSION_STAGE"; OMP_CONFIG_STAGE="$OMP_CONFIG_PATH.stage"; : > "$OMP_CONFIG_STAGE";',
+              `OMP_CONNECTIONS_PATH=${shellQuote(join(directory, 'floway.json'))}; OMP_CONNECTIONS_STAGE=${shellQuote(join(directory, 'connections-stage'))};`,
+              ': > "$OMP_CONNECTIONS_STAGE"; : > "$OMP_EXTENSION_STAGE"; OMP_CONFIG_STAGE="$OMP_CONFIG_PATH.stage"; : > "$OMP_CONFIG_STAGE";',
               'rm() { echo "test deletion failure" >&2; return 73; };',
               'omp_apply_staged; exit $?;',
             ].join('\n'),
@@ -229,10 +230,13 @@ test.skipIf(!hasPowerShell)('PowerShell OMP propagates empty-config deletion fai
     writeFileSync(config, 'modelRoles:\n  default: work/alias\n');
     writeFileSync(extensionStage, 'new extension');
     writeFileSync(configStage, '');
+    const connectionsStage = join(directory, 'connections-stage');
+    writeFileSync(connectionsStage, '{"connections":[]}');
     const body = readFileSync(join(packageRoot, 'installers/powershell/omp.ps1'), 'utf8');
     const script = [
       "$ErrorActionPreference='Stop'; function Test-SetupIsWindows { $false }; function Protect-SetupFile { param([string]$Path) };",
       body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'oh-my-pi'")),
+      `$script:OmpConnectionsStage=${psQuote(connectionsStage)}; $script:OmpConnectionsPath=${psQuote(join(directory, 'floway.json'))};`,
       `$script:OmpExtensionStage=${psQuote(extensionStage)}; $script:OmpExtensionPath=${psQuote(extension)};`,
       `$script:OmpConfigStage=${psQuote(configStage)}; $script:OmpConfigPath=${psQuote(config)};`,
       `function Remove-Item { param([string]$LiteralPath, [switch]$Force, [string]$ErrorAction); if ($LiteralPath -eq ${psQuote(config)}) { throw 'test deletion failure' }; Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $LiteralPath -Force -ErrorAction Stop };`,

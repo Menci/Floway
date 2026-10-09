@@ -53,8 +53,10 @@ function Get-SetupOmpAgentDir {
 
 function Backup-SetupOmpFiles {
   $script:OmpExtensionExisted = $false
+  $script:OmpConnectionsExisted = $false
   $script:OmpConfigExisted = $false
   $script:OmpExtensionBackup = $null
+  $script:OmpConnectionsBackup = $null
   $script:OmpConfigBackup = $null
   $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
   if (Test-Path -LiteralPath $script:OmpExtensionPath) {
@@ -71,6 +73,20 @@ function Backup-SetupOmpFiles {
       throw
     }
   }
+  if (Test-Path -LiteralPath $script:OmpConnectionsPath) {
+    $script:OmpConnectionsExisted = $true
+    $script:OmpConnectionsBackup = "$($script:OmpConnectionsPath).floway-backup.$stamp.$PID"
+    try {
+      Copy-Item -LiteralPath $script:OmpConnectionsPath -Destination $script:OmpConnectionsBackup
+      Protect-SetupFile $script:OmpConnectionsBackup
+    } catch {
+      if (Test-Path -LiteralPath $script:OmpConnectionsBackup) {
+        Remove-Item -LiteralPath $script:OmpConnectionsBackup -Force
+      }
+      $script:OmpConnectionsBackup = $null
+      throw
+    }
+  }
   if (Test-Path -LiteralPath $script:OmpConfigPath) {
     $script:OmpConfigExisted = $true
     $script:OmpConfigBackup = "$($script:OmpConfigPath).floway-backup.$stamp.$PID"
@@ -82,10 +98,14 @@ function Restore-SetupOmpFiles {
   if ($script:OmpExtensionStage -and (Test-Path -LiteralPath $script:OmpExtensionStage)) {
     Remove-Item -LiteralPath $script:OmpExtensionStage -Force -ErrorAction SilentlyContinue
   }
+  if ($script:OmpConnectionsStage -and (Test-Path -LiteralPath $script:OmpConnectionsStage)) {
+    Remove-Item -LiteralPath $script:OmpConnectionsStage -Force -ErrorAction SilentlyContinue
+  }
   if ($script:OmpConfigStage -and (Test-Path -LiteralPath $script:OmpConfigStage)) {
     Remove-Item -LiteralPath $script:OmpConfigStage -Force -ErrorAction SilentlyContinue
   }
   Restore-SetupManagedFile -Existed $script:OmpExtensionExisted -Backup $script:OmpExtensionBackup -Path $script:OmpExtensionPath -OriginalLabel 'extension file' -CreatedLabel 'oh-my-pi extension file'
+  Restore-SetupManagedFile -Existed $script:OmpConnectionsExisted -Backup $script:OmpConnectionsBackup -Path $script:OmpConnectionsPath -OriginalLabel 'connection file' -CreatedLabel 'oh-my-pi connection file'
   Restore-SetupManagedFile -Existed $script:OmpConfigExisted -Backup $script:OmpConfigBackup -Path $script:OmpConfigPath -OriginalLabel 'config file' -CreatedLabel 'oh-my-pi config file'
 }
 
@@ -95,6 +115,12 @@ function Remove-SetupOmpBackups {
     Remove-Item -LiteralPath $script:OmpExtensionBackup -Force -ErrorAction Stop
   }
   $script:OmpExtensionBackup = $null
+
+  Remove-SetupOlderBackups -Path $script:OmpConnectionsPath -Keep $script:OmpConnectionsBackup
+  if ($script:OmpConnectionsBackup) {
+    Remove-Item -LiteralPath $script:OmpConnectionsBackup -Force -ErrorAction Stop
+  }
+  $script:OmpConnectionsBackup = $null
 
   Remove-SetupOlderBackups -Path $script:OmpConfigPath -Keep $script:OmpConfigBackup
   if ($script:OmpConfigBackup) {
@@ -148,14 +174,15 @@ function Stage-SetupOmpExtension {
   $script:OmpExtensionStage = "$($script:OmpExtensionPath).floway-stage.$PID"
   [System.IO.File]::Create($script:OmpExtensionStage).Dispose()
   Protect-SetupFile $script:OmpExtensionStage
-  $uri = $SetupEndpoint.TrimEnd('/') + $SetupExtensionPath + '?endpoint=' + [Uri]::EscapeDataString($SetupEndpoint) + '&provider=' + [Uri]::EscapeDataString($SetupOmpProvider)
+  $uri = $SetupEndpoint.TrimEnd('/') + $SetupExtensionPath
   $response = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 30
   $source = [string]$response.Content
   if (-not $source.StartsWith("// Managed by Floway Agent Setup.`n")) {
     Stop-Setup 'the gateway did not return a Floway extension.'
   }
   [System.IO.File]::WriteAllText($script:OmpExtensionStage, $source, (New-Object System.Text.UTF8Encoding($false)))
-  Merge-SetupProviderExtension -ExistingPath $script:OmpExtensionPath -StagePath $script:OmpExtensionStage
+  $script:OmpConnectionsStage = "$($script:OmpConnectionsPath).floway-stage.$PID"
+  Stage-SetupProviderConnections -ExistingPath $script:OmpConnectionsPath -StagePath $script:OmpConnectionsStage -Provider $SetupOmpProvider -IncludeKey $true
 }
 
 function Set-SetupOmpRetryScalar {
@@ -335,6 +362,14 @@ function Stage-SetupOmpConfig {
 
 function Apply-SetupOmpStaged {
   $runningOnWindows = Test-SetupIsWindows
+  if ($script:OmpConnectionsExisted -and $runningOnWindows) {
+    Protect-SetupFile $script:OmpConnectionsPath
+    [System.IO.File]::Replace($script:OmpConnectionsStage, $script:OmpConnectionsPath, [System.Management.Automation.Language.NullString]::Value)
+  } else {
+    Move-Item -LiteralPath $script:OmpConnectionsStage -Destination $script:OmpConnectionsPath -Force
+  }
+  $script:OmpConnectionsStage = $null
+
   if ($script:OmpExtensionExisted -and $runningOnWindows) {
     Protect-SetupFile $script:OmpExtensionPath
     [System.IO.File]::Replace($script:OmpExtensionStage, $script:OmpExtensionPath, [System.Management.Automation.Language.NullString]::Value)
@@ -402,6 +437,7 @@ function Set-SetupAgent {
   $script:OmpAgentDir = Get-SetupOmpAgentDir -Exe $exe
   $extensionsDir = Join-Path $script:OmpAgentDir 'extensions'
   [void][System.IO.Directory]::CreateDirectory($extensionsDir)
+  $script:OmpConnectionsPath = Join-Path $script:OmpAgentDir 'floway.json'
   $script:OmpExtensionPath = Join-Path $extensionsDir 'floway.js'
 
   $configYml = Join-Path $script:OmpAgentDir 'config.yml'
