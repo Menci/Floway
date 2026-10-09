@@ -79,7 +79,7 @@ test('Bash Pi restores credentials after a later extension replacement fails', (
       `PI_CONNECTIONS_PATH=${quote(join(directory, 'floway.json'))}; PI_AUTH_PATH=${quote(join(directory, 'auth.json'))}; PI_EXTENSION_PATH=${quote(join(directory, 'floway.js'))}; PI_SETTINGS_PATH=${quote(join(directory, 'settings.json'))}; SETUP_TMPDIR=${quote(directory)}; SETUP_PI_PROVIDER=floway; SETUP_API_KEY=new-key;`,
       `_write_jsonc_editor() { cp ${quote(join(packageRoot, 'installers/node/jsonc-edit.mjs'))} "$SETUP_TMPDIR/jsonc-edit.mjs"; };`,
       'JQ=jq; ensure_jq() { :; }; SETUP_ENDPOINT=https://new.example; pi_backup_files && pi_stage_auth || exit $?;',
-      'PI_CONNECTIONS_STAGE="$PI_CONNECTIONS_PATH.floway-stage.$$"; _stage_provider_connections "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_STAGE" floway false || exit $?;',
+      'PI_CONNECTIONS_STAGE="$PI_CONNECTIONS_PATH.floway-stage.$$"; _stage_provider_connections "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_STAGE" floway || exit $?;',
       'PI_EXTENSION_STAGE="$PI_EXTENSION_PATH.floway-stage.$$"; printf "new extension" > "$PI_EXTENSION_STAGE";',
       'mv() { if [ "$1" = "$PI_EXTENSION_STAGE" ]; then node -e \'if(JSON.parse(require("fs").readFileSync(process.argv[1])).floway.key!=="new-key")process.exit(1)\' "$PI_AUTH_PATH" || exit $?; printf "auth replacement observed\\n"; return 73; fi; command mv "$@"; };',
       'pi_apply_staged; status=$?; [ "$status" -ne 0 ] || exit 90; pi_rollback;',

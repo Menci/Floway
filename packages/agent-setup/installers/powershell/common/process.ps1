@@ -56,16 +56,16 @@ function Invoke-SetupLiveProcess {
 # Run a child process with captured output under a deadline, terminating its
 # whole process tree and throwing on timeout.
 function Invoke-SetupProcess {
-  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage, [switch]$CloseInput)
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
   $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
-  $startInfo.RedirectStandardInput = $CloseInput
+  $startInfo.RedirectStandardInput = $true
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
   if (-not $process.Start()) { Stop-Setup "failed to start $Exe." }
-  if ($CloseInput) { $process.StandardInput.Close() }
+  $process.StandardInput.Close()
   $stdoutTask = $process.StandardOutput.ReadToEndAsync()
   $stderrTask = $process.StandardError.ReadToEndAsync()
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {

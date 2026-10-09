@@ -217,7 +217,7 @@ function Fetch-SetupPiExtension {
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllText($script:PiExtensionStage, $body, $utf8NoBom)
   $script:PiConnectionsStage = "$($script:PiConnectionsPath).floway-stage.$PID"
-  Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider -IncludeKey $false
+  Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider
 }
 
 function Invoke-SetupNodeJsonc {

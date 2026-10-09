@@ -337,22 +337,11 @@ case "$1" in
     esac
     : > "$FAKE_OMP_UPDATE_MARKER"
     ;;
-  config)
-    if [ "$2" = "path" ]; then
-      if [ "\${FAKE_OMP_NO_CONFIG_PATH:-0}" = "1" ]; then
-        printf 'test config path failure\\n' >&2
-        exit 73
-      elif [ -n "\${FAKE_OMP_CONFIG_PATH:-}" ]; then
-        printf '%s\\n' "$FAKE_OMP_CONFIG_PATH"
-      else
-        printf '%s\\n' "$HOME/.omp/agent"
-      fi
-    else
-      printf 'fake omp: unhandled config subcommand: %s\\n' "$2" >&2
-      exit 2
-    fi
-    ;;
   --mode)
+    if [ "\${FAKE_OMP_PROBE_FAILURE:-0}" = "1" ]; then
+      printf 'test native path probe failure\\n' >&2
+      exit 73
+    fi
     [ "$2" = "rpc" ] && [ "$3" = "--no-ui" ] && [ "$4" = "--no-session" ] \
       && [ "$5" = "--no-tools" ] && [ "$6" = "--no-lsp" ] && [ "$7" = "--no-skills" ] \
       && [ "$8" = "--no-rules" ] && [ "$9" = "--no-extensions" ] && [ "\${10}" = "-e" ] \
@@ -360,7 +349,7 @@ case "$1" in
     [ -s "\${11}" ] || { printf 'fake omp: missing path probe file: %s\\n' "\${11}" >&2; exit 66; }
     [ -n "\${FLOWAY_SETUP_PATHS_FILE:-}" ] || { printf 'fake omp: missing FLOWAY_SETUP_PATHS_FILE\\n' >&2; exit 65; }
     printf '%s\\n' "$*" >> "$FAKE_OMP_PROBE_RECORD"
-    agent_dir="\${FAKE_OMP_CONFIG_PATH:-$HOME/.omp/agent}"
+    agent_dir="\${FAKE_OMP_AGENT_DIR:-$HOME/.omp/agent}"
     plugins_dir="\${FAKE_OMP_PLUGINS_PATH:-$HOME/.omp/plugins}"
     "$FAKE_OMP_PATHS_SCRIPT" "$agent_dir" "$plugins_dir" "$FLOWAY_SETUP_PATHS_FILE" "\${11}"
     ;;
@@ -899,10 +888,10 @@ interface RunOptions {
   ambientCodexNonInteractive?: string;
   fakeOmpVersion?: string;
   fakeOmpVersionSleep?: number;
-  fakeOmpConfigPath?: string;
+  fakeOmpAgentDir?: string;
   fakeOmpPluginsDir?: string;
   fakeOmpLinkFailure?: 'after' | 'unlink';
-  fakeOmpNoConfigPath?: boolean;
+  fakeOmpProbeFailure?: boolean;
   withOmpInstallHook?: boolean;
   ompInstallerUrl?: string;
   piCodingAgentDir?: string;
@@ -986,10 +975,10 @@ const ompEnv = (options: RunOptions): Record<string, string> => {
   };
   if (options.fakeOmpVersion) env.FAKE_OMP_VERSION = options.fakeOmpVersion;
   if (options.fakeOmpVersionSleep !== undefined) env.FAKE_OMP_VERSION_SLEEP = String(options.fakeOmpVersionSleep);
-  if (options.fakeOmpConfigPath) env.FAKE_OMP_CONFIG_PATH = options.fakeOmpConfigPath;
+  if (options.fakeOmpAgentDir) env.FAKE_OMP_AGENT_DIR = options.fakeOmpAgentDir;
   if (options.fakeOmpPluginsDir) env.FAKE_OMP_PLUGINS_PATH = options.fakeOmpPluginsDir;
   if (options.fakeOmpLinkFailure) env.FAKE_OMP_LINK_FAILURE = options.fakeOmpLinkFailure;
-  if (options.fakeOmpNoConfigPath) env.FAKE_OMP_NO_CONFIG_PATH = '1';
+  if (options.fakeOmpProbeFailure) env.FAKE_OMP_PROBE_FAILURE = '1';
   if (options.withOmpInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT = FAKE_OMP_INSTALLER_SCRIPT;
   if (options.ompInstallerUrl) env.AGENT_SETUP_TEST_OMP_URL = options.ompInstallerUrl;
   if (options.piCodingAgentDir) env.PI_CODING_AGENT_DIR = options.piCodingAgentDir;
@@ -4080,7 +4069,7 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
   });
 }
 
-test('omp', 'resolves agent directory from omp config path when omp CLI provides it', async t => {
+test('omp', 'resolves agent directory from the native probe', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   const customDir = join(ws.home, 'from-config-path');
@@ -4089,17 +4078,17 @@ test('omp', 'resolves agent directory from omp config path when omp CLI provides
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpConfigPath: customDir,
+    fakeOmpAgentDir: customDir,
     fakeOmpPluginsDir: customPluginsDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
   const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
-  t.equal(paths.agentDir, customDir, 'native probe preserves the CLI config path');
+  t.equal(paths.agentDir, customDir, 'native probe preserves the native agent directory');
   t.equal(paths.pluginsDir, customPluginsDir, 'native probe can resolve an independent plugin root');
   t.ok(existsSync(ompExtensionPath(ws, 'independent-plugin-root')), 'extension written under the independently resolved plugin root');
 });
 
-test('omp', 'propagates config path failure without guessing the agent directory', async t => {
+test('omp', 'propagates native probe failure without guessing the agent directory', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   const customDir = join(ws.home, 'from-pi-env-dir');
@@ -4107,13 +4096,13 @@ test('omp', 'propagates config path failure without guessing the agent directory
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpNoConfigPath: true,
+    fakeOmpProbeFailure: true,
     piCodingAgentDir: customDir,
   });
   t.notEqual(run.code, 0);
-  t.includes(run.combined, 'test config path failure');
+  t.includes(run.combined, 'test native path probe failure');
   t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
-  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'path probing does not run after config path fails');
+  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'a failed probe publishes no native path result');
 });
 
 test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -4124,7 +4113,7 @@ test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGE
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
+    fakeOmpAgentDir: join(ws.home, '.omp/profiles/work/agent'),
     fakeOmpPluginsDir: join(ws.home, '.omp/profiles/work/plugins'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,
@@ -4473,7 +4462,7 @@ test('omp', 'PowerShell: rollback restore failure preserves backup file and warn
   t.ok(preservedBackups > 0, 'a package backup is preserved for manual recovery');
 });
 
-test('omp', 'PowerShell: resolves agent directory from omp config path when omp CLI provides it', async t => {
+test('omp', 'PowerShell: resolves agent directory from the native probe', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
@@ -4483,17 +4472,17 @@ test('omp', 'PowerShell: resolves agent directory from omp config path when omp 
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpConfigPath: customDir,
+    fakeOmpAgentDir: customDir,
     fakeOmpPluginsDir: customPluginsDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
   const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
-  t.equal(paths.agentDir, customDir, 'native probe preserves the CLI config path');
+  t.equal(paths.agentDir, customDir, 'native probe preserves the native agent directory');
   t.equal(paths.pluginsDir, customPluginsDir, 'native probe can resolve an independent plugin root');
   t.ok(existsSync(ompExtensionPath(ws, 'independent-plugin-root')), 'extension written under the independently resolved plugin root');
 });
 
-test('omp', 'PowerShell: propagates config path failure without guessing the agent directory', async t => {
+test('omp', 'PowerShell: propagates native probe failure without guessing the agent directory', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
@@ -4502,13 +4491,13 @@ test('omp', 'PowerShell: propagates config path failure without guessing the age
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpNoConfigPath: true,
+    fakeOmpProbeFailure: true,
     piCodingAgentDir: customDir,
   });
   t.notEqual(run.code, 0);
-  t.includes(run.combined, 'test config path failure');
+  t.includes(run.combined, 'test native path probe failure');
   t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
-  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'path probing does not run after config path fails');
+  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'a failed probe publishes no native path result');
 });
 
 test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -4520,7 +4509,7 @@ test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores P
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
-    fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
+    fakeOmpAgentDir: join(ws.home, '.omp/profiles/work/agent'),
     fakeOmpPluginsDir: join(ws.home, '.omp/profiles/work/plugins'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,

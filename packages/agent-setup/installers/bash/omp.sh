@@ -109,13 +109,7 @@ omp_write_version() {
   fi
 }
 
-omp_resolve_agent_dir() {
-  OMP_AGENT_DIR=$("$OMP_BIN" config path) || return $?
-  OMP_AGENT_DIR="${OMP_AGENT_DIR%$'\r'}"
-  if [ -z "$OMP_AGENT_DIR" ]; then
-    out_error '`omp config path` returned an empty path.'
-    return 1
-  fi
+omp_resolve_native_paths() {
   ensure_jq || return 1
   local probe="$SETUP_TMPDIR/omp-paths.js" paths="$SETUP_TMPDIR/omp-paths.json"
   # Plugins can live outside the agent directory under profiles or XDG.
@@ -137,6 +131,7 @@ JS
     out_error 'the oh-my-pi path probe did not write its result.'
     return 1
   fi
+  OMP_AGENT_DIR=$("$JQ" -er '.agentDir | strings | select(length > 0)' "$paths") || return $?
   OMP_PLUGINS_DIR=$("$JQ" -er '.pluginsDir | strings | select(length > 0)' "$paths") || return $?
 }
 
@@ -552,7 +547,7 @@ configure_agent() {
   fi
 
   out_agent_notice 'Configuring' 'oh-my-pi'
-  if ! omp_resolve_agent_dir; then
+  if ! omp_resolve_native_paths; then
     return 1
   fi
   if ! mkdir -p "$OMP_AGENT_DIR"; then

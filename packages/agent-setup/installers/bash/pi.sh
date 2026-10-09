@@ -304,7 +304,7 @@ pi_fetch_extension() {
     return 1
   fi
   PI_CONNECTIONS_STAGE="$PI_CONNECTIONS_PATH.floway-stage.$$"
-  _stage_provider_connections "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_STAGE" "$SETUP_PI_PROVIDER" false
+  _stage_provider_connections "$PI_CONNECTIONS_PATH" "$PI_CONNECTIONS_STAGE" "$SETUP_PI_PROVIDER"
 }
 
 pi_stage_settings() {

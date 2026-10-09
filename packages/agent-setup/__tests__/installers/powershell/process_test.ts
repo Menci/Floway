@@ -43,7 +43,7 @@ describe.skipIf(!hasPowerShell)('PowerShell captured and live process launch bou
     const script = [
       "$ErrorActionPreference='Stop'; function Test-SetupIsWindows { $false }; function Stop-Setup { param([string]$Message) throw $Message };",
       helper,
-      `$result = Invoke-SetupProcess -Exe ${quote(process.execPath)} -Arguments @('-e', ${quote(nodeProbe)}) -TimeoutSeconds 2 -CloseInput;`,
+      `$result = Invoke-SetupProcess -Exe ${quote(process.execPath)} -Arguments @('-e', ${quote(nodeProbe)}) -TimeoutSeconds 2;`,
       'if ($result.ExitCode -ne 0) { throw $result.Output }; [Console]::Write($result.Output);',
     ].join('\n');
     const child = spawn('pwsh', ['-NoProfile', '-Command', script]);

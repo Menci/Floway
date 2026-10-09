@@ -175,7 +175,7 @@ $script:PiSettingsPath=Join-Path $args[0] 'settings.json'
 Backup-SetupPiFiles
 Stage-SetupPiAuth
 $script:PiConnectionsStage="$($script:PiConnectionsPath).floway-stage"
-Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider -IncludeKey $false
+Stage-SetupProviderConnections -ExistingPath $script:PiConnectionsPath -StagePath $script:PiConnectionsStage -Provider $SetupPiProvider
 $script:PiExtensionStage="$($script:PiExtensionPath).floway-stage"
 [IO.File]::WriteAllText($script:PiExtensionStage,'new extension')
 function Move-Item {
