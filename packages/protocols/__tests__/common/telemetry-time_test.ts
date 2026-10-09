@@ -13,6 +13,12 @@ describe('telemetry hour boundaries', () => {
 });
 
 describe('telemetry calendar buckets', () => {
+  it('retains the requested local wall clock through the repeated DST hour', () => {
+    const map = createTelemetryBucket({ bucket: 'hour', timeZone: 'America/New_York', timezoneOffsetMinutes: 240 });
+    expect(map('2026-11-01T05')).toBe('2026-11-01T01');
+    expect(map('2026-11-01T06')).toBe('2026-11-01T01');
+  });
+
   it('aligns weeks to Monday even across a year boundary', () => {
     const map = createTelemetryBucket({ bucket: 'week', timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 });
     expect(map('2025-12-31T20')).toBe('2025-12-29');
@@ -27,6 +33,7 @@ describe('telemetry calendar buckets', () => {
 
   it('preserves UTC instants for hourly dashboard buckets', () => {
     const map = createTelemetryBucket({ bucket: 'hour', timeZone: 'UTC', timezoneOffsetMinutes: 0 });
-    expect(map('2026-11-01T05')).not.toBe(map('2026-11-01T06'));
+    expect(map('2026-11-01T05')).toBe('2026-11-01T05');
+    expect(map('2026-11-01T06')).toBe('2026-11-01T06');
   });
 });
