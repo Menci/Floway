@@ -328,13 +328,14 @@ export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry 
 }
 
 export function updatePiAuth(src, provider, key) {
+  const source = src === '' ? '{}\n' : src;
   let document;
-  try { document = src === '' ? {} : JSON.parse(src.replace(/^\uFEFF/, '')); } catch (cause) { throw new JsoncRefusalError('Invalid JSON in auth.json', { cause }); }
+  try { document = JSON.parse(source.replace(/^\uFEFF/, '')); } catch (cause) { throw new JsoncRefusalError('Invalid JSON in auth.json', { cause }); }
   if (document === null || Array.isArray(document) || typeof document !== 'object') throw new JsoncRefusalError('Root value in auth.json must be an object');
   // Pi resolves stored keys as config values; escape a literal key on write.
   // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/docs/custom-provider.md#L74-L81
   const escaped = key.replaceAll('$', () => '$$');
-  return setJsoncProperty(src === '' ? '{}\n' : src, [provider], { type: 'api_key', key: key.startsWith('!') ? `$${  escaped}` : escaped }, 'auth.json');
+  return setJsoncProperty(source, [provider], { type: 'api_key', key: key.startsWith('!') ? `$${  escaped}` : escaped }, 'auth.json');
 }
 
 function setJsoncProperty(src, path, value, fileName = 'settings.json') {
