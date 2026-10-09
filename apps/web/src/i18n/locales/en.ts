@@ -306,7 +306,6 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        upstreamDisabled: 'Upstream disabled',
         emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
       },
       apiKeys: {
