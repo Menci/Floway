@@ -35,33 +35,6 @@ test('Bash Pi protects a reused settings stage before the JSONC subprocess write
 });
 
 test.each([
-  { version: 'v22.19.0', patch: '', supported: true },
-  { version: 'v23.4.0', patch: 'delete require("node:zlib").createZstdDecompress;', supported: false },
-  { version: 'v24.0.0', patch: '', supported: true },
-])('Bash checks the required Zstandard API on $version ($supported)', ({ version, patch, supported }) => {
-  const directory = mkdtempSync(join(packageRoot, '.pi-node-capability-test-'));
-  try {
-    const preload = join(directory, 'runtime.cjs');
-    writeFileSync(preload, patch);
-    const executable = join(directory, 'node');
-    writeFileSync(executable, `#!/bin/sh\nif [ "$1" = "-v" ]; then echo '${version}'; exit 0; fi\nexec ${quote(process.execPath)} --require ${quote(preload)} "$@"\n`);
-    chmodSync(executable, 0o700);
-    const body = readFileSync(join(packageRoot, 'installers/bash/pi.sh'), 'utf8');
-    const timeout = readFileSync(join(packageRoot, 'installers/bash/common/process.sh'), 'utf8');
-    const script = [
-      'set +e; out_error() { printf "%s\\n" "$*" >&2; };', timeout,
-      body.slice(0, body.lastIndexOf("main 'Pi'")),
-      `SETUP_TMPDIR=${quote(directory)}; pi_check_node; exit $?;`,
-    ].join('\n');
-    const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000, env: { ...process.env, PATH: `${directory}:${process.env.PATH}` } });
-    expect(result.status === 0, result.stdout + result.stderr).toBe(supported);
-    if (!supported) expect(result.stdout + result.stderr).toContain('Upgrade to the current Node.js LTS and re-run.');
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test.each([
   { output: 'upstream probe failure', code: 73, expected: 'upstream probe failure' },
   { output: '', code: 0, expected: 'Node.js returned an invalid version.' },
   { output: 'invalid.version', code: 0, expected: 'Node.js returned an invalid version.' },

@@ -1,5 +1,15 @@
 import { getApiProvider } from '@earendil-works/pi-ai/compat';
 import { VERSION } from '@earendil-works/pi-coding-agent';
+import * as zlib from 'node:zlib';
+
+// Work around Undici advertising Zstd on runtimes without its decoder.
+// https://github.com/nodejs/undici/pull/4968
+const acceptEncoding = typeof zlib.createZstdDecompress === 'function' ? 'gzip, deflate, br, zstd' : 'gzip, deflate, br';
+const withEncoding = options => {
+  const headers = new Headers(options?.headers);
+  headers.set('Accept-Encoding', acceptEncoding);
+  return { ...options, headers: Object.fromEntries(headers) };
+};
 
 // Use Pi's native discovery User-Agent so Floway selects the Pi catalog.
 // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/utils/pi-user-agent.ts#L1-L4
@@ -10,7 +20,7 @@ export default async pi => {
   for (const connection of connections) {
     const fetchModels = async (signal = AbortSignal.timeout(15000)) => {
       const response = await fetch(`${connection.endpoint}/v1/models?endpoint=${encodeURIComponent(connection.endpoint)}&provider=${encodeURIComponent(connection.provider)}`, {
-        headers: { Authorization: `Bearer ${connection.apiKey}`, 'User-Agent': userAgent },
+        headers: { Authorization: `Bearer ${connection.apiKey}`, 'User-Agent': userAgent, 'Accept-Encoding': acceptEncoding },
         signal,
       });
       if (!response.ok) throw new Error(`Floway model discovery failed: HTTP ${response.status}: ${await response.text()}`);
@@ -34,9 +44,9 @@ export default async pi => {
       },
       // Resolve the API directly to avoid built-in provider fallback.
       // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/ai/src/compat.ts#L238-L292
-      stream: (model, context, options) => getApiProvider(model.api).stream(model, context, options),
+      stream: (model, context, options) => getApiProvider(model.api).stream(model, context, withEncoding(options)),
       streamSimple: (model, context, options) => getApiProvider(model.api).streamSimple(model, context, {
-        ...options,
+        ...withEncoding(options),
         thinkingBudgets: options.thinkingBudgets ?? model.thinkingBudgets,
         onPayload: async payload => {
           const effort = model.effortOverrides?.[options.reasoning];

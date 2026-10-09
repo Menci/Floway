@@ -10,30 +10,6 @@ import { SETUP_SCRIPT_BODIES } from '../../../src/script-assets.ts';
 
 const hasPowerShell = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()']).status === 0;
 
-test.skipIf(!hasPowerShell).each([
-  { version: 'v22.19.0', patch: '', supported: true },
-  { version: 'v23.4.0', patch: 'delete require("node:zlib").createZstdDecompress;', supported: false },
-  { version: 'v24.0.0', patch: '', supported: true },
-])('PowerShell checks the required Zstandard API on $version ($supported)', ({ version, patch, supported }) => {
-  const directory = mkdtempSync(join(process.cwd(), '.pi-node-capability-test-'));
-  try {
-    const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-    const preload = join(directory, 'runtime.cjs');
-    writeFileSync(preload, patch);
-    const executable = join(directory, 'node');
-    writeFileSync(executable, `#!/bin/sh\nif [ "$1" = "-v" ]; then echo '${version}'; exit 0; fi\nexec ${quote(process.execPath)} --require ${quote(preload)} "$@"\n`);
-    chmodSync(executable, 0o700);
-    const body = SETUP_SCRIPT_BODIES.pi.ps1;
-    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
-    const script = `$ErrorActionPreference='Stop'; $PSNativeCommandUseErrorActionPreference=$false;\n${fragment}\nTest-SetupPiNode`;
-    const result = spawnSync('pwsh', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 10000, env: { ...process.env, PATH: `${directory}:${process.env.PATH}` } });
-    expect(result.status === 0, result.stdout + result.stderr).toBe(supported);
-    if (!supported) expect(result.stdout + result.stderr).toContain('Upgrade to the current Node.js LTS and re-run.');
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 test.skipIf(!hasPowerShell)('PowerShell Pi protects a reused settings stage before writing editor output', () => {
   const directory = mkdtempSync(join(process.cwd(), '.pi-stage-protection-test-'));
   try {

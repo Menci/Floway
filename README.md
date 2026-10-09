@@ -58,10 +58,10 @@ registration API only requires a server update; startup or model refresh applies
 it to the existing extension. Native client API changes or new client operations
 may require an extension update.
 
-Pi setup requires Node.js >= 22.19 and the native Zstandard decompression API. It
-checks the actual API before installation or configuration, since early Node 23
-releases satisfy Pi's version range but lack that API. Unsupported runtimes must
-be upgraded to the current Node.js LTS before rerunning setup.
+Pi setup requires Node.js >= 22.19. Its extension explicitly negotiates response
+compression for discovery and inference, advertising Zstandard only when the
+runtime provides the decoder. Early Node 23 releases therefore use gzip, deflate
+or Brotli without triggering Undici's missing-decoder crash.
 
 OMP's custom-provider registration accepts a subset of its native model fields.
 Fields outside that API need support in OMP before they can take effect; the

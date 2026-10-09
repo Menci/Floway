@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import * as zlib from 'node:zlib';
 
 import { expect, test, vi } from 'vitest';
 
@@ -20,6 +21,33 @@ test('Pi extension rendering rejects non-HTTP and credential-bearing URLs', () =
   for (const endpoint of ['file:///tmp/file', 'ftp://example.com', 'https://user:password@example.com', 'https://example.com?a=1', 'https://example.com/#fragment']) {
     expect(() => renderAgentExtension({ agent: 'pi', provider: 'floway', endpoint, apiKey: 'key' })).toThrow();
   }
+});
+
+test.each([false, true])('Pi negotiates compression for discovery and both inference bridges (Zstd: %s)', async hasZstd => {
+  const model = { id: 'model', api: 'openai-responses', headers: { 'x-model-header': 'preserved' } };
+  const source = renderAgentExtension({ agent: 'pi', provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' });
+  const body = source.replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
+  const fetchCatalog = vi.fn<(url: string, options: { headers: Record<string, string> }) => Promise<Response>>(async () => Response.json({ models: [model] }));
+  const stream = vi.fn();
+  const streamSimple = vi.fn();
+  const factory = new Function('fetch', 'getApiProvider', 'VERSION', 'zlib', body)(fetchCatalog, () => ({ stream, streamSimple }), '1.1.0', hasZstd ? { createZstdDecompress: vi.fn() } : {});
+  let provider: {
+    getModels: () => typeof model[];
+    stream: (model: object, context: object, options?: object) => void;
+    streamSimple: (model: object, context: object, options: object) => void;
+    refreshModels: (context: { allowNetwork: boolean; publish: (publication: { update: () => void }) => Promise<void> }) => Promise<void>;
+  };
+  await factory({ registerProvider: (value: typeof provider) => { provider = value; } });
+  await provider!.refreshModels({ allowNetwork: true, publish: async publication => { publication.update(); } });
+  const expected = hasZstd ? 'gzip, deflate, br, zstd' : 'gzip, deflate, br';
+  for (const [, options] of fetchCatalog.mock.calls) expect(options.headers['Accept-Encoding']).toBe(expected);
+  provider!.stream(model, {});
+  const options = { headers: { 'aCcEpT-EnCoDiNg': 'identity', 'x-request-header': 'preserved' }, reasoning: 'high' };
+  provider!.streamSimple(model, {}, options);
+  expect(stream.mock.calls[0]![2]).toEqual({ headers: { 'accept-encoding': expected } });
+  expect(streamSimple.mock.calls[0]![2]).toMatchObject({ headers: { 'accept-encoding': expected, 'x-request-header': 'preserved' }, reasoning: 'high' });
+  expect(options.headers['aCcEpT-EnCoDiNg']).toBe('identity');
+  expect(provider!.getModels()).toEqual([model]);
 });
 
 test('Pi connections keep authentication and refresh publication isolated by provider', async () => {
@@ -46,7 +74,7 @@ test('Pi connections keep authentication and refresh publication isolated by pro
     refreshModels: (context: { allowNetwork: boolean; publish: (publication: { update: () => void }) => Promise<void> }) => Promise<void>;
   };
   const providers: Provider[] = [];
-  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', body)(connections, fetchCatalog, () => ({}), '1.1.0') as (pi: { registerProvider: (provider: Provider) => void }) => Promise<void>;
+  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', 'zlib', body)(connections, fetchCatalog, () => ({}), '1.1.0', zlib) as (pi: { registerProvider: (provider: Provider) => void }) => Promise<void>;
   await factory({ registerProvider: provider => { providers.push(provider); } });
   expect(providers.map(provider => provider.id)).toEqual(['floway-home', 'floway-work']);
   expect(await providers[0]!.auth.apiKey.resolve()).toMatchObject({ auth: { apiKey: 'home-key' } });
@@ -64,9 +92,9 @@ test('Pi delegates an explicit null payload replacement to its native adapter', 
     .replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
   const model = { id: 'alias', api: 'anthropic-messages', effortOverrides: { high: 'fast' } };
   const adapter = { streamSimple: vi.fn<(model: object, context: object, options: { onPayload: (payload: object) => unknown }) => void>() };
-  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', body)(
+  const factory = new Function('connections', 'fetch', 'getApiProvider', 'VERSION', 'zlib', body)(
     [{ provider: 'work', endpoint: 'https://gateway.example', apiKey: 'key' }],
-    async () => Response.json({ models: [model] }), () => adapter, '1.1.0',
+    async () => Response.json({ models: [model] }), () => adapter, '1.1.0', zlib,
   );
   let provider: { streamSimple: (model: object, context: object, options: object) => void };
   await factory({ registerProvider: (value: typeof provider) => { provider = value; } });
@@ -94,7 +122,7 @@ test('Pi forwards server-added native metadata and API choices without a client 
   const streamSimple = vi.fn();
   const providers: { getModels: () => typeof model[]; stream: typeof stream; streamSimple: (model: object, context: object, options: object) => void }[] = [];
   const getApiProvider = vi.fn(() => ({ stream, streamSimple }));
-  const factory = new Function('fetch', 'getApiProvider', 'VERSION', body)(async () => Response.json({ models: [model] }), getApiProvider, '1.1.0');
+  const factory = new Function('fetch', 'getApiProvider', 'VERSION', 'zlib', body)(async () => Response.json({ models: [model] }), getApiProvider, '1.1.0', zlib);
   await factory({ registerProvider: (provider: typeof providers[number]) => { providers.push(provider); } });
   const registered = providers[0]!;
   expect(registered.getModels()).toEqual([model]);

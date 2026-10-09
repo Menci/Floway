@@ -9,6 +9,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
+import * as zlib from 'node:zlib';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { renderAgentExtension } from '../src/render-extension.ts';
@@ -3512,7 +3513,7 @@ test('pi', 'real Pi SDK refresh replaces and removes models while retaining full
     reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: null },
     input: ['text', 'image'], contextWindow: 200000, maxTokens: 32000,
     cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    headers: { 'x-model-capability': id }, compat: { supportsDeveloperRole: false },
+    headers: { 'x-model-capability': id, 'accept-encoding': 'identity' }, compat: { supportsDeveloperRole: false },
   });
   piFixture.models = [fixture('first-model'), { ...fixture('budget-model'), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingBudgets: { minimal: 4096, low: 4096, medium: 8192, high: 10000 }, effortOverrides: { low: 'fast' } }, { ...fixture('mandatory-model'), thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null } }, ...['adaptive-model', 'adaptive-mandatory-model'].map(id => ({ ...fixture(id), api: 'anthropic-messages', baseUrl: modelServer.url, thinkingLevelMap: { off: id === 'adaptive-model' ? 'off' : null, minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null }, compat: { forceAdaptiveThinking: true }, payloadRemovals: [['output_config', 'effort']] }))];
   const refreshedModel = {
@@ -3542,7 +3543,7 @@ const models = () => runtime.getModels().filter(model => model.provider === 'flo
 const snapshots = [models()];
 const context = { messages: [{ role: 'user', content: 'Hello', timestamp: Date.now() }] };
 for (const id of ['first-model', 'budget-model', 'mandatory-model', 'adaptive-model', 'adaptive-mandatory-model']) {
-  const response = await runtime.completeSimple(runtime.getModel('floway', id), context, { reasoning: id.startsWith('adaptive') ? 'high' : 'low', onPayload: payload => { if (id.startsWith('adaptive')) payload.output_config = { ...payload.output_config, format: { type: 'json_schema', schema: { type: 'object' } } }; } });
+  const response = await runtime.completeSimple(runtime.getModel('floway', id), context, { reasoning: id.startsWith('adaptive') ? 'high' : 'low', headers: { 'x-request-capability': id, 'aCcEpT-EnCoDiNg': 'identity' }, onPayload: payload => { if (id.startsWith('adaptive')) payload.output_config = { ...payload.output_config, format: { type: 'json_schema', schema: { type: 'object' } } }; } });
   assert.equal(response.stopReason, 'stop', response.errorMessage);
 }
 const budgetModel = runtime.getModel('floway', 'budget-model');
@@ -3592,6 +3593,13 @@ process.stdout.write(JSON.stringify(snapshots));
   t.excludes(result.combined, SENTINEL_KEY);
   const responses = modelServer.requests.find(request => request.path === '/v1/responses');
   const messages = modelServer.requests.find(request => request.path === '/v1/messages');
+  for (const request of modelServer.requests.filter(request => ['/v1/models', '/v1/responses', '/v1/messages'].includes(request.path))) {
+    t.equal(request.headers['accept-encoding'], typeof zlib.createZstdDecompress === 'function' ? 'gzip, deflate, br, zstd' : 'gzip, deflate, br', 'discovery and both native APIs negotiate supported response compression');
+  }
+  for (const request of [responses!, messages!]) {
+    t.equal(request.headers['x-model-capability'], request.body!.model as string, 'model headers remain intact');
+    t.equal(request.headers['x-request-capability'], request.body!.model as string, 'request headers remain intact');
+  }
   t.equal(JSON.stringify(responses?.body?.reasoning), JSON.stringify({ effort: 'low', summary: 'auto' }), 'Responses effort reaches the adapter');
   const thinking = messages?.body?.thinking as { type: string; budget_tokens: number };
   t.equal(thinking.type, 'enabled', 'budget enables native Anthropic thinking');
