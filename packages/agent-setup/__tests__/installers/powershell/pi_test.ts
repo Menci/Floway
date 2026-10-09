@@ -251,7 +251,6 @@ if (-not $script:ProtectionObserved) { throw 'Protection was not reached' }
   }
 });
 
-
 test.skipIf(!hasPowerShell).each(['auth', 'settings'] as const)('PowerShell Pi preserves native UTF-8 bytes through the %s editor process', mode => {
   const directory = mkdtempSync(join(process.cwd(), '.pi-bom-transport-test-'));
   try {
