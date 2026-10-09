@@ -220,20 +220,15 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     }));
     return <div className="grid gap-3">
       <div className={FIELD_GRID_CLASS}>
-        <Field label={t('dashboard.apiKeys.agentSetup.providerName')} hint={t('dashboard.apiKeys.agentSetup.providerHint')}>
+        <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerHint')) }}>
           <Input value={connection.provider} maxLength={64} onChange={event => patchConnection({ provider: event.target.value })} />
         </Field>
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family={agent} picker="default" value={connection.model} onChange={model => patchConnection({ model })} />
+        <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} info={t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piModelHint' : 'dashboard.apiKeys.agentSetup.ompModelHint')} models={models} family={agent} picker="default" value={connection.model} onChange={model => patchConnection({ model })} />
       </div>
-      <Text size={200} className="text-fui-fg2">
-        {t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piModelHint' : 'dashboard.apiKeys.agentSetup.ompModelHint')}
-      </Text>
       <section className={SECTION_STACK_CLASS}>
-        <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.globalSettings')} />
-        <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.globalSettingsHint')}</Text>
+        <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.globalSettings')} info={t('dashboard.apiKeys.agentSetup.globalSettingsHint')} />
         {agent === 'pi' && <Field
-          label={t('dashboard.apiKeys.agentSetup.defaultThinkingLevel')}
-          hint={thinking?.supported === false ? t('dashboard.apiKeys.agentSetup.unsupportedThinking') : t('dashboard.apiKeys.agentSetup.defaultThinkingHint')}
+          label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.defaultThinkingLevel'), thinking?.supported === false ? t('dashboard.apiKeys.agentSetup.unsupportedThinking') : t('dashboard.apiKeys.agentSetup.defaultThinkingHint')) }}
         >
           <Dropdown
             disabled={thinking?.supported === false}
@@ -358,7 +353,7 @@ function AgentRetryFields({ retry, onChange }: {
         <Option value="disabled">{t('dashboard.apiKeys.agentSetup.retryDisabled')}</Option>
       </Dropdown>
     </Field>
-    <Field label={t('dashboard.apiKeys.agentSetup.maxRetries')} hint={t('dashboard.apiKeys.agentSetup.maxRetriesHint')}>
+    <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t('dashboard.apiKeys.agentSetup.maxRetriesHint')) }}>
       <Input type="number" min={0} step={1} value={retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
         const maxRetries = event.target.value === '' ? null : Number(event.target.value);
         onChange(current => ({ ...current, maxRetries }));
@@ -367,8 +362,9 @@ function AgentRetryFields({ retry, onChange }: {
   </div>;
 }
 
-function ModelSelect({ family, label, models, onChange, picker, value }: {
+function ModelSelect({ family, info, label, models, onChange, picker, value }: {
   family: 'claude' | 'codex' | 'pi' | 'omp';
+  info?: string;
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;
@@ -386,7 +382,7 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
   const filtered = useMemo(() => filterModelOptions(catalog, query), [catalog, query]);
   const defaultVisible = query === '' || defaultLabel.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 
-  return <Field label={label}>
+  return <Field label={info === undefined ? label : { children: infoLabelSlot(label, info) }}>
     <Combobox
       emptyMessage={t('dashboard.apiKeys.agentSetup.noModelMatches')}
       open={open}

@@ -93,6 +93,8 @@ describe('Agent Setup card fields', () => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
     expect(screen.getByRole('combobox', { name: 'Default model' })).toBeTruthy();
+    expect(screen.queryByText(/The Floway extension refreshes available models/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Default model/ }));
     expect(screen.getByText(/The Floway extension refreshes available models/i)).toBeTruthy();
     expect(screen.queryByRole('tab', { name: 'Config snippet' })).toBeNull();
   });
@@ -101,6 +103,8 @@ describe('Agent Setup card fields', () => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
     expect(screen.getByRole('combobox', { name: 'Default model' })).toBeTruthy();
+    expect(screen.queryByText(/OMP loads current Floway models at startup/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Default model/ }));
     expect(screen.getByText(/OMP loads current Floway models at startup/i)).toBeTruthy();
     expect(screen.getByText(/\/floway-refresh/)).toBeTruthy();
   });
