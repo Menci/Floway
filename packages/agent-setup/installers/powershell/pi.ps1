@@ -222,11 +222,16 @@ function Fetch-SetupPiExtension {
 
 function Invoke-SetupNodeJsonc {
   param(
-    [string]$InputText,
+    [string]$InputPath,
     [string]$OutputPath,
     [Parameter(Mandatory=$true)][hashtable]$EnvVars,
     [Parameter(Mandatory=$true)][ValidateSet('auth', 'settings')][string]$Mode
   )
+  $inputText = if (Test-Path -LiteralPath $InputPath) {
+    [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($InputPath))
+  } else {
+    ''
+  }
   $nodeCmd = Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1
 
   $editorPath = Join-Path $script:PiTmpDir 'jsonc-edit.mjs'
@@ -249,11 +254,13 @@ function Invoke-SetupNodeJsonc {
 
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   $writer = New-Object System.IO.StreamWriter($process.StandardInput.BaseStream, $utf8NoBom)
-  $writer.Write($InputText)
+  $writer.Write($inputText)
   $writer.Flush()
   $writer.Close()
 
-  $stdout = $process.StandardOutput.ReadToEnd()
+  $reader = [System.IO.StreamReader]::new($process.StandardOutput.BaseStream, $utf8NoBom, $false)
+  $stdout = $reader.ReadToEnd()
+  $reader.Dispose()
   $stderr = $process.StandardError.ReadToEnd()
   [void]$process.WaitForExit(30000)
 
@@ -275,11 +282,6 @@ function Stage-SetupPiSettings {
   }
   $stamp = [System.Diagnostics.Process]::GetCurrentProcess().Id
   $script:PiSettingsStage = "$($script:PiSettingsPath).floway-stage.$stamp"
-  $src = if (Test-Path -LiteralPath $script:PiSettingsPath) {
-    [System.IO.File]::ReadAllText($script:PiSettingsPath)
-  } else {
-    ''
-  }
   $envVars = @{
     FLOWAY_DEFAULT_PROVIDER = $SetupPiProvider
     FLOWAY_PI_THINKING_LEVEL = $SetupPiThinkingLevel
@@ -288,14 +290,13 @@ function Stage-SetupPiSettings {
   }
   $envVars['FLOWAY_DEFAULT_MODEL'] = $SetupPiModel
   Write-SetupJsoncEditor
-  Invoke-SetupNodeJsonc -Mode settings -InputText $src -OutputPath $script:PiSettingsStage -EnvVars $envVars
+  Invoke-SetupNodeJsonc -Mode settings -InputPath $script:PiSettingsPath -OutputPath $script:PiSettingsStage -EnvVars $envVars
 }
 
 function Stage-SetupPiAuth {
   $script:PiAuthStage = "$($script:PiAuthPath).floway-stage.$([System.Diagnostics.Process]::GetCurrentProcess().Id)"
-  $source = if (Test-Path -LiteralPath $script:PiAuthPath) { [System.IO.File]::ReadAllText($script:PiAuthPath) } else { '' }
   Write-SetupJsoncEditor
-  Invoke-SetupNodeJsonc -Mode auth -InputText $source -OutputPath $script:PiAuthStage -EnvVars @{
+  Invoke-SetupNodeJsonc -Mode auth -InputPath $script:PiAuthPath -OutputPath $script:PiAuthStage -EnvVars @{
     FLOWAY_DEFAULT_PROVIDER = $SetupPiProvider
     FLOWAY_PI_AUTH_KEY = $SetupApiKey
   }

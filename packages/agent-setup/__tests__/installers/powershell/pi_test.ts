@@ -250,3 +250,33 @@ if (-not $script:ProtectionObserved) { throw 'Protection was not reached' }
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test.skipIf(!hasPowerShell).each(['auth', 'settings'] as const)('PowerShell Pi preserves native UTF-8 bytes through the %s editor process', mode => {
+  const directory = mkdtempSync(join(process.cwd(), '.pi-bom-transport-test-'));
+  try {
+    const original = mode === 'auth'
+      ? '\uFEFF{\r\n  "floway": {"type":"api_key","key":"old-key"},\r\n  "other": {"type":"api_key","key":"keep-key","env":{"KEEP":"保留"}}\r\n}\r\n'
+      : '\uFEFF{\r\n  // 保留设置\r\n  "defaultProvider": "other",\r\n  "defaultModel": "other-model",\r\n  "defaultThinkingLevel": "low"\r\n}\r\n';
+    const input = join(directory, `${mode}.json`);
+    writeFileSync(input, original);
+    const configuration = defaultAgentSetupConfiguration('key-a');
+    configuration.pi.thinkingLevel = 'high';
+    const prefix = renderPowerShellPrefix({ agent: 'pi', extensionPath: '/pi.js', apiKey: 'rotated-key', apiKeyName: 'Test', configuration });
+    const body = SETUP_SCRIPT_BODIES.pi.ps1;
+    const fragment = body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'Pi'"));
+    const scriptPath = join(directory, 'transport.ps1');
+    writeFileSync(scriptPath, `${prefix}\n$ErrorActionPreference='Stop'\n${fragment}\n
+$script:PiTmpDir=$args[0]
+$script:Pi${mode === 'auth' ? 'Auth' : 'Settings'}Path=Join-Path $args[0] '${mode}.json'
+Stage-SetupPi${mode === 'auth' ? 'Auth' : 'Settings'}
+[IO.File]::Copy($script:Pi${mode === 'auth' ? 'Auth' : 'Settings'}Stage, (Join-Path $args[0] 'staged.json'))
+`);
+    const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 10000 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(readFileSync(input, 'utf8')).toBe(original);
+    expect(readFileSync(join(directory, 'staged.json'), 'utf8')).toBe(mode === 'auth' ? original.replace('old-key', 'rotated-key') : original.replace('"low"', '"high"'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
