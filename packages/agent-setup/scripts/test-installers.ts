@@ -104,12 +104,12 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'tr', 'cat', 'chmod', 'cmp', 'cp', 'date', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'tr', 'cat', 'chmod', 'cmp', 'cp', 'date', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'ln', 'readlink', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
 }
-for (const tool of ['sha256sum', 'openssl', 'timeout', 'gtimeout', 'node', 'bun', 'dirname', 'readlink', 'sed']) {
+for (const tool of ['sha256sum', 'openssl', 'timeout', 'gtimeout', 'node', 'bun', 'dirname', 'sed']) {
   const path = resolveTool(tool);
   if (path) symlinkSync(path, join(SHIM_BIN, tool));
 }
