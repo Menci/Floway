@@ -263,3 +263,11 @@ test('Pi auth updates only the selected provider and encodes literal config meta
   expect(JSON.parse(updated)['floway-work']).toEqual({ type: 'api_key', key: 'rotated' });
   for (const input of ['[]', 'null', 'invalid', '{"floway":{},"floway":{}}']) expect(() => updatePiAuth(input, 'floway', 'key')).toThrow();
 });
+
+test('Pi auth updates preserve a native-supported BOM, line endings and unrelated credentials', () => {
+  const original = '\uFEFF{\r\n  "openai": {"type":"api_key","key":"keep-key"},\r\n  "floway": {"type":"api_key","key":"old-key"}\r\n}\r\n';
+  const result = updatePiAuth(original, 'floway', 'rotated-key');
+  expect(result).toBe(original.replace('old-key', 'rotated-key'));
+  expect(JSON.parse(result.slice(1)).floway.key).toBe('rotated-key');
+  expect(updatePiAuth(result, 'floway', 'rotated-key')).toBe(result);
+});

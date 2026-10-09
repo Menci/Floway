@@ -329,7 +329,7 @@ export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry 
 
 export function updatePiAuth(src, provider, key) {
   let document;
-  try { document = src === '' ? {} : JSON.parse(src); } catch (cause) { throw new JsoncRefusalError('Invalid JSON in auth.json', { cause }); }
+  try { document = src === '' ? {} : JSON.parse(src.replace(/^\uFEFF/, '')); } catch (cause) { throw new JsoncRefusalError('Invalid JSON in auth.json', { cause }); }
   if (document === null || Array.isArray(document) || typeof document !== 'object') throw new JsoncRefusalError('Root value in auth.json must be an object');
   // Pi resolves stored keys as config values; escape a literal key on write.
   // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/docs/custom-provider.md#L74-L81

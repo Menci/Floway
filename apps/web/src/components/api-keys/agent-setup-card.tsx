@@ -215,9 +215,6 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     const thinking = selectedModel ? piThinkingLevelMap(selectedModel.chat?.reasoning, selectedModel.id) : null;
     const levels = thinking === null ? piThinkingLevels : thinking.supported ? piThinkingLevels.filter(level => thinking.map[level] !== null) : [];
     const patchConnection = agent === 'pi' ? patchPi : patchOmp;
-    const patchRetry = (update: (current: typeof connection.retry) => typeof connection.retry) => onChange(current => ({
-      ...current, [agent]: { ...current[agent], retry: update(current[agent].retry) },
-    }));
     return <div className={FIELD_GRID_CLASS}>
       <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerHint')) }}>
         <Input placeholder="floway" value={connection.provider} maxLength={64} onChange={event => patchConnection({ provider: event.target.value })} />
@@ -238,7 +235,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
           {levels.map(level => <Option key={level} value={level}>{level}</Option>)}
         </Dropdown>
       </Field>}
-      <AgentRetryField agent={agent} retry={connection.retry} onChange={patchRetry} />
+      <AgentRetryField agent={agent} retry={connection.retry} onChange={retry => patchConnection({ retry })} />
     </div>;
   }
 
@@ -330,13 +327,13 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 function AgentRetryField({ agent, retry, onChange }: {
   agent: 'pi' | 'omp';
   retry: AgentSetupConfiguration['pi']['retry'];
-  onChange: (update: (current: AgentSetupConfiguration['pi']['retry']) => AgentSetupConfiguration['pi']['retry']) => void;
+  onChange: (retry: AgentSetupConfiguration['pi']['retry']) => void;
 }) {
   const { t } = useTranslation();
   return <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piMaxRetriesHint' : 'dashboard.apiKeys.agentSetup.ompMaxRetriesHint')) }}>
     <Input type="number" min={0} step={1} value={retry.enabled === false ? '0' : retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
       const maxRetries = event.target.value === '' ? null : Number(event.target.value);
-      onChange(() => ({ enabled: maxRetries === null ? null : maxRetries !== 0, maxRetries }));
+      onChange({ enabled: maxRetries === null ? null : maxRetries !== 0, maxRetries });
     }} />
   </Field>;
 }
