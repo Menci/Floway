@@ -76,7 +76,7 @@ export default pi => {
     }
     [System.IO.File]::WriteAllText($probePath, $probe, (New-Object System.Text.UTF8Encoding($false)))
     $env:FLOWAY_SETUP_PATHS_FILE = $pathsFile
-    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('--mode', 'rpc', '--no-ui', '--no-session', '--no-tools', '--no-lsp', '--no-skills', '--no-rules', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
+    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('--mode', 'rpc', '--no-ui', '--no-session', '--no-tools', '--no-lsp', '--no-skills', '--no-rules', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30) -CloseInput
     if ($probeResult.ExitCode -ne 0) { Stop-Setup ('`omp` path probe failed. ' + $probeResult.Output) }
     if (-not (Test-Path -LiteralPath $pathsFile -PathType Leaf)) { Stop-Setup ('`omp` path probe did not write its result. ' + $probeResult.Output) }
     $paths = [System.IO.File]::ReadAllText($pathsFile) | ConvertFrom-Json -ErrorAction Stop
