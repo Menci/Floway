@@ -33,6 +33,8 @@ export const calendarCss = `
   width: 100%;
   height: auto;
   border: 1px solid transparent;
+  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L243-L247 */
+  padding: 0 0 4px 0;
   border-radius: 50%;
   background-color: transparent;
   color: var(--winui-text-fill-primary);
@@ -82,6 +84,40 @@ export const calendarCss = `
 .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:focus-visible {
   outline: 2px solid var(--winui-focus-stroke-outer);
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+}
+/* Month and year selectors share CalendarView's item brushes and rounded
+   chrome. Their sizing remains Fluent's four-column picker layout.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/specs/CalendarView/CalendarViewSpec1.md#L348-L352
+   https://github.com/microsoft/fluentui/blob/a51547435d0a5c4a0fb15c2996c3d3efea5b49dd/packages/react-components/react-calendar-compat/library/src/components/CalendarPicker/useCalendarPickerStyles.styles.ts */
+.fui-CalendarPicker.fui-CalendarPicker {
+  width: var(--floway-calendar-grid-width);
+}
+.fui-CalendarPicker__buttonRow.fui-CalendarPicker__buttonRow {
+  display: flex;
+}
+.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton {
+  flex: 1;
+  width: auto;
+  border: 1px solid transparent;
+  border-radius: calc(var(--floway-calendar-day-size) / 2);
+  background-color: transparent;
+  color: var(--winui-text-fill-primary);
+  font-size: var(--fontSizeBase300);
+}
+.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton:hover {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton:active {
+  background-color: var(--winui-subtle-fill-tertiary);
+}
+.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton.fui-CalendarPicker__selected {
+  border-color: var(--winui-accent-fill-default);
+  background-color: transparent;
+  color: var(--winui-accent-text-fill-primary);
+}
+.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton.fui-CalendarPicker__current {
+  background-color: var(--winui-accent-fill-default);
+  color: var(--winui-text-on-accent-fill-primary);
 }
 @media (forced-colors: active) {
   .fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton {

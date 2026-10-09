@@ -83,8 +83,11 @@ export function TelemetryTimeRange({
     setError(null);
     if (interval.start !== originalRef.current.start || interval.end !== originalRef.current.end) {
       onChange(dashboardRangeFromInterval(interval.start, interval.end, Date.now()));
+    } else if (typeof range === 'string') {
+      const current = dashboardInterval(range, Date.now());
+      if (current.start !== originalRef.current.start || current.end !== originalRef.current.end) onChange(range);
     }
-  }, [onChange, onEditingChange]);
+  }, [onChange, onEditingChange, range]);
 
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -144,7 +147,6 @@ export function TelemetryTimeRange({
           if (document.hasFocus() && !owns(document.activeElement)) finish();
         });
       }}
-      onFocusCapture={begin}
       onKeyDownCapture={event => {
         if (event.key !== 'Escape') return;
         event.preventDefault();

@@ -93,12 +93,12 @@ test('preset activation replaces the draft without an intermediate custom query'
   expect(change.mock.calls).toEqual([['7d']]);
 });
 
-test('an untouched editor preserves its live preset across an hour boundary', async () => {
+test('an untouched editor catches up its live preset across an hour boundary', async () => {
   const { change } = renderEditor();
   openEndpoint('Start time');
   vi.mocked(Date.now).mockReturnValue(now + 3_600_000);
   screen.getByRole('button', { name: 'Outside' }).focus();
   await Promise.resolve();
-  expect(change).not.toHaveBeenCalled();
+  expect(change.mock.calls).toEqual([['today']]);
   expect(dashboardInterval('today', now).end).not.toBe(dashboardInterval('today', Date.now()).end);
 });

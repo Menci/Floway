@@ -129,6 +129,8 @@ export function DateTimePicker({
             dateTimeFormatter={dateFormatter}
             onDismiss={() => onOpenChange(false)}
             onSelectDate={selectDate}
+            highlightCurrentMonth
+            highlightSelectedMonth
             showGoToToday={false}
             showMonthPickerAsOverlay
             showSixWeeksByDefault
