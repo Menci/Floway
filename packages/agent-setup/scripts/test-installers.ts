@@ -329,7 +329,7 @@ case "$1" in
     fi
     ;;
   update)
-    [ "$2" = "--stable" ] || exit 64
+    [ "$#" -eq 1 ] || { printf "fake omp: unsupported update argument: %s\\n" "$2" >&2; exit 64; }
     case "\${FAKE_OMP_UPDATE_MODE:-ok}" in
       fail) exit 73 ;;
       sleep) sleep 10 ;;
@@ -4855,6 +4855,15 @@ for (const agent of ['pi', 'omp'] as const) {
     });
 
     if (agent === 'omp') {
+      test(agent, `${platform}: upgrades OMP 17.4.1 with its native update command`, async t => {
+        const ws = makeWorkspace();
+        place(ws.binDir);
+        const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config(), fakeOmpVersion: 'omp/17.4.1' });
+        t.equal(result.code, 0, result.combined);
+        t.ok(existsSync(join(ws.root, 'updated-omp')), 'the selected CLI updater ran without a channel override');
+        t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
+      });
+
       for (const [version, upgrade] of [['18.8.4-canary.1', true], ['18.8.10-canary.1', false], ['18.8.4+build.1', false]] as const) {
         test(agent, `${platform}: ${version} respects the numeric minimum and prerelease precedence`, async t => {
           const ws = makeWorkspace();
