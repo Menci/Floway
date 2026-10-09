@@ -238,7 +238,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
           {levels.map(level => <Option key={level} value={level}>{level}</Option>)}
         </Dropdown>
       </Field>}
-      <AgentRetryField retry={connection.retry} onChange={patchRetry} />
+      <AgentRetryField agent={agent} retry={connection.retry} onChange={patchRetry} />
     </div>;
   }
 
@@ -327,12 +327,13 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   </div>;
 }
 
-function AgentRetryField({ retry, onChange }: {
+function AgentRetryField({ agent, retry, onChange }: {
+  agent: 'pi' | 'omp';
   retry: AgentSetupConfiguration['pi']['retry'];
   onChange: (update: (current: AgentSetupConfiguration['pi']['retry']) => AgentSetupConfiguration['pi']['retry']) => void;
 }) {
   const { t } = useTranslation();
-  return <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t('dashboard.apiKeys.agentSetup.maxRetriesHint')) }}>
+  return <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piMaxRetriesHint' : 'dashboard.apiKeys.agentSetup.ompMaxRetriesHint')) }}>
     <Input type="number" min={0} step={1} value={retry.enabled === false ? '0' : retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
       const maxRetries = event.target.value === '' ? null : Number(event.target.value);
       onChange(() => ({ enabled: maxRetries === null ? null : maxRetries !== 0, maxRetries }));

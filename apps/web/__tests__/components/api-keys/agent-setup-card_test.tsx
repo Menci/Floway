@@ -147,6 +147,15 @@ describe('Agent Setup card fields', () => {
     expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('0');
   });
 
+  it.each(['Pi', 'OMP'])('scopes the retry help to %s', agent => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: agent }).click(); });
+    fireEvent.click(screen.getByRole('button', { name: /Maximum retries/ }));
+    const hint = screen.getByText(/^0 disables retries\./).textContent;
+    expect(hint).toContain(agent === 'Pi' ? 'Pi defaults to 3 retries' : 'OMP defaults to 10 retries');
+    expect(hint).not.toContain(agent === 'Pi' ? 'OMP' : 'Pi');
+  });
+
   it('keeps the configuration on screen while another key is being leased', () => {
     // The lease request for the newly picked key never answers, and that window
     // is what the card used to spend showing a stale local copy of the form.
