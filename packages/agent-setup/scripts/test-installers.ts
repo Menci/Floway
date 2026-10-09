@@ -330,6 +330,9 @@ case "$1" in
     ;;
   update)
     [ "$#" -eq 1 ] || { printf "fake omp: unsupported update argument: %s\\n" "$2" >&2; exit 64; }
+    resolved=$(command -v omp) || { printf 'Could not resolve omp binary path in PATH\\n' >&2; exit 73; }
+    [ "$resolved" = "$0" ] || { printf 'updater resolved a different omp installation\\n' >&2; exit 73; }
+    printf '%s\\n' "$resolved" > "$FAKE_OMP_UPDATE_MARKER.resolved"
     case "\${FAKE_OMP_UPDATE_MODE:-ok}" in
       fail) exit 73 ;;
       sleep) sleep 10 ;;
@@ -4845,15 +4848,29 @@ for (const agent of ['pi', 'omp'] as const) {
   const oldVersion = agent === 'pi' ? '1.0.4' : '18.8.3';
   for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
     for (const version of agent === 'pi' ? [oldVersion] : ['omp/17.4.1', oldVersion]) {
-      test(agent, `${platform}: upgrades ${version} before writing configuration`, async t => {
-        const ws = makeWorkspace();
-        place(ws.binDir);
-        const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: version };
-        const result = await install(options);
-        t.equal(result.code, 0, result.combined);
-        t.ok(existsSync(join(ws.root, `updated-${agent}`)), 'the selected CLI updater ran');
-        t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
-      });
+      for (const location of agent === 'pi' ? ['PATH'] : ['PATH', 'Bun outside PATH']) {
+        test(agent, `${platform}: upgrades ${version} from ${location} before writing configuration`, async t => {
+          const ws = makeWorkspace();
+          let bin = ws.binDir;
+          if (location === 'Bun outside PATH') {
+            const packageDir = join(ws.home, '.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist');
+            place(packageDir);
+            bin = join(ws.home, '.bun/bin');
+            mkdirSync(bin, { recursive: true });
+            symlinkSync(join(packageDir, 'omp'), join(bin, 'omp'));
+          } else {
+            place(bin);
+          }
+          const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: version };
+          const result = await install(options);
+          t.equal(result.code, 0, result.combined);
+          t.ok(existsSync(join(ws.root, `updated-${agent}`)), 'the selected CLI updater ran');
+          if (agent === 'omp') {
+            t.equal(readFileSync(join(ws.root, 'updated-omp.resolved'), 'utf8').trim(), join(bin, 'omp'), 'updater resolves the selected launcher through PATH');
+          }
+          t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
+        });
+      }
     }
 
     if (agent === 'omp') {

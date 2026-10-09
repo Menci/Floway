@@ -39,8 +39,9 @@ function New-SetupProcessStartInfo {
 
 # Inherit stdout/stderr so native updater progress keeps terminal rendering.
 function Invoke-SetupLiveProcess {
-  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [hashtable]$Environment = @{})
   $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments
+  foreach ($name in $Environment.Keys) { $startInfo.EnvironmentVariables[$name] = $Environment[$name] }
   $startInfo.CreateNoWindow = $false
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
