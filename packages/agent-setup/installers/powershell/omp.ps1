@@ -552,10 +552,10 @@ function Set-SetupAgent {
   }
   $supportedVersion = Test-SetupOmpVersion -Exe $exe
   if (-not $supportedVersion) {
-    Write-SetupInfo 'Updating oh-my-pi to the latest stable version.'
-    # The official updater resolves the active installation and update method.
-    # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2272-L2331
-    Invoke-SetupLiveProcess -Exe $exe -Arguments @('update', '--stable') -TimeoutSeconds (Get-SetupTimeoutSeconds 120)
+    Write-SetupInfo 'Updating oh-my-pi.'
+    # The native updater owns installation method and release-channel selection.
+    # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2227-L2331
+    Invoke-SetupLiveProcess -Exe $exe -Arguments @('update') -TimeoutSeconds (Get-SetupTimeoutSeconds 120)
     $exe = Get-SetupCliExe -Name omp -Label 'oh-my-pi' -Candidates $candidates
     if (-not $exe) { Stop-Setup 'oh-my-pi CLI is unavailable after updating.' }
     $supportedVersion = Test-SetupOmpVersion -Exe $exe

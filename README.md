@@ -39,9 +39,12 @@ Add an upstream under **Providers → Upstreams**, then create a key under
 agents to use Floway as provider through **Agent Setup**.
 
 Pi and OMP setup installs a private provider extension and automatically updates
-older clients to the required version (Pi 1.1.0 or OMP 18.8.4). Choose a provider
-ID such as `floway-home` or `floway-work` to connect multiple Floway instances
-through one extension. Repeating setup updates that provider and preserves the
+older clients to the required version (Pi 1.1.0 or OMP 18.8.4). OMP uses its native
+`omp update` command, preserving the configured release channel. Setup verifies
+the selected executable's effective version before writing configuration.
+
+Choose a provider ID such as `floway-home` or `floway-work` to connect multiple
+Floway instances through one extension. Repeating setup updates that provider and preserves the
 other connections and manual model configuration. Selecting a default model
 sets the agent-wide startup default; leaving it unset clears that default only
 when it belongs to the selected provider. Other OMP model roles are preserved.

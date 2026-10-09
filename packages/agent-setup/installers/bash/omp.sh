@@ -87,11 +87,11 @@ omp_version_is_supported() {
 omp_write_version() {
   omp_probe_version || return 1
   if omp_version_is_supported; then return 0; fi
-  out_info 'Updating oh-my-pi to the latest stable version.'
-  # The official updater resolves the active installation and update method.
-  # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2272-L2331
+  out_info 'Updating oh-my-pi.'
+  # The native updater owns installation method and release-channel selection.
+  # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2227-L2331
   _ov_update_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
-  if ! _run_with_timeout "$_ov_update_timeout" env -u SETUP_API_KEY "$OMP_BIN" update --stable </dev/null; then
+  if ! _run_with_timeout "$_ov_update_timeout" env -u SETUP_API_KEY "$OMP_BIN" update </dev/null; then
     out_error 'could not update oh-my-pi to a supported version.'
     return 1
   fi
