@@ -17,7 +17,7 @@ test('all four native views hide outside dates and transfer focus before disabli
   expect(document.activeElement).toBe(monthHeading);
   fireEvent.click(screen.getByRole('button', { name: '2026, choose a year' }));
   expect(screen.getAllByRole('gridcell')).toHaveLength(10);
-  fireEvent.click(screen.getByRole('button', { name: '2020-2029, choose a year' }));
+  fireEvent.click(screen.getByRole('button', { name: '2020 - 2029, choose a year' }));
   expect(screen.getAllByRole('gridcell')).toHaveLength(10);
   expect((document.activeElement as HTMLElement).dataset.date).toBe('2020-01-01');
   fireEvent.click(screen.getByRole('gridcell', { name: '2020-2029' }));

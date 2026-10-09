@@ -54,7 +54,7 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
         : dateAt(start.getFullYear() - start.getFullYear() / 10 % RANGE_LARGE_COLUMNS * 10);
   const cells = Array.from({ length: mode === 'month' ? 42 : 16 }, (_, index) => shiftDate(mode, origin, index));
   const header = mode === 'month' ? date.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
-    : mode === 'year' ? date.getFullYear().toLocaleString(locale, { useGrouping: false }) : `${start.getFullYear()}-${end.getFullYear()}`;
+    : mode === 'year' ? date.getFullYear().toLocaleString(locale, { useGrouping: false }) : `${start.getFullYear()} - ${end.getFullYear()}`;
 
   const transitionTo = (nextMode: Mode, nextDate: Date, nextFocus: string, transferFocus: boolean) => {
     const root = panelRef.current;
