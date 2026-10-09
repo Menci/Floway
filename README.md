@@ -40,8 +40,10 @@ agents to use Floway as provider through **Agent Setup**.
 
 Pi and OMP setup installs a private provider extension and automatically updates
 older clients to the required version (Pi 1.1.0 or OMP 18.8.4). OMP uses its native
-`omp update` command, preserving the configured release channel. Setup verifies
-the selected executable's effective version before writing configuration.
+`omp update` command, preserving the configured release channel. Its update
+process receives the selected launcher's directory first in PATH, including
+installations discovered outside PATH; the caller's PATH is unchanged. Setup
+verifies the selected executable's effective version before writing configuration.
 
 Choose a provider ID such as `floway-home` or `floway-work` to connect multiple
 Floway instances through one extension. Repeating setup updates that provider and preserves the

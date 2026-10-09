@@ -91,7 +91,9 @@ omp_write_version() {
   # The native updater owns installation method and release-channel selection.
   # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2227-L2331
   _ov_update_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
-  if ! _run_with_timeout "$_ov_update_timeout" env -u SETUP_API_KEY "$OMP_BIN" update </dev/null; then
+  # The updater locates its launcher through PATH, including package-manager symlinks.
+  # https://github.com/can1357/oh-my-pi/blob/9350b7990d26ebf69a604edc82d8558ef04adf30/packages/coding-agent/src/cli/update-cli.ts#L1067-L1072
+  if ! _run_with_timeout "$_ov_update_timeout" env -u SETUP_API_KEY PATH="$(dirname "$OMP_BIN"):$PATH" "$OMP_BIN" update </dev/null; then
     out_error 'could not update oh-my-pi to a supported version.'
     return 1
   fi

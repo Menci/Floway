@@ -555,7 +555,10 @@ function Set-SetupAgent {
     Write-SetupInfo 'Updating oh-my-pi.'
     # The native updater owns installation method and release-channel selection.
     # https://github.com/can1357/oh-my-pi/blob/1a96f360262a7c26274646ea1e6c304d6a4ab7c8/packages/coding-agent/src/cli/update-cli.ts#L2227-L2331
-    Invoke-SetupLiveProcess -Exe $exe -Arguments @('update') -TimeoutSeconds (Get-SetupTimeoutSeconds 120)
+    # The updater locates its launcher through PATH, including package-manager symlinks.
+    # https://github.com/can1357/oh-my-pi/blob/9350b7990d26ebf69a604edc82d8558ef04adf30/packages/coding-agent/src/cli/update-cli.ts#L1067-L1072
+    $updatePath = (Split-Path -Parent $exe) + [System.IO.Path]::PathSeparator + $env:PATH
+    Invoke-SetupLiveProcess -Exe $exe -Arguments @('update') -TimeoutSeconds (Get-SetupTimeoutSeconds 120) -Environment @{ PATH = $updatePath }
     $exe = Get-SetupCliExe -Name omp -Label 'oh-my-pi' -Candidates $candidates
     if (-not $exe) { Stop-Setup 'oh-my-pi CLI is unavailable after updating.' }
     $supportedVersion = Test-SetupOmpVersion -Exe $exe
