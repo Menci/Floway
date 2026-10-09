@@ -205,7 +205,6 @@ try { Apply-SetupPiStaged; throw 'Failure was not reached' } catch { if ($_.Exce
   }
 });
 
-
 test.skipIf(!hasPowerShell).each([false, true])('PowerShell Pi protects the native auth backup before writing credentials (protection failure: %s)', failProtection => {
   const directory = mkdtempSync(join(process.cwd(), '.pi-auth-backup-test-'));
   try {
