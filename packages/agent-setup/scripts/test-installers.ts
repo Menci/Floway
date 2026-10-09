@@ -4,7 +4,7 @@
 // Run `pnpm run test:installers`, optionally selecting `--agent <name>`.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -352,11 +352,69 @@ case "$1" in
       exit 2
     fi
     ;;
+  --mode)
+    [ "$2" = "rpc" ] && [ "$3" = "--no-ui" ] && [ "$4" = "--no-session" ] \
+      && [ "$5" = "--no-tools" ] && [ "$6" = "--no-lsp" ] && [ "$7" = "--no-skills" ] \
+      && [ "$8" = "--no-rules" ] && [ "$9" = "--no-extensions" ] && [ "\${10}" = "-e" ] \
+      || { printf 'fake omp: malformed path probe args: %s\\n' "$*" >&2; exit 64; }
+    [ -s "\${11}" ] || { printf 'fake omp: missing path probe file: %s\\n' "\${11}" >&2; exit 66; }
+    [ -n "\${FLOWAY_SETUP_PATHS_FILE:-}" ] || { printf 'fake omp: missing FLOWAY_SETUP_PATHS_FILE\\n' >&2; exit 65; }
+    printf '%s\\n' "$*" >> "$FAKE_OMP_PROBE_RECORD"
+    agent_dir="\${FAKE_OMP_CONFIG_PATH:-$HOME/.omp/agent}"
+    plugins_dir="\${FAKE_OMP_PLUGINS_PATH:-$HOME/.omp/plugins}"
+    "$FAKE_OMP_PATHS_SCRIPT" "$agent_dir" "$plugins_dir" "$FLOWAY_SETUP_PATHS_FILE" "\${11}"
+    ;;
+  plugin)
+    [ "$2" = "link" ] && [ -n "$3" ] || { printf 'fake omp: malformed plugin args: %s\\n' "$*" >&2; exit 64; }
+    printf '%s\\n' "$*" >> "$FAKE_OMP_PLUGIN_RECORD"
+    "$FAKE_OMP_PLUGIN_LINK_SCRIPT" "$3" || exit $?
+    if [ "\${FAKE_OMP_LINK_FAILURE:-}" = "unlink" ]; then
+      printf 'fake omp plugin link removed the native link and injected a failure\\n' >&2
+      exit 73
+    elif [ "\${FAKE_OMP_LINK_FAILURE:-}" = "after" ]; then
+      printf 'fake omp plugin link completed and injected a failure\\n' >&2
+      exit 73
+    fi
+    ;;
   *)
     printf 'fake omp: unhandled args: %s\\n' "$*" >&2
     exit 2
     ;;
 esac
+`;
+
+const FAKE_OMP_PATHS_SCRIPT = `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const [agentDir, pluginsDir, outputPath, probePath] = process.argv.slice(2);
+const probeSource = fs.readFileSync(probePath, 'utf8');
+if (!/\\bgetAgentDir\\s*\\(/.test(probeSource) || !/\\bgetPluginsDir\\s*\\(/.test(probeSource)) {
+  throw new Error('fake omp path probe does not call both public path APIs');
+}
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+const paths = { agentDir, pluginsDir };
+fs.writeFileSync(outputPath, JSON.stringify(paths) + '\\n');
+if (process.env.FAKE_OMP_PATHS_RECORD) fs.appendFileSync(process.env.FAKE_OMP_PATHS_RECORD, JSON.stringify(paths) + '\\n');
+`;
+
+const FAKE_OMP_PLUGIN_LINK_SCRIPT = `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const name = '@floway-dev/omp';
+const sourceDir = path.resolve(process.argv[2]);
+const pluginsDir = process.env.FAKE_OMP_PLUGINS_PATH || path.join(process.env.HOME || '', '.omp', 'plugins');
+const packageManifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
+if (packageManifest.name !== name) throw new Error('fake omp plugin link received an unexpected package');
+const lockPath = path.join(pluginsDir, 'omp-plugins.lock.json');
+const previous = fs.existsSync(lockPath) ? JSON.parse(fs.readFileSync(lockPath, 'utf8')) : {};
+const lock = { plugins: previous.plugins ?? {}, settings: previous.settings ?? {} };
+lock.plugins[name] = { version: packageManifest.version, enabledFeatures: null, enabled: true };
+fs.mkdirSync(pluginsDir, { recursive: true });
+fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\\n');
+const linkPath = path.join(pluginsDir, 'node_modules', ...name.split('/'));
+fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+fs.rmSync(linkPath, { recursive: true, force: true });
+if (process.env.FAKE_OMP_LINK_FAILURE !== 'unlink') fs.symlinkSync(sourceDir, linkPath, 'dir');
 `;
 
 const FAKE_OMP_INSTALLER = `#!/bin/bash
@@ -386,6 +444,10 @@ const FAKE_OMP_SRC = join(FIXTURES, 'omp');
 writeFileSync(FAKE_OMP_SRC, FAKE_OMP, { mode: 0o755 });
 const FAKE_OMP_INSTALLER_SCRIPT = join(FIXTURES, 'install-omp.sh');
 writeFileSync(FAKE_OMP_INSTALLER_SCRIPT, FAKE_OMP_INSTALLER, { mode: 0o755 });
+const FAKE_OMP_PATHS_SCRIPT_FILE = join(FIXTURES, 'omp-paths.js');
+writeFileSync(FAKE_OMP_PATHS_SCRIPT_FILE, FAKE_OMP_PATHS_SCRIPT, { mode: 0o755 });
+const FAKE_OMP_PLUGIN_LINK_SCRIPT_FILE = join(FIXTURES, 'omp-plugin-link.js');
+writeFileSync(FAKE_OMP_PLUGIN_LINK_SCRIPT_FILE, FAKE_OMP_PLUGIN_LINK_SCRIPT, { mode: 0o755 });
 
 const FAKE_PI = `#!/bin/bash
 if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
@@ -838,6 +900,8 @@ interface RunOptions {
   fakeOmpVersion?: string;
   fakeOmpVersionSleep?: number;
   fakeOmpConfigPath?: string;
+  fakeOmpPluginsDir?: string;
+  fakeOmpLinkFailure?: 'after' | 'unlink';
   fakeOmpNoConfigPath?: boolean;
   withOmpInstallHook?: boolean;
   ompInstallerUrl?: string;
@@ -910,6 +974,12 @@ const piEnv = (options: RunOptions): Record<string, string> => {
 const ompEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
     FAKE_OMP_SRC,
+    FAKE_OMP_PATHS_SCRIPT: FAKE_OMP_PATHS_SCRIPT_FILE,
+    FAKE_OMP_PLUGIN_LINK_SCRIPT: FAKE_OMP_PLUGIN_LINK_SCRIPT_FILE,
+    FAKE_OMP_PLUGIN_RECORD: join(options.workspace.root, 'omp-plugin-commands.txt'),
+    FAKE_OMP_PROBE_RECORD: join(options.workspace.root, 'omp-probe-commands.txt'),
+    FAKE_OMP_PATHS_RECORD: join(options.workspace.root, 'omp-setup-paths-record.jsonl'),
+    FLOWAY_SETUP_PATHS_FILE: join(options.workspace.root, 'omp-setup-paths.json'),
     FAKE_OMP_UPDATE_MODE: options.fakeAgentUpdateMode ?? 'ok',
     FAKE_OMP_UPDATE_MARKER: join(options.workspace.root, 'updated-omp'),
     FAKE_OMP_UPDATED_VERSION: options.fakeOmpUpdatedVersion ?? 'omp/18.8.4',
@@ -917,6 +987,8 @@ const ompEnv = (options: RunOptions): Record<string, string> => {
   if (options.fakeOmpVersion) env.FAKE_OMP_VERSION = options.fakeOmpVersion;
   if (options.fakeOmpVersionSleep !== undefined) env.FAKE_OMP_VERSION_SLEEP = String(options.fakeOmpVersionSleep);
   if (options.fakeOmpConfigPath) env.FAKE_OMP_CONFIG_PATH = options.fakeOmpConfigPath;
+  if (options.fakeOmpPluginsDir) env.FAKE_OMP_PLUGINS_PATH = options.fakeOmpPluginsDir;
+  if (options.fakeOmpLinkFailure) env.FAKE_OMP_LINK_FAILURE = options.fakeOmpLinkFailure;
   if (options.fakeOmpNoConfigPath) env.FAKE_OMP_NO_CONFIG_PATH = '1';
   if (options.withOmpInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT = FAKE_OMP_INSTALLER_SCRIPT;
   if (options.ompInstallerUrl) env.AGENT_SETUP_TEST_OMP_URL = options.ompInstallerUrl;
@@ -951,7 +1023,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const cleanupFailure = options.fakeBackupCleanupFailure ? `
 _prune_managed_backups() {
   case "$1" in
-    */settings.json|*/config.yml)
+    */settings.json|*/omp-plugins.lock.json|*/config.yml)
       [ -z "$${agent === 'pi' ? 'PI' : 'OMP'}_EXTENSION_BACKUP" ] || { out_error 'extension backup was not removed'; return 74; }
       printf 'committed' > ${shellLiteral(join(workspace.root, 'cleanup-after-commit'))}
       out_error 'test backup cleanup failure'
@@ -1130,6 +1202,7 @@ const powerShellCallerSurvivalPath = (workspace: Workspace): string => join(work
 const piDirFor = (workspace: Workspace, subPath = '.pi/agent'): string => join(workspace.home, subPath);
 const piExtensionPath = (workspace: Workspace, subPath = '.pi/agent'): string => join(piDirFor(workspace, subPath), 'extensions/floway.js');
 const piSettingsPath = (workspace: Workspace, subPath = '.pi/agent'): string => join(piDirFor(workspace, subPath), 'settings.json');
+const piConnectionsPath = (workspace: Workspace, subPath = '.pi/agent'): string => join(piDirFor(workspace, subPath), 'floway.json');
 const readPiSettings = (path: string): Record<string, unknown> => JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 const piBackupFiles = (dir: string, base: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
@@ -1149,13 +1222,53 @@ const hostPiBin = hostAgentBinary('pi');
 // --- omp inspection helpers -------------------------------------------------
 
 const ompDirFor = (workspace: Workspace, subPath = '.omp/agent'): string => join(workspace.home, subPath);
-const ompExtensionPath = (workspace: Workspace, subPath = '.omp/agent'): string => join(ompDirFor(workspace, subPath), 'extensions/floway.js');
+const ompPluginsDirFor = (workspace: Workspace, subPath = '.omp/plugins'): string => join(workspace.home, subPath);
+const ompExtensionPath = (workspace: Workspace, subPath = '.omp/plugins'): string => join(ompPluginsDirFor(workspace, subPath), 'floway/index.js');
+const ompPackagePath = (workspace: Workspace, subPath = '.omp/plugins'): string => join(ompPluginsDirFor(workspace, subPath), 'floway/package.json');
+const ompPluginLinkPath = (workspace: Workspace, subPath = '.omp/plugins'): string => join(ompPluginsDirFor(workspace, subPath), 'node_modules/@floway-dev/omp');
+const ompPluginLockPath = (workspace: Workspace, subPath = '.omp/plugins'): string => join(ompPluginsDirFor(workspace, subPath), 'omp-plugins.lock.json');
 const ompModelsPath = (workspace: Workspace, subPath = '.omp/agent', ext = 'yml'): string => join(ompDirFor(workspace, subPath), `models.${ext}`);
 const ompConfigPath = (workspace: Workspace, subPath = '.omp/agent', ext = 'yml'): string => join(ompDirFor(workspace, subPath), `config.${ext}`);
 const ompBackupFiles = (dir: string, base: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
-const ompStagedFiles = (dir: string): string[] =>
-  existsSync(dir) ? readdirSync(dir).filter(name => name.includes('.floway-stage.')) : [];
+const ompStagedFiles = (dir: string): string[] => existsSync(dir)
+  ? readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+      const entryPath = join(dir, entry.name);
+      return entry.isDirectory() && !entry.isSymbolicLink()
+        ? ompStagedFiles(entryPath)
+        : entry.name.includes('.floway-stage.') ? [entryPath] : [];
+    })
+  : [];
+const OMP_PLUGIN_NAME = '@floway-dev/omp';
+const OMP_PLUGIN_MANIFEST = { name: OMP_PLUGIN_NAME, version: '1.0.0', type: 'module', omp: { extensions: ['index.js'] } };
+const writeOmpPluginPackage = (workspace: Workspace, source: string, subPath = '.omp/plugins'): void => {
+  mkdirSync(dirname(ompExtensionPath(workspace, subPath)), { recursive: true });
+  writeFileSync(ompExtensionPath(workspace, subPath), source, { mode: 0o600 });
+  writeFileSync(ompPackagePath(workspace, subPath), `${JSON.stringify(OMP_PLUGIN_MANIFEST, null, 2)}\n`, { mode: 0o600 });
+};
+const seedOmpPlugin = (
+  workspace: Workspace,
+  lock: OmpPluginLock,
+  source = SETUP_NODE_OMP_EXTENSION,
+  subPath = '.omp/plugins',
+): void => {
+  writeOmpPluginPackage(workspace, source, subPath);
+  mkdirSync(dirname(ompPluginLinkPath(workspace, subPath)), { recursive: true });
+  symlinkSync(join(ompPluginsDirFor(workspace, subPath), 'floway'), ompPluginLinkPath(workspace, subPath), 'dir');
+  writeFileSync(ompPluginLockPath(workspace, subPath), `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
+};
+interface OmpPluginLock {
+  plugins?: Record<string, unknown>;
+  settings?: Record<string, Record<string, unknown>>;
+  [key: string]: unknown;
+}
+const readOmpPluginLock = (workspace: Workspace, subPath = '.omp/plugins'): OmpPluginLock =>
+  JSON.parse(readFileSync(ompPluginLockPath(workspace, subPath), 'utf8')) as OmpPluginLock;
+const readOmpConnections = (workspace: Workspace, subPath = '.omp/plugins'): { provider: string; endpoint: string; apiKey: string }[] => {
+  const settings = readOmpPluginLock(workspace, subPath).settings?.[OMP_PLUGIN_NAME] as { connections?: unknown } | undefined;
+  if (!Array.isArray(settings?.connections)) throw new Error(`missing settings[${JSON.stringify(OMP_PLUGIN_NAME)}].connections in omp-plugins.lock.json`);
+  return settings.connections as { provider: string; endpoint: string; apiKey: string }[];
+};
 
 const hostOmpBin = hostAgentBinary('omp');
 
@@ -1184,7 +1297,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const cleanupFailure = options.fakeBackupCleanupFailure ? `
 function Remove-SetupOlderBackups {
   param([string]$Path, [string]$Keep)
-  if ($Path -match '(settings\\.json|config\\.yml)$') {
+  if ($Path -match '(settings\\.json|omp-plugins\\.lock\\.json|config\\.yml)$') {
     if ($script:${agent === 'pi' ? 'Pi' : 'Omp'}ExtensionBackup) { throw 'extension backup was not removed' }
     [System.IO.File]::WriteAllText(${powerShellLiteral(join(workspace.root, 'cleanup-after-commit'))}, 'committed')
     throw 'test backup cleanup failure'
@@ -3673,14 +3786,71 @@ test('omp', 'fresh install downloads a protected JS extension without model or r
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
   t.equal(run.code, 0, `fresh install should succeed:\n${run.combined}`);
   t.includes(run.stdout, '==> Completed Agent Setup: oh-my-pi', 'completion notice emitted');
-  const modelsFile = ompExtensionPath(ws);
-  t.ok(existsSync(modelsFile), 'extension exists');
-  t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
+  const extensionPath = ompExtensionPath(ws);
+  t.ok(existsSync(extensionPath), 'extension exists inside the linked plugin package');
+  t.equal(statSync(extensionPath).mode & 0o777, 0o600, 'extension permissions are 0600');
+  t.equal(readFileSync(extensionPath, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
+  const manifest = JSON.parse(readFileSync(ompPackagePath(ws), 'utf8')) as typeof OMP_PLUGIN_MANIFEST;
+  t.equal(manifest.name, OMP_PLUGIN_NAME, 'package uses the native Floway plugin name');
+  t.equal(manifest.version, '1.0.0', 'plugin package has the declared version');
+  t.equal(manifest.type, 'module', 'plugin package is an ES module');
+  t.equal(manifest.omp.extensions[0], 'index.js', 'plugin manifest exposes the extension entrypoint');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, join(ws.home, '.omp/agent'), 'default agent directory is discovered');
+  t.equal(paths.pluginsDir, join(ws.home, '.omp/plugins'), 'default plugin directory is discovered independently');
+  const probeCommand = readFileSync(join(ws.root, 'omp-probe-commands.txt'), 'utf8').trim();
+  t.includes(probeCommand, '--mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e ', 'probe uses the isolated RPC mode and an explicit script file');
+  const pluginLink = ompPluginLinkPath(ws);
+  t.ok(lstatSync(pluginLink).isSymbolicLink(), 'native plugin link was registered');
+  t.equal(realpathSync(pluginLink), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native plugin link targets the installed package');
+  t.equal(readFileSync(join(ws.root, 'omp-plugin-commands.txt'), 'utf8').trim(), `plugin link ${join(ompPluginsDirFor(ws), 'floway')}`, 'installer registers the source through omp plugin link');
+  const lockPath = ompPluginLockPath(ws);
+  const pluginLock = readOmpPluginLock(ws);
+  const registration = pluginLock.plugins?.[OMP_PLUGIN_NAME] as { version?: string; enabledFeatures?: unknown; enabled?: boolean } | undefined;
+  t.ok(registration !== undefined, 'native plugin lock registers Floway');
+  t.equal(registration?.version, '1.0.0', 'native plugin registration uses the package version');
+  t.equal(registration?.enabledFeatures, null, 'native plugin registration keeps default feature selection');
+  t.equal(registration?.enabled, true, 'native plugin registration enables Floway');
+  t.equal(statSync(lockPath).mode & 0o777, 0o600, 'plugin settings and credentials are private');
+  t.equal(readOmpConnections(ws)[0]?.endpoint, modelServer.url, 'connection settings live in the native plugin lock');
+  t.equal(readOmpConnections(ws)[0]?.apiKey, SENTINEL_KEY, 'connection credentials live in the native plugin lock');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
-
 });
+
+for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
+  test('omp', `${platform}: preserves native plugin settings when linking Floway`, async t => {
+    const ws = makeWorkspace();
+    placeFakeOmp(ws.binDir);
+    mkdirSync(ompPluginsDirFor(ws), { recursive: true });
+    const otherPlugin = { enabled: false, preferences: { accent: 'violet' } };
+    const existingFlowayConnection = { provider: 'existing-floway', endpoint: 'https://existing.example', apiKey: 'existing-key' };
+    const priorLock: OmpPluginLock = {
+      plugins: { '@example/theme': { version: '2.0.0', source: 'registry' } },
+      settings: {
+        '@example/theme': otherPlugin,
+        [OMP_PLUGIN_NAME]: { theme: 'dark', custom: { retained: true }, connections: [existingFlowayConnection] },
+      },
+    };
+    writeFileSync(ompPluginLockPath(ws), `${JSON.stringify(priorLock, null, 2)}\n`, { mode: 0o644 });
+
+    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+    t.equal(run.code, 0, run.combined);
+
+    const lock = readOmpPluginLock(ws);
+    t.equal(JSON.stringify(lock.plugins?.['@example/theme']), JSON.stringify(priorLock.plugins?.['@example/theme']), 'other plugin registration is preserved');
+    t.equal(JSON.stringify(lock.settings?.['@example/theme']), JSON.stringify(otherPlugin), 'other plugin settings are preserved');
+    const flowaySettings = lock.settings?.[OMP_PLUGIN_NAME] as { theme?: string; custom?: unknown } | undefined;
+    t.equal(flowaySettings?.theme, 'dark', 'unrelated Floway settings are preserved');
+    t.equal(JSON.stringify(flowaySettings?.custom), JSON.stringify({ retained: true }), 'nested Floway settings are preserved');
+    t.ok(lock.plugins?.[OMP_PLUGIN_NAME] !== undefined, 'Floway appears in native plugin registration');
+    t.ok(lstatSync(ompPluginLinkPath(ws)).isSymbolicLink(), 'the native package link is created');
+    t.equal(realpathSync(ompPluginLinkPath(ws)), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'the package link resolves to the installed source');
+    t.equal(readOmpConnections(ws).length, 2, 'existing connections remain alongside the new connection');
+    t.equal(readOmpConnections(ws)[0]?.provider, 'existing-floway', 'existing connection order is retained');
+    t.equal(statSync(ompPluginLockPath(ws)).mode & 0o777, 0o600, 'plugin settings are protected after update');
+  });
+}
 
 test('omp', 'model set, changed, and cleared updates config.yml', async t => {
   const ws = makeWorkspace();
@@ -3723,7 +3893,9 @@ test('omp', 'idempotent re-run produces no diff and prunes backups', async t => 
   t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), extension1, 'extension source identical');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no extension backups remain');
+  t.equal(ompBackupFiles(dirname(ompExtensionPath(ws)), 'index.js').length, 0, 'no extension backups remain');
+  t.equal(ompBackupFiles(dirname(ompPackagePath(ws)), 'package.json').length, 0, 'no manifest backups remain');
+  t.equal(ompBackupFiles(ompPluginsDirFor(ws), 'omp-plugins.lock.json').length, 0, 'no plugin settings backups remain');
   t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
 });
 
@@ -3790,7 +3962,7 @@ test('omp', 'refuses flow-style modelRoles mapping in config.yml without modifyi
 test('omp', 'refuses an unmanaged extension without modifying it', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
+  mkdirSync(dirname(ompExtensionPath(ws)), { recursive: true });
   const badContent = 'providers:\n  floway:\n    baseUrl: https://custom.example.com\n';
   writeFileSync(ompExtensionPath(ws), badContent);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
@@ -3798,6 +3970,24 @@ test('omp', 'refuses an unmanaged extension without modifying it', async t => {
   t.includes(run.combined, 'existing unmanaged Floway extension found', 'error mentions unmanaged floway provider');
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), badContent, 'file unmodified');
 });
+
+for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
+  test('omp', `${platform}: rejects a non-object plugin settings root without modifying it`, async t => {
+    const ws = makeWorkspace();
+    placeFakeOmp(ws.binDir);
+    mkdirSync(ompPluginsDirFor(ws), { recursive: true });
+    const badContent = '[{}]\n';
+    writeFileSync(ompPluginLockPath(ws), badContent, { mode: 0o600 });
+
+    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+    t.notEqual(run.code, 0, 'array root must fail setup');
+    t.excludes(run.stdout, '==> Completed Agent Setup: oh-my-pi', 'invalid lock data cannot complete setup');
+    t.equal(readFileSync(ompPluginLockPath(ws), 'utf8'), badContent, 'invalid lock file remains byte for byte unchanged');
+    t.ok(!existsSync(ompExtensionPath(ws)), 'invalid lock data is rejected before installing source');
+    t.ok(!existsSync(ompPluginLinkPath(ws)), 'invalid lock data is rejected before registering the plugin');
+    t.equal(ompStagedFiles(ompPluginsDirFor(ws)).length, 0, 'invalid lock data leaves no stage files');
+  });
+}
 
 test('omp', 'refuses YAML anchors, aliases, or merge keys touching modelRoles in config.yml', async t => {
   const ws = makeWorkspace();
@@ -3822,25 +4012,32 @@ test('omp', 'an explicit default replaces the previous provider while preserving
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), before.replace('openai/gpt-4o', '"floway/my-model"'));
 });
 
-test('omp', 'rollback restores the original extension and cleans stage files on mid-install failure', async t => {
+test('omp', 'rollback restores the prior plugin registration and settings after link failure', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
   const priorContent = SETUP_NODE_OMP_EXTENSION;
-  writeFileSync(ompExtensionPath(ws), priorContent);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
-  t.ok(run.code !== 0, 'simulated failure should exit nonzero');
-  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
+  const priorLock: OmpPluginLock = {
+    plugins: { [OMP_PLUGIN_NAME]: { version: '1.0.0', enabledFeatures: null, enabled: false }, '@example/theme': { version: '2.0.0' } },
+    settings: { [OMP_PLUGIN_NAME]: { theme: 'dark', connections: [{ provider: 'floway', endpoint: 'https://before.example', apiKey: 'old-key' }] }, '@example/theme': { enabled: true, color: 'violet' } },
+  };
+  seedOmpPlugin(ws, priorLock, priorContent);
+  const priorLockText = readFileSync(ompPluginLockPath(ws), 'utf8');
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpLinkFailure: 'unlink' });
+  t.ok(run.code !== 0, 'simulated plugin link failure should exit nonzero');
+  t.includes(run.combined, 'fake omp plugin link removed the native link and injected a failure', 'failure occurs after native registration updates and link removal');
+  t.includes(run.combined, 'oh-my-pi applying changes failed; rolling back configuration.', 'plugin link failure enters rollback');
+  t.ok(existsSync(join(ws.root, 'omp-plugin-commands.txt')), 'the native registration command ran');
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), priorContent, 'extension restored to original content');
-  t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
+  t.equal(readFileSync(ompPluginLockPath(ws), 'utf8'), priorLockText, 'native registration and plugin settings are restored byte for byte');
+  t.equal(realpathSync(ompPluginLinkPath(ws)), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native link is restored to the Floway package');
+  t.equal(ompStagedFiles(ompPluginsDirFor(ws)).length, 0, 'no plugin stage files left behind');
 });
 
 test('omp', 'rollback restore failure preserves backup file and warns operator', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
   const priorContent = SETUP_NODE_OMP_EXTENSION;
-  writeFileSync(ompExtensionPath(ws), priorContent);
+  seedOmpPlugin(ws, { plugins: { [OMP_PLUGIN_NAME]: { version: '1.0.0', enabledFeatures: null, enabled: false } }, settings: { [OMP_PLUGIN_NAME]: { connections: [] } } }, priorContent);
   const run = await runShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
@@ -3852,21 +4049,54 @@ test('omp', 'rollback restore failure preserves backup file and warns operator',
   t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
   t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 1, 'backup file preserved for manual recovery');
+  const preservedBackups = ompBackupFiles(dirname(ompExtensionPath(ws)), 'index.js').length + ompBackupFiles(dirname(ompPackagePath(ws)), 'package.json').length;
+  t.ok(preservedBackups > 0, 'a package backup is preserved for manual recovery');
 });
+
+for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
+  test('omp', `${platform}: removes a newly registered plugin after link failure`, async t => {
+    const ws = makeWorkspace();
+    placeFakeOmp(ws.binDir);
+    mkdirSync(ompPluginsDirFor(ws), { recursive: true });
+    const priorLock: OmpPluginLock = {
+      metadata: { schema: 1 },
+      plugins: { '@example/theme': { version: '2.0.0', source: 'registry' } },
+      settings: { '@example/theme': { enabled: true, color: 'blue' } },
+    };
+    writeFileSync(ompPluginLockPath(ws), `${JSON.stringify(priorLock, null, 2)}\n`, { mode: 0o600 });
+    const priorLockText = readFileSync(ompPluginLockPath(ws), 'utf8');
+
+    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpLinkFailure: 'after' });
+    t.notEqual(run.code, 0, 'simulated native link failure exits nonzero');
+    t.includes(run.combined, 'fake omp plugin link completed and injected a failure', 'the fake mutates the registry and creates the link before failing');
+    t.includes(run.combined, 'oh-my-pi applying changes failed; rolling back configuration.', 'plugin link failure enters rollback');
+    t.equal(readFileSync(ompPluginLockPath(ws), 'utf8'), priorLockText, 'previous plugin registrations and settings are restored');
+    t.equal(readOmpPluginLock(ws).plugins?.[OMP_PLUGIN_NAME], undefined, 'Floway registration is removed');
+    const pluginScope = dirname(ompPluginLinkPath(ws));
+    t.ok(!existsSync(pluginScope) || !readdirSync(pluginScope).includes('omp'), 'new native package link is removed');
+    t.ok(!existsSync(ompExtensionPath(ws)), 'new plugin source is removed');
+    t.ok(!existsSync(ompPackagePath(ws)), 'new plugin manifest is removed');
+    t.equal(ompStagedFiles(ompPluginsDirFor(ws)).length, 0, 'no plugin stage files remain');
+  });
+}
 
 test('omp', 'resolves agent directory from omp config path when omp CLI provides it', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   const customDir = join(ws.home, 'from-config-path');
+  const customPluginsDir = join(ws.home, 'independent-plugin-root');
   const run = await runShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
     fakeOmpConfigPath: customDir,
+    fakeOmpPluginsDir: customPluginsDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under directory returned by omp config path');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, customDir, 'native probe preserves the CLI config path');
+  t.equal(paths.pluginsDir, customPluginsDir, 'native probe can resolve an independent plugin root');
+  t.ok(existsSync(ompExtensionPath(ws, 'independent-plugin-root')), 'extension written under the independently resolved plugin root');
 });
 
 test('omp', 'propagates config path failure without guessing the agent directory', async t => {
@@ -3883,6 +4113,7 @@ test('omp', 'propagates config path failure without guessing the agent directory
   t.notEqual(run.code, 0);
   t.includes(run.combined, 'test config path failure');
   t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
+  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'path probing does not run after config path fails');
 });
 
 test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -3894,11 +4125,15 @@ test('omp', 'resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGE
     baseUrl: modelServer.url,
     configuration: ompConfig(),
     fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
+    fakeOmpPluginsDir: join(ws.home, '.omp/profiles/work/plugins'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(ws.home, '.omp/profiles/work/agent/extensions/floway.js')), 'extension written under profile agent directory');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, join(ws.home, '.omp/profiles/work/agent'), 'profile agent directory is discovered');
+  t.equal(paths.pluginsDir, join(ws.home, '.omp/profiles/work/plugins'), 'profile plugin directory is discovered');
+  t.ok(existsSync(ompExtensionPath(ws, '.omp/profiles/work/plugins')), 'extension written under the profile plugin directory');
   t.ok(!existsSync(ignoredDir), 'PI_CODING_AGENT_DIR was ignored');
 });
 
@@ -4014,13 +4249,35 @@ test('omp', 'PowerShell: fresh install downloads a protected JS extension withou
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
   t.equal(run.code, 0, `fresh install should succeed:\n${run.combined}`);
   t.includes(run.stdout, '==> Completed Agent Setup: oh-my-pi', 'completion notice emitted');
-  const modelsFile = ompExtensionPath(ws);
-  t.ok(existsSync(modelsFile), 'extension exists');
-  t.equal(statSync(modelsFile).mode & 0o777, 0o600, 'extension permissions are 0600');
-  t.equal(readFileSync(modelsFile, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
+  const extensionPath = ompExtensionPath(ws);
+  t.ok(existsSync(extensionPath), 'extension exists inside the linked plugin package');
+  t.equal(statSync(extensionPath).mode & 0o777, 0o600, 'extension permissions are 0600');
+  t.equal(readFileSync(extensionPath, 'utf8'), SETUP_NODE_OMP_EXTENSION, 'installed source matches the leased extension');
+  const manifest = JSON.parse(readFileSync(ompPackagePath(ws), 'utf8')) as typeof OMP_PLUGIN_MANIFEST;
+  t.equal(manifest.name, OMP_PLUGIN_NAME, 'package uses the native Floway plugin name');
+  t.equal(manifest.version, '1.0.0', 'plugin package has the declared version');
+  t.equal(manifest.type, 'module', 'plugin package is an ES module');
+  t.equal(manifest.omp.extensions[0], 'index.js', 'plugin manifest exposes the extension entrypoint');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, join(ws.home, '.omp/agent'), 'default agent directory is discovered');
+  t.equal(paths.pluginsDir, join(ws.home, '.omp/plugins'), 'default plugin directory is discovered independently');
+  t.includes(readFileSync(join(ws.root, 'omp-probe-commands.txt'), 'utf8'), '--mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e ', 'probe uses the isolated RPC mode and an explicit script file');
+  const pluginLink = ompPluginLinkPath(ws);
+  t.ok(lstatSync(pluginLink).isSymbolicLink(), 'native plugin link was registered');
+  t.equal(realpathSync(pluginLink), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native plugin link targets the installed package');
+  t.equal(readFileSync(join(ws.root, 'omp-plugin-commands.txt'), 'utf8').trim(), `plugin link ${join(ompPluginsDirFor(ws), 'floway')}`, 'installer registers the source through omp plugin link');
+  const lockPath = ompPluginLockPath(ws);
+  const pluginLock = readOmpPluginLock(ws);
+  const registration = pluginLock.plugins?.[OMP_PLUGIN_NAME] as { version?: string; enabledFeatures?: unknown; enabled?: boolean } | undefined;
+  t.ok(registration !== undefined, 'native plugin lock registers Floway');
+  t.equal(registration?.version, '1.0.0', 'native plugin registration uses the package version');
+  t.equal(registration?.enabledFeatures, null, 'native plugin registration keeps default feature selection');
+  t.equal(registration?.enabled, true, 'native plugin registration enables Floway');
+  t.equal(statSync(lockPath).mode & 0o777, 0o600, 'plugin settings and credentials are private');
+  t.equal(readOmpConnections(ws)[0]?.endpoint, modelServer.url, 'connection settings live in the native plugin lock');
+  t.equal(readOmpConnections(ws)[0]?.apiKey, SENTINEL_KEY, 'connection credentials live in the native plugin lock');
   t.ok(!existsSync(ompConfigPath(ws)), 'no default role is created');
   t.ok(!existsSync(ompModelsPath(ws)), 'models configuration is untouched');
-
 });
 
 test('omp', 'PowerShell: model set, changed, and cleared updates config.yml', async t => {
@@ -4066,7 +4323,9 @@ test('omp', 'PowerShell: idempotent re-run produces no diff and prunes backups',
   t.equal(run2.code, 0, `second run should succeed:\n${run2.combined}`);
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), extension1, 'extension source identical');
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), config1, 'config.yml identical');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 0, 'no extension backups remain');
+  t.equal(ompBackupFiles(dirname(ompExtensionPath(ws)), 'index.js').length, 0, 'no extension backups remain');
+  t.equal(ompBackupFiles(dirname(ompPackagePath(ws)), 'package.json').length, 0, 'no manifest backups remain');
+  t.equal(ompBackupFiles(ompPluginsDirFor(ws), 'omp-plugins.lock.json').length, 0, 'no plugin settings backups remain');
   t.equal(ompBackupFiles(ompDirFor(ws), 'config.yml').length, 0, 'no config backups remain');
 });
 
@@ -4137,7 +4396,7 @@ test('omp', 'PowerShell: refuses an unmanaged extension without modifying it', a
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
+  mkdirSync(dirname(ompExtensionPath(ws)), { recursive: true });
   const badContent = 'providers:\n  floway:\n    baseUrl: https://custom.example.com\n';
   writeFileSync(ompExtensionPath(ws), badContent);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
@@ -4171,27 +4430,34 @@ test('omp', 'PowerShell: an explicit default replaces the previous provider whil
   t.equal(readFileSync(ompConfigPath(ws), 'utf8'), before.replace('openai/gpt-4o', '"floway/my-model"'));
 });
 
-test('omp', 'PowerShell: rollback restores the original extension and cleans stage files on mid-install failure', async t => {
+test('omp', 'PowerShell: rollback restores the prior plugin registration and settings after link failure', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
   const priorContent = SETUP_NODE_OMP_EXTENSION;
-  writeFileSync(ompExtensionPath(ws), priorContent);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpFailConfig: true });
-  t.ok(run.code !== 0, 'simulated failure should exit nonzero');
-  t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
+  const priorLock: OmpPluginLock = {
+    plugins: { [OMP_PLUGIN_NAME]: { version: '1.0.0', enabledFeatures: null, enabled: false }, '@example/theme': { version: '2.0.0' } },
+    settings: { [OMP_PLUGIN_NAME]: { theme: 'dark', connections: [{ provider: 'floway', endpoint: 'https://before.example', apiKey: 'old-key' }] }, '@example/theme': { enabled: true, color: 'violet' } },
+  };
+  seedOmpPlugin(ws, priorLock, priorContent);
+  const priorLockText = readFileSync(ompPluginLockPath(ws), 'utf8');
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpLinkFailure: 'unlink' });
+  t.ok(run.code !== 0, 'simulated plugin link failure should exit nonzero');
+  t.includes(run.combined, 'fake omp plugin link removed the native link and injected a failure', 'failure occurs after native registration updates and link removal');
+  t.includes(run.combined, 'oh-my-pi applying changes failed; rolling back configuration.', 'plugin link failure enters rollback');
+  t.ok(existsSync(join(ws.root, 'omp-plugin-commands.txt')), 'the native registration command ran');
   t.equal(readFileSync(ompExtensionPath(ws), 'utf8'), priorContent, 'extension restored to original content');
-  t.equal(ompStagedFiles(ompDirFor(ws)).length, 0, 'no stage files left behind');
+  t.equal(readFileSync(ompPluginLockPath(ws), 'utf8'), priorLockText, 'native registration and plugin settings are restored byte for byte');
+  t.equal(realpathSync(ompPluginLinkPath(ws)), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native link is restored to the Floway package');
+  t.equal(ompStagedFiles(ompPluginsDirFor(ws)).length, 0, 'no plugin stage files left behind');
 });
 
 test('omp', 'PowerShell: rollback restore failure preserves backup file and warns operator', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
   const priorContent = SETUP_NODE_OMP_EXTENSION;
-  writeFileSync(ompExtensionPath(ws), priorContent);
+  seedOmpPlugin(ws, { plugins: { [OMP_PLUGIN_NAME]: { version: '1.0.0', enabledFeatures: null, enabled: false } }, settings: { [OMP_PLUGIN_NAME]: { connections: [] } } }, priorContent);
   const run = await runPowerShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
@@ -4203,7 +4469,8 @@ test('omp', 'PowerShell: rollback restore failure preserves backup file and warn
   t.includes(run.combined, 'oh-my-pi simulated failure; rolling back configuration.', 'fault reached after successful extension staging');
   t.includes(run.combined, 'could not restore', 'rollback warning names restore failure');
   t.includes(run.combined, 'restore it by hand', 'operator guidance emitted');
-  t.equal(ompBackupFiles(join(ompDirFor(ws), 'extensions'), 'floway.js').length, 1, 'backup file preserved for manual recovery');
+  const preservedBackups = ompBackupFiles(dirname(ompExtensionPath(ws)), 'index.js').length + ompBackupFiles(dirname(ompPackagePath(ws)), 'package.json').length;
+  t.ok(preservedBackups > 0, 'a package backup is preserved for manual recovery');
 });
 
 test('omp', 'PowerShell: resolves agent directory from omp config path when omp CLI provides it', async t => {
@@ -4211,14 +4478,19 @@ test('omp', 'PowerShell: resolves agent directory from omp config path when omp 
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
   const customDir = join(ws.home, 'from-config-path');
+  const customPluginsDir = join(ws.home, 'independent-plugin-root');
   const run = await runPowerShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: ompConfig(),
     fakeOmpConfigPath: customDir,
+    fakeOmpPluginsDir: customPluginsDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(customDir, 'extensions/floway.js')), 'extension written under directory returned by omp config path');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, customDir, 'native probe preserves the CLI config path');
+  t.equal(paths.pluginsDir, customPluginsDir, 'native probe can resolve an independent plugin root');
+  t.ok(existsSync(ompExtensionPath(ws, 'independent-plugin-root')), 'extension written under the independently resolved plugin root');
 });
 
 test('omp', 'PowerShell: propagates config path failure without guessing the agent directory', async t => {
@@ -4236,6 +4508,7 @@ test('omp', 'PowerShell: propagates config path failure without guessing the age
   t.notEqual(run.code, 0);
   t.includes(run.combined, 'test config path failure');
   t.ok(!existsSync(customDir), 'failed discovery writes no guessed directory');
+  t.ok(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl')), 'path probing does not run after config path fails');
 });
 
 test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores PI_CODING_AGENT_DIR', async t => {
@@ -4248,11 +4521,15 @@ test('omp', 'PowerShell: resolves agent directory from OMP_PROFILE and ignores P
     baseUrl: modelServer.url,
     configuration: ompConfig(),
     fakeOmpConfigPath: join(ws.home, '.omp/profiles/work/agent'),
+    fakeOmpPluginsDir: join(ws.home, '.omp/profiles/work/plugins'),
     ompProfile: 'work',
     piCodingAgentDir: ignoredDir,
   });
   t.equal(run.code, 0, `setup should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(ws.home, '.omp/profiles/work/agent/extensions/floway.js')), 'extension written under profile agent directory');
+  const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
+  t.equal(paths.agentDir, join(ws.home, '.omp/profiles/work/agent'), 'profile agent directory is discovered');
+  t.equal(paths.pluginsDir, join(ws.home, '.omp/profiles/work/plugins'), 'profile plugin directory is discovered');
+  t.ok(existsSync(ompExtensionPath(ws, '.omp/profiles/work/plugins')), 'extension written under the profile plugin directory');
   t.ok(!existsSync(ignoredDir), 'PI_CODING_AGENT_DIR was ignored');
 });
 
@@ -4421,18 +4698,22 @@ test('omp', 'PowerShell: a download that ends before the final Main call perform
 
 test('omp', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', t => {
   const body = powerShellBody('omp');
-  const createIndex = body.indexOf('[System.IO.File]::Create($StagePath).Dispose()');
-  const protectStageIndex = body.indexOf('Protect-SetupFile $StagePath', createIndex);
-  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($StagePath, (ConvertTo-Json', protectStageIndex);
-  const protectTargetIndex = body.indexOf('Protect-SetupFile $script:OmpExtensionPath', writeIndex);
-  const replaceIndex = body.indexOf('[System.IO.File]::Replace($script:OmpExtensionStage, $script:OmpExtensionPath, [System.Management.Automation.Language.NullString]::Value)', protectTargetIndex);
+  const stageFunctionIndex = body.indexOf('function Stage-SetupOmpPluginSettings');
+  const createIndex = body.indexOf('[System.IO.File]::Create($script:OmpPluginSettingsStage).Dispose()', stageFunctionIndex);
+  const protectStageIndex = body.indexOf('Protect-SetupFile $script:OmpPluginSettingsStage', createIndex);
+  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($script:OmpPluginSettingsStage, (ConvertTo-Json', protectStageIndex);
+  const applyIndex = body.indexOf('function Apply-SetupOmpFile');
+  const protectTargetIndex = body.indexOf('Protect-SetupFile $Path', applyIndex);
+  const replaceIndex = body.indexOf('[System.IO.File]::Replace($StagePath, $Path, [System.Management.Automation.Language.NullString]::Value)', protectTargetIndex);
+  const applySettingsIndex = body.indexOf('Apply-SetupOmpFile -StagePath $script:OmpPluginSettingsStage -Path $script:OmpPluginSettingsPath', body.indexOf('function Apply-SetupOmpStaged'));
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
   t.ok(protectStageIndex < writeIndex, 'stage must be protected before connection credentials is written');
   t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
+  t.ok(applySettingsIndex > writeIndex, 'the protected plugin settings stage is applied after credentials are written');
   t.includes(body, '$runningOnWindows = Test-SetupIsWindows', 'the replacement path uses the shared Windows predicate');
   t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
   t.excludes(body, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
-  t.includes(body, 'Move-Item -LiteralPath $script:OmpExtensionStage -Destination $script:OmpExtensionPath', 'new target must use a same-directory move');
+  t.includes(body, 'Move-Item -LiteralPath $StagePath -Destination $Path -Force', 'new target must use a same-directory move');
 });
 
 test('omp', 'installer scripts embed expected URLs and command sequences', t => {
@@ -4450,7 +4731,7 @@ test('omp', 'both installers reject empty downloads and unmanaged empty extensio
     t.ok(emptyDownload.code !== 0, 'empty downloaded source must fail');
     t.ok(!existsSync(ompExtensionPath(ws)), 'empty download leaves no extension');
     modelServer.reset();
-    mkdirSync(join(ompDirFor(ws), 'extensions'), { recursive: true });
+    mkdirSync(dirname(ompExtensionPath(ws)), { recursive: true });
     writeFileSync(ompExtensionPath(ws), '');
     const emptyExisting = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
     t.ok(emptyExisting.code !== 0, 'unmanaged empty file must fail');
@@ -4607,9 +4888,12 @@ for (const agent of ['pi', 'omp'] as const) {
       t.equal(first.code, 0, first.combined);
       const second = await install({ workspace: ws, baseUrl: `${modelServer.url  }/work`, configuration: config({ provider: 'floway-work' }) });
       t.equal(second.code, 0, second.combined);
-      const readConnections = () => JSON.parse(readFileSync(join(dirname(dirname(extension(ws))), 'floway.json'), 'utf8')).connections as { provider: string; endpoint: string; apiKey: string }[];
+      const connectionsPath = agent === 'pi' ? piConnectionsPath(ws) : ompPluginLockPath(ws);
+      const readConnections = () => agent === 'pi'
+        ? JSON.parse(readFileSync(connectionsPath, 'utf8')).connections as { provider: string; endpoint: string; apiKey: string }[]
+        : readOmpConnections(ws);
       t.excludes(readFileSync(extension(ws), 'utf8'), SENTINEL_KEY, 'both fixed resources contain no key');
-      t.equal(statSync(join(dirname(dirname(extension(ws))), 'floway.json')).mode & 0o777, 0o600, 'connection configuration is private');
+      t.equal(statSync(connectionsPath).mode & 0o777, 0o600, 'connection configuration is private');
       if (agent === 'pi') {
         const auth = JSON.parse(readFileSync(join(piDirFor(ws), 'auth.json'), 'utf8'));
         t.equal(auth['floway-home'].key, SENTINEL_KEY);
@@ -4694,7 +4978,10 @@ for (const agent of ['pi', 'omp'] as const) {
       t.includes(updated.combined, 'test backup cleanup failure');
       t.ok(existsSync(join(ws.root, 'cleanup-after-commit')), 'failure occurs after removing the extension backup');
       t.equal(readFileSync(extension(ws), 'utf8'), agent === 'pi' ? SETUP_NODE_PI_EXTENSION : SETUP_NODE_OMP_EXTENSION, 'fixed extension remains committed');
-      t.equal(JSON.parse(readFileSync(join(dirname(dirname(extension(ws))), 'floway.json'), 'utf8')).connections[0].endpoint, `${modelServer.url}/updated`, 'new connection remains committed');
+      const connections = agent === 'pi'
+        ? JSON.parse(readFileSync(piConnectionsPath(ws), 'utf8')).connections as { endpoint: string }[]
+        : readOmpConnections(ws);
+      t.equal(connections[0]?.endpoint, `${modelServer.url}/updated`, 'new connection remains committed');
       t.includes(readFileSync(settings(ws), 'utf8'), 'new-model', 'new preferences remain committed');
       t.excludes(updated.combined, 'rolling back', 'committed data does not enter rollback');
     });

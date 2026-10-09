@@ -116,11 +116,35 @@ omp_resolve_agent_dir() {
     out_error '`omp config path` returned an empty path.'
     return 1
   fi
+  ensure_jq || return 1
+  local probe="$SETUP_TMPDIR/omp-paths.js" paths="$SETUP_TMPDIR/omp-paths.json"
+  # Plugins can live outside the agent directory under profiles or XDG.
+  # https://github.com/can1357/oh-my-pi/blob/cde91bb38674d365e8c3916d05d2292273bb8554/packages/utils/src/dirs.ts#L660-L688
+  cat > "$probe" <<'JS'
+import { getAgentDir, getPluginsDir } from '@oh-my-pi/pi-utils';
+import { writeFileSync } from 'node:fs';
+export default pi => {
+  writeFileSync(process.env.FLOWAY_SETUP_PATHS_FILE, JSON.stringify({ agentDir: getAgentDir(), pluginsDir: getPluginsDir() }));
+  pi.on('session_start', (_event, context) => context.shutdown());
+};
+JS
+  if ! _run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" env -u SETUP_API_KEY FLOWAY_SETUP_PATHS_FILE="$paths" "$OMP_BIN" --mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e "$probe" </dev/null > "$SETUP_TMPDIR/omp-paths.out" 2>&1; then
+    cat "$SETUP_TMPDIR/omp-paths.out" >&2
+    return 1
+  fi
+  if [ ! -f "$paths" ]; then
+    cat "$SETUP_TMPDIR/omp-paths.out" >&2
+    out_error 'the oh-my-pi path probe did not write its result.'
+    return 1
+  fi
+  OMP_PLUGINS_DIR=$("$JQ" -er '.pluginsDir | strings | select(length > 0)' "$paths") || return $?
 }
 
 omp_backup_files() {
-  OMP_CONNECTIONS_EXISTED=0
-  OMP_CONNECTIONS_BACKUP=""
+  OMP_PLUGIN_SETTINGS_EXISTED=0
+  OMP_PLUGIN_SETTINGS_BACKUP=""
+  OMP_MANIFEST_EXISTED=0
+  OMP_MANIFEST_BACKUP=""
   OMP_EXTENSION_EXISTED=0
   OMP_CONFIG_EXISTED=0
   OMP_EXTENSION_BACKUP=""
@@ -140,19 +164,21 @@ omp_backup_files() {
       return 1
     fi
   fi
-  if [ -e "$OMP_CONNECTIONS_PATH" ]; then
-    OMP_CONNECTIONS_EXISTED=1
-    OMP_CONNECTIONS_BACKUP="$OMP_CONNECTIONS_PATH.floway-backup.$_obf_stamp"
-    if ! cp "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_BACKUP"; then
-      out_error "could not back up $OMP_CONNECTIONS_PATH"
+  if [ -e "$OMP_PLUGIN_SETTINGS_PATH" ]; then
+    OMP_PLUGIN_SETTINGS_EXISTED=1
+    OMP_PLUGIN_SETTINGS_BACKUP="$OMP_PLUGIN_SETTINGS_PATH.floway-backup.$_obf_stamp"
+    if ! (umask 077 && : > "$OMP_PLUGIN_SETTINGS_BACKUP") || ! chmod 600 "$OMP_PLUGIN_SETTINGS_BACKUP" || ! cp "$OMP_PLUGIN_SETTINGS_PATH" "$OMP_PLUGIN_SETTINGS_BACKUP"; then
+      rm -f "$OMP_PLUGIN_SETTINGS_BACKUP"
+      OMP_PLUGIN_SETTINGS_BACKUP=""
+      out_error "could not back up $OMP_PLUGIN_SETTINGS_PATH"
       return 1
     fi
-    if ! chmod 600 "$OMP_CONNECTIONS_BACKUP"; then
-      rm -f "$OMP_CONNECTIONS_BACKUP"
-      OMP_CONNECTIONS_BACKUP=""
-      out_error "could not protect the backup of $OMP_CONNECTIONS_PATH"
-      return 1
-    fi
+  fi
+  if [ -e "$OMP_MANIFEST_PATH" ]; then
+    OMP_MANIFEST_EXISTED=1
+    OMP_MANIFEST_BACKUP="$OMP_MANIFEST_PATH.floway-backup.$_obf_stamp"
+    cp "$OMP_MANIFEST_PATH" "$OMP_MANIFEST_BACKUP" || return $?
+    chmod 600 "$OMP_MANIFEST_BACKUP" || return $?
   fi
   if [ -e "$OMP_CONFIG_PATH" ]; then
     OMP_CONFIG_EXISTED=1
@@ -165,7 +191,8 @@ omp_backup_files() {
 }
 
 omp_rollback() {
-  if [ -n "${OMP_CONNECTIONS_STAGE:-}" ]; then rm -f "$OMP_CONNECTIONS_STAGE"; fi
+  if [ -n "${OMP_MANIFEST_STAGE:-}" ]; then rm -f "$OMP_MANIFEST_STAGE"; fi
+  if [ -n "${OMP_PLUGIN_SETTINGS_STAGE:-}" ]; then rm -f "$OMP_PLUGIN_SETTINGS_STAGE"; fi
   if [ -n "${OMP_EXTENSION_STAGE:-}" ] && [ -e "$OMP_EXTENSION_STAGE" ]; then
     rm -f "$OMP_EXTENSION_STAGE"
   fi
@@ -173,12 +200,20 @@ omp_rollback() {
     rm -f "$OMP_CONFIG_STAGE"
   fi
   _obr_rc=0
+  if [ "$OMP_LINK_EXISTED" -eq 0 ] && [ -L "$OMP_PLUGIN_LINK" ]; then
+    rm "$OMP_PLUGIN_LINK" || _obr_rc=1
+  elif [ "$OMP_LINK_EXISTED" -eq 1 ] && [ ! -L "$OMP_PLUGIN_LINK" ]; then
+    ln -s "$OMP_PLUGIN_DIR" "$OMP_PLUGIN_LINK" || _obr_rc=1
+  fi
+  _restore_managed_file \
+    "$OMP_MANIFEST_EXISTED" "$OMP_MANIFEST_BACKUP" "$OMP_MANIFEST_PATH" \
+    "plugin manifest" "oh-my-pi plugin manifest" || _obr_rc=1
   _restore_managed_file \
     "$OMP_EXTENSION_EXISTED" "$OMP_EXTENSION_BACKUP" "$OMP_EXTENSION_PATH" \
     "extension file" "oh-my-pi extension file" || _obr_rc=1
   _restore_managed_file \
-    "$OMP_CONNECTIONS_EXISTED" "$OMP_CONNECTIONS_BACKUP" "$OMP_CONNECTIONS_PATH" \
-    "connection file" "oh-my-pi connection file" || _obr_rc=1
+    "$OMP_PLUGIN_SETTINGS_EXISTED" "$OMP_PLUGIN_SETTINGS_BACKUP" "$OMP_PLUGIN_SETTINGS_PATH" \
+    "plugin settings" "oh-my-pi plugin settings" || _obr_rc=1
   _restore_managed_file \
     "$OMP_CONFIG_EXISTED" "$OMP_CONFIG_BACKUP" "$OMP_CONFIG_PATH" \
     "config file" "oh-my-pi config file" || _obr_rc=1
@@ -186,6 +221,11 @@ omp_rollback() {
 }
 
 omp_cleanup_backups() {
+  _prune_managed_backups "$OMP_MANIFEST_PATH" "$OMP_MANIFEST_BACKUP" || return 1
+  if [ -n "$OMP_MANIFEST_BACKUP" ]; then
+    rm "$OMP_MANIFEST_BACKUP" || return $?
+    OMP_MANIFEST_BACKUP=""
+  fi
   if [ -n "$OMP_EXTENSION_BACKUP" ]; then
     _prune_managed_backups "$OMP_EXTENSION_PATH" "$OMP_EXTENSION_BACKUP" || return 1
     if ! rm -f "$OMP_EXTENSION_BACKUP"; then
@@ -196,15 +236,15 @@ omp_cleanup_backups() {
   else
     _prune_managed_backups "$OMP_EXTENSION_PATH" "" || return 1
   fi
-  if [ -n "$OMP_CONNECTIONS_BACKUP" ]; then
-    _prune_managed_backups "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_BACKUP" || return 1
-    if ! rm -f "$OMP_CONNECTIONS_BACKUP"; then
-      out_error "could not remove connection backup $OMP_CONNECTIONS_BACKUP"
+  if [ -n "$OMP_PLUGIN_SETTINGS_BACKUP" ]; then
+    _prune_managed_backups "$OMP_PLUGIN_SETTINGS_PATH" "$OMP_PLUGIN_SETTINGS_BACKUP" || return 1
+    if ! rm -f "$OMP_PLUGIN_SETTINGS_BACKUP"; then
+      out_error "could not remove plugin settings backup $OMP_PLUGIN_SETTINGS_BACKUP"
       return 1
     fi
-    OMP_CONNECTIONS_BACKUP=""
+    OMP_PLUGIN_SETTINGS_BACKUP=""
   else
-    _prune_managed_backups "$OMP_CONNECTIONS_PATH" "" || return 1
+    _prune_managed_backups "$OMP_PLUGIN_SETTINGS_PATH" "" || return 1
   fi
 
   if [ -n "$OMP_CONFIG_BACKUP" ]; then
@@ -238,8 +278,28 @@ omp_stage_extension() {
     out_error 'the gateway did not return a Floway extension.'
     return 1
   fi
-  OMP_CONNECTIONS_STAGE="$OMP_CONNECTIONS_PATH.floway-stage.$$"
-  _stage_provider_connections "$OMP_CONNECTIONS_PATH" "$OMP_CONNECTIONS_STAGE" "$SETUP_OMP_PROVIDER" true
+  OMP_PLUGIN_SETTINGS_STAGE="$OMP_PLUGIN_SETTINGS_PATH.floway-stage.$$"
+  local old=/dev/null initialize=true
+  if [ -f "$OMP_PLUGIN_SETTINGS_PATH" ]; then old=$OMP_PLUGIN_SETTINGS_PATH; initialize=false; fi
+  (umask 077 && : > "$OMP_PLUGIN_SETTINGS_STAGE") || return 1
+  chmod 600 "$OMP_PLUGIN_SETTINGS_STAGE" || return 1
+  FLOWAY_CONNECTION_KEY="$SETUP_API_KEY" "$JQ" -en --rawfile old "$old" --arg provider "$SETUP_OMP_PROVIDER" --arg endpoint "${SETUP_ENDPOINT%/}" --argjson initialize "$initialize" '
+    def objectField($key): if has($key) then .[$key] | objects else {} end;
+    ($old | if $initialize then {} else fromjson end) | objects
+    | .plugins = objectField("plugins")
+    | .settings = objectField("settings")
+    | .settings["@floway-dev/omp"] = (.settings | objectField("@floway-dev/omp")
+      | .connections = ((if has("connections") then .connections | arrays else [] end)
+        | map(select(.provider != $provider)) + [{provider: $provider, endpoint: $endpoint, apiKey: env.FLOWAY_CONNECTION_KEY}]))
+  ' > "$OMP_PLUGIN_SETTINGS_STAGE" 2> "$SETUP_TMPDIR/omp-plugin-settings.err" || {
+    out_error 'could not update the oh-my-pi plugin settings'
+    return 1
+  }
+  OMP_MANIFEST_STAGE="$OMP_MANIFEST_PATH.floway-stage.$$"
+  (umask 077 && cat > "$OMP_MANIFEST_STAGE" <<'JSON'
+{"name":"@floway-dev/omp","version":"1.0.0","type":"module","omp":{"extensions":["index.js"]}}
+JSON
+  ) || return $?
 }
 
 omp_set_retry_scalar() {
@@ -450,18 +510,20 @@ omp_stage_config() {
 }
 
 omp_apply_staged() {
-  if ! mv "$OMP_CONNECTIONS_STAGE" "$OMP_CONNECTIONS_PATH"; then
-    out_error "could not replace $OMP_CONNECTIONS_PATH"
-    rm -f "$OMP_CONNECTIONS_STAGE"
+  if ! mv "$OMP_PLUGIN_SETTINGS_STAGE" "$OMP_PLUGIN_SETTINGS_PATH"; then
+    out_error "could not replace $OMP_PLUGIN_SETTINGS_PATH"
+    rm -f "$OMP_PLUGIN_SETTINGS_STAGE"
     return 1
   fi
-  OMP_CONNECTIONS_STAGE=""
+  OMP_PLUGIN_SETTINGS_STAGE=""
   if ! mv "$OMP_EXTENSION_STAGE" "$OMP_EXTENSION_PATH"; then
     out_error "could not replace $OMP_EXTENSION_PATH"
     rm -f "$OMP_EXTENSION_STAGE"
     return 1
   fi
   OMP_EXTENSION_STAGE=""
+  mv "$OMP_MANIFEST_STAGE" "$OMP_MANIFEST_PATH" || return $?
+  OMP_MANIFEST_STAGE=""
 
   if [ -n "$OMP_CONFIG_STAGE" ]; then
     if [ -s "$OMP_CONFIG_STAGE" ]; then
@@ -475,6 +537,7 @@ omp_apply_staged() {
     fi
     OMP_CONFIG_STAGE=""
   fi
+  _run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" env -u SETUP_API_KEY "$OMP_BIN" plugin link "$OMP_PLUGIN_DIR" </dev/null || return $?
   return 0
 }
 
@@ -497,12 +560,20 @@ configure_agent() {
     return 1
   fi
 
-  if ! mkdir -p "$OMP_AGENT_DIR/extensions"; then
-    out_error 'could not create the oh-my-pi extensions directory.'
-    return 1
+  OMP_PLUGIN_DIR="$OMP_PLUGINS_DIR/floway"
+  OMP_PLUGIN_LINK="$OMP_PLUGINS_DIR/node_modules/@floway-dev/omp"
+  OMP_LINK_EXISTED=0
+  if [ -e "$OMP_PLUGIN_LINK" ] || [ -L "$OMP_PLUGIN_LINK" ]; then
+    if [ ! -L "$OMP_PLUGIN_LINK" ] || [ "$(readlink "$OMP_PLUGIN_LINK")" != "$OMP_PLUGIN_DIR" ]; then
+      out_error 'an unmanaged @floway-dev/omp plugin is already installed.'
+      return 1
+    fi
+    OMP_LINK_EXISTED=1
   fi
-  OMP_CONNECTIONS_PATH="$OMP_AGENT_DIR/floway.json"
-  OMP_EXTENSION_PATH="$OMP_AGENT_DIR/extensions/floway.js"
+  mkdir -p "$OMP_PLUGIN_DIR" || return $?
+  OMP_PLUGIN_SETTINGS_PATH="$OMP_PLUGINS_DIR/omp-plugins.lock.json"
+  OMP_EXTENSION_PATH="$OMP_PLUGIN_DIR/index.js"
+  OMP_MANIFEST_PATH="$OMP_PLUGIN_DIR/package.json"
 
   if [ -f "$OMP_AGENT_DIR/config.yml" ]; then
     OMP_CONFIG_PATH="$OMP_AGENT_DIR/config.yml"
@@ -543,6 +614,7 @@ configure_agent() {
   omp_cleanup_backups || return 1
 
   out_info "Written to \`$OMP_EXTENSION_PATH\`."
+  out_info "Written to \`$OMP_PLUGIN_SETTINGS_PATH\`."
   if [ -e "$OMP_CONFIG_PATH" ]; then
     out_info "Written to \`$OMP_CONFIG_PATH\`."
   fi

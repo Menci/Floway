@@ -3,13 +3,13 @@ import { expect, test, vi } from 'vitest';
 import { SETUP_NODE_OMP_EXTENSION } from '../src/script-assets.generated.ts';
 
 const evaluateExtension = async (source: string, api: Record<string, unknown>, connections = [{ provider: 'floway', endpoint: 'https://gateway.example', apiKey: 'key' }]) => {
-  const executable = source.replace(/^import .*;\n/gm, '').replaceAll('import.meta.url', JSON.stringify('file:///agent/extensions/floway.js')).replace('export default async pi =>', 'return async pi =>');
-  const create = new Function('USER_AGENT', 'streamSimple', 'buildModel', 'readFile', executable);
-  const extension = create('omp/18.8.4', api.streamSimple, api.buildModel, async (url: URL) => { expect(url.href).toBe('file:///agent/floway.json'); return JSON.stringify({ connections }); });
+  const executable = source.replace(/^import .*;\n/gm, '').replace('export default async pi =>', 'return async pi =>');
+  const create = new Function('USER_AGENT', 'streamSimple', 'buildModel', 'getPluginSettings', executable);
+  const extension = create('omp/18.8.4', api.streamSimple, api.buildModel, async (name: string, cwd: string) => { expect(name).toBe('@floway-dev/omp'); expect(cwd).toBe(process.cwd()); return { connections }; });
   await extension(api);
 };
 
-test('the short extension reads external connection credentials and forwards native declarations', async () => {
+test('the short extension reads native plugin settings and forwards native declarations', async () => {
   const key = "key'\n\\quote";
   const source = SETUP_NODE_OMP_EXTENSION;
   const configuration = {

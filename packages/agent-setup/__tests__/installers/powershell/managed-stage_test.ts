@@ -16,7 +16,7 @@ test.skipIf(!hasPowerShell).each([
 ] as const)('PowerShell $agent keeps protected replacements without a second permission operation ($windowsReplacement)', ({ agent, windowsReplacement }) => {
   const directory = mkdtempSync(join(process.cwd(), '.managed-stage-test-'));
   try {
-    const files = agent === 'pi' ? ['extension', 'settings', 'auth', 'connections'] : ['extension', 'settings', 'connections'];
+    const files = agent === 'pi' ? ['extension', 'settings', 'auth', 'connections'] : ['extension', 'settings', 'connections', 'manifest'];
     for (const name of files) {
       writeFileSync(join(directory, name), 'original');
       writeFileSync(join(directory, `${name}.stage`), 'replacement');
@@ -24,6 +24,7 @@ test.skipIf(!hasPowerShell).each([
     }
     const host = agent === 'pi' ? 'Pi' : 'Omp';
     const settings = agent === 'pi' ? 'Settings' : 'Config';
+    const connections = agent === 'pi' ? 'Connections' : 'PluginSettings';
     const body = SETUP_SCRIPT_BODIES[agent].ps1;
     const fragment = body.slice(0, body.lastIndexOf('$global:LASTEXITCODE = Main '));
     const scriptPath = join(directory, 'apply.ps1');
@@ -35,16 +36,16 @@ function Protect-SetupFile {
   if ([System.IO.File]::ReadAllText($Path) -cne 'original') { throw 'Protection repeated after replacement' }
   $script:ProtectionCalls++
 }
-$script:${host}ConnectionsPath = Join-Path $args[0] 'connections'
-$script:${host}ConnectionsStage = Join-Path $args[0] 'connections.stage'
-$script:${host}ConnectionsExisted = $true
+$script:${host}${connections}Path = Join-Path $args[0] 'connections'
+$script:${host}${connections}Stage = Join-Path $args[0] 'connections.stage'
+$script:${host}${connections}Existed = $true
 $script:${host}ExtensionPath = Join-Path $args[0] 'extension'
 $script:${host}ExtensionStage = Join-Path $args[0] 'extension.stage'
 $script:${host}ExtensionExisted = $true
 $script:${host}${settings}Path = Join-Path $args[0] 'settings'
 $script:${host}${settings}Stage = Join-Path $args[0] 'settings.stage'
 $script:${host}${settings}Existed = $true
-${agent === 'pi' ? `$script:PiAuthPath = Join-Path $args[0] 'auth'\n$script:PiAuthStage = Join-Path $args[0] 'auth.stage'\n$script:PiAuthExisted = $true` : ''}
+${agent === 'pi' ? `$script:PiAuthPath = Join-Path $args[0] 'auth'\n$script:PiAuthStage = Join-Path $args[0] 'auth.stage'\n$script:PiAuthExisted = $true` : `$script:OmpManifestPath = Join-Path $args[0] 'manifest'\n$script:OmpManifestStage = Join-Path $args[0] 'manifest.stage'\n$script:OmpManifestExisted = $true\nfunction Invoke-SetupLiveProcess { }\nfunction Get-SetupTimeoutSeconds { param([int]$Default) $Default }`}
 Apply-Setup${host}Staged
 if ($script:ProtectionCalls -ne ${windowsReplacement ? files.length : 0}) { throw 'Unexpected protection boundary' }
 if ($null -ne $script:${host}ExtensionStage -or $null -ne $script:${host}${settings}Stage) { throw 'Stage remains pending' }
