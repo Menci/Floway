@@ -86,7 +86,7 @@ export function UpstreamAccessControl({
     >
       <div className="grid gap-3 min-w-0">
         <ScrollArea axes="horizontal" className="min-w-0">
-          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} style={{ tableLayout: 'auto' }}>
+          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[344px] whitespace-nowrap" style={{ tableLayout: 'auto' }}>
             <TableColumns widths={['80px', '100%', null]} />
             <TableHeader><TableRow>
               <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
