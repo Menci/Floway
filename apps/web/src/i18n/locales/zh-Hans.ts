@@ -6,6 +6,7 @@ const zhHansCN = {
     },
     common: {
       dateTime: {
+        clockHour: '{0} 点', clockPeriod: '上午/下午', am: 'am', pm: 'pm',
         date: '日期', time: '时间', hour: '小时', minute: '分钟', accept: '确认时间', previousHour: '上一小时', nextHour: '下一小时',
         previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
         previousDecade: '上一个十年', nextDecade: '下一个十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',

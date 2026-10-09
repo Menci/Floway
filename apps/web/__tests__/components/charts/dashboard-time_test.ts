@@ -1,8 +1,18 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeFromInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeFromInterval, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
 
 afterEach(() => vi.unstubAllEnvs());
+
+test.each(['en-US', 'zh-Hans'])('bucket tooltip omits years across year boundaries in %s', locale => {
+  vi.stubEnv('TZ', 'Asia/Singapore');
+  const range = { start: Date.UTC(2026, 11, 31), end: Date.UTC(2027, 0, 1) };
+  const frame = { ...dashboardBucketFrames(range, 0)[0]!, ...range };
+  const title = formatBucketInterval(frame, locale);
+  expect(title).not.toMatch(/2026|2027|年/);
+  expect(title).toContain('31');
+  expect(title).toContain('08:00');
+});
 
 test('today keeps both repeated local hours as distinct frames', () => {
   vi.stubEnv('TZ', 'America/New_York');

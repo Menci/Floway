@@ -188,8 +188,13 @@ export const formatAxisDate = (date: Date, range: DashboardRange, locale: string
 };
 
 export const formatBucketInterval = (frame: DashboardBucketFrame, locale: string): string => {
-  const formatter = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  return formatter.formatRange(new Date(frame.start), new Date(frame.end));
+  const formatter = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const start = new Date(frame.start);
+  const end = new Date(frame.end);
+  const parts = formatter.formatRangeToParts(start, end);
+  return parts.some(part => part.type === 'year')
+    ? `${formatter.format(start)} – ${formatter.format(end)}`
+    : parts.map(part => part.value).join('');
 };
 
 export const formatCalloutTitle = (

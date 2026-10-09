@@ -1,35 +1,67 @@
 export const dateTimePickerCss = `
-/* DateTimePicker uses a padding-free FlyoutPresenter and an inner 1px border
-   in TimePicker mode. Its calendar has no border; the time picker is centered
-   at the right with a 5px margin on every side.
-   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/Controls/DateTimePicker.xaml#L130-L167
-   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Controls/Native/Date/DateTimePicker/DateTimePicker.cs#L220-L229
-   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Controls/Native/Date/CalendarWithClock/CalendarWithClock.cs#L273-L289 */
+/* AnalogClock is the reference's default composition. The calendar owns its
+   left border, and the clock owns the remaining three sides.
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/Controls/CalendarWithClockStyle.xaml#L29-L109
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Controls/Native/Date/CalendarWithClock/CalendarWithClock.cs#L324-L343 */
 .fui-PopoverSurface.fui-PopoverSurface.floway-date-time-picker-surface {
   padding: 0;
   border-width: 0;
   border-radius: var(--winui-control-corner-radius);
   max-width: 100vw;
 }
-.floway-date-time-picker-body { display: grid; grid-template-columns: 1fr auto; border: 1px solid; border-color: var(--winui-control-elevation-border-color); border-radius: var(--winui-control-corner-radius); }
-.floway-date-time-picker-time { display: grid; align-items: center; margin: 5px; }
-/* On a viewport narrower than the Right composition, use the reference's
-   Bottom composition and its own corner assignments.
-   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Controls/Native/Date/CalendarWithClock/CalendarWithClock.cs#L246-L270 */
+.floway-date-time-picker-body { display: grid; grid-template-columns: minmax(300px, 1fr) auto; border-radius: var(--winui-control-corner-radius); }
+.floway-date-time-picker-body .floway-calendar { width: 300px; border: 1px solid var(--winui-control-stroke-default); border-right: 0; }
+/* Clock's 250px Viewbox is a uniform scale of its 178px face plus 10px
+   margins. The minute hand and hour circles share those natural coordinates;
+   its background reads CalendarViewBackground's input-active brush.
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/Controls/Clock.xaml#L25-L85
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/Controls/ClockRadioButton.xaml#L8-L94 */
+.floway-clock { position: relative; display: grid; grid-template-rows: 49.5px 1fr 40px; width: 250px; min-height: calc(49.5px + 250px + 40px); box-sizing: border-box; border: 0; border-radius: 0 4px 4px 0; background-color: var(--winui-control-fill-input-active); font: 14px var(--fontFamilyBase); }
+.floway-clock::before { content: ''; position: absolute; inset: 0; border: 1px solid var(--winui-control-stroke-default); border-left: 0; border-radius: inherit; pointer-events: none; }
+.floway-clock-title { display: block; margin: 5px 4px 4px 0; padding: 0; border: 0; border-radius: 0 8px 8px 0; background-color: var(--winui-accent-fill-default); color: var(--winui-text-on-accent-fill-primary); font: inherit; font-size: 20px; text-align: center; cursor: pointer; }
+.floway-clock-viewbox { position: relative; width: 250px; height: 250px; align-self: center; }
+.floway-clock-canvas { width: 198px; height: 198px; transform-origin: top left; padding: 10px; box-sizing: border-box; }
+.floway-clock-face { position: relative; width: 178px; height: 178px; background-color: var(--winui-card-background-fill-secondary); border-radius: 90px; touch-action: none; }
+.floway-clock-hour { position: absolute; display: grid; place-items: center; width: 30px; height: 30px; transform: translate(-50%, -50%); padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--winui-text-fill-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.floway-clock-hour[aria-checked='true'] { background-color: var(--winui-accent-fill-default); color: var(--winui-text-on-accent-fill-primary); }
+.floway-clock-hand { position: absolute; inset: 0; width: 178px; height: 178px; pointer-events: none; color: var(--winui-accent-fill-default); }
+/* Native minute focus is painted on the hand, rather than around the face.
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Controls/Native/Date/Clock/Clock.cs#L234-L250 */
+.floway-clock-minute-focus:focus-visible { outline: none; box-shadow: none; }
+.floway-clock-minute-focus { position: absolute; inset: 0; pointer-events: none; }
+.floway-clock-face:has(.floway-clock-minute-focus:focus-visible) .floway-clock-hand line { stroke: black; stroke-width: 4px; }
+.floway-clock-period { display: contents; }
+.floway-clock-period button { position: absolute; bottom: 5.5px; display: grid; place-items: center; width: 44px; min-width: 120px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--winui-text-fill-primary); font: inherit; font-weight: 600; cursor: pointer; isolation: isolate; }
+.floway-clock-period button::before { content: ''; position: absolute; z-index: -1; width: 35px; height: 35px; border-radius: 50%; background: transparent; }
+.floway-clock-period button[aria-checked='true']::before { background-color: var(--winui-accent-fill-default); }
+.floway-clock-period button[aria-checked='true'] { color: var(--winui-text-on-accent-fill-primary); }
+/* Native RadioButton inherits MinWidth=120 even when Width=44. Keeping
+   that floor positions the 35px painted circles inside the clock with the
+   reference's negative margins: their centers are 120/2 - 34.5 = 25.5px.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/Controls/Clock.xaml#L84-L85 */
+.floway-clock-am { left: -34.5px; }
+.floway-clock-pm { right: -34.5px; }
+.floway-clock-hour:focus-visible, .floway-clock-period button:focus-visible::before { outline: 2.5px solid var(--winui-text-fill-primary); outline-offset: -2.5px; }
+.floway-clock-hour:disabled, .floway-clock-period button:disabled { color: var(--winui-text-fill-disabled); cursor: default; }
+.floway-clock-title:focus-visible { outline: 2px solid var(--winui-focus-stroke-outer); outline-offset: -2px; }
+@media (prefers-color-scheme: dark) {
+  .floway-clock-face { background-color: var(--winui-control-fill-tertiary); }
+  .floway-clock-face:has(.floway-clock-minute-focus:focus-visible) .floway-clock-hand line { stroke: white; }
+}
 @media (max-width: 552px) {
   .floway-date-time-picker-body { grid-template-columns: 1fr; }
-  .floway-date-time-picker-time { justify-content: center; }
-  .floway-date-time-picker-body .floway-calendar { border-radius: 4px 4px 0 0; }
+  .floway-date-time-picker-body .floway-calendar { border-right: 1px solid var(--winui-control-stroke-default); border-radius: 4px 4px 0 0; }
+  .floway-date-time-picker-body .floway-clock { width: 300px; border-radius: 0 0 4px 4px; }
+  .floway-date-time-picker-body .floway-clock::before { border-left: 1px solid var(--winui-control-stroke-default); border-top: 0; }
+  .floway-clock-viewbox { justify-self: center; }
+  .floway-clock-title { margin: 4px; border-radius: 8px; }
+  .floway-clock-am { left: -34.5px; }
+  .floway-clock-pm { right: -34.5px; }
 }
 /* Native TimePicker: column faceplate, centered wheel highlight and footer.
    Text keeps natural metrics; 40px belongs to selector slots, not the button.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TimePicker_themeresources.xaml#L113-L307 */
-.floway-time-picker { display: grid; grid-template-columns: 1fr 1fr; min-width: 242px; max-width: 456px; padding: 0; border: 1px solid; border-color: var(--winui-control-elevation-border-color); border-radius: var(--winui-control-corner-radius); background-color: var(--winui-control-fill-default); color: var(--winui-text-fill-primary); font-family: var(--fontFamilyBase); font-size: 14px; line-height: normal; cursor: pointer; }
-.floway-time-picker > span { padding: 3px 0 6px; text-align: center; }
-.floway-time-picker > span + span { border-left: 1px solid var(--winui-control-stroke-default); }
-.floway-time-picker:hover { background-color: var(--winui-control-fill-secondary); }
-.floway-time-picker:active { border-color: var(--winui-control-stroke-default); background-color: var(--winui-control-fill-tertiary); color: var(--winui-text-fill-secondary); }
-.floway-time-picker:focus-visible { outline: 2px solid var(--winui-focus-stroke-outer); outline-offset: 1px; box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner); }
 .fui-PopoverSurface.fui-PopoverSurface.floway-time-picker-surface {
   --floway-picker-height: min(398px, 100dvh);
   --floway-picker-viewport-height: calc(var(--floway-picker-height) - 2px - 41px);
@@ -53,11 +85,11 @@ export const dateTimePickerCss = `
 .floway-time-picker-columns { position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr); height: var(--floway-picker-viewport-height); }
 .floway-time-picker-column { position: relative; min-width: 0; min-height: 0; }
 .floway-time-picker-column + .floway-time-picker-minute { border-left: 1px solid var(--winui-divider-stroke-default); }
-.floway-time-picker-wheel { height: var(--floway-picker-viewport-height); min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; scroll-snap-type: y mandatory; box-sizing: border-box; }
+.floway-time-picker-wheel { height: var(--floway-picker-viewport-height); min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; box-sizing: border-box; }
 .floway-time-picker-plane { position: relative; height: calc(var(--floway-picker-viewport-height) + 1001 * 40px); }
 .floway-time-picker-wheel .floway-time-picker-item { position: absolute; left: 0; right: 0; }
 .floway-time-picker-wheel::-webkit-scrollbar { display: none; }
-.floway-time-picker-item { display: grid; box-sizing: border-box; height: 40px; width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--winui-text-fill-primary); font: inherit; scroll-snap-align: center; cursor: pointer; }
+.floway-time-picker-item { display: grid; box-sizing: border-box; height: 40px; width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--winui-text-fill-primary); font: inherit; cursor: pointer; }
 .floway-time-picker-item > span { display: grid; place-items: center; margin: 2px 4px; padding: 3px 2px 6px; }
 /* MonochromaticOverlayPresenter recolors glyphs only inside the fixed stripe.
    Subtract each slot's local position from the stripe and add the wheel's

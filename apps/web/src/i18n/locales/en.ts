@@ -8,6 +8,7 @@ const en = {
     },
     common: {
       dateTime: {
+        clockHour: 'Hour {0}', clockPeriod: 'AM/PM', am: 'am', pm: 'pm',
         date: 'Date', time: 'Time', hour: 'Hour', minute: 'Minute', accept: 'Accept time', previousHour: 'Previous hour', nextHour: 'Next hour',
         previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
         previousDecade: 'Previous decade', nextDecade: 'Next decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',

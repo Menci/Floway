@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { CalendarView } from './calendar-view';
-import { TimePicker } from './time-picker';
+import { Clock } from './clock';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
@@ -55,8 +55,8 @@ export function DateTimePicker({
     <PopoverTrigger disableButtonEnhancement><Link aria-label={label} className={styles.trigger}>{labelText}</Link></PopoverTrigger>
     <PopoverSurface aria-label={label} className="floway-date-time-picker-surface" ref={surfaceRef}>
       <div className="floway-date-time-picker-body">
-        <CalendarView autoFocus maxDate={new Date(max)} minDate={new Date(min)} onSelectDate={day => onChange(dateOnDay(day, value, stepMs))} value={date} />
-        <div className="floway-date-time-picker-time"><TimePicker active={open} label={`${label  }: ${  t('common.dateTime.time')}`} onChange={onChange} surfaceRef={timeSurfaceRef} value={value} values={times} /></div>
+        <CalendarView accentHeader autoFocus maxDate={new Date(max)} minDate={new Date(min)} onSelectDate={day => onChange(dateOnDay(day, value, stepMs))} value={date} />
+        <Clock active={open} label={`${label}: ${t('common.dateTime.time')}`} onChange={onChange} surfaceRef={timeSurfaceRef} value={value} values={times} />
       </div>
     </PopoverSurface>
   </Popover>;

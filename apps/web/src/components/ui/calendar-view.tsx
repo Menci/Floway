@@ -1,6 +1,6 @@
-import { ChevronLeft12Regular, ChevronRight12Regular } from '@fluentui/react-icons';
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 
+import { CalendarChevron } from './calendar-chevron';
 import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
 import { CALENDAR_DAY_MIN_SIZE, CALENDAR_ROW_SIZE } from '../../winui/calendar';
@@ -155,7 +155,7 @@ function CalendarPanel({ mode, display, value, minDate, maxDate, navigation, onS
   </div>;
 }
 
-export function CalendarView({ autoFocus = false, onSelectDate, value, minDate, maxDate }: { autoFocus?: boolean; onSelectDate: (date: Date) => void; value: Date; minDate: Date; maxDate: Date }) {
+export function CalendarView({ accentHeader = false, autoFocus = false, onSelectDate, value, minDate, maxDate }: { accentHeader?: boolean; autoFocus?: boolean; onSelectDate: (date: Date) => void; value: Date; minDate: Date; maxDate: Date }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const [mode, setMode] = useState<Mode>('month');
@@ -248,11 +248,11 @@ export function CalendarView({ autoFocus = false, onSelectDate, value, minDate, 
     onSelectDate(date);
   };
   const weekdayRow = <div className="floway-calendar-weekdays" role="row">{weekdays.map((day, index) => <span aria-label={day.toLocaleDateString(locale, { weekday: 'long' })} key={index} role="columnheader">{day.toLocaleDateString(locale, { weekday: locale.startsWith('zh') ? 'narrow' : 'short' }).slice(0, 2)}</span>)}</div>;
-  return <div className="floway-calendar">
+  return <div className="floway-calendar" data-accent-header={accentHeader || undefined}>
     <div className="floway-calendar-header">
-      <button aria-label={t(mode === 'month' ? 'common.dateTime.previousMonth' : mode === 'year' ? 'common.dateTime.previousYear' : 'common.dateTime.previousDecade')} className="floway-calendar-navigation floway-calendar-previous" disabled={!viewport.before} onClick={() => navigate(-1)} type="button"><span><ChevronLeft12Regular /></span></button>
+      <button aria-label={t(mode === 'month' ? 'common.dateTime.previousMonth' : mode === 'year' ? 'common.dateTime.previousYear' : 'common.dateTime.previousDecade')} className="floway-calendar-navigation floway-calendar-previous" disabled={!viewport.before} onClick={() => navigate(-1)} type="button"><span><CalendarChevron direction="left" /></span></button>
       <button aria-label={t(mode === 'month' ? 'common.dateTime.chooseMonth' : 'common.dateTime.chooseYear').replace('{0}', header)} className="floway-calendar-heading" disabled={mode === 'decade'} onClick={() => changeMode(modes[modes.indexOf(mode) + 1])} ref={headerRef} type="button">{header}</button>
-      <button aria-label={t(mode === 'month' ? 'common.dateTime.nextMonth' : mode === 'year' ? 'common.dateTime.nextYear' : 'common.dateTime.nextDecade')} className="floway-calendar-navigation floway-calendar-next" disabled={!viewport.after} onClick={() => navigate(1)} type="button"><span><ChevronRight12Regular /></span></button>
+      <button aria-label={t(mode === 'month' ? 'common.dateTime.nextMonth' : mode === 'year' ? 'common.dateTime.nextYear' : 'common.dateTime.nextDecade')} className="floway-calendar-navigation floway-calendar-next" disabled={!viewport.after} onClick={() => navigate(1)} type="button"><span><CalendarChevron direction="right" /></span></button>
     </div>
     <div className="floway-calendar-top-border" />
     <div className="floway-calendar-views">

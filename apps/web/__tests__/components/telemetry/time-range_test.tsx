@@ -121,3 +121,17 @@ test('time wheel keyboard navigation confirms from either column', async () => {
   screen.getByRole('button', { name: 'Outside' }).focus();
   await waitFor(() => expect(change.mock.calls).toEqual([[{ start: Date.UTC(2026, 9, 9, 1), end: Date.UTC(2026, 9, 10, 15) }]]));
 });
+
+test('clock hour and AM/PM changes remain drafts until the complete editor loses focus', async () => {
+  const { change } = renderEditor();
+  openEndpoint('Start time');
+  fireEvent.click(screen.getByRole('radio', { name: 'Hour 4' }));
+  expect(screen.getByRole('button', { name: 'Start time: Time' }).textContent).toBe('16:00:00');
+  const am = screen.getByRole('radio', { name: 'am' });
+  am.focus(); fireEvent.click(am);
+  expect(screen.getByRole('button', { name: 'Start time: Time' }).textContent).toBe('04:00:00');
+  expect(document.activeElement).toBe(am);
+  expect(change).not.toHaveBeenCalled();
+  screen.getByRole('button', { name: 'Outside' }).focus();
+  await waitFor(() => expect(change.mock.calls).toEqual([[{ start: Date.UTC(2026, 9, 9, 4), end: Date.UTC(2026, 9, 10, 15) }]]));
+});
