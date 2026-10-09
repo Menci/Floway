@@ -286,7 +286,6 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
-        upstreamDisabled: '上游已停用',
         emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
       },
       apiKeys: {
