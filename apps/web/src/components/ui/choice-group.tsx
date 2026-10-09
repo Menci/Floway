@@ -39,6 +39,10 @@ const useStyles = makeStyles({
     // Stated for the addressed item, whose anchor would otherwise take the
     // user-agent link colour and underline.
     color: 'inherit',
+    border: '0',
+    backgroundColor: 'transparent',
+    fontFamily: 'inherit',
+    fontWeight: 'inherit',
     textDecorationLine: 'none',
     // ControlCornerRadius, the radius SelectorBarItem states for itself; every
     // fill it can carry is transparent, so only the focus ring below reads it.
@@ -156,6 +160,10 @@ const useStyles = makeStyles({
 });
 
 export interface ChoiceGroupItem {
+  button?: boolean;
+  ariaExpanded?: boolean;
+  ariaControls?: string;
+  elementRef?: (element: HTMLElement | null) => void;
   value: string;
   label: string;
   disabled?: boolean;
@@ -203,10 +211,10 @@ export function ChoiceGroup({
       event.preventDefault();
       return;
     }
-    const choices = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('[role="radio"]:not([aria-disabled="true"])')];
+    const choices = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not([aria-disabled="true"])')];
     if (choices.length === 0) return;
     event.preventDefault();
-    const next = choices[(choices.indexOf(event.target as HTMLAnchorElement) + step + choices.length) % choices.length];
+    const next = choices[(choices.indexOf(event.target as HTMLElement) + step + choices.length) % choices.length];
     next.focus();
     next.click();
   };
@@ -214,12 +222,30 @@ export function ChoiceGroup({
   return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} onKeyDown={handleKeyDown} role="radiogroup">
     {items.map((item, index) => {
       const itemDisabled = disabled || item.disabled === true;
+      if (item.button) return <button
+        aria-checked={value === item.value}
+        aria-disabled={itemDisabled ? true : undefined}
+        aria-controls={item.ariaControls}
+        aria-expanded={item.ariaExpanded}
+        aria-haspopup={item.ariaExpanded === undefined ? undefined : 'dialog'}
+        className={styles.item}
+        data-checked={value === item.value ? '' : undefined}
+        data-disabled={itemDisabled ? '' : undefined}
+        disabled={itemDisabled}
+        key={item.value}
+        onClick={readOnly === true ? undefined : () => onChange(item.value)}
+        ref={item.elementRef}
+        role="radio"
+        tabIndex={!itemDisabled && (selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
+        type="button"
+      ><span>{item.label}</span></button>;
       return item.to === undefined
         ? <label
             className={styles.item}
             data-checked={value === item.value ? '' : undefined}
             data-disabled={itemDisabled ? '' : undefined}
             key={item.value}
+            ref={item.elementRef}
           >
             <input
               checked={value === item.value}
@@ -237,7 +263,8 @@ export function ChoiceGroup({
             checked={value === item.value}
             className={styles.item}
             disabled={itemDisabled}
-            item={item}
+            label={item.label}
+            value={item.value}
             key={item.value}
             onChange={onChange}
             to={item.to}
@@ -247,18 +274,19 @@ export function ChoiceGroup({
   </div>;
 }
 
-function AddressedChoice({ checked, className, disabled, item, onChange, tabIndex, to }: {
+function AddressedChoice({ checked, className, disabled, label, value, onChange, tabIndex, to }: {
   checked: boolean;
   className: string;
   disabled: boolean;
-  item: ChoiceGroupItem;
+  label: string;
+  value: string;
   onChange: (value: string) => void;
   tabIndex: number;
   to: string;
 }) {
   // The page owns the transition, holding the view in state and writing the URL
   // after it, so the address only has to say where the view lives.
-  const address = useRouteAddress(to, () => onChange(item.value));
+  const address = useRouteAddress(to, () => onChange(value));
   return <a
     href={disabled ? undefined : address.href}
     onClick={disabled ? event => event.preventDefault() : address.onClick}
@@ -277,6 +305,6 @@ function AddressedChoice({ checked, className, disabled, item, onChange, tabInde
     role="radio"
     tabIndex={disabled ? -1 : tabIndex}
   >
-    <span>{item.label}</span>
+    <span>{label}</span>
   </a>;
 }

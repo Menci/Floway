@@ -1,137 +1,95 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardInterval, type DashboardRange } from '../../../src/components/charts/dashboard-time';
+import type { DashboardRange } from '../../../src/components/charts/dashboard-time';
 import { TelemetryTimeRange } from '../../../src/components/telemetry/time-range';
 import { renderInApp } from '../../render';
 
 const now = Date.UTC(2026, 9, 10, 14, 30);
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
-
-const renderEditor = () => {
+const renderEditor = (initial: DashboardRange = 'today') => {
   vi.stubEnv('TZ', 'UTC');
   vi.spyOn(Date, 'now').mockReturnValue(now);
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
   const change = vi.fn<(range: DashboardRange) => void>();
   const editing = vi.fn();
+  let commitLoaded!: Dispatch<SetStateAction<DashboardRange>>;
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <>
-      <TelemetryTimeRange addressOf={() => '/'} ariaLabel="Range" loadedAt={now} onChange={change} onEditingChange={editing} range="today" />
-      <button type="button">Outside</button>
-    </>,
+    Component: () => {
+      const [range, setRange] = useState(initial);
+      commitLoaded = setRange;
+      return <>
+        <TelemetryTimeRange addressOf={() => '/'} ariaLabel="Range" loadedAt={now} onChange={change} onEditingChange={editing} range={range} />
+        <button type="button">Outside</button>
+      </>;
+    },
   }]);
   renderInApp(<RouterProvider router={router} />);
-  return { change, editing };
+  return { change, editing, commit: (range: DashboardRange) => act(() => commitLoaded(range)) };
 };
-const openEndpoint = (name: string) => {
-  const button = screen.getByRole('button', { name });
-  button.focus(); fireEvent.click(button);
-};
-const chooseDay = (day: number) => fireEvent.click(screen.getByRole('gridcell', { name: new RegExp(`^${  day  }(, today)?$`) }));
+const open = () => { const custom = screen.getByRole('radio', { name: 'Custom' }); custom.focus(); fireEvent.click(custom); };
+const day = (value: number) => fireEvent.click(screen.getByRole('gridcell', { name: `October ${value}, 2026` }));
+const outside = () => screen.getByRole('button', { name: 'Outside' }).focus();
 
-test('calendar dates and portalled time wheels form one commit group', async () => {
+test('only Custom opens a day range and a complete range applies on group blur', async () => {
   const { change } = renderEditor();
-  openEndpoint('Start time');
-  chooseDay(8);
+  expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
+  open(); day(6); day(16);
   expect(change).not.toHaveBeenCalled();
-  const time = screen.getByRole('button', { name: 'Start time: Time' });
-  time.focus(); fireEvent.click(time);
-  const option = await screen.findByRole('option', { name: '12' });
-  fireEvent.mouseDown(option); fireEvent.click(option);
-  expect(change).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Accept time' }));
-  openEndpoint('End time');
-  chooseDay(9);
-  expect(change).not.toHaveBeenCalled();
-  screen.getByRole('button', { name: 'Outside' }).focus();
-  await waitFor(() => expect(change).toHaveBeenCalledTimes(1));
-  expect(change).toHaveBeenCalledWith({ start: Date.UTC(2026, 9, 8, 12), end: Date.UTC(2026, 9, 9, 15) });
+  outside();
+  await waitFor(() => expect(change.mock.calls).toEqual([[{ start: '2026-10-06', end: '2026-10-16' }]]));
+  expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
 });
 
-test('cancelling the inner time picker preserves the complete draft without fetching', async () => {
+test('the date caption appears only after a successful load and both entries reopen the same picker', async () => {
+  const { commit } = renderEditor();
+  open(); day(6); day(16); outside();
+  await waitFor(() => expect(screen.queryByRole('grid')).toBeNull());
+  expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
+  commit({ start: '2026-10-06', end: '2026-10-16' });
+  const caption = screen.getByRole('button', { name: 'Choose date range' });
+  expect(caption.textContent).toBe('Oct 6, 2026 to Oct 16, 2026');
+  caption.focus(); fireEvent.click(caption);
+  expect(screen.getByRole('grid')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
+  open();
+  expect(screen.getByRole('grid')).toBeTruthy();
+});
+
+test('an incomplete range or Escape keeps the loaded preset', async () => {
   const { change } = renderEditor();
-  openEndpoint('Start time');
-  const time = screen.getByRole('button', { name: 'Start time: Time' });
-  time.focus(); fireEvent.click(time);
-  fireEvent.click(await screen.findByRole('option', { name: '12' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  screen.getByRole('button', { name: 'Outside' }).focus();
+  open(); day(8); outside();
   await Promise.resolve();
   expect(change).not.toHaveBeenCalled();
-});
-
-test('reversed endpoints retain the loaded query and report an error', async () => {
-  const { change } = renderEditor();
-  openEndpoint('Start time');
-  chooseDay(11);
-  screen.getByRole('button', { name: 'Outside' }).focus();
-  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('later than'));
+  open(); day(8); day(9);
+  fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
   expect(change).not.toHaveBeenCalled();
 });
 
-test('preset activation replaces the draft without an intermediate custom query', () => {
+test('preset activation discards a draft without an intermediate custom query', () => {
   const { change } = renderEditor();
-  openEndpoint('Start time');
-  chooseDay(8);
+  open(); day(8); day(9);
   const preset = screen.getByRole('radio', { name: '7 Days' });
   preset.focus(); fireEvent.click(preset);
   expect(change.mock.calls).toEqual([['7d']]);
 });
 
-test('an untouched editor catches up its live preset across an hour boundary', async () => {
+test('the native range semantics sort reversed clicks and allow the same day', async () => {
   const { change } = renderEditor();
-  openEndpoint('Start time');
-  vi.mocked(Date.now).mockReturnValue(now + 3_600_000);
-  screen.getByRole('button', { name: 'Outside' }).focus();
+  open(); day(16); day(6); outside();
+  await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-06', end: '2026-10-16' }));
+  open(); day(8); day(8); outside();
+  await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-08', end: '2026-10-08' }));
+});
+
+test('clicking within the selected range clears it without replacing loaded data', async () => {
+  const { change } = renderEditor({ start: '2026-10-06', end: '2026-10-16' });
+  open(); day(10); outside();
   await Promise.resolve();
-  expect(change.mock.calls).toEqual([['today']]);
-  expect(dashboardInterval('today', now).end).not.toBe(dashboardInterval('today', Date.now()).end);
-});
-
-test('time wheel dismissal discards pending time while retaining a calendar draft', async () => {
-  const { change } = renderEditor();
-  openEndpoint('Start time');
-  chooseDay(8);
-  const time = screen.getByRole('button', { name: 'Start time: Time' });
-  time.focus(); fireEvent.click(time);
-  fireEvent.click(await screen.findByRole('option', { name: '12' }));
-  expect(screen.getByRole('button', { name: 'Start time' }).textContent).toContain('15:00');
-  fireEvent.keyDown(screen.getByRole('listbox', { name: 'Hour' }), { key: 'Escape' });
-  await waitFor(() => expect(document.activeElement).toBe(time));
-  screen.getByRole('button', { name: 'Outside' }).focus();
-  await waitFor(() => expect(change.mock.calls).toEqual([[{ start: Date.UTC(2026, 9, 8, 15), end: Date.UTC(2026, 9, 10, 15) }]]));
-});
-
-test('time wheel keyboard navigation confirms from either column', async () => {
-  const { change } = renderEditor();
-  openEndpoint('Start time');
-  const time = screen.getByRole('button', { name: 'Start time: Time' });
-  time.focus(); fireEvent.click(time);
-  const hours = await screen.findByRole('listbox', { name: 'Hour' });
-  fireEvent.keyDown(hours, { key: 'Home' });
-  fireEvent.keyDown(hours, { key: 'ArrowDown' });
-  fireEvent.keyDown(hours, { key: 'ArrowRight' });
-  const minutes = screen.getByRole('listbox', { name: 'Minute' });
-  expect(document.activeElement).toBe(minutes);
-  fireEvent.keyDown(minutes, { key: 'Enter' });
-  await waitFor(() => expect(document.activeElement).toBe(time));
   expect(change).not.toHaveBeenCalled();
-  screen.getByRole('button', { name: 'Outside' }).focus();
-  await waitFor(() => expect(change.mock.calls).toEqual([[{ start: Date.UTC(2026, 9, 9, 1), end: Date.UTC(2026, 9, 10, 15) }]]));
-});
-
-test('clock hour and AM/PM changes remain drafts until the complete editor loses focus', async () => {
-  const { change } = renderEditor();
-  openEndpoint('Start time');
-  fireEvent.click(screen.getByRole('radio', { name: 'Hour 4' }));
-  expect(screen.getByRole('button', { name: 'Start time: Time' }).textContent).toBe('16:00:00');
-  const am = screen.getByRole('radio', { name: 'am' });
-  am.focus(); fireEvent.click(am);
-  expect(screen.getByRole('button', { name: 'Start time: Time' }).textContent).toBe('04:00:00');
-  expect(document.activeElement).toBe(am);
-  expect(change).not.toHaveBeenCalled();
-  screen.getByRole('button', { name: 'Outside' }).focus();
-  await waitFor(() => expect(change.mock.calls).toEqual([[{ start: Date.UTC(2026, 9, 9, 4), end: Date.UTC(2026, 9, 10, 15) }]]));
+  expect(screen.getByRole('button', { name: 'Choose date range' }).textContent).toContain('Oct 6');
 });

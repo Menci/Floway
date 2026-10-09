@@ -107,22 +107,6 @@ export const createFlyoutPresence = (components: FluentComponents) => components
   exit: { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: POPUP_HIDE_MS, easing: 'linear', fill: 'both' },
 });
 
-// PickerFlyoutThemeTransition expands a clipping rectangle around the
-// faceplate center. The selector content and highlight stripe never move.
-// Geometry variables are measured after positioning, including viewport shifts.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L580-L672
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/PickerFlyoutThemeTransition_Partial.h#L17-L20
-export const createPickerFlyoutPresence = (components: FluentComponents) => {
-  const clip = (half: string) => `inset(calc(50% + var(--floway-picker-center-offset) - var(${  half  })) 0px calc(50% - var(--floway-picker-center-offset) - var(${  half  })) 0px)`;
-  return components.createPresenceComponent({
-    enter: { keyframes: [{ clipPath: clip('--floway-picker-open-half') }, { clipPath: clip('--floway-picker-full-half') }], duration: CONTROL_NORMAL_ANIMATION_MS, easing: CONTROL_FAST_OUT_SLOW_IN_EASING, fill: 'both' },
-    exit: [
-      { keyframes: [{ clipPath: clip('--floway-picker-full-half') }, { clipPath: clip('--floway-picker-close-half') }], duration: CONTROL_FAST_ANIMATION_MS, easing: CONTROL_FAST_OUT_SLOW_IN_EASING, fill: 'both' },
-      { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: CONTROL_FASTER_ANIMATION_MS, delay: 84, easing: 'linear', fill: 'both' },
-    ],
-  });
-};
-
 export const withWinuiMotion = (components: FluentComponents): FluentComponents => {
   // ContentDialog settles down from 1.05 rather than growing in from below 1,
   // and its fade is a separate, much shorter animation, so the surface is fully

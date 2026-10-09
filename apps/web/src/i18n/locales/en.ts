@@ -7,12 +7,9 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      dateTime: {
-        clockHour: 'Hour {0}', clockPeriod: 'AM/PM', am: 'am', pm: 'pm',
-        date: 'Date', time: 'Time', hour: 'Hour', minute: 'Minute', accept: 'Accept time', previousHour: 'Previous hour', nextHour: 'Next hour',
+      calendar: {
         previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
-        previousDecade: 'Previous decade', nextDecade: 'Next decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
-        todaySuffix: ', today',
+        previousDecade: 'Previous decade', previousCentury: 'Previous century', nextDecade: 'Next decade', nextCentury: 'Next century', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
       },
       bodyViewer: {
         options: 'Body options',
@@ -1123,8 +1120,7 @@ const en = {
       telemetry: {
         currentUserOnly: 'Only me',
         range: {
-          to: 'to', start: 'Start time', end: 'End time', oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days',
-          invalid: 'End time must be later than start time',
+          to: 'to', oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
         },
       },
       usage: {

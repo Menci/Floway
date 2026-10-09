@@ -1,13 +1,13 @@
+import { calendarDate, nextCalendarDate, parseCalendarDate, validateCalendarRange, type CalendarDateRange } from '../../lib/calendar-date';
 import {
   createTelemetryBucket,
-  parseTelemetryHour,
   TELEMETRY_HOUR_MS,
   telemetryHourKey,
   type TelemetryBucketGranularity,
 } from '@floway-dev/protocols/common';
 
 export type DashboardPreset = 'today' | '7d' | '30d';
-export type DashboardRange = DashboardPreset | { start: number; end: number };
+export type DashboardRange = DashboardPreset | CalendarDateRange;
 export type DashboardGranularity = Exclude<TelemetryBucketGranularity, 'all'>;
 
 export interface DashboardBucketFrame {
@@ -37,8 +37,11 @@ export const validateDashboardInterval = (start: number, end: number): void => {
 
 export const dashboardInterval = (range: DashboardRange, nowMs: number): { start: number; end: number } => {
   if (typeof range !== 'string') {
-    validateDashboardInterval(range.start, range.end);
-    return range;
+    validateCalendarRange(range);
+    return {
+      start: Math.ceil(parseCalendarDate(range.start).getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS,
+      end: Math.ceil(parseCalendarDate(nextCalendarDate(range.end)).getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS,
+    };
   }
   const end = Math.floor(nowMs / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS + TELEMETRY_HOUR_MS;
   if (range === 'today') return { start: end - 24 * TELEMETRY_HOUR_MS, end };
@@ -51,13 +54,10 @@ export const dashboardInterval = (range: DashboardRange, nowMs: number): { start
   return { start: Math.ceil(start.getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS, end };
 };
 
-export const dashboardRangeFromInterval = (start: number, end: number, nowMs: number): DashboardRange => {
-  validateDashboardInterval(start, end);
-  for (const preset of ['today', '7d', '30d'] as const) {
-    const interval = dashboardInterval(preset, nowMs);
-    if (interval.start === start && interval.end === end) return preset;
-  }
-  return { start, end };
+export const dashboardRangeIsCurrent = (range: DashboardRange, nowMs: number): boolean => {
+  if (typeof range === 'string') return true;
+  const today = calendarDate(new Date(nowMs));
+  return range.start <= today && today <= range.end;
 };
 
 export const sameDashboardRange = (left: DashboardRange, right: DashboardRange): boolean =>
@@ -148,10 +148,9 @@ export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
 
 export const parseDashboardRange = (search: URLSearchParams): DashboardRange => {
   if (search.get('r') === 'custom') {
-    const start = parseTelemetryHour(search.get('start') ?? '');
-    const end = parseTelemetryHour(search.get('end') ?? '');
-    validateDashboardInterval(start, end);
-    return { start, end };
+    const range = { start: search.get('start') ?? '', end: search.get('end') ?? '' };
+    validateCalendarRange(range);
+    return range;
   }
   const range = search.get('r');
   return range === '7d' || range === '30d' ? range : 'today';
@@ -161,10 +160,10 @@ export const serializeDashboardRange = (search: URLSearchParams, range: Dashboar
   if (typeof range === 'string') {
     if (range !== 'today') search.set('r', range);
   } else {
-    validateDashboardInterval(range.start, range.end);
+    validateCalendarRange(range);
     search.set('r', 'custom');
-    search.set('start', telemetryHourKey(range.start));
-    search.set('end', telemetryHourKey(range.end));
+    search.set('start', range.start);
+    search.set('end', range.end);
   }
 };
 

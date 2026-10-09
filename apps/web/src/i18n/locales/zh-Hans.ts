@@ -5,12 +5,9 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
-      dateTime: {
-        clockHour: '{0} 点', clockPeriod: '上午/下午', am: 'am', pm: 'pm',
-        date: '日期', time: '时间', hour: '小时', minute: '分钟', accept: '确认时间', previousHour: '上一小时', nextHour: '下一小时',
+      calendar: {
         previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
-        previousDecade: '上一个十年', nextDecade: '下一个十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
-        todaySuffix: '，今天',
+        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
       },
       bodyViewer: {
         options: '正文选项',
@@ -1075,8 +1072,7 @@ const zhHansCN = {
       telemetry: {
         currentUserOnly: '仅自己',
         range: {
-          to: '到', start: '开始时间', end: '结束时间', oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天',
-          invalid: '结束时间必须晚于开始时间',
+          to: '到', oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
         },
       },
       usage: {

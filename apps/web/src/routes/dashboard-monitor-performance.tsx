@@ -29,6 +29,7 @@ import { PerformanceTable } from '../components/performance/table';
 import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
+import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -37,7 +38,6 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
@@ -222,7 +222,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   );
 
   const [editingRange, setEditingRange] = useState(false);
-  usePollWhileVisible(poll, 60_000, !editingRange);
+  useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<PerformanceUrlState>(
     () => ({ ...loadedQuery, metric, percentile, hidden: [...hiddenSeries] }),

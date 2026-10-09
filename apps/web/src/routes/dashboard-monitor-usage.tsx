@@ -16,13 +16,13 @@ import {
 } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
+import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
-import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
@@ -122,7 +122,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     onQueryCommit,
   );
   const [editingRange, setEditingRange] = useState(false);
-  usePollWhileVisible(poll, 60_000, !editingRange);
+  useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<UsageUrlState>(
     () => ({ ...loadedQuery, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch] }),
