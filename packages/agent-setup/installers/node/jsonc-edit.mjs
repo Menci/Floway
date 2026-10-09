@@ -316,14 +316,14 @@ export function updateDefaultModel(src, modelId, provider) {
     return result;
   }
 
-  return setSettingsProperty(setSettingsProperty(src, ['defaultProvider'], provider), ['defaultModel'], modelId);
+  return setJsoncProperty(setJsoncProperty(src, ['defaultProvider'], provider), ['defaultModel'], modelId);
 }
 
 export function updatePiSettings(src, { modelId, provider, thinkingLevel, retry }) {
   let result = updateDefaultModel(src, modelId, provider);
-  if (thinkingLevel !== null) result = setSettingsProperty(result, ['defaultThinkingLevel'], thinkingLevel);
-  if (retry.enabled !== null) result = setSettingsProperty(result, ['retry', 'enabled'], retry.enabled);
-  if (retry.maxRetries !== null) result = setSettingsProperty(result, ['retry', 'maxRetries'], retry.maxRetries);
+  if (thinkingLevel !== null) result = setJsoncProperty(result, ['defaultThinkingLevel'], thinkingLevel);
+  if (retry.enabled !== null) result = setJsoncProperty(result, ['retry', 'enabled'], retry.enabled);
+  if (retry.maxRetries !== null) result = setJsoncProperty(result, ['retry', 'maxRetries'], retry.maxRetries);
   return result;
 }
 
@@ -334,10 +334,10 @@ export function updatePiAuth(src, provider, key) {
   // Pi resolves stored keys as config values; escape a literal key on write.
   // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/docs/custom-provider.md#L74-L81
   const escaped = key.replaceAll('$', () => '$$');
-  return setSettingsProperty(src === '' ? '{}\n' : src, [provider], { type: 'api_key', key: key.startsWith('!') ? `$${  escaped}` : escaped }, 'auth.json');
+  return setJsoncProperty(src === '' ? '{}\n' : src, [provider], { type: 'api_key', key: key.startsWith('!') ? `$${  escaped}` : escaped }, 'auth.json');
 }
 
-function setSettingsProperty(src, path, value, fileName = 'settings.json') {
+function setJsoncProperty(src, path, value, fileName = 'settings.json') {
   const ast = parseJsoncAst(src);
   let current = ast.root;
   for (let index = 0; index < path.length; index++) {

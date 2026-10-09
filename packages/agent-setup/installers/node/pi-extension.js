@@ -22,8 +22,8 @@ const userAgent = `pi/${VERSION} (${process.platform}; ${runtime}; ${process.arc
 
 export default async pi => {
   const { connections } = JSON.parse(await readFile(new URL('../floway.json', import.meta.url), 'utf8'));
-  // Factory discovery precedes registration in Pi's runtime. Its public SDK
-  // resolves stored keys, including command/environment values, without a model file.
+  // Startup discovery needs stored credentials before Pi registers extension providers.
+  // The public ModelRuntime resolves command/environment keys without models.json.
   // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/core/model-runtime.ts
   const credentials = await ModelRuntime.create({ authPath: fileURLToPath(new URL('../auth.json', import.meta.url)), modelsPath: null, refreshOnCreate: false });
   for (const connection of connections) {

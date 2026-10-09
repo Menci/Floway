@@ -4,8 +4,8 @@
 // retry preferences preserve the existing agent-wide settings.
 //
 // Model identifiers and Codex effort strings remain vendor-independent opaque
-// values. Empty strings are ambiguous with unset preferences, and NUL cannot
-// pass through the native shell argument boundary.
+// values. Empty model and effort strings cannot stand in for null, and NUL
+// cannot pass through the native shell argument boundary.
 
 import { z } from 'zod';
 

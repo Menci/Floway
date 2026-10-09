@@ -2,9 +2,9 @@
 // factories so the package carries all domain logic while a host application
 // supplies persistence and authentication. Two disjoint surfaces:
 //
-// - Public GET/HEAD script routes reveal the selected API key as executable
-//   source to an unauthenticated machine. A host mounts them structurally ahead
-//   of its logger / CORS / auth middleware, so no per-path bypass is needed;
+// - Public GET/HEAD routes serve setup scripts containing the selected API key
+//   and fixed Pi/OMP extension resources. A host mounts them ahead of its
+//   logger / CORS / auth middleware to protect credential-bearing URLs;
 //   every failure is sealed here so a thrown secret never escapes.
 // - Authenticated control routes (POST / PUT / heartbeat) drive the lease
 //   lifecycle. A host mounts them behind its auth middleware and injects the
