@@ -32,13 +32,13 @@ _prune_managed_backups() {
 }
 
 _stage_provider_connections() {
-  local existing=$1 stage=$2 provider=$3 include_key=$4 old=/dev/null
+  local existing=$1 stage=$2 provider=$3 include_key=$4 old=/dev/null initialize=true
   ensure_jq || return 1
-  if [ -f "$existing" ]; then old=$existing; fi
+  if [ -f "$existing" ]; then old=$existing; initialize=false; fi
   (umask 077 && : > "$stage") || return 1
   chmod 600 "$stage" || return 1
-  FLOWAY_CONNECTION_KEY="$SETUP_API_KEY" "$JQ" -en --rawfile old "$old" --arg provider "$provider" --arg endpoint "${SETUP_ENDPOINT%/}" --argjson includeKey "$include_key" '
-    ($old | if length == 0 then {connections: []} else fromjson end)
+  FLOWAY_CONNECTION_KEY="$SETUP_API_KEY" "$JQ" -en --rawfile old "$old" --arg provider "$provider" --arg endpoint "${SETUP_ENDPOINT%/}" --argjson includeKey "$include_key" --argjson initialize "$initialize" '
+    ($old | if $initialize then {connections: []} else fromjson end)
     | .connections = ((.connections | arrays | map(select(.provider != $provider))) +
       [{provider: $provider, endpoint: $endpoint} + (if $includeKey then {apiKey: env.FLOWAY_CONNECTION_KEY} else {} end)])
   ' > "$stage" 2> "$SETUP_TMPDIR/provider-parse.err" || {

@@ -80,6 +80,10 @@ for (const platform of ['bash', 'powershell'] as const) {
           expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
         });
       });
+
+      test('rejects an empty installed connection file', () => {
+        run('', result => { expect(result.status).not.toBe(0); });
+      });
     });
   }
 }
