@@ -56,11 +56,11 @@ const POWERSHELL_COMMON_SECTIONS: readonly Section[] = [
     file: 'installers/powershell/common/process.ps1',
     source: SETUP_POWERSHELL_COMMON_PROCESS,
     start: '# Inherit stdout/stderr',
-    end: '# Run a child process with captured output',
+    end: '# Captured commands are noninteractive',
   },
   { file: 'installers/powershell/common/cli.ps1', source: SETUP_POWERSHELL_COMMON_CLI, append: '\n' },
   { file: 'installers/powershell/common/managed-file.ps1', source: SETUP_POWERSHELL_COMMON_MANAGED_FILE, start: '# Rollback retains', append: '\n' },
-  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, start: '# Run a child process with captured output' },
+  { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, start: '# Captured commands are noninteractive' },
   { file: 'installers/powershell/common/main.ps1', source: SETUP_POWERSHELL_COMMON_MAIN, start: '# --- run' },
 ];
 

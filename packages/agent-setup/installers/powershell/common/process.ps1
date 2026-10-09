@@ -53,8 +53,8 @@ function Invoke-SetupLiveProcess {
   if ($process.ExitCode -ne 0) { Stop-Setup "$Exe exited with status $($process.ExitCode)." }
 }
 
-# Run a child process with captured output under a deadline, terminating its
-# whole process tree and throwing on timeout.
+# Captured commands are noninteractive and receive EOF. A timeout terminates
+# the whole process tree before throwing.
 function Invoke-SetupProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
   $startInfo = New-SetupProcessStartInfo -Exe $Exe -Arguments $Arguments

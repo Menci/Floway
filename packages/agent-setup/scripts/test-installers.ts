@@ -3961,6 +3961,22 @@ test('omp', 'refuses an unmanaged extension without modifying it', async t => {
 });
 
 for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
+  test('omp', `${platform}: preserves an unmanaged plugin with a different extension entrypoint`, async t => {
+    const ws = makeWorkspace();
+    placeFakeOmp(ws.binDir);
+    mkdirSync(dirname(ompPackagePath(ws)), { recursive: true });
+    const manifest = '{"name":"custom-plugin","omp":{"extensions":["custom.js"]}}';
+    const entrypoint = join(dirname(ompPackagePath(ws)), 'custom.js');
+    writeFileSync(ompPackagePath(ws), manifest);
+    writeFileSync(entrypoint, 'export default () => {};');
+    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
+    t.notEqual(run.code, 0, 'unmanaged plugin setup must fail');
+    t.equal(readFileSync(ompPackagePath(ws), 'utf8'), manifest, 'manifest preserved');
+    t.equal(readFileSync(entrypoint, 'utf8'), 'export default () => {};', 'native extension entrypoint preserved');
+    t.ok(!existsSync(ompExtensionPath(ws)), 'no managed extension created');
+    t.ok(!existsSync(ompPluginLockPath(ws)), 'no native settings written');
+  });
+
   test('omp', `${platform}: rejects a non-object plugin settings root without modifying it`, async t => {
     const ws = makeWorkspace();
     placeFakeOmp(ws.binDir);
@@ -4072,7 +4088,7 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
 test('omp', 'resolves agent directory from the native probe', async t => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  const customDir = join(ws.home, 'from-config-path');
+  const customDir = join(ws.home, 'from-native-probe');
   const customPluginsDir = join(ws.home, 'independent-plugin-root');
   const run = await runShellInstaller({
     workspace: ws,
@@ -4466,7 +4482,7 @@ test('omp', 'PowerShell: resolves agent directory from the native probe', async 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
-  const customDir = join(ws.home, 'from-config-path');
+  const customDir = join(ws.home, 'from-native-probe');
   const customPluginsDir = join(ws.home, 'independent-plugin-root');
   const run = await runPowerShellInstaller({
     workspace: ws,

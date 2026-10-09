@@ -256,7 +256,7 @@ omp_cleanup_backups() {
 
 omp_stage_extension() {
   OMP_EXTENSION_STAGE="$OMP_EXTENSION_PATH.floway-stage.$$"
-  if [ -f "$OMP_EXTENSION_PATH" ] && { [ ! -s "$OMP_EXTENSION_PATH" ] || ! awk 'NR == 1 { exit $0 == "// Managed by Floway Agent Setup." ? 0 : 1 }' "$OMP_EXTENSION_PATH"; }; then
+  if { [ -e "$OMP_EXTENSION_PATH" ] || [ -e "$OMP_MANIFEST_PATH" ]; } && ! awk 'NR == 1 { managed = ($0 == "// Managed by Floway Agent Setup."); exit } END { exit !managed }' "$OMP_EXTENSION_PATH"; then
     out_error 'existing unmanaged Floway extension found; rename it before running Agent Setup.'
     return 1
   fi
