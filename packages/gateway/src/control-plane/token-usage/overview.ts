@@ -1,3 +1,4 @@
+import type { TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
@@ -19,7 +20,7 @@ interface UsageOverviewParams {
   start: string;
   end: string;
   groupBy: UsageOverviewGroupBy;
-  bucket: 'hour' | '4h' | '8h' | 'day' | 'all';
+  bucket: TelemetryBucketGranularity;
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;

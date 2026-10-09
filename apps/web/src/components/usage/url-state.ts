@@ -1,5 +1,6 @@
 import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from './types';
 import { oneOf, repeatedValues } from '../../lib/search-params';
+import { parseDashboardRange, serializeDashboardRange } from '../charts/dashboard-time';
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
@@ -12,7 +13,6 @@ export interface UsageUrlState {
   hiddenSearch: string[];
 }
 
-const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation'];
 const usageGroupByValues: UsageGroupBy[] = ['model', 'upstream', 'keyId', 'userId'];
 
@@ -25,7 +25,7 @@ export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
     keyId: repeatedValues(search, 'fk'),
   };
   return {
-    range: oneOf(search.get('r'), usageRangeValues, 'today'),
+    range: parseDashboardRange(search),
     groupBy,
     filters: clearGroupedTelemetryFilters(filters, groupBy),
     metric: oneOf(search.get('m'), usageMetricValues, 'total'),
@@ -36,7 +36,7 @@ export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
 
 export const serializeUsageUrlState = (state: UsageUrlState): URLSearchParams => {
   const search = new URLSearchParams();
-  if (state.range !== 'today') search.set('r', state.range);
+  serializeDashboardRange(search, state.range);
   if (state.groupBy !== 'model') search.set('g', state.groupBy);
   if (state.metric !== 'total') search.set('m', state.metric);
   const filters: Array<[string, readonly string[]]> = [

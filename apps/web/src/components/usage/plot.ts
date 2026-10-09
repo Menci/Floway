@@ -6,7 +6,8 @@ import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/dec
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
   dashboardBucketFrames,
-  dashboardBucketKeyForUtcHour,
+  dashboardBucketMapper,
+  formatBucketInterval,
 } from '../charts/dashboard-time';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
@@ -15,32 +16,13 @@ import { areaSeries, lineSeries } from '../charts/series-plot';
 import type { MultiselectOption } from '../ui/multiselect-combobox';
 import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
-const shortMonthDay = (date: Date, locale: string): string =>
-  date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
-
-// `formatRange` keeps the span locale-owned, where a hand-built `14:00 - 15:00`
-// would impose a 24-hour clock. The end is wrapped onto the start's own calendar
-// day because `formatRange` widens to two full datetimes once its endpoints fall
-// on different days; reversed endpoints still print in the order given.
-const bucketHourRange = (date: Date, spanHours: number, locale: string): string => {
-  const end = new Date(date);
-  end.setHours((date.getHours() + spanHours) % 24, 0, 0, 0);
-  return new Intl.DateTimeFormat(locale, { hour: 'numeric' }).formatRange(date, end);
-};
-
-const bucketLabel = (date: Date, range: UsageRange, locale: string): string => {
-  if (range === '30d') return shortMonthDay(date, locale);
-  const time = bucketHourRange(date, range === '7d' ? 4 : 1, locale);
-  return range === '7d' ? `${shortMonthDay(date, locale)} ${time}` : time;
-};
-
 export const dashboardBuckets = (
   range: UsageRange,
   nowMs: number,
   locale: string,
 ): ChartBucket[] => {
   return dashboardBucketFrames(range, nowMs)
-    .map(({ date, key }) => ({ key, label: bucketLabel(date, range, locale), date }));
+    .map(frame => ({ ...frame, label: formatBucketInterval(frame, locale) }));
 };
 
 export const buildTokenChart = ({
@@ -139,13 +121,14 @@ export const buildSearchChart = ({
   const presentGroups = new Set<string>();
   const providers = new Set<string>();
   const bucketKeys = new Set(buckets.map(bucket => bucket.key));
+  const bucketForHour = dashboardBucketMapper(range, 0);
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
   // Not gated on the configured provider: that would erase the history of every
   // provider since switched away from, and hide the panel once search is off.
   for (const record of search.records) {
-    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
+    const bucket = bucketForHour(record.hour);
     if (!bucketKeys.has(bucket)) continue;
     providers.add(record.provider);
     presentGroups.add(record.keyId);
@@ -193,7 +176,7 @@ const aggregateTokenRecords = (
   }
 
   for (const record of records) {
-    const bucket = dashboardBucketKeyForUtcHour(range, record.bucket);
+    const bucket = record.bucket;
     if (!values.has(bucket)) continue;
 
     const group = record.group;

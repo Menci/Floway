@@ -4,6 +4,7 @@ import type { TelemetryBucketGranularity } from './telemetry-bucket.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
+import { parseTelemetryHour } from '@floway-dev/protocols/common';
 
 interface TelemetryOverviewQuery {
   start?: string;
@@ -26,6 +27,14 @@ export const readTelemetryOverviewWindow = (
 ): { type: 'ok'; value: TelemetryOverviewWindow } | { type: 'error'; error: string } => {
   if (!query.start || !query.end) {
     return { type: 'error', error: 'start and end query parameters are required (e.g. 2026-03-09T00)' };
+  }
+  try {
+    if (parseTelemetryHour(query.start) >= parseTelemetryHour(query.end)) {
+      return { type: 'error', error: 'end must be later than start' };
+    }
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return { type: 'error', error: 'start and end must be valid UTC hours (e.g. 2026-03-09T00)' };
   }
   const timezoneOffsetMinutes = Number(query.timezone_offset_minutes ?? '0');
   if (!Number.isFinite(timezoneOffsetMinutes) || timezoneOffsetMinutes < -1440 || timezoneOffsetMinutes > 1440) {
