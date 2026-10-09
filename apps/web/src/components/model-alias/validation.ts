@@ -1,4 +1,4 @@
-import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/browser';
 
 const isTokenCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;

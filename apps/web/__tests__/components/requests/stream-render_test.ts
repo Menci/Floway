@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { collectKindFromTargetApi, streamEndedCleanly } from '../../../src/components/requests/stream-render';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const event = (frame: DumpStreamEvent['frame']): DumpStreamEvent => ({ frame, ts: 1 });
 

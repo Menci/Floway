@@ -1,9 +1,11 @@
 import type { PlaygroundApi, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { parseSSEStream } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import {
+  type AnthropicMessagesStreamEvent,
+  parseSSEStream,
+  type OpenAIChatCompletionsStreamEvent,
+  type OpenAIResponsesStreamEvent,
+} from '@floway-dev/protocols/browser';
 
 export interface PlaygroundRequest {
   api: PlaygroundApi;

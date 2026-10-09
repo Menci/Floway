@@ -1,4 +1,4 @@
-import type { ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/browser';
 
 // The path each endpoint is addressed by, unversioned: the editor labels its
 // checkboxes and its per-path overrides with the public route rather than with

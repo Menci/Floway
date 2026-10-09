@@ -23,6 +23,10 @@
     "./proxy-config": {
       "import": "./src/proxy-config.ts",
       "types": "./src/proxy-config.ts"
+    },
+    "./browser": {
+      "import": "./src/browser.ts",
+      "types": "./src/browser.ts"
     }
   },
   "scripts": {

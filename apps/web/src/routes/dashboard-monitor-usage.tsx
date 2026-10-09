@@ -34,7 +34,7 @@ import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/browser';
 
 const { Button, Tooltip } = fluentComponents;
 

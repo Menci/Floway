@@ -28,7 +28,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
+import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/browser';
 
 const { Button, Field, List, ListItem, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({

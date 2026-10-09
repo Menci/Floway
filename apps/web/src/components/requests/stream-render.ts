@@ -1,28 +1,21 @@
 import { errorMessage } from '../../lib/error-message';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 import {
   collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
-import {
+  type ProtocolFrame,
+  type SseFrame,
   collectGeminiGenerateContentProtocolEventsToResult,
   geminiGenerateContentProtocolFrameToSSEFrame,
   type GeminiGenerateContentStreamEvent,
-} from '@floway-dev/protocols/gemini-generate-content';
-import {
   openaiChatCompletionsProtocolFrameToSSEFrame,
   collectOpenAIChatCompletionsProtocolEventsToResult,
-} from '@floway-dev/protocols/openai-chat-completions';
-import {
   openaiCompletionsProtocolFrameToSSEFrame,
   reassembleOpenAICompletionsEvents,
   type OpenAICompletionsStreamEvent,
-} from '@floway-dev/protocols/openai-completions';
-import {
   collectOpenAIResponsesProtocolEventsToResult,
   openaiResponsesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/openai-responses';
+} from '@floway-dev/protocols/browser';
 
 export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 

@@ -28,7 +28,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
-import { type PiThinkingLevel, piThinkingLevelMap, piThinkingLevels } from '@floway-dev/agent-setup/pi-thinking';
+import { type PiThinkingLevel, piThinkingLevelMap, piThinkingLevels } from '@floway-dev/agent-setup/browser';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex' | 'pi' | 'omp';

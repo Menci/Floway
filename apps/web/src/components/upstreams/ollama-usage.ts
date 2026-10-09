@@ -5,7 +5,7 @@
 import { FIVE_HOUR_WINDOW_MINUTES, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { formatUsd } from '../../lib/decimal-display';
-import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 
