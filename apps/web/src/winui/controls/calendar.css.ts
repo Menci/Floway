@@ -1,132 +1,110 @@
-// CalendarView day items have a 40px floor and 1px margins. The calendar's
-// width derives from those seven columns and Fluent's own 12px body inset.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L243-L253
-// https://github.com/microsoft/fluentui/blob/a51547435d0a5c4a0fb15c2996c3d3efea5b49dd/packages/react-components/react-calendar-compat/library/src/components/CalendarDay/useCalendarDayStyles.styles.ts
 export const calendarCss = `
-.fui-Calendar.fui-Calendar {
+/* DevWinUI keeps the native CalendarView measurements and brushes but centers
+   its header between left/right navigation buttons.
+   https://github.com/ghost1372/DevWinUI/blob/42a6f0e8445e7911ba8e81a88f2215547b425be1/dev/DevWinUI/Themes/Styles/CommonStyles/CalendarViewStyle.xaml#L435-L503
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L243-L321 */
+.floway-calendar {
   --floway-calendar-day-size: 40px;
   --floway-calendar-day-margin: 1px;
-  --floway-calendar-body-inset: 12px;
-  --floway-calendar-grid-width: calc(7 * (var(--floway-calendar-day-size) + 2 * var(--floway-calendar-day-margin)));
-  width: calc(var(--floway-calendar-grid-width) + 2 * var(--floway-calendar-body-inset));
-}
-.fui-CalendarDay.fui-CalendarDay,
-.fui-CalendarDayGrid__table.fui-CalendarDayGrid__table {
-  width: var(--floway-calendar-grid-width);
-}
-.fui-CalendarDayGrid__dayCell.fui-CalendarDayGrid__dayCell {
-  padding: var(--floway-calendar-day-margin);
-  background-color: transparent;
-  font-size: var(--fontSizeBase300);
-}
-/* Rounded chrome derives its circle from half the item size. Selected dates
-   use an accent outline and accent text; today uses a filled accent circle.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/specs/CalendarView/CalendarViewSpec1.md#L348-L352
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L6-L46 */
-.fui-CalendarDayGrid__dayCell.fui-CalendarDayGrid__dayCell.fui-CalendarDayGrid__hoverStyle,
-.fui-CalendarDayGrid__dayCell.fui-CalendarDayGrid__dayCell.fui-CalendarDayGrid__pressedStyle {
-  background-color: transparent;
-}
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton {
-  min-width: var(--floway-calendar-day-size);
-  min-height: var(--floway-calendar-day-size);
-  width: 100%;
-  height: auto;
-  border: 1px solid transparent;
-  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L243-L247 */
-  padding: 0 0 4px 0;
-  border-radius: 50%;
-  background-color: transparent;
+  --floway-calendar-row-size: calc(var(--floway-calendar-day-size) + 2 * var(--floway-calendar-day-margin));
+  --floway-calendar-grid-width: calc(7 * var(--floway-calendar-row-size));
+  box-sizing: border-box;
+  width: calc(var(--floway-calendar-grid-width) + 4px);
+  background-color: var(--winui-solid-background-fill-tertiary);
   color: var(--winui-text-fill-primary);
-  font-size: var(--fontSizeBase300);
+  font-family: var(--fontFamilyBase);
+  font-size: 14px;
+  line-height: normal;
+  border-radius: 4px 0 0 4px;
 }
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:hover {
-  background-color: var(--winui-subtle-fill-secondary);
+.floway-calendar button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
 }
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:active {
-  background-color: var(--winui-subtle-fill-tertiary);
+/* Header and weekday metrics are resource constraints, with natural text
+   lineboxes rather than imported Fluent line heights.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L60-L81 */
+.floway-calendar-header { display: grid; grid-template-columns: auto 1fr auto; }
+.floway-calendar-heading {
+  margin: 6px 3px 7px 7px;
+  padding: 7px 8px 8px;
+  font-weight: 600 !important;
+  border-radius: var(--winui-control-corner-radius);
 }
-.fui-CalendarDayGrid__dayOutsideNavigatedMonth > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton {
-  color: var(--winui-text-fill-secondary);
-}
-.fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton {
-  border-color: var(--winui-accent-fill-default);
-  border-radius: 50%;
-  background-color: transparent;
-  color: var(--winui-accent-text-fill-primary);
-}
-.fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:hover {
-  border-color: var(--winui-accent-fill-secondary);
-  background-color: var(--winui-subtle-fill-secondary);
-}
-.fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:active {
-  border-color: var(--winui-subtle-fill-tertiary);
-  background-color: var(--winui-subtle-fill-tertiary);
-  color: var(--winui-accent-text-fill-tertiary);
-}
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayIsToday {
-  background-color: var(--winui-accent-fill-default);
-  color: var(--winui-text-on-accent-fill-primary);
-}
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayIsToday:hover {
-  background-color: var(--winui-accent-fill-secondary);
-}
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayIsToday:active {
-  background-color: var(--winui-accent-fill-tertiary);
-}
-/* Rounded chrome's selected-today inner border is 1px.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/CalendarViewBaseItemChrome.cpp#L30 */
-.fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayIsToday {
-  box-shadow: inset 0 0 0 1px var(--winui-text-on-accent-fill-primary);
-}
-/* FocusVisualPrimaryThickness=2 and FocusVisualSecondaryThickness=1.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L249-L253 */
-.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton:focus-visible {
-  outline: 2px solid var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
-}
-/* Month and year selectors share CalendarView's item brushes and rounded
-   chrome. Their sizing remains Fluent's four-column picker layout.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/specs/CalendarView/CalendarViewSpec1.md#L348-L352
-   https://github.com/microsoft/fluentui/blob/a51547435d0a5c4a0fb15c2996c3d3efea5b49dd/packages/react-components/react-calendar-compat/library/src/components/CalendarPicker/useCalendarPickerStyles.styles.ts */
-.fui-CalendarPicker.fui-CalendarPicker {
-  width: var(--floway-calendar-grid-width);
-}
-.fui-CalendarPicker__buttonRow.fui-CalendarPicker__buttonRow {
-  display: flex;
-}
-.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton {
-  flex: 1;
-  width: auto;
-  border: 1px solid transparent;
-  border-radius: calc(var(--floway-calendar-day-size) / 2);
-  background-color: transparent;
-  color: var(--winui-text-fill-primary);
-  font-size: var(--fontSizeBase300);
-}
-.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton:hover {
-  background-color: var(--winui-subtle-fill-secondary);
-}
-.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton:active {
-  background-color: var(--winui-subtle-fill-tertiary);
-}
-.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton.fui-CalendarPicker__selected {
-  border-color: var(--winui-accent-fill-default);
-  background-color: transparent;
-  color: var(--winui-accent-text-fill-primary);
-}
-.fui-CalendarPicker__itemButton.fui-CalendarPicker__itemButton.fui-CalendarPicker__current {
-  background-color: var(--winui-accent-fill-default);
-  color: var(--winui-text-on-accent-fill-primary);
-}
+.floway-calendar-navigation { display: grid; place-items: center; padding: 11.5px 12px; border-radius: var(--winui-control-corner-radius); }
+.floway-calendar-navigation > span { font-size: 8px; line-height: normal; }
+.floway-calendar-navigation svg { width: 8px; height: 8px; vertical-align: middle; }
+.floway-calendar-previous { margin: 6px 3px 7px; }
+.floway-calendar-next { margin: 6px 7px 7px 3px; }
+.floway-calendar-heading:hover:enabled, .floway-calendar-navigation:hover:enabled { background-color: var(--winui-subtle-fill-secondary); }
+.floway-calendar-heading:active:enabled, .floway-calendar-navigation:active:enabled { background-color: var(--winui-subtle-fill-tertiary); }
+.floway-calendar-heading:active:enabled { color: var(--winui-text-fill-secondary); }
+.floway-calendar-navigation:hover:enabled, .floway-calendar-navigation:active:enabled { color: var(--winui-control-strong-fill-default); }
+.floway-calendar-heading:disabled, .floway-calendar-navigation:disabled { color: var(--winui-text-fill-disabled); cursor: default; }
+.floway-calendar-navigation:disabled { color: var(--winui-control-strong-fill-disabled); }
+.floway-calendar-top-border { height: 1px; background-color: var(--winui-control-stroke-default); }
+.floway-calendar-views { position: relative; overflow: hidden; }
+.floway-calendar-measure { visibility: hidden; }
+.floway-calendar-month-measure { height: calc(6 * var(--floway-calendar-row-size)); margin: 2px; }
+.floway-calendar-background, .floway-calendar-view { position: absolute; inset: 0; transform-origin: center; }
+.floway-calendar-background { background-color: var(--winui-solid-background-fill-tertiary); }
+.floway-calendar-outgoing { pointer-events: none; }
+.floway-calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin: 2px 2px 0; }
+.floway-calendar-weekdays > span { box-sizing: border-box; justify-self: center; align-self: center; white-space: nowrap; text-align: center; margin: 1px; padding: 12px; font-size: 12px; font-weight: 600; line-height: normal; }
+/* ScrollViewer owns month navigation, not a fade on each row. Its native
+   manipulation API takes bounds and an animate flag rather than a duration.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/CalendarView_Partial.cpp#L1584-L1613 */
+.floway-calendar-scroll { height: calc(6 * var(--floway-calendar-row-size)); margin: 2px; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; scroll-snap-type: y proximity; }
+.floway-calendar-scroll::-webkit-scrollbar { display: none; }
+.floway-calendar-plane { position: relative; }
+.floway-calendar-row { display: grid; position: absolute; left: 0; right: 0; scroll-snap-align: start; }
+.floway-calendar-large-scroll { height: calc(100% - 4px); }
+.floway-calendar-item { box-sizing: border-box; position: relative; display: grid; place-items: center; isolation: isolate; }
+.floway-calendar-item > span { position: relative; margin-top: 3px; }
+.floway-calendar-day { min-width: var(--floway-calendar-day-size); min-height: var(--floway-calendar-day-size); margin: var(--floway-calendar-day-margin); padding: 0 0 4px; }
+/* Brush precedence is today, then selected, then out-of-scope.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L5-L51
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/CalendarViewBaseItemChrome.cpp#L1335-L1621 */
+.floway-calendar-item::before { content: ''; position: absolute; z-index: -1; box-sizing: border-box; border: 1px solid transparent; border-radius: 50%; background-color: transparent; }
+.floway-calendar-day::before { inset: 0; }
+.floway-calendar-item[data-outside] { color: var(--winui-text-fill-secondary); }
+.floway-calendar-item:hover::before { background-color: var(--winui-subtle-fill-secondary); border-color: var(--winui-subtle-fill-secondary); }
+.floway-calendar-item:active::before { background-color: var(--winui-subtle-fill-tertiary); border-color: var(--winui-subtle-fill-tertiary); }
+.floway-calendar-item:active { color: var(--winui-text-fill-secondary); }
+.floway-calendar-item[data-outside]:hover { color: var(--winui-text-fill-primary); }
+.floway-calendar-item[data-outside]:active { color: var(--winui-text-fill-tertiary); }
+.floway-calendar-item[data-selected] { color: var(--winui-accent-text-fill-primary); }
+.floway-calendar-item[data-selected]::before { border-color: var(--winui-accent-fill-default); }
+.floway-calendar-item[data-selected]:hover::before { border-color: var(--winui-accent-fill-secondary); }
+.floway-calendar-item[data-selected]:active { color: var(--winui-accent-text-fill-tertiary); }
+.floway-calendar-item[data-selected]:active::before { border-color: var(--winui-subtle-fill-tertiary); }
+.floway-calendar-item[data-current], .floway-calendar-item[data-current]:hover, .floway-calendar-item[data-current]:active { color: var(--winui-text-on-accent-fill-primary); }
+.floway-calendar-item[data-current]::before { background-color: var(--winui-accent-fill-default); border-color: transparent; }
+.floway-calendar-item[data-current]:hover::before { background-color: var(--winui-accent-fill-secondary); border-color: transparent; }
+.floway-calendar-item[data-current]:active::before { background-color: var(--winui-accent-fill-tertiary); border-color: transparent; }
+.floway-calendar-item[data-current][data-selected]::before { box-shadow: inset 0 0 0 1px var(--winui-text-on-accent-fill-primary); }
+/* Rounded year/decade items reserve 9px on every side. They have a today
+   state, but selection belongs exclusively to CalendarViewDayItem.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/CalendarViewGeneratorHost.cpp#L215-L224
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/CalendarViewGeneratorYearViewHost.cpp#L77-L89 */
+.floway-calendar-large-item { margin: 9px; padding: 0; }
+.floway-calendar-large-item > span { margin: 0; }
+.floway-calendar-large-item::before { width: var(--floway-calendar-item-diameter); aspect-ratio: 1; }
+.floway-calendar-item:disabled { color: var(--winui-text-fill-disabled); cursor: default; }
+.floway-calendar-item:disabled::before { background-color: transparent; border-color: transparent; }
+.floway-calendar-item[data-selected]:disabled { color: var(--winui-accent-text-fill-disabled); }
+.floway-calendar-item[data-selected]:disabled::before { border-color: var(--winui-accent-fill-disabled); }
+.floway-calendar-item[data-current]:disabled { color: var(--winui-text-on-accent-fill-primary); }
+.floway-calendar-item[data-current]:disabled::before { background-color: var(--winui-accent-fill-disabled); border-color: var(--winui-accent-fill-disabled); }
+.floway-calendar button:focus-visible { outline: 2px solid var(--winui-focus-stroke-outer); outline-offset: 1px; box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner); }
+.floway-calendar-heading:focus-visible, .floway-calendar-navigation:focus-visible { outline-offset: 0; box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner); }
 @media (forced-colors: active) {
-  .fui-CalendarDayGrid__daySingleSelected > .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton {
-    border-color: Highlight;
-    color: Highlight;
-  }
-  .fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayButton.fui-CalendarDayGrid__dayIsToday {
-    background-color: Highlight;
-    color: HighlightText;
-  }
+  .floway-calendar-item[data-selected] { color: Highlight; }
+  .floway-calendar-item[data-selected]::before { border-color: Highlight; }
+  .floway-calendar-item[data-current], .floway-calendar-item[data-current]:hover, .floway-calendar-item[data-current]:active { color: HighlightText; }
+  .floway-calendar-item[data-current]::before { background-color: Highlight; }
 }
 `;

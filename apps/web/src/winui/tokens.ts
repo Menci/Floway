@@ -120,6 +120,8 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L228 */
 :root {
   --winui-control-strong-fill-default: rgba(0, 0, 0, 0.447059);
+  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L227 */
+  --winui-control-strong-fill-disabled: rgba(0, 0, 0, 0.317647);
   --winui-control-solid-fill-default: #ffffff;
 }
 
@@ -128,6 +130,8 @@ export const winuiTokenCss = `
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-control-strong-fill-default: rgba(255, 255, 255, 0.545098);
+    /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L23 */
+    --winui-control-strong-fill-disabled: rgba(255, 255, 255, 0.247059);
     --winui-control-solid-fill-default: #454545;
   }
 }

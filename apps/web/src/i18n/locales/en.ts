@@ -8,10 +8,10 @@ const en = {
     },
     common: {
       dateTime: {
-        date: 'Date', time: 'Time', dateFormat: 'YYYY/MM/DD', invalidDate: 'Enter a valid date in YYYY/MM/DD format',
-        today: 'Today', previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
+        date: 'Date', time: 'Time', hour: 'Hour', minute: 'Minute', accept: 'Accept time', previousHour: 'Previous hour', nextHour: 'Next hour',
+        previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
         previousDecade: 'Previous decade', nextDecade: 'Next decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
-        selectedDate: 'Selected date {0}', todayDate: 'Today {0}', week: 'Week {0}', markedDate: 'Marked date',
+        todaySuffix: ', today',
       },
       bodyViewer: {
         options: 'Body options',

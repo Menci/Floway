@@ -51,6 +51,18 @@ patchedDependencies:
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
 
+# Charts imports these runtime packages but omits them from its manifest.
+# Keep resolution independent of whichever dependency happened to be hoisted.
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/charts/react-charts/library/src/components/DeclarativeChart/DeclarativeChart.tsx#L17
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/charts/react-charts/library/src/components/Legends/OverflowMenu.tsx#L5
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/tokens/package.json
+# https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/react-components/react-menu/library/package.json
+packageExtensions:
+  '@fluentui/react-charts@9.3.22':
+    dependencies:
+      '@fluentui/tokens': 1.0.0-alpha.23
+      '@fluentui/react-menu': 9.25.1
+
 # @react-router/dev pulls in a standalone HTTP server we never run — the SPA is
 # served by Workers Static Assets in production and by the Node target in the
 # docker-compose topology.

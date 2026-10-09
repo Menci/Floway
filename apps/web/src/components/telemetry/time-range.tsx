@@ -39,14 +39,12 @@ export function TelemetryTimeRange({
   const applied = dashboardInterval(range, loadedAt);
   const [draft, setDraft] = useState<Interval>(applied);
   const [editing, setEditing] = useState(false);
-  const [error, setError] = useState<'date' | 'interval' | null>(null);
+  const [invalidInterval, setInvalidInterval] = useState(false);
   const [openEndpoint, setOpenEndpoint] = useState<'start' | 'end' | null>(null);
-  const [resetToken, setResetToken] = useState(0);
   const groupRef = useRef<HTMLDivElement>(null);
   const surfaces = useRef(new Map<string, HTMLElement>());
   const draftRef = useRef(draft);
   const originalRef = useRef(applied);
-  const validRef = useRef({ start: true, end: true });
   const editingRef = useRef(false);
 
   const owns = useCallback((target: EventTarget | null) => target instanceof Node && (
@@ -56,7 +54,7 @@ export function TelemetryTimeRange({
     if (editingRef.current) return;
     editingRef.current = true;
     originalRef.current = applied;
-    if (error === null) {
+    if (!invalidInterval) {
       draftRef.current = applied;
       setDraft(applied);
     }
@@ -70,15 +68,11 @@ export function TelemetryTimeRange({
     onEditingChange(false);
     setOpenEndpoint(null);
     const interval = draftRef.current;
-    if (!validRef.current.start || !validRef.current.end) {
-      setError('date');
-      return;
-    }
     if (interval.start >= interval.end) {
-      setError('interval');
+      setInvalidInterval(true);
       return;
     }
-    setError(null);
+    setInvalidInterval(false);
     if (interval.start !== originalRef.current.start || interval.end !== originalRef.current.end) {
       onChange(dashboardRangeFromInterval(interval.start, interval.end, Date.now()));
     } else if (typeof range === 'string') {
@@ -99,12 +93,10 @@ export function TelemetryTimeRange({
     editingRef.current = false;
     setEditing(false);
     onEditingChange(false);
-    setError(null);
+    setInvalidInterval(false);
     setOpenEndpoint(null);
-    validRef.current = { start: true, end: true };
     draftRef.current = applied;
     setDraft(applied);
-    setResetToken(current => current + 1);
   };
   const selectPreset = (next: DashboardRange) => {
     cancel();
@@ -123,9 +115,9 @@ export function TelemetryTimeRange({
   }, []);
   const startSurfaceRef = useCallback((element: HTMLDivElement | null) => registerSurface('start', element), [registerSurface]);
   const endSurfaceRef = useCallback((element: HTMLDivElement | null) => registerSurface('end', element), [registerSurface]);
-  const startListboxRef = useCallback((element: HTMLDivElement | null) => registerSurface('start-listbox', element), [registerSurface]);
-  const endListboxRef = useCallback((element: HTMLDivElement | null) => registerSurface('end-listbox', element), [registerSurface]);
-  const shown = editing || error !== null ? draft : applied;
+  const startTimeSurfaceRef = useCallback((element: HTMLDivElement | null) => registerSurface('start-time', element), [registerSurface]);
+  const endTimeSurfaceRef = useCallback((element: HTMLDivElement | null) => registerSurface('end-time', element), [registerSurface]);
+  const shown = editing || invalidInterval ? draft : applied;
 
   return <div className={styles.root}>
     <div onPointerDownCapture={event => {
@@ -145,7 +137,7 @@ export function TelemetryTimeRange({
           if (document.hasFocus() && !owns(document.activeElement)) finish();
         });
       }}
-      onKeyDownCapture={event => {
+      onKeyDown={event => {
         if (event.key !== 'Escape') return;
         event.preventDefault();
         event.stopPropagation();
@@ -155,12 +147,10 @@ export function TelemetryTimeRange({
     >
       <DateTimePicker
         label={t('dashboard.telemetry.range.start')}
-        listboxRef={startListboxRef}
+        timeSurfaceRef={startTimeSurfaceRef}
         onChange={handleStartChange}
-        onOpenChange={open => { if (open) begin(); setOpenEndpoint(open ? 'start' : null); }}
-        onValidityChange={valid => { validRef.current.start = valid; }}
+        onOpenChange={open => { if (open) begin(); setOpenEndpoint(current => open ? 'start' : current === 'start' ? null : current); }}
         open={openEndpoint === 'start'}
-        resetToken={resetToken}
         stepMs={TELEMETRY_HOUR_MS}
         surfaceRef={startSurfaceRef}
         value={shown.start}
@@ -168,17 +158,15 @@ export function TelemetryTimeRange({
       {' '}{t('dashboard.telemetry.range.to')}{' '}
       <DateTimePicker
         label={t('dashboard.telemetry.range.end')}
-        listboxRef={endListboxRef}
+        timeSurfaceRef={endTimeSurfaceRef}
         onChange={handleEndChange}
-        onOpenChange={open => { if (open) begin(); setOpenEndpoint(open ? 'end' : null); }}
-        onValidityChange={valid => { validRef.current.end = valid; }}
+        onOpenChange={open => { if (open) begin(); setOpenEndpoint(current => open ? 'end' : current === 'end' ? null : current); }}
         open={openEndpoint === 'end'}
-        resetToken={resetToken}
         stepMs={TELEMETRY_HOUR_MS}
         surfaceRef={endSurfaceRef}
         value={shown.end}
       />
     </div>
-    {error !== null && <Text className={styles.error} role="alert" size={200}>{t(error === 'date' ? 'common.dateTime.invalidDate' : 'dashboard.telemetry.range.invalid')}</Text>}
+    {invalidInterval && <Text className={styles.error} role="alert" size={200}>{t('dashboard.telemetry.range.invalid')}</Text>}
   </div>;
 }

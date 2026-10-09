@@ -144,15 +144,13 @@ const listboxRenderer = (freeform: boolean, emptyMessage: string | undefined): L
 // trailing edge and open away from it, or it would grow off the page.
 const CONTENT_WIDTH_LISTBOX_CLASS = '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]';
 
-const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean, emptyMessage: string | undefined, ref?: Ref<HTMLDivElement>) => ({
-  ref,
+const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boolean, emptyMessage: string | undefined) => ({
   children: listboxRenderer(freeform, emptyMessage),
   ...(listWidth === 'content' ? { className: CONTENT_WIDTH_LISTBOX_CLASS } : {}),
 });
 
 interface ListWidthProp {
   listWidth?: 'target' | 'content';
-  listboxRef?: Ref<HTMLDivElement>;
 }
 
 // A caller that filters its own options says here what it wants the empty
@@ -176,7 +174,7 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L216
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L165
 export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
-  ({ className, emptyMessage, expandIcon, listWidth, listboxRef, onOptionSelect, positioning, readOnly, ...props }, ref) => (
+  ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentCombobox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
@@ -184,7 +182,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       input={{ ...slotProps(props.input), readOnly }}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth, props.freeform === true, emptyMessage, listboxRef)}
+      listbox={listboxFor(listWidth, props.freeform === true, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />
@@ -192,14 +190,14 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
 );
 
 export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'appearance' | 'listbox'> & ListWidthProp & EmptyMessageProp & ReadOnlyProp>(
-  ({ className, emptyMessage, expandIcon, listWidth, listboxRef, onOptionSelect, positioning, readOnly, ...props }, ref) => (
+  ({ className, emptyMessage, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentDropdown
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={listboxFor(listWidth, false, emptyMessage, listboxRef)}
+      listbox={listboxFor(listWidth, false, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
       ref={ref}
     />

@@ -6,10 +6,10 @@ const zhHansCN = {
     },
     common: {
       dateTime: {
-        date: '日期', time: '时间', dateFormat: 'YYYY/MM/DD', invalidDate: '请输入 YYYY/MM/DD 格式的有效日期',
-        today: '今天', previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
+        date: '日期', time: '时间', hour: '小时', minute: '分钟', accept: '确认时间', previousHour: '上一小时', nextHour: '下一小时',
+        previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
         previousDecade: '上一个十年', nextDecade: '下一个十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
-        selectedDate: '已选日期 {0}', todayDate: '今天 {0}', week: '第 {0} 周', markedDate: '标记日期',
+        todaySuffix: '，今天',
       },
       bodyViewer: {
         options: '正文选项',

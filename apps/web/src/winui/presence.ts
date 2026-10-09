@@ -17,6 +17,7 @@ import {
   CONTROL_FAST_OUT_SLOW_IN_EASING,
   CONTROL_NORMAL_ANIMATION_MS,
   EXPAND_ANIMATION_MS,
+  FLYOUT_ENTRANCE_OFFSET_PX,
   PANE_SLIDE_EASING,
   PANE_SLIDE_MS,
   PANE_SLIDE_OUT_MS,
@@ -87,6 +88,40 @@ export const createToastPresence = (components: FluentComponents) => components.
   ],
   exit: { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: POPUP_HIDE_MS, easing: 'linear', fill: 'both' },
 });
+
+// Popover's placement variables preserve the positioning engine transform.
+// Only the complete attached flyout enters; its descendants remain static.
+// https://github.com/microsoft/fluentui/blob/a4b871ca80c1f16f35ab4229def4fe02be7f30ea/packages/react-components/react-popover/library/src/components/Popover/PopoverSurfaceMotion.ts#L18-L34
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/FlyoutBase_partial.cpp#L2028-L2050
+export const createFlyoutPresence = (components: FluentComponents) => components.createPresenceComponent({
+  enter: [
+    {
+      keyframes: [{ translate: `calc(var(--fui-positioning-slide-direction-x, 0px) * ${  FLYOUT_ENTRANCE_OFFSET_PX  }) calc(var(--fui-positioning-slide-direction-y, 0px) * ${  FLYOUT_ENTRANCE_OFFSET_PX  })` }, { translate: '0px 0px' }],
+      duration: POPUP_SLIDE_MS,
+      easing: POPUP_SLIDE_EASING,
+      composite: 'accumulate',
+      fill: 'both',
+    },
+    { keyframes: [{ opacity: 0 }, { opacity: 1 }], duration: POPUP_FADE_MS, delay: POPUP_FADE_DELAY_MS, easing: 'linear', fill: 'both' },
+  ],
+  exit: { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: POPUP_HIDE_MS, easing: 'linear', fill: 'both' },
+});
+
+// PickerFlyoutThemeTransition expands a clipping rectangle around the
+// faceplate center. The selector content and highlight stripe never move.
+// Geometry variables are measured after positioning, including viewport shifts.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L580-L672
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/PickerFlyoutThemeTransition_Partial.h#L17-L20
+export const createPickerFlyoutPresence = (components: FluentComponents) => {
+  const clip = (half: string) => `inset(calc(50% + var(--floway-picker-center-offset) - var(${  half  })) 0px calc(50% - var(--floway-picker-center-offset) - var(${  half  })) 0px)`;
+  return components.createPresenceComponent({
+    enter: { keyframes: [{ clipPath: clip('--floway-picker-open-half') }, { clipPath: clip('--floway-picker-full-half') }], duration: CONTROL_NORMAL_ANIMATION_MS, easing: CONTROL_FAST_OUT_SLOW_IN_EASING, fill: 'both' },
+    exit: [
+      { keyframes: [{ clipPath: clip('--floway-picker-full-half') }, { clipPath: clip('--floway-picker-close-half') }], duration: CONTROL_FAST_ANIMATION_MS, easing: CONTROL_FAST_OUT_SLOW_IN_EASING, fill: 'both' },
+      { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: CONTROL_FASTER_ANIMATION_MS, delay: 84, easing: 'linear', fill: 'both' },
+    ],
+  });
+};
 
 export const withWinuiMotion = (components: FluentComponents): FluentComponents => {
   // ContentDialog settles down from 1.05 rather than growing in from below 1,
@@ -211,6 +246,11 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
     Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
+    Popover: runMotion(components.Popover, 'surfaceMotion', createFlyoutPresence(components)),
+    PopoverSurface: wrapFluent(components.PopoverSurface, props => {
+      const open = components.usePopoverContext_unstable(context => context.open);
+      return open ? props : { ...props, 'aria-hidden': true, inert: true };
+    }),
     NavCategoryItem: runMotion(components.NavCategoryItem, 'expandIconMotion', ChevronTurnMotion),
     OverlayDrawer: runMotion(components.OverlayDrawer, 'surfaceMotion', DrawerSurfaceMotion),
     // Fluent runs the indeterminate ProgressBar from the Web Animations API

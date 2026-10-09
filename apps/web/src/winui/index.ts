@@ -5,6 +5,7 @@ import { calendarCss } from './controls/calendar.css';
 import { cardCss } from './controls/card.css';
 import { choiceCss } from './controls/choice.css';
 import { colorPickerCss } from './controls/color-picker.css';
+import { dateTimePickerCss } from './controls/date-time-picker.css';
 import { dialogCss } from './controls/dialog.css';
 import { drawerCss } from './controls/drawer.css';
 import { fieldCss } from './controls/field.css';
@@ -39,6 +40,7 @@ export const winuiCss = [
   buttonCss,
   cardCss,
   calendarCss,
+  dateTimePickerCss,
   choiceCss,
   colorPickerCss,
   dialogCss,
