@@ -191,13 +191,13 @@ function Restore-SetupOmpFiles {
   Restore-SetupManagedFile -Existed $script:OmpManifestExisted -Backup $script:OmpManifestBackup -Path $script:OmpManifestPath -OriginalLabel 'plugin manifest' -CreatedLabel 'oh-my-pi plugin manifest'
   Restore-SetupManagedFile -Existed $script:OmpConfigExisted -Backup $script:OmpConfigBackup -Path $script:OmpConfigPath -OriginalLabel 'config file' -CreatedLabel 'oh-my-pi config file'
 
-  if ($script:OmpPluginLinkExisted -and $script:OmpPluginLinkAttempted -and (-not (Get-SetupOmpPluginLinkItem))) {
-    try {
+  try {
+    if ($script:OmpPluginLinkExisted -and $script:OmpPluginLinkAttempted -and (-not (Get-SetupOmpPluginLinkItem))) {
       $linkType = if (Test-SetupIsWindows) { 'Junction' } else { 'SymbolicLink' }
       [void](New-Item -ItemType $linkType -Path $script:OmpPluginLinkPath -Target $script:OmpPluginDir)
-    } catch {
-      Write-SetupWarn "could not recreate the existing @floway-dev/omp plugin link at $script:OmpPluginLinkPath — re-run Agent Setup after restoring the original files."
     }
+  } catch {
+    Write-SetupWarn "could not restore the existing @floway-dev/omp plugin link at $script:OmpPluginLinkPath — re-run Agent Setup after restoring the original files."
   }
   Restore-SetupManagedFile -Existed $script:OmpPluginSettingsExisted -Backup $script:OmpPluginSettingsBackup -Path $script:OmpPluginSettingsPath -OriginalLabel 'plugin settings file' -CreatedLabel 'oh-my-pi plugin settings file'
 }
@@ -287,7 +287,7 @@ function Stage-SetupOmpPluginSettings {
 }
 
 function Stage-SetupOmpExtension {
-  if (Test-Path -LiteralPath $script:OmpExtensionPath) {
+  if ((Test-Path -LiteralPath $script:OmpExtensionPath) -or (Test-Path -LiteralPath $script:OmpManifestPath)) {
     $first = [System.IO.File]::ReadLines($script:OmpExtensionPath) | Select-Object -First 1
     if ($first -ne '// Managed by Floway Agent Setup.') {
       Stop-Setup 'existing unmanaged Floway extension found; rename it before running Agent Setup.'

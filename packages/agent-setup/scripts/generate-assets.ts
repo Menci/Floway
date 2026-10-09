@@ -62,11 +62,11 @@ const scriptSources = {
         name: 'SETUP_POWERSHELL_COMMON_PROCESS',
         file: 'installers/powershell/common/process.ps1',
         start: '# Inherit stdout/stderr',
-        end: '# Run a child process with captured output',
+        end: '# Captured commands are noninteractive',
       },
       { name: 'SETUP_POWERSHELL_COMMON_CLI', file: 'installers/powershell/common/cli.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', start: '# Rollback retains', append: '\n' },
-      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Run a child process with captured output' },
+      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Captured commands are noninteractive' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', start: '# --- run' },
     ],
     agents: [
