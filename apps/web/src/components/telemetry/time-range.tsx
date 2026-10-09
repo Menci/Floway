@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import {
-  dashboardGranularity,
   dashboardInterval,
   dashboardRangeFromInterval,
   type DashboardRange,
@@ -16,8 +15,7 @@ const { Text, makeStyles, tokens } = fluentComponents;
 const useStyles = makeStyles({
   root: { display: 'grid', justifyItems: 'end', rowGap: tokens.spacingVerticalXS, minWidth: '0' },
   editor: {
-    display: 'flex', alignItems: 'center', justifyContent: 'end', flexWrap: 'wrap',
-    columnGap: tokens.spacingHorizontalS, rowGap: tokens.spacingVerticalXS,
+    textAlign: 'end',
     fontSize: tokens.fontSizeBase200, lineHeight: tokens.lineHeightBase300,
     color: 'var(--winui-text-fill-secondary)',
   },
@@ -167,7 +165,7 @@ export function TelemetryTimeRange({
         surfaceRef={startSurfaceRef}
         value={shown.start}
       />
-      <span>{t('dashboard.telemetry.range.to')}</span>
+      {' '}{t('dashboard.telemetry.range.to')}{' '}
       <DateTimePicker
         label={t('dashboard.telemetry.range.end')}
         listboxRef={endListboxRef}
@@ -180,7 +178,6 @@ export function TelemetryTimeRange({
         surfaceRef={endSurfaceRef}
         value={shown.end}
       />
-      <Text size={200} className="text-fui-fg2">{t(`dashboard.telemetry.range.aggregation.${dashboardGranularity(range, loadedAt)}`)}</Text>
     </div>
     {error !== null && <Text className={styles.error} role="alert" size={200}>{t(error === 'date' ? 'common.dateTime.invalidDate' : 'dashboard.telemetry.range.invalid')}</Text>}
   </div>;

@@ -8,7 +8,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
 
-const { Button, Calendar, Field, Option, Popover, PopoverSurface, PopoverTrigger, makeStyles, tokens } = fluentComponents;
+const { Link, Calendar, Field, Option, Popover, PopoverSurface, PopoverTrigger, makeStyles, tokens } = fluentComponents;
 // CalendarView uses the solid up/down carets EDDB and EDDC.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CalendarView_themeresources.xaml#L682-L683
 const calendarNavigationIcons = { upNavigation: <CaretUp12Filled />, downNavigation: <CaretDown12Filled /> };
@@ -19,17 +19,7 @@ const dateText = (value: number) => {
 };
 
 const useStyles = makeStyles({
-  // An inline trigger takes the text leading; the popup retains full-size controls.
-  trigger: {
-    minHeight: `${tokens.lineHeightBase300} !important`,
-    minWidth: '0 !important',
-    padding: '0 !important',
-    fontWeight: tokens.fontWeightRegular,
-    fontSize: tokens.fontSizeBase200,
-    lineHeight: tokens.lineHeightBase300,
-    whiteSpace: 'nowrap',
-    color: 'var(--winui-text-fill-secondary)',
-  },
+  trigger: { fontSize: 'inherit', lineHeight: 'inherit', whiteSpace: 'nowrap' },
   surface: { maxWidth: 'calc(100vw - 2 * var(--spacingHorizontalL))' },
   body: {
     display: 'flex', flexWrap: 'wrap', columnGap: tokens.spacingHorizontalL,
@@ -118,7 +108,7 @@ export function DateTimePicker({
   const labelText = `${date.toLocaleDateString(locale, locale.startsWith('zh') ? { year: 'numeric', month: '2-digit', day: '2-digit' } : { year: 'numeric', month: 'short', day: 'numeric' })} ${timeFormatter.format(date)}`;
   return <Popover open={open} onOpenChange={(_, data) => onOpenChange(data.open)} positioning={{ position: 'below', align: 'end', fallbackPositions: ['above'] }}>
     <PopoverTrigger disableButtonEnhancement>
-      <Button appearance="transparent" aria-label={label} className={styles.trigger}>{labelText}</Button>
+      <Link aria-label={label} className={styles.trigger}>{labelText}</Link>
     </PopoverTrigger>
     <PopoverSurface aria-label={label} className={styles.surface} ref={surfaceRef}>
       <div className={styles.body}>

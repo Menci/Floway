@@ -1124,7 +1124,6 @@ const en = {
         range: {
           to: 'to', start: 'Start time', end: 'End time', oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days',
           invalid: 'End time must be later than start time',
-          aggregation: { hour: 'Hourly', '4h': 'Every 4 hours', '8h': 'Every 8 hours', day: 'Daily', week: 'Weekly', month: 'Monthly', year: 'Yearly' },
         },
       },
       usage: {
