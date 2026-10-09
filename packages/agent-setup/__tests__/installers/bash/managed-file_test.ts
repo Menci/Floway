@@ -20,7 +20,7 @@ test('Bash connection staging propagates JSON writer failures', () => {
       `SETUP_TMPDIR=${quote(directory)};`,
       'test_jq() { return 19; };',
       helper,
-      `_stage_provider_connections ${quote(join(directory, 'missing.json'))} ${quote(stage)} work true; exit $?;`,
+      `_stage_provider_connections ${quote(join(directory, 'missing.json'))} ${quote(stage)} work; exit $?;`,
     ].join('\n');
     const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
     expect(result.status, result.stdout + result.stderr).not.toBe(0);

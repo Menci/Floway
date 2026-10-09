@@ -62,9 +62,8 @@ function Remove-SetupOlderBackups {
 }
 
 function Stage-SetupProviderConnections {
-  param([string]$ExistingPath, [string]$StagePath, [string]$Provider, [bool]$IncludeKey)
+  param([string]$ExistingPath, [string]$StagePath, [string]$Provider)
   $connection = [PSCustomObject]@{ provider = $Provider; endpoint = $SetupEndpoint.TrimEnd('/') }
-  if ($IncludeKey) { $connection | Add-Member -NotePropertyName apiKey -NotePropertyValue $SetupApiKey }
   try {
     $configuration = if (Test-Path -LiteralPath $ExistingPath) {
       [System.IO.File]::ReadAllText($ExistingPath) | ConvertFrom-Json -ErrorAction Stop

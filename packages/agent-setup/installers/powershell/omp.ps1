@@ -42,15 +42,6 @@ function Test-SetupOmpVersion {
   return $core -gt [Version]'18.8.4' -or ($core -eq [Version]'18.8.4' -and $Matches[2] -notlike '-*')
 }
 
-function Get-SetupOmpAgentDir {
-  param([string]$Exe)
-  $proc = Invoke-SetupProcess -Exe $Exe -Arguments @('config', 'path') -TimeoutSeconds (Get-SetupTimeoutSeconds 10)
-  if ($proc.ExitCode -ne 0) { Stop-Setup ('`omp config path` failed. ' + $proc.Output) }
-  $path = $proc.Output.Trim()
-  if ([string]::IsNullOrEmpty($path)) { Stop-Setup '`omp config path` returned an empty path.' }
-  return $path
-}
-
 function Get-SetupOmpNativePaths {
   param([string]$Exe)
   $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('floway-omp-' + [System.Guid]::NewGuid().ToString('N'))
@@ -76,12 +67,12 @@ export default pi => {
     }
     [System.IO.File]::WriteAllText($probePath, $probe, (New-Object System.Text.UTF8Encoding($false)))
     $env:FLOWAY_SETUP_PATHS_FILE = $pathsFile
-    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('--mode', 'rpc', '--no-ui', '--no-session', '--no-tools', '--no-lsp', '--no-skills', '--no-rules', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30) -CloseInput
+    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('--mode', 'rpc', '--no-ui', '--no-session', '--no-tools', '--no-lsp', '--no-skills', '--no-rules', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
     if ($probeResult.ExitCode -ne 0) { Stop-Setup ('`omp` path probe failed. ' + $probeResult.Output) }
     if (-not (Test-Path -LiteralPath $pathsFile -PathType Leaf)) { Stop-Setup ('`omp` path probe did not write its result. ' + $probeResult.Output) }
     $paths = [System.IO.File]::ReadAllText($pathsFile) | ConvertFrom-Json -ErrorAction Stop
-    if ($paths.pluginsDir -isnot [string] -or [string]::IsNullOrEmpty($paths.pluginsDir)) {
-      Stop-Setup 'the oh-my-pi path probe returned an invalid plugins directory.'
+    if ($paths.agentDir -isnot [string] -or [string]::IsNullOrEmpty($paths.agentDir) -or $paths.pluginsDir -isnot [string] -or [string]::IsNullOrEmpty($paths.pluginsDir)) {
+      Stop-Setup 'the oh-my-pi path probe returned invalid native directories.'
     }
     return $paths
   } finally {
@@ -261,15 +252,6 @@ function Read-SetupYamlDocument {
   }
 }
 
-function Test-SetupOmpPluginSource {
-  if (Test-Path -LiteralPath $script:OmpExtensionPath) {
-    $first = [System.IO.File]::ReadLines($script:OmpExtensionPath) | Select-Object -First 1
-    if ($first -ne '// Managed by Floway Agent Setup.') {
-      Stop-Setup 'existing unmanaged Floway extension found; rename it before running Agent Setup.'
-    }
-  }
-}
-
 function Stage-SetupOmpPluginSettings {
   try {
     $configuration = if (Test-Path -LiteralPath $script:OmpPluginSettingsPath) {
@@ -279,9 +261,6 @@ function Stage-SetupOmpPluginSettings {
     } else { [PSCustomObject]@{} }
   } catch {
     throw [System.Exception]::new('could not read oh-my-pi plugin settings', $_.Exception)
-  }
-  if ($null -eq $configuration -or $configuration -is [array] -or $configuration -isnot [System.Management.Automation.PSCustomObject]) {
-    Stop-Setup 'the oh-my-pi plugin settings root must be a JSON object.'
   }
   [void](Get-SetupOmpJsonObject -Parent $configuration -Name 'plugins')
   $settings = Get-SetupOmpJsonObject -Parent $configuration -Name 'settings'
@@ -308,7 +287,12 @@ function Stage-SetupOmpPluginSettings {
 }
 
 function Stage-SetupOmpExtension {
-  Test-SetupOmpPluginSource
+  if (Test-Path -LiteralPath $script:OmpExtensionPath) {
+    $first = [System.IO.File]::ReadLines($script:OmpExtensionPath) | Select-Object -First 1
+    if ($first -ne '// Managed by Floway Agent Setup.') {
+      Stop-Setup 'existing unmanaged Floway extension found; rename it before running Agent Setup.'
+    }
+  }
   $script:OmpExtensionStage = "$($script:OmpExtensionPath).floway-stage.$PID"
   [System.IO.File]::Create($script:OmpExtensionStage).Dispose()
   Protect-SetupFile $script:OmpExtensionStage
@@ -582,9 +566,9 @@ function Set-SetupAgent {
 
   Write-SetupAgentNotice 'Configuring' 'oh-my-pi'
   $script:OmpExe = $exe
-  $script:OmpAgentDir = Get-SetupOmpAgentDir -Exe $exe
   $paths = Get-SetupOmpNativePaths -Exe $exe
-  $script:OmpPluginsDir = [string]$paths.pluginsDir
+  $script:OmpAgentDir = $paths.agentDir
+  $script:OmpPluginsDir = $paths.pluginsDir
   [void][System.IO.Directory]::CreateDirectory($script:OmpAgentDir)
   [void][System.IO.Directory]::CreateDirectory($script:OmpPluginsDir)
 
