@@ -6,7 +6,7 @@
 // gateway never renders its own public origin: the dashboard injects it into
 // the executing shell, and the fixed installer body reads it from there.
 
-import type { AgentSetupConfiguration } from './configuration.ts';
+import { type AgentSetupConfiguration, resolveAgentSetupProvider } from './configuration.ts';
 
 interface RenderPrefixBase {
   apiKey: string;
@@ -77,7 +77,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
   } else {
     assignments.push([input.agent === 'pi' ? 'SETUP_PI_MODEL' : 'SETUP_OMP_MODEL', shellOptional(configuration[input.agent].model)]);
     assignments.push(['SETUP_EXTENSION_PATH', input.extensionPath]);
-    assignments.push([input.agent === 'pi' ? 'SETUP_PI_PROVIDER' : 'SETUP_OMP_PROVIDER', configuration[input.agent].provider]);
+    assignments.push([input.agent === 'pi' ? 'SETUP_PI_PROVIDER' : 'SETUP_OMP_PROVIDER', resolveAgentSetupProvider(configuration[input.agent].provider)]);
     const retry = configuration[input.agent].retry;
     assignments.push([input.agent === 'pi' ? 'SETUP_PI_RETRY_ENABLED' : 'SETUP_OMP_RETRY_ENABLED', retry.enabled === null ? '' : retry.enabled ? 'true' : 'false']);
     assignments.push([input.agent === 'pi' ? 'SETUP_PI_MAX_RETRIES' : 'SETUP_OMP_MAX_RETRIES', shellOptionalNumber(retry.maxRetries)]);
@@ -131,7 +131,7 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
   } else {
     assignments.push([input.agent === 'pi' ? '$SetupPiModel' : '$SetupOmpModel', powerShellOptional(configuration[input.agent].model)]);
     assignments.push(['$SetupExtensionPath', powerShellLiteral(input.extensionPath)]);
-    assignments.push([input.agent === 'pi' ? '$SetupPiProvider' : '$SetupOmpProvider', powerShellLiteral(configuration[input.agent].provider)]);
+    assignments.push([input.agent === 'pi' ? '$SetupPiProvider' : '$SetupOmpProvider', powerShellLiteral(resolveAgentSetupProvider(configuration[input.agent].provider))]);
     const retry = configuration[input.agent].retry;
     assignments.push([input.agent === 'pi' ? '$SetupPiRetryEnabled' : '$SetupOmpRetryEnabled', retry.enabled === null ? '$null' : powerShellBool(retry.enabled)]);
     assignments.push([input.agent === 'pi' ? '$SetupPiMaxRetries' : '$SetupOmpMaxRetries', powerShellOptionalNumber(retry.maxRetries)]);

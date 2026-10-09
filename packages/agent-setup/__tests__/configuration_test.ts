@@ -139,8 +139,8 @@ describe('defaultAgentSetupConfiguration', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
-      pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
-      omp: { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } },
+      pi: { model: null, provider: '', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+      omp: { model: null, provider: '', retry: { enabled: null, maxRetries: null } },
     });
   });
 
@@ -160,8 +160,8 @@ test('requires OMP preferences and validates its nullable opaque model', () => {
 
 test('validates independent Pi and OMP provider names', () => {
   for (const agent of ['pi', 'omp'] as const) {
-    for (const provider of ['personal', 'work.api-2', 'a'.repeat(64)]) expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, [agent]: { ...fullConfiguration[agent], model: null, provider } }).success).toBe(true);
-    for (const provider of ['', 'UPPER', '../escape', 'with space', 'a'.repeat(65)]) expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, [agent]: { ...fullConfiguration[agent], model: null, provider } }).success).toBe(false);
+    for (const provider of ['', 'personal', 'work.api-2', 'a'.repeat(64)]) expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, [agent]: { ...fullConfiguration[agent], model: null, provider } }).success).toBe(true);
+    for (const provider of ['UPPER', '../escape', 'with space', 'a'.repeat(65)]) expect(agentSetupConfigurationSchema.safeParse({ ...fullConfiguration, [agent]: { ...fullConfiguration[agent], model: null, provider } }).success).toBe(false);
   }
 });
 

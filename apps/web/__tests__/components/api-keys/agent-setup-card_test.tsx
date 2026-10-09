@@ -24,8 +24,8 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
-  pi: { provider: 'floway', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
-  omp: { provider: 'floway', model: null, retry: { enabled: null, maxRetries: null } },
+  pi: { provider: '', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { provider: '', model: null, retry: { enabled: null, maxRetries: null } },
 });
 
 const lease = (apiKeyId: string): AgentSetupLease => ({
@@ -112,6 +112,8 @@ describe('Agent Setup card fields', () => {
   it('retains distinct provider names when switching agent tabs', () => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).value).toBe('');
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).placeholder).toBe('floway');
     fireEvent.change(screen.getByRole('textbox', { name: 'Provider ID' }), { target: { value: 'floway-home' } });
     act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
     fireEvent.change(screen.getByRole('textbox', { name: 'Provider ID' }), { target: { value: 'floway-work' } });
@@ -130,14 +132,19 @@ describe('Agent Setup card fields', () => {
     expect(screen.queryByRole('option', { name: 'medium' })).toBeNull();
     fireEvent.click(screen.getByRole('option', { name: 'high' }));
     expect(screen.getByRole('combobox', { name: 'Default thinking level' }).textContent).toContain('high');
-    fireEvent.click(screen.getByRole('combobox', { name: 'Automatic retries' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Disabled' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum retries' }), { target: { value: '0' } });
-    expect(screen.getByRole('combobox', { name: 'Automatic retries' }).textContent).toContain('Disabled');
+    expect(screen.queryByRole('combobox', { name: 'Automatic retries' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Agent-wide settings' })).toBeNull();
     expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('0');
     act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
     expect(screen.queryByRole('combobox', { name: 'Default thinking level' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Automatic retries' }).textContent).toContain('Keep existing setting');
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum retries' }), { target: { value: '4' } });
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('4');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum retries' }), { target: { value: '' } });
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('');
+    act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('0');
   });
 
   it('keeps the configuration on screen while another key is being leased', () => {

@@ -218,32 +218,27 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     const patchRetry = (update: (current: typeof connection.retry) => typeof connection.retry) => onChange(current => ({
       ...current, [agent]: { ...current[agent], retry: update(current[agent].retry) },
     }));
-    return <div className="grid gap-3">
-      <div className={FIELD_GRID_CLASS}>
-        <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerHint')) }}>
-          <Input value={connection.provider} maxLength={64} onChange={event => patchConnection({ provider: event.target.value })} />
-        </Field>
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} info={t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piModelHint' : 'dashboard.apiKeys.agentSetup.ompModelHint')} models={models} family={agent} picker="default" value={connection.model} onChange={model => patchConnection({ model })} />
-      </div>
-      <section className={SECTION_STACK_CLASS}>
-        <SectionHeader level={4} title={t('dashboard.apiKeys.agentSetup.globalSettings')} info={t('dashboard.apiKeys.agentSetup.globalSettingsHint')} />
-        {agent === 'pi' && <Field
-          label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.defaultThinkingLevel'), thinking?.supported === false ? t('dashboard.apiKeys.agentSetup.unsupportedThinking') : t('dashboard.apiKeys.agentSetup.defaultThinkingHint')) }}
+    return <div className={FIELD_GRID_CLASS}>
+      <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerHint')) }}>
+        <Input placeholder="floway" value={connection.provider} maxLength={64} onChange={event => patchConnection({ provider: event.target.value })} />
+      </Field>
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} info={t(agent === 'pi' ? 'dashboard.apiKeys.agentSetup.piModelHint' : 'dashboard.apiKeys.agentSetup.ompModelHint')} models={models} family={agent} picker="default" value={connection.model} onChange={model => patchConnection({ model })} />
+      {agent === 'pi' && <Field
+        label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.defaultThinkingLevel'), thinking?.supported === false ? t('dashboard.apiKeys.agentSetup.unsupportedThinking') : t('dashboard.apiKeys.agentSetup.defaultThinkingHint')) }}
+      >
+        <Dropdown
+          disabled={thinking?.supported === false}
+          selectedOptions={[configuration.pi.thinkingLevel ?? MODEL_DEFAULT]}
+          value={configuration.pi.thinkingLevel ?? t('dashboard.apiKeys.agentSetup.keepExisting')}
+          onOptionSelect={(_, data) => {
+            patchPi({ thinkingLevel: data.optionValue === MODEL_DEFAULT ? null : data.optionValue as PiThinkingLevel });
+          }}
         >
-          <Dropdown
-            disabled={thinking?.supported === false}
-            selectedOptions={[configuration.pi.thinkingLevel ?? MODEL_DEFAULT]}
-            value={configuration.pi.thinkingLevel ?? t('dashboard.apiKeys.agentSetup.keepExisting')}
-            onOptionSelect={(_, data) => {
-              patchPi({ thinkingLevel: data.optionValue === MODEL_DEFAULT ? null : data.optionValue as PiThinkingLevel });
-            }}
-          >
-            <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>
-            {levels.map(level => <Option key={level} value={level}>{level}</Option>)}
-          </Dropdown>
-        </Field>}
-        <AgentRetryFields retry={connection.retry} onChange={patchRetry} />
-      </section>
+          <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>
+          {levels.map(level => <Option key={level} value={level}>{level}</Option>)}
+        </Dropdown>
+      </Field>}
+      <AgentRetryField retry={connection.retry} onChange={patchRetry} />
     </div>;
   }
 
@@ -332,34 +327,17 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   </div>;
 }
 
-function AgentRetryFields({ retry, onChange }: {
+function AgentRetryField({ retry, onChange }: {
   retry: AgentSetupConfiguration['pi']['retry'];
   onChange: (update: (current: AgentSetupConfiguration['pi']['retry']) => AgentSetupConfiguration['pi']['retry']) => void;
 }) {
   const { t } = useTranslation();
-  const enabledValue = retry.enabled === null ? MODEL_DEFAULT : retry.enabled ? 'enabled' : 'disabled';
-  return <div className={FIELD_GRID_CLASS}>
-    <Field label={t('dashboard.apiKeys.agentSetup.automaticRetry')}>
-      <Dropdown
-        selectedOptions={[enabledValue]}
-        value={t(retry.enabled === null ? 'dashboard.apiKeys.agentSetup.keepExisting' : retry.enabled ? 'dashboard.apiKeys.agentSetup.retryEnabled' : 'dashboard.apiKeys.agentSetup.retryDisabled')}
-        onOptionSelect={(_, data) => {
-          const enabled = data.optionValue === MODEL_DEFAULT ? null : data.optionValue === 'enabled';
-          onChange(current => ({ ...current, enabled }));
-        }}
-      >
-        <Option value={MODEL_DEFAULT}>{t('dashboard.apiKeys.agentSetup.keepExisting')}</Option>
-        <Option value="enabled">{t('dashboard.apiKeys.agentSetup.retryEnabled')}</Option>
-        <Option value="disabled">{t('dashboard.apiKeys.agentSetup.retryDisabled')}</Option>
-      </Dropdown>
-    </Field>
-    <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t('dashboard.apiKeys.agentSetup.maxRetriesHint')) }}>
-      <Input type="number" min={0} step={1} value={retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
-        const maxRetries = event.target.value === '' ? null : Number(event.target.value);
-        onChange(current => ({ ...current, maxRetries }));
-      }} />
-    </Field>
-  </div>;
+  return <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.maxRetries'), t('dashboard.apiKeys.agentSetup.maxRetriesHint')) }}>
+    <Input type="number" min={0} step={1} value={retry.enabled === false ? '0' : retry.maxRetries?.toString() ?? ''} placeholder={t('dashboard.apiKeys.agentSetup.keepExisting')} onChange={event => {
+      const maxRetries = event.target.value === '' ? null : Number(event.target.value);
+      onChange(() => ({ enabled: maxRetries === null ? null : maxRetries !== 0, maxRetries }));
+    }} />
+  </Field>;
 }
 
 function ModelSelect({ family, info, label, models, onChange, picker, value }: {

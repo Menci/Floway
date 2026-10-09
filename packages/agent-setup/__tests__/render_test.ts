@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
+import { renderAgentExtension } from '../src/render-extension.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 
 const fullConfiguration: AgentSetupConfiguration = {
@@ -283,4 +284,14 @@ test('renders explicit native Pi thinking and retry values while retaining zero 
   expect(renderPowerShellPrefix({ ...input, agent: 'pi' })).toContain('$SetupPiMaxRetries = 0');
   expect(renderShellPrefix({ ...input, agent: 'omp' })).toContain("SETUP_OMP_RETRY_ENABLED='true'");
   expect(renderPowerShellPrefix({ ...input, agent: 'omp' })).toContain('$SetupOmpMaxRetries = 8');
+});
+
+test('blank provider IDs resolve consistently in scripts and extensions', () => {
+  for (const agent of ['pi', 'omp'] as const) {
+    const configuration = { ...fullConfiguration, [agent]: { ...fullConfiguration[agent], provider: '' } };
+    const input = { agent, extensionPath: '/extension.js', apiKey: 'key', apiKeyName: 'key', configuration };
+    expect(renderShellPrefix(input)).toContain(`SETUP_${agent.toUpperCase()}_PROVIDER='floway'`);
+    expect(renderPowerShellPrefix(input)).toContain(`$Setup${agent === 'pi' ? 'Pi' : 'Omp'}Provider = 'floway'`);
+    expect(renderAgentExtension({ agent, provider: '', endpoint: 'https://gateway.example', apiKey: 'key' })).toContain('"provider":"floway"');
+  }
 });

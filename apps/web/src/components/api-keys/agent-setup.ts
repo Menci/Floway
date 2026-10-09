@@ -29,8 +29,8 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
-  pi: { provider: 'floway', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
-  omp: { provider: 'floway', model: null, retry: { enabled: null, maxRetries: null } },
+  pi: { provider: '', model: null, thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { provider: '', model: null, retry: { enabled: null, maxRetries: null } },
 });
 
 export const cloneAgentSetupConfiguration = (

@@ -22,8 +22,8 @@ test('the extension migration adds both clients and preserves existing preferenc
         disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
     };
-    const pi = { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } };
-    const omp = { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } };
+    const pi = { model: null, provider: '', thinkingLevel: null, retry: { enabled: null, maxRetries: null } };
+    const omp = { model: null, provider: '', retry: { enabled: null, maxRetries: null } };
     const defaults = { ...preferences, pi, omp };
     const fixtures = {
       defaults: preferences,
