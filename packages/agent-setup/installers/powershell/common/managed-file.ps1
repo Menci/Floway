@@ -63,17 +63,19 @@ function Remove-SetupOlderBackups {
 
 function Stage-SetupProviderConnections {
   param([string]$ExistingPath, [string]$StagePath, [string]$Provider, [bool]$IncludeKey)
-  $configuration = [PSCustomObject]@{ connections = @() }
-  if (Test-Path -LiteralPath $ExistingPath) {
-    try {
-      $configuration = [System.IO.File]::ReadAllText($ExistingPath) | ConvertFrom-Json -ErrorAction Stop
-    } catch {
-      Stop-Setup 'could not parse the Floway connection configuration'
-    }
-  }
   $connection = [PSCustomObject]@{ provider = $Provider; endpoint = $SetupEndpoint.TrimEnd('/') }
   if ($IncludeKey) { $connection | Add-Member -NotePropertyName apiKey -NotePropertyValue $SetupApiKey }
-  $configuration.connections = @($configuration.connections | Where-Object { $_.provider -cne $Provider }) + $connection
+  try {
+    $configuration = if (Test-Path -LiteralPath $ExistingPath) {
+      [System.IO.File]::ReadAllText($ExistingPath) | ConvertFrom-Json -ErrorAction Stop
+    } else {
+      [PSCustomObject]@{ connections = @() }
+    }
+    [System.Collections.IList]$connections = $configuration.connections
+    $configuration.connections = @($connections.GetEnumerator() | Where-Object { $_.provider -cne $Provider }) + $connection
+  } catch {
+    throw [System.Exception]::new('could not read the Floway connection configuration', $_.Exception)
+  }
   [System.IO.File]::Create($StagePath).Dispose()
   Protect-SetupFile $StagePath
   [System.IO.File]::WriteAllText($StagePath, (ConvertTo-Json -InputObject $configuration -Depth 100) + "`n", (New-Object Text.UTF8Encoding($false)))

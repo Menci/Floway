@@ -39,7 +39,7 @@ _stage_provider_connections() {
   chmod 600 "$stage" || return 1
   FLOWAY_CONNECTION_KEY="$SETUP_API_KEY" "$JQ" -en --rawfile old "$old" --arg provider "$provider" --arg endpoint "${SETUP_ENDPOINT%/}" --argjson includeKey "$include_key" '
     ($old | if length == 0 then {connections: []} else fromjson end)
-    | .connections = ((.connections | map(select(.provider != $provider))) +
+    | .connections = ((.connections | arrays | map(select(.provider != $provider))) +
       [{provider: $provider, endpoint: $endpoint} + (if $includeKey then {apiKey: env.FLOWAY_CONNECTION_KEY} else {} end)])
   ' > "$stage" 2> "$SETUP_TMPDIR/provider-parse.err" || {
     out_error 'could not update the Floway connection configuration'
