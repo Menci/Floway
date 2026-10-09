@@ -4844,26 +4844,19 @@ for (const agent of ['pi', 'omp'] as const) {
   const extension = agent === 'pi' ? piExtensionPath : ompExtensionPath;
   const oldVersion = agent === 'pi' ? '1.0.4' : '18.8.3';
   for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
-    test(agent, `${platform}: upgrades an older CLI before writing configuration`, async t => {
-      const ws = makeWorkspace();
-      place(ws.binDir);
-      const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: oldVersion };
-      const result = await install(options);
-      t.equal(result.code, 0, result.combined);
-      t.ok(existsSync(join(ws.root, `updated-${agent}`)), 'the selected CLI updater ran');
-      t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
-    });
-
-    if (agent === 'omp') {
-      test(agent, `${platform}: upgrades OMP 17.4.1 with its native update command`, async t => {
+    for (const version of agent === 'pi' ? [oldVersion] : ['omp/17.4.1', oldVersion]) {
+      test(agent, `${platform}: upgrades ${version} before writing configuration`, async t => {
         const ws = makeWorkspace();
         place(ws.binDir);
-        const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config(), fakeOmpVersion: 'omp/17.4.1' });
+        const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: version };
+        const result = await install(options);
         t.equal(result.code, 0, result.combined);
-        t.ok(existsSync(join(ws.root, 'updated-omp')), 'the selected CLI updater ran without a channel override');
+        t.ok(existsSync(join(ws.root, `updated-${agent}`)), 'the selected CLI updater ran');
         t.ok(existsSync(extension(ws)), 'configuration installed after the effective version was rechecked');
       });
+    }
 
+    if (agent === 'omp') {
       for (const [version, upgrade] of [['18.8.4-canary.1', true], ['18.8.10-canary.1', false], ['18.8.4+build.1', false]] as const) {
         test(agent, `${platform}: ${version} respects the numeric minimum and prerelease precedence`, async t => {
           const ws = makeWorkspace();
