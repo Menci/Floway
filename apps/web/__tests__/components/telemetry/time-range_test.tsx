@@ -87,7 +87,7 @@ test('preset activation replaces the draft without an intermediate custom query'
   const date = screen.getByRole('textbox', { name: 'Start time: Date' });
   date.focus();
   fireEvent.change(date, { target: { value: '2026/10/08' } });
-  const preset = screen.getByRole('radio', { name: '7d' });
+  const preset = screen.getByRole('radio', { name: '7 Days' });
   preset.focus();
   fireEvent.click(preset);
   expect(change.mock.calls).toEqual([['7d']]);

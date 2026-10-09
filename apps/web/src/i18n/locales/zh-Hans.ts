@@ -1074,7 +1074,7 @@ const zhHansCN = {
       telemetry: {
         currentUserOnly: '仅自己',
         range: {
-          to: '到', start: '开始时间', end: '结束时间', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天',
+          to: '到', start: '开始时间', end: '结束时间', oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天',
           invalid: '结束时间必须晚于开始时间',
           aggregation: { hour: '按小时汇总', '4h': '每 4 小时汇总', '8h': '每 8 小时汇总', day: '按天汇总', week: '按周汇总', month: '按月汇总', year: '按年汇总' },
         },

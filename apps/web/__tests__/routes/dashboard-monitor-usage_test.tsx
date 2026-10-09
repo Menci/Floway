@@ -86,9 +86,9 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'API Key' })).toBeTruthy();
-    expect(screen.getByText('1d')).toBeTruthy();
-    expect(screen.getByText('7d')).toBeTruthy();
-    expect(screen.getByText('30d')).toBeTruthy();
+    expect(screen.getByText('Last Day')).toBeTruthy();
+    expect(screen.getByText('7 Days')).toBeTruthy();
+    expect(screen.getByText('30 Days')).toBeTruthy();
     const controlsRow = screen.getByRole('group', { name: 'Group by' }).parentElement?.parentElement;
     const range = screen.getByRole('radiogroup', { name: 'Usage range' });
     expect(controlsRow?.contains(range)).toBe(true);
@@ -248,7 +248,7 @@ describe('usage dimension controls', () => {
     await waitFor(() => expect(overviewRequests).toBe(1));
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
 
-    fireEvent.click(screen.getByText('7d'));
+    fireEvent.click(screen.getByText('7 Days'));
     await waitFor(() => expect(overviewRequests).toBe(2));
     expect(requestedGroups).toEqual(['upstream', 'model']);
 
