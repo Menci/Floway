@@ -12,8 +12,12 @@ function Test-SetupPiNode {
   $version = $result.Output.Trim()
   if ($version -notmatch '^v(\d+)\.(\d+)\.(\d+)$') { Stop-Setup 'Node.js returned an invalid version.' }
   if ([Version]$version.Substring(1) -lt [Version]'22.19.0') {
-    Write-SetupWarn "Node.js version is $version; Pi requires Node.js >= 22.19."
+    Stop-Setup "Node.js version is $version; Pi requires Node.js >= 22.19. Upgrade to the current Node.js LTS and re-run."
   }
+  # Early Node 23 satisfies Pi's version range but lacks Undici's Zstd decoder.
+  # https://github.com/nodejs/undici/blob/5e541e0b9df7563e5766bbd469fbfe383d9ae6ca/lib/web/fetch/index.js#L2309-L2313
+  $result = Invoke-SetupProcess -Exe $nodeCmd.Source -Arguments @('-e', 'process.exit(typeof require("node:zlib").createZstdDecompress === "function" ? 0 : 1)') -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
+  if ($result.ExitCode -ne 0) { Stop-Setup ('Node.js cannot provide Zstandard decompression required by Pi. Upgrade to the current Node.js LTS and re-run. ' + $result.Output) }
 }
 
 function Get-SetupPiCli {

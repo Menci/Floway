@@ -17,7 +17,14 @@ pi_check_node() {
   _node_rest="${_node_ver#*.}"
   _node_minor="${_node_rest%%.*}"
   if [ "$_node_major" -lt 22 ] || { [ "$_node_major" -eq 22 ] && [ "$_node_minor" -lt 19 ]; }; then
-    out_warn "Node.js version is v$_node_ver; Pi requires Node.js >= 22.19."
+    out_error "Node.js version is v$_node_ver; Pi requires Node.js >= 22.19. Upgrade to the current Node.js LTS and re-run."
+    return 1
+  fi
+  # Early Node 23 satisfies Pi's version range but lacks Undici's Zstd decoder.
+  # https://github.com/nodejs/undici/blob/5e541e0b9df7563e5766bbd469fbfe383d9ae6ca/lib/web/fetch/index.js#L2309-L2313
+  if ! _run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" node -e 'process.exit(typeof require("node:zlib").createZstdDecompress === "function" ? 0 : 1)'; then
+    out_error 'Node.js cannot provide Zstandard decompression required by Pi. Upgrade to the current Node.js LTS and re-run.'
+    return 1
   fi
   return 0
 }

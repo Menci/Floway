@@ -3142,13 +3142,13 @@ test('pi', 'missing node aborts with clear error message', async t => {
   t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when node check fails');
 });
 
-test('pi', 'older node warns but continues', async t => {
+test('pi', 'unsupported Node fails before configuration', async t => {
   const ws = makeWorkspace();
   placeFakePi(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), fakeNodeVersion: 'v20.10.0' });
-  t.equal(run.code, 0, `setup should succeed even with older node:\n${run.combined}`);
-  t.includes(run.combined, 'Pi requires Node.js >= 22.19.', 'warning emitted for older node');
-  t.ok(existsSync(piExtensionPath(ws)), 'extension created');
+  t.notEqual(run.code, 0, `setup should reject unsupported Node:\n${run.combined}`);
+  t.includes(run.combined, 'Pi requires Node.js >= 22.19.', 'required Node version is reported');
+  t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when Node is unsupported');
 });
 
 test('pi', 'API key is never printed to stdout or stderr during setup', async t => {
@@ -3299,14 +3299,14 @@ test('pi', 'PowerShell: missing node aborts with clear error message', async t =
   t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when node check fails');
 });
 
-test('pi', 'PowerShell: older node warns but continues', async t => {
+test('pi', 'PowerShell: unsupported Node fails before configuration', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakePi(ws.binDir);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), fakeNodeVersion: 'v20.10.0' });
-  t.equal(run.code, 0, `setup should succeed even with older node:\n${run.combined}`);
-  t.includes(run.combined, 'Pi requires Node.js >= 22.19.', 'warning emitted for older node');
-  t.ok(existsSync(piExtensionPath(ws)), 'extension created');
+  t.notEqual(run.code, 0, `setup should reject unsupported Node:\n${run.combined}`);
+  t.includes(run.combined, 'Pi requires Node.js >= 22.19.', 'required Node version is reported');
+  t.ok(!existsSync(piExtensionPath(ws)), 'extension not created when Node is unsupported');
 });
 
 test('pi', 'PowerShell: API key is never printed to stdout or stderr during setup', async t => {
