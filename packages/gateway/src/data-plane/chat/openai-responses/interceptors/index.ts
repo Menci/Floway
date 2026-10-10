@@ -53,14 +53,9 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
-//   - withStoreForcedFalse: gated by `openai-responses-store-false` (off by
-//     default; on for Copilot upstreams, whose `/responses` endpoint rejects
-//     `store: true` outright). Pins `store: false` on the outbound wire body
-//     so a stateful upstream handles every request statelessly; the
-//     gateway's own item store keys off the caller's original `store` value
-//     captured at the entry boundary and is unaffected. This entry is the
-//     single `store: false` forcing — Codex additionally pins `store: false`
-//     in its own body builder regardless of the flag.
+//   - withStoreForcedFalse: gated by `openai-responses-store-false`. Sets
+//     `store: false` on the outbound wire body so a stateful upstream operates
+//     in stateless mode.
 //   - withExclusiveCachedTokensNormalized: unconditional on an OpenAI Responses
 //     target. Folds the cache buckets back into `input_tokens` whenever
 //     `total_tokens` witnesses that the upstream reports them alongside it,

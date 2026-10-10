@@ -23,7 +23,9 @@ export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
-  // Default off: stateless upstream mode is opt-in. Copilot's provider is
-  // the exception — see provider-copilot's defaults.
+  // Do not turn on stateless on OpenAI's official servers.
+  // Intermediate results of server tools like `web_search` are stored only on
+  // the server side. Therefore, turning on stateless mode would cause models to
+  // lose web search results across turns.
   'openai-responses-store-false': false,
 };

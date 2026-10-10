@@ -28,11 +28,9 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
-  // Default on: Copilot's `/responses` rejects `store: true` outright with
-  // a 400, and the gateway's `openai-responses-store-false` interceptor is
-  // the single forcing — the provider boundary no longer forces it
-  // separately. Turning it off for a Copilot upstream makes stateful
-  // requests fail upstream. Every other provider defaults it off.
+  // Copilot's `/responses` rejects `store: true` with
+  // `400 {"error":{"message":"store is not
+  // supported","code":"unsupported_value","param":"store"}}`.
   'openai-responses-store-false': true,
 };
 

@@ -724,7 +724,7 @@ const en = {
             'openai-responses-store-false': {
               label: 'Request Stateful Upstreams to Use Stateless Mode',
               description:
-                  'The OpenAI Responses API is stateful by default: a stateful upstream may retain the requests and responses it serves.\nFloway never uses stateful features in the upstream direction — conversation continuity is served from Floway\'s own store.\nWhen this option is enabled, Floway always specifies `{"store": false}` when connecting to upstreams using the Responses protocol, regardless of the `store` value the caller sent.\nDisabling upstream-side state may help control data residency.',
+                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway do not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
             },
           },
         },

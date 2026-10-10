@@ -431,9 +431,6 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
   );
 
   if (!openaiResponsesBody) throw new Error('expected /responses to be hit');
-  // The boundary passes `store` through untouched — the `store: false`
-  // forcing is the gateway's flag-gated openai-responses interceptor, not
-  // this provider boundary, and the compact dispatch drops `store` anyway.
   assertEquals('store' in openaiResponsesBody, false);
   assertEquals('service_tier' in openaiResponsesBody, false);
   const wireInput = openaiResponsesBody?.input as Array<{ type: string }>;
