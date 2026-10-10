@@ -11,6 +11,10 @@
     "./pi-thinking": {
       "import": "./src/pi-thinking.ts",
       "types": "./src/pi-thinking.ts"
+    },
+    "./browser": {
+      "import": "./src/browser.ts",
+      "types": "./src/browser.ts"
     }
   },
   "scripts": {

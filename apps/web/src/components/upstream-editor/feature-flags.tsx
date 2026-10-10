@@ -3,7 +3,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { InlineMarkdown } from '../ui/markdown';
-import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/browser';
 
 const { Option, Text } = fluentComponents;
 

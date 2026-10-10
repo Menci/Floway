@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { effectiveUpstreams, modelBadges } from '../../../src/components/models/badges';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
-import type { AliasTarget } from '@floway-dev/protocols/common';
+import type { AliasTarget } from '@floway-dev/protocols/browser';
 
 describe('model badges', () => {
   it('abbreviates the token limits the catalog advertises', () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { EventList } from '../../../src/components/requests/events';
 import { renderInApp } from '../../render';
-import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const events: DumpStreamEvent[] = Array.from({ length: 120 }, (_, i) => ({
   ts: i * 15,

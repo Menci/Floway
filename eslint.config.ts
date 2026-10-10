@@ -50,14 +50,8 @@ const RESTRICTED_IMPORT_PATTERNS = [
 const WEB_RESTRICTED_IMPORT_PATTERNS = [
   ...RESTRICTED_IMPORT_PATTERNS,
   {
-    // Match the bare specifier only, not the `/url`, `/url-kind`, etc.
-    // subpaths the dashboard is allowed to import.
-    regex: '^@floway-dev/proxy$',
-    message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
-  },
-  {
-    regex: '^@floway-dev/provider$',
-    message: 'apps/web must reach @floway-dev/provider only via its /flags, /join, /model, /model-config, or /model-prefix subpath exports — the root reaches the outbound fetch contract, and through it @floway-dev/http and userspace TLS.',
+    regex: '^@floway-dev/[^/]+(?:$|/(?!browser$))',
+    message: 'apps/web must reach workspace packages through their /browser exports.',
   },
 ];
 
@@ -276,11 +270,8 @@ const config: Linter.Config[] = [
     },
   },
   {
-    // Redefining a single rule replaces its whole option value: the option
-    // array is not deep-merged with the earlier declaration, so the shared
-    // patterns are spread in again alongside the proxy-root ban. Other common
-    // rules still apply to apps/web via flat-config's per-rule merge across
-    // matching config objects.
+    // Flat-config replaces each rule's complete options, so web restrictions
+    // repeat the shared import patterns.
     files: ['apps/web/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
@@ -292,19 +283,11 @@ const config: Linter.Config[] = [
         ],
         patterns: WEB_RESTRICTED_IMPORT_PATTERNS,
       }],
-      // Block runtime `import { ... } from '@floway-dev/gateway[/...]'`
-      // — apps/web may only type-import from the gateway package (`import
-      // type`). Runtime imports would land gateway's data plane into the
-      // SPA bundle. `@typescript-eslint/no-restricted-imports`'s
-      // `allowTypeImports` is the closest built-in, but it also clears the
-      // inline `import { type X }` form; the selector holds the whole
-      // declaration to `import type`.
+      // Inline type specifiers leave the declaration's importKind as value;
+      // require declaration-level type imports for the types-only entrypoint.
       'no-restricted-syntax': ['error', {
-        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
-        message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
-      }, {
-        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F)/][source.value!="@floway-dev/agent-setup/pi-thinking"]',
-        message: 'apps/web may only runtime-import the browser-safe @floway-dev/agent-setup/pi-thinking subpath. The package entrypoint carries gateway route factories and persistence.',
+        selector: 'ImportDeclaration[importKind!="type"][source.value="@floway-dev/gateway/browser"]',
+        message: 'apps/web must use import type for @floway-dev/gateway/browser.',
       }, {
         // Griffel injects its sheet after the utility sheet, and `Text`'s root
         // states white-space, overflow and text-overflow while `Link`'s states

@@ -1,8 +1,9 @@
 // SOCKS5 client (TCP CONNECT only).
 
-import { concat, copy, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
+import { concat, copy, encodeAtypAddress } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { utf8Bytes } from '../encoding.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 

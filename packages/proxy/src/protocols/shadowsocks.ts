@@ -19,9 +19,10 @@
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
-import { utf8Bytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
+import { concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { utf8Bytes } from '../encoding.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';

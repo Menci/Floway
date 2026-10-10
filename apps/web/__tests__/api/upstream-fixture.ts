@@ -1,5 +1,5 @@
 import type { UpstreamRecord } from '../../src/api/types';
-import { OPTIONAL_FLAG_IDS, type FlagDefaults } from '@floway-dev/provider/flags';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults } from '@floway-dev/provider/browser';
 
 // `FlagDefaults` is exhaustive over the flag catalog, so it is built from that
 // catalog rather than written out: a new flag needs no edit here.

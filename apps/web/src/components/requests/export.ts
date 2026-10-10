@@ -1,5 +1,5 @@
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
-import type { DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/gateway/browser';
 
 // The dump API serves headers verbatim so the dashboard's reveal affordance
 // keeps working, but an exported file leaves the operator's machine, so every

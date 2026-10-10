@@ -1,5 +1,6 @@
 import type {
   CanonicalOpenAIResponsesPayload,
+  OpenAIResponsesCompactionItem,
   CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesOutputItemEx,
   OpenAIResponsesRequestInputItem,
@@ -61,3 +62,6 @@ export interface OpenAIResponsesCompactionResultEx {
   created_at?: number;
   usage?: OpenAIResponsesResultEx['usage'];
 }
+
+export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
+  item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction';

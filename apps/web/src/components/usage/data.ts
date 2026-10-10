@@ -14,7 +14,7 @@ import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
   TokenUsageOverviewResponse,
-} from '@floway-dev/gateway/control-plane/usage-types';
+} from '@floway-dev/gateway/browser';
 
 const userBucketId = (userId: number) => `user-${userId}`;
 

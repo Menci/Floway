@@ -14,7 +14,7 @@ import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
 import type { MultiselectOption } from '../ui/multiselect-combobox';
-import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
+import type { BillingMetric, DecimalString } from '@floway-dev/protocols/browser';
 
 export const dashboardBuckets = (
   range: UsageRange,

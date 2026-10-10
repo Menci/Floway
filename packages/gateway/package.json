@@ -30,6 +30,9 @@
     "./migrations-dir": {
       "import": "./src/migrations-dir.ts",
       "types": "./src/migrations-dir.ts"
+    },
+    "./browser": {
+      "types": "./src/browser.ts"
     }
   },
   "scripts": {

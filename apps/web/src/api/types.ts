@@ -1,7 +1,7 @@
 import type { InferRequestType, InferResponseType } from 'hono/client';
 
 import type { api } from './client';
-import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
+import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/browser';
 
 export type {
   ClaudeCodeAccountCredentialSummary,
@@ -14,7 +14,7 @@ export type {
   CodexRateLimitResetCredits,
   ProviderModelsFailureResponse,
   UpstreamRecord,
-} from '@floway-dev/gateway/control-plane/upstreams/types';
+} from '@floway-dev/gateway/browser';
 
 export type UpstreamRecordEnvelope = InferRequestType<
   typeof api.api.upstreams['preview-models']['$post']

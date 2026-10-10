@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ProxyUriError } from '../src/errors.ts';
+import { ProxyUriError } from '../src/uri-error.ts';
 import { formatProxyUri, parseProxyUri } from '../src/url.ts';
 
 describe('parseProxyUri', () => {

@@ -8,9 +8,12 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
-import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import {
+  type UpstreamProviderKind,
+  type UpstreamModelConfig,
+  MODEL_PREFIX_MAX_LENGTH,
+  MODEL_PREFIX_REGEX,
+} from '@floway-dev/provider/browser';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
