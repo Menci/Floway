@@ -55,9 +55,7 @@ const hasResponsesText = (part: unknown): boolean => {
 // need not expose a summary, so waiting for its text would count decode as prefill.
 // https://github.com/vllm-project/vllm/blob/3709632ff2944a5f2ecdacc84ede5cd134b7ae08/vllm/entrypoints/openai/responses/streaming_events.py#L562-L595
 // https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries
-// Discovery can precede inference; execution results and supplied context are
-// not model-output signals. Unknown wire types start timing at their announcement.
-// https://github.com/sgl-project/sglang/blob/de487f8039e06853b5f376fd5f068ea9d7c400bb/sgl-model-gateway/src/routers/grpc/regular/responses/streaming.rs#L542-L613
+// Unknown wire types start timing at their announcement.
 const RESPONSES_ITEM_DECODE_SIGNALS = {
   message: true,
   reasoning: true,
@@ -77,6 +75,11 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   shell_call: true,
   apply_patch_call: true,
   image_generation_call: true,
+
+  // Tool/agent runtimes supply execution results; their arrival does not mark
+  // this response's model starting to decode. Execution may be client- or
+  // server-side, as tool_search_output explicitly supports both.
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7156-L7190
   function_call_output: false,
   custom_tool_call_output: false,
   computer_call_output: false,
@@ -86,9 +89,27 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   local_shell_call_output: false,
   shell_call_output: false,
   apply_patch_call_output: false,
+
+  // Tool definitions and approval decisions are configuration/control state,
+  // even when returned as output items; their direction alone is not the reason
+  // for exclusion. An approval response records the caller's decision, whereas
+  // an approval request above exposes the model-selected invocation.
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5116-L5136
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5399-L5425
   additional_tools: false,
-  mcp_list_tools: false,
   mcp_approval_response: false,
+
+  // MCP discovery can emit a populated tool list before inference is invoked;
+  // it establishes available tools, not a model-selected call.
+  // https://github.com/sgl-project/sglang/blob/de487f8039e06853b5f376fd5f068ea9d7c400bb/sgl-model-gateway/src/routers/grpc/regular/responses/streaming.rs#L542-L613
+  mcp_list_tools: false,
+
+  // Compaction can involve inference and appear in the response stream before
+  // normal inference continues. We exclude its context-maintenance boundary
+  // from ordinary response timing; the resulting state can also be replayed
+  // as input in later turns.
+  // https://developers.openai.com/api/docs/guides/compaction
+  // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1252
   compaction: false,
   compaction_summary: false,
   context_compaction: false,
