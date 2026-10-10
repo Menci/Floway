@@ -7,7 +7,7 @@ import { EmptyStateLine } from '../ui/empty-state';
 const narrowChartWidth = 120;
 
 // The box every dashboard chart is drawn into: it reserves the height, measures
-// the width Fluent has to be told, and answers a container too narrow to plot in
+// the width each plot needs, and answers a container too narrow to plot in
 // and a range with nothing in it, so a chart module supplies only its plot.
 export function ChartHost({ children, className, emptyText, hasData }: {
   children: (frame: { element: HTMLDivElement; size: ElementSize }) => ReactNode;
