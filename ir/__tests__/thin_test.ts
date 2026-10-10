@@ -163,4 +163,9 @@ describe('thin items and IAT', () => {
     }
   });
 
+  it.each(['1e400', '9007199254740993.0'])('preserves out-of-range numeric lexeme %s', token => {
+    const text = `{"n":${token}}`;
+    expect(JSON.stringify(cloneIRJSON(parseIRJSONObject(text)))).toBe(text);
+  });
+
 });

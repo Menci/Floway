@@ -1,7 +1,7 @@
 import type { IRContentPart, IRItem, IRSourceCitation } from './ir.ts';
 import { cloneIRJSON, parseIRJSONObject } from './json.ts';
-import { consumeIRRecords, createIRProjection, type IROutputOptions } from './projection.ts';
-import type { IRFrame, IRPath } from './stream.ts';
+import { createIRProjection, type IROutputOptions } from './projection.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from './stream.ts';
 import { usageFromIR, type IRWire } from './usage.ts';
 import type { AnthropicMessagesStreamEventEx, AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
@@ -51,7 +51,11 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       const source: IRPath = ['choices', 0, 'items', unit.item];
       const block = blockFor(item, part, unit.item);
       if (block === undefined) {
-        if (item.type === 'function_call' && item.name === '' && !unit.closed) break;
+        if (item.type === 'function_call' && item.name === '') {
+          if (unit.closed) throw new TypeError('Completed tool calls require a name');
+          break;
+        }
+        if (!unit.closed && part?.type === 'audio') break;
         cursor++; continue;
       }
       if (unit.index === undefined) {

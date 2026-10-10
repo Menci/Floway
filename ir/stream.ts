@@ -85,19 +85,31 @@ export const reconcileIRValue = (builder: IRBuilder, path: IRPath, previous: unk
   } else builder.assign(path, next);
 };
 
-export const collectIR = async (frames: AsyncIterable<IRFrame>): Promise<IR> => {
+export const consumeIRRecords = async function* (frames: AsyncIterable<IRFrame>): AsyncGenerator<{ state: IR; record: IRRecord }> {
   const state: IR = { choices: [], extensions: {} };
+  let started = false;
   let finished = false;
   for await (const frame of frames) for (const record of frame.records) {
-    if (finished) throw new TypeError('IR record arrived after finish');
+    if (finished) throw new Error('IR record arrived after finish');
     if (record.type === 'operation') applyIROperation(state, record);
-    else if (record.type === 'error') throw new Error('IR stream failed', { cause: record.error });
-    else if (record.type === 'finish') {
-      if (record.status === 'failed') throw new Error('IR generation failed', { cause: record.error });
+    else if (record.type === 'start') {
+      if (started) throw new Error('Duplicate IR start');
+      started = true;
+    } else if (record.type === 'finish') {
+      if (!started) throw new Error('IR finish arrived before start');
       finished = true;
-    }
+    } else if (record.type === 'error') throw new Error('IR upstream error', { cause: record.error });
+    yield { state, record };
   }
   if (!finished) throw new Error('IR stream ended without finish');
+};
+
+export const collectIR = async (frames: AsyncIterable<IRFrame>): Promise<IR> => {
+  let state: IR = { choices: [], extensions: {} };
+  for await (const value of consumeIRRecords(frames)) {
+    state = value.state;
+    if (value.record.type === 'finish' && value.record.status === 'failed') throw new Error('IR generation failed', { cause: value.record.error });
+  }
   return state;
 };
 

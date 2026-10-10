@@ -1,6 +1,6 @@
 
 import { codePointRangeToIR } from './coordinates.ts';
-import type { IRItem, IRSourceCitation } from './ir.ts';
+import type { IRAudioPart, IRItem, IRMessageItem, IRSourceCitation } from './ir.ts';
 import { cloneIRJSON } from './json.ts';
 import { createIRBuilder, reconcileIRValue, type IRFrame } from './stream.ts';
 import { usageToIR, type IRWire } from './usage.ts';
@@ -32,7 +32,7 @@ export const responsesItemToIR = (item: IRWire): IRItem | undefined => {
   };
   case 'function_call': return { type: 'function_call', name: item.name, call_id: item.call_id, arguments: item.arguments };
   case 'custom_tool_call': return { type: 'custom_tool_call', name: item.name, call_id: item.call_id, input: item.input };
-  case 'image_generation_call': return item.result == null ? undefined : { type: 'message', content: [{ type: 'image', image: { data: item.result, ...(item.output_format === undefined ? {} : { mime_type: `image/${item.output_format}` }) } }] };
+  case 'image_generation_call': return item.result == null ? undefined : { type: 'message', content: [{ type: 'image', image: { data: item.result, ...(item.output_format == null ? {} : { mime_type: `image/${item.output_format}` }) } }] };
   default: return undefined;
   }
 };
@@ -103,9 +103,8 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
         response.output.forEach((item: IRWire, index: number) => replace(index, item, true));
         flush();
         if (audioIndex !== undefined) {
-          const item = b.state.choices[0].items[audioIndex];
-          if (item.type !== 'message' || item.content[0].type !== 'audio') throw new TypeError('Responses audio mapping failed');
-          for (const field of ['data', 'transcript'] as const) if (item.content[0].audio[field] !== undefined && !audioDone.has(field)) throw new Error('Responses audio stream ended without its done event');
+          const part = (b.state.choices[0].items[audioIndex] as IRMessageItem).content[0] as IRAudioPart;
+          for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined && !audioDone.has(field)) throw new Error('Responses audio stream ended without its done event');
           b.event({ type: 'part_end', choice: 0, item: audioIndex, part: 0 });
           b.event({ type: 'item_end', choice: 0, item: audioIndex });
         }
@@ -124,9 +123,8 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
         b.event({ type: 'part_start', choice: 0, item: audioIndex, part: 0 });
       }
       const path = ['choices', 0, 'items', audioIndex, 'content', 0, 'audio'];
-      const item = b.state.choices[0].items[audioIndex];
-      if (item.type !== 'message' || item.content[0].type !== 'audio') throw new TypeError('Responses audio mapping failed');
-      if (item.content[0].audio[field] === undefined) b.assign([...path, field], '');
+      const part = (b.state.choices[0].items[audioIndex] as IRMessageItem).content[0] as IRAudioPart;
+      if (part.audio[field] === undefined) b.assign([...path, field], '');
       b.append([...path, field], e.delta);
     } else if (e.type === 'response.audio.done' || e.type === 'response.audio.transcript.done') {
       audioDone.add(e.type === 'response.audio.done' ? 'data' : 'transcript');

@@ -2,8 +2,8 @@
 import { irRangeToCodePoints } from './coordinates.ts';
 import type { IRItem } from './ir.ts';
 import { cloneIRJSON } from './json.ts';
-import { consumeIRRecords, createIRProjection, type IROutputOptions } from './projection.ts';
-import type { IRFrame, IRPath } from './stream.ts';
+import { createIRProjection, type IROutputOptions } from './projection.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from './stream.ts';
 import { usageFromIR, type IRWire } from './usage.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -18,7 +18,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
   let extension: IRWire = {};
   const emit = (event: IRWire): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: sequence++ } as OpenAIResponsesStreamEventEx);
   const response = (status: string, usage: unknown = null): IRWire => ({ ...extension, id: options.id, object: 'response', created_at: options.created, model: options.model, status, output: cloneIRJSON(output), usage, error: null, incomplete_details: status === 'incomplete' ? extension.incomplete_details ?? { reason: 'max_output_tokens' } : null });
-  const targetItem = (item: IRItem, sourceIndex: number, partIndex?: number): IRWire | undefined => {
+  const targetItem = (item: IRItem, sourceIndex: number, closed: boolean, partIndex?: number): IRWire | undefined => {
     const id = `${options.id}_${sourceIndex}${partIndex === undefined ? '' : `_${partIndex}`}`;
     if (partIndex !== undefined && item.type === 'message') {
       const part = item.content[partIndex];
@@ -28,7 +28,10 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
     }
     if (item.type === 'message') return undefined;
     if (item.type === 'reasoning') return { type: 'reasoning', id, status: 'in_progress', summary: [], ...(item.content === undefined ? {} : { content: [] }) };
-    if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.name === '') return undefined;
+    if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.name === '') {
+      if (closed) throw new TypeError('Completed tool calls require a name');
+      return undefined;
+    }
     if (item.type === 'function_call') return { type: 'function_call', id, call_id: item.call_id ?? id, name: item.name, arguments: '', status: 'in_progress' };
     return { type: 'custom_tool_call', id, call_id: item.call_id, name: item.name, input: '', status: 'in_progress' };
   };
@@ -43,13 +46,13 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
       for (let sourceIndex = 0; sourceIndex < (state.choices[0]?.items.length ?? 0); sourceIndex++) {
         const item = state.choices[0].items[sourceIndex];
         const source: IRPath = ['choices', 0, 'items', sourceIndex];
+        const closing = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
         if (item.type === 'message') for (let p = 0; p < item.content.length; p++) {
           const part = item.content[p]; if (part.type !== 'audio') continue;
           for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {
             const delta = projection.append([...source, 'content', p, 'audio', field], part.audio[field]!, ['audio', field], false);
             if (delta !== '') yield emit({ type: field === 'data' ? 'response.audio.delta' : 'response.audio.transcript.delta', delta });
           }
-          const closing = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
           const key = `${sourceIndex}/${p}/audio`;
           if (closing && !ended.has(key)) {
             if (part.audio.data !== undefined) yield emit({ type: 'response.audio.done' });
@@ -62,7 +65,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
           const key = `${sourceIndex}/${partIndex ?? 'item'}`;
           let index = indices.get(key);
           if (index === undefined) {
-            const native = targetItem(item, sourceIndex, partIndex);
+            const native = targetItem(item, sourceIndex, closing, partIndex);
             if (native === undefined) continue;
             index = output.length; indices.set(key, index); output.push(native);
             yield emit({ type: 'response.output_item.added', output_index: index, item: cloneIRJSON(native) });
@@ -72,6 +75,8 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
           const part = item.type === 'message' ? item.content[partIndex!] : undefined;
           if (part?.type === 'image') {
             native.result = part.image.data;
+            // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts#L5805-L5839
+            if (part.image.mime_type !== undefined) native.output_format = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' }[part.image.mime_type as 'image/png' | 'image/jpeg' | 'image/webp'];
             projection.assign([...source, 'content', partIndex!, 'image', 'data'], part.image.data, [...target, 'result'], true);
           } else if (part?.type === 'text' || part?.type === 'refusal') {
             const original = partIndex!;
@@ -128,7 +133,6 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
             if (item.call_id !== undefined) native.call_id = item.call_id;
             if (delta !== '') yield emit({ type: custom ? 'response.custom_tool_call_input.delta' : 'response.function_call_arguments.delta', item_id: native.id, output_index: index, delta });
           }
-          const closing = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
           const closingPart = record.type === 'part_end' && record.item === sourceIndex && record.part === partIndex;
           if (native.type === 'message' && (closing || closingPart)) {
             const old = partCounts.get(index) ?? 0;

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { codePointRangeToIR, irRangeToCodePoints } from '../coordinates.ts';
 import { irFromAnthropicMessages } from '../from-anthropic-messages.ts';
 import { irFromOpenAIChatCompletions } from '../from-openai-chat-completions.ts';
-import { irFromOpenAIResponses } from '../from-openai-responses.ts';
+import { irFromOpenAIResponses, responsesItemToIR } from '../from-openai-responses.ts';
 import type { IR } from '../ir.ts';
 import { createIRProjection } from '../projection.ts';
 import { collectIR, createIRBuilder } from '../stream.ts';
@@ -247,10 +247,54 @@ describe('fit IR streaming', () => {
     expect(added[0]).toMatchObject({ name: 'tool', call_id: 'call' });
   });
 
-  it('exposes invalid logprob item ownership', async () => {
-    const frames = completeIR([]);
-    frames[0].records.splice(2, 0, { type: 'operation', operation: 'assign', path: ['choices', 0, 'logprobs'], value: [{ scope: 'text_part', item_index: 99, content_index: 0, tokens: [{ token: 'x', logprob: -1 }] }] });
+  it.each([{ items: [] }, { items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
+    const frames = completeIR(items);
+    frames[0].records.splice(2, 0, { type: 'operation', operation: 'assign', path: ['choices', 0, 'logprobs'], value: [{ scope: 'text_part', item_index: 0, content_index: 0, tokens: [{ token: 'x', logprob: -1 }] }] });
     await expect(collect(openaiChatCompletionsFromIR(iterate(frames), options))).rejects.toThrow();
+  });
+
+  it('uses the same lifecycle validation when collecting IR', async () => {
+    for (const records of [[{ type: 'finish', status: 'completed' }], [{ type: 'start', id: 's', model: 'm' }, { type: 'start', id: 's', model: 'm' }, { type: 'finish', status: 'completed' }]]) {
+      await expect(collectIR(iterate([{ records } as any]))).rejects.toThrow();
+    }
+  });
+
+  it('preserves Responses generated image format', async () => {
+    const result = await reassembleOpenAIResponsesEvents(events(openaiResponsesFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'image', image: { data: 'YQ==', mime_type: 'image/jpeg' } }] }])), options)));
+    expect(result.output[0]).toMatchObject({ type: 'image_generation_call', output_format: 'jpeg' });
+  });
+
+  it('does not invent MIME types for a null Responses format', () => {
+    expect(responsesItemToIR({ type: 'image_generation_call', result: 'YQ==', output_format: null })).toEqual({ type: 'message', content: [{ type: 'image', image: { data: 'YQ==' } }] });
+  });
+
+  it.each([true, false])('preserves Responses audio when transcript arrives first=%s', async transcriptFirst => {
+    const data = { type: 'response.audio.delta', delta: 'YQ==' };
+    const transcript = { type: 'response.audio.transcript.delta', delta: 'hello' };
+    const response = { id: 's', model: 'm', output: [] };
+    const input: any[] = [{ type: 'response.created', response }, ...(transcriptFirst ? [transcript, data] : [data, transcript]), { type: 'response.audio.done' }, { type: 'response.audio.transcript.done' }, { type: 'response.completed', response }];
+    const source = () => irFromOpenAIResponses(iterate(input.map(eventFrame)));
+    const messages = await reassembleAnthropicMessagesEvents(events(anthropicMessagesFromIR(source(), options)));
+    expect(messages.content).toMatchObject([{ type: 'text', text: 'hello' }]);
+    const chat = await reassembleOpenAIChatCompletionsEvents(events(openaiChatCompletionsFromIR(source(), { ...options, audioMetadata: () => ({ id: 'a', expires_at: 123 }) })));
+    expect(chat.choices[0].message.audio).toEqual({ id: 'a', expires_at: 123, data: 'YQ==', transcript: 'hello' });
+    expect(chat.choices[0].message.content).toBeNull();
+  });
+
+  it('emits transcript-only audio before ChatCompletions finish_reason', async () => {
+    const frames = await collect(openaiChatCompletionsFromIR(iterate(completeIR([{ type: 'message', content: [{ type: 'audio', audio: { transcript: 'hello' } }] }])), options));
+    const chunks = frames.flatMap(frame => frame.type === 'event' ? frame.event.choices : []);
+    expect(chunks.findIndex(choice => choice.delta.content === 'hello')).toBeLessThan(chunks.findIndex(choice => choice.finish_reason === 'stop'));
+  });
+
+  it('does not let empty reasoning claim the next GenerateContent text projection', async () => {
+    let projection: any;
+    await collect(geminiGenerateContentFromIR(iterate(completeIR([{ type: 'reasoning', summary: [''] }, { type: 'message', content: [{ type: 'text', text: 'hello' }] }])), { ...options, onProjection: result => { projection = result; } }));
+    expect(projection.contents).toEqual([{ path: ['candidates', 0, 'content', 'parts', 0, 'text'], text: 'hello', round_trip: true }]);
+  });
+
+  it.each([['Responses', openaiResponsesFromIR], ['Messages', anthropicMessagesFromIR]] as const)('rejects completed unnamed tools in %s', async (_name, adapter) => {
+    await expect(collect<unknown>(adapter(iterate(completeIR([{ type: 'function_call', name: '', arguments: '{}' }])), options))).rejects.toThrow('require a name');
   });
 
 });

@@ -1,7 +1,7 @@
 
 import { irRangeToCodePoints } from './coordinates.ts';
-import { consumeIRRecords, createIRProjection, type IROutputOptions } from './projection.ts';
-import type { IRFrame, IRPath } from './stream.ts';
+import { createIRProjection, type IROutputOptions } from './projection.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from './stream.ts';
 import { usageFromIR, type IRWire } from './usage.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -19,13 +19,14 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   for await (const { state, record } of consumeIRRecords(frames)) {
     extension = state.extensions?.openaiChatCompletions ?? {};
     if (record.type === 'finish' && record.status === 'failed') throw new Error('IR generation failed', { cause: record.error });
-    if (record.type === 'operation' || record.type === 'item_end' || record.type === 'finish') {
+    if (record.type === 'operation' || record.type === 'part_end' || record.type === 'item_end' || record.type === 'choice_end' || record.type === 'finish') {
       for (let choice = 0; choice < state.choices.length; choice++) {
         if (!startedChoices.has(choice)) { yield deltaFrame(choice, { role: 'assistant', content: '' }); startedChoices.add(choice); }
         for (let index = 0; index < state.choices[choice].items.length; index++) {
           const item = state.choices[choice].items[index];
           const path: IRPath = ['choices', choice, 'items', index];
           const target: IRPath = ['choices', choice, 'message'];
+          const closed = record.type === 'finish' || record.type === 'choice_end' && record.choice === choice || record.type === 'item_end' && record.item === index && record.choice === choice;
           if (item.type === 'message') for (let p = 0; p < item.content.length; p++) {
             const part = item.content[p];
             const source = [...path, 'content', p];
@@ -36,6 +37,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
               if (delta !== '') yield deltaFrame(choice, { [key]: delta });
             } else if (part.type === 'audio') {
               if (part.audio.data === undefined) {
+                if (!closed && !(record.type === 'part_end' && record.choice === choice && record.item === index && record.part === p)) continue;
                 const text = projection.append([...source, 'audio', 'transcript'], part.audio.transcript!, [...target, 'content'], true);
                 if (text !== '') yield deltaFrame(choice, { content: text });
                 continue;
@@ -64,7 +66,6 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
             const custom = item.type === 'custom_tool_call';
             const field = custom ? 'input' : 'arguments';
             const namespace = custom ? 'custom' : 'function';
-            const closed = record.type === 'finish' || record.type === 'item_end' && record.item === index && record.choice === choice;
             const argument = custom ? item.input : typeof item.arguments === 'object' ? closed ? JSON.stringify(item.arguments) : '' : item.arguments ?? '';
             const delta = !custom && typeof item.arguments === 'object' && !closed ? '' : projection.append([...path, field], argument, [...target, 'tool_calls', toolIndex, namespace, field], true);
             const name = `${item.call_id ?? ''}\0${item.name}`;
@@ -78,8 +79,12 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
           const key = `${choice}/${group}`;
           const length = logprobLengths.get(key) ?? 0;
           if (value.tokens.length > length) {
-            const item = value.scope === 'text_part' ? state.choices[choice].items[value.item_index] : undefined;
-            const refusal = value.scope === 'text_part' && item!.type === 'message' && item!.content[value.content_index].type === 'refusal';
+            let refusal = false;
+            if (value.scope === 'text_part') {
+              const item = state.choices[choice].items[value.item_index];
+              if (item.type !== 'message' || !['text', 'refusal'].includes(item.content[value.content_index].type)) throw new TypeError('Text-part logprobs require a text or refusal owner');
+              refusal = item.content[value.content_index].type === 'refusal';
+            }
             yield chunk([{ index: choice, delta: {}, logprobs: { content: refusal ? null : value.tokens.slice(length), refusal: refusal ? value.tokens.slice(length) : null } }]);
             logprobLengths.set(key, value.tokens.length);
           }

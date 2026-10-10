@@ -1,6 +1,6 @@
-import type { IR, IRJSONObject } from './ir.ts';
+import type { IRJSONObject } from './ir.ts';
 import { cloneIRJSON, parseIRJSON } from './json.ts';
-import { applyIROperation, type IRFrame, type IRPath, type IRRecord } from './stream.ts';
+import type { IRPath } from './stream.ts';
 
 export interface IRStringProjection {
   source_path: IRPath;
@@ -39,17 +39,16 @@ export const createIRProjection = () => {
     }
     const delta = text.slice(old.length);
     previous.set(sourceKey, text);
+    if (delta === '') return '';
     const key = JSON.stringify(target);
     let content = contents.get(key);
     if (content === undefined) { content = { path: target, text: '', round_trip: roundTrip }; contents.set(key, content); }
-    if (delta !== '') {
-      const previousProjection = projections.at(-1);
-      if (previousProjection !== undefined && JSON.stringify(previousProjection.source_path) === sourceKey && JSON.stringify(previousProjection.target_path) === key && previousProjection.source_end_exclusive === old.length && previousProjection.target_end_exclusive === content.text.length && previousProjection.round_trip === roundTrip) {
-        previousProjection.source_end_exclusive = text.length;
-        previousProjection.target_end_exclusive += delta.length;
-      } else projections.push({ source_path: source, source_start: old.length, source_end_exclusive: text.length, target_path: target, target_start: content.text.length, target_end_exclusive: content.text.length + delta.length, round_trip: roundTrip });
-      content.text += delta;
-    }
+    const previousProjection = projections.at(-1);
+    if (previousProjection !== undefined && JSON.stringify(previousProjection.source_path) === sourceKey && JSON.stringify(previousProjection.target_path) === key && previousProjection.source_end_exclusive === old.length && previousProjection.target_end_exclusive === content.text.length && previousProjection.round_trip === roundTrip) {
+      previousProjection.source_end_exclusive = text.length;
+      previousProjection.target_end_exclusive += delta.length;
+    } else projections.push({ source_path: source, source_start: old.length, source_end_exclusive: text.length, target_path: target, target_start: content.text.length, target_end_exclusive: content.text.length + delta.length, round_trip: roundTrip });
+    content.text += delta;
     return delta;
   };
   const assign = (source: IRPath, text: string, target: IRPath, roundTrip: boolean): void => {
@@ -60,23 +59,4 @@ export const createIRProjection = () => {
   };
   const result = (): IRProjectionResult => cloneIRJSON({ contents: [...contents.values()], projections });
   return { append, assign, result };
-};
-
-export const consumeIRRecords = async function* (frames: AsyncIterable<IRFrame>): AsyncGenerator<{ state: IR; record: IRRecord }> {
-  const state: IR = { choices: [], extensions: {} };
-  let started = false;
-  let finished = false;
-  for await (const frame of frames) for (const record of frame.records) {
-    if (finished) throw new Error('IR record arrived after finish');
-    if (record.type === 'operation') applyIROperation(state, record);
-    else if (record.type === 'start') {
-      if (started) throw new Error('Duplicate IR start');
-      started = true;
-    } else if (record.type === 'finish') {
-      if (!started) throw new Error('IR finish arrived before start');
-      finished = true;
-    } else if (record.type === 'error') throw new Error('IR upstream error', { cause: record.error });
-    yield { state, record };
-  }
-  if (!finished) throw new Error('IR stream ended without finish');
 };
