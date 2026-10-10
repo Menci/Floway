@@ -284,7 +284,7 @@ describe('upstream readout by provider', () => {
     };
     expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
     const cost = readoutOf(record).signals.at(-1);
-    expect(cost?.detail).toBe('USD value of model requests recorded by the upstream over the past four weeks.');
+    expect(cost?.detail).toBe('Credits used over the past four weeks, shown in US dollars.');
   });
 
   it('leaves USD usage unqualified when the upstream named no period for it', () => {
@@ -300,7 +300,7 @@ describe('upstream readout by provider', () => {
         },
       },
     }).signals;
-    expect(signals.at(-1)?.detail).toBe('USD value of model requests recorded by the upstream over its reporting period.');
+    expect(signals.at(-1)?.detail).toBe('Credits used during this period, shown in US dollars.');
   });
 
   // The card keeps that zero; a row of live readings does not, because a figure
