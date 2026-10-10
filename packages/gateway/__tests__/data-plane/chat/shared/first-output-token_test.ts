@@ -57,9 +57,8 @@ describe('isFirstOutputTokenFrame — responses', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_summary_text.delta', delta: '...' }), 'openaiResponses')).toBe(true);
   });
 
-  it('rejects response.created and response.output_item.added (envelope frames)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.created' }), 'openaiResponses')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added' }), 'openaiResponses')).toBe(false);
+  it.each(['response.created', 'response.queued', 'response.in_progress', 'response.completed'])('rejects response lifecycle metadata: %s', type => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type }), 'openaiResponses')).toBe(false);
   });
 
   it('rejects known event type with empty delta string', () => {
@@ -122,14 +121,31 @@ describe('first output across supported stream payloads', () => {
     'response.mcp_call_arguments.delta',
     'response.shell_call_command.delta',
     'response.apply_patch_call_operation_diff.delta',
+    'response.future_model_output.delta',
   ])('recognizes generated %s content and rejects its empty envelope', type => {
     expect(isFirstOutputTokenFrame(eventFrame({ type, delta: 'output' }), 'openaiResponses')).toBe(true);
     expect(isFirstOutputTokenFrame(eventFrame({ type, delta: '' }), 'openaiResponses')).toBe(false);
   });
 
-  it.each(['function_call', 'custom_tool_call', 'mcp_call'])('recognizes generated Responses %s names', type => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item: { type, name: 'search' } }), 'openaiResponses')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item: { type, id: 'call_1', name: '' } }), 'openaiResponses')).toBe(false);
+  it.each([
+    { type: 'reasoning', id: 'rs_1', summary: [] },
+    { type: 'message', role: 'assistant', content: [] },
+    { type: 'function_call', name: '', arguments: '' },
+    { type: 'custom_tool_call', name: '', input: '' },
+    { type: 'mcp_call', name: '', arguments: '' },
+    { type: 'shell_call', action: { commands: [] } },
+    { type: 'future_model_output', id: 'item_1' },
+  ])('recognizes any output item at creation: %j', item => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item }), 'openaiResponses')).toBe(true);
+  });
+
+  it.each([
+    { type: 'response.future_model_output.delta', delta: null },
+    { type: 'response.future_model_output.delta', delta: {} },
+    { type: 'response.future_model_output.done', delta: 'snapshot' },
+    { type: 'unrelated.delta', delta: 'text' },
+  ])('rejects events outside nonempty Responses string deltas: %j', event => {
+    expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
   });
 
   it('excludes execution output, progress, and completion snapshots', () => {
@@ -138,7 +154,6 @@ describe('first output across supported stream payloads', () => {
       { type: 'response.mcp_list_tools.completed', tools: [{ name: 'search' }] },
       { type: 'response.code_interpreter_call.in_progress' },
       { type: 'response.reasoning.done', text: 'complete reasoning' },
-      { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1' } },
     ]) expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
   });
 

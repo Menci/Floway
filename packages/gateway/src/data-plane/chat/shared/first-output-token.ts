@@ -1,7 +1,6 @@
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesOutputItemEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
 export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): boolean => {
@@ -45,37 +44,12 @@ const isAnthropicMessagesOutputEvent = (event: Record<string, unknown>): boolean
   }
 };
 
-// All currently modeled string deltas carry generated content. The exhaustive
-// record forces additions to the protocol union to be classified here too.
-// https://github.com/openai/openai-python/tree/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses
-// Tool execution output has an object delta and must not start model timing.
-// https://github.com/openai/openai-python/blob/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses/response_shell_call_output_content_delta_event.py#L12-L38
-const OPENAI_RESPONSES_OUTPUT_EVENT_TYPES = new Set(Object.keys({
-  'response.output_text.delta': true,
-  'response.function_call_arguments.delta': true,
-  'response.custom_tool_call_input.delta': true,
-  'response.refusal.delta': true,
-  'response.reasoning.delta': true,
-  'response.reasoning_text.delta': true,
-  'response.reasoning_summary_text.delta': true,
-  'response.audio.delta': true,
-  'response.audio.transcript.delta': true,
-  'response.code_interpreter_call_code.delta': true,
-  'response.mcp_call_arguments.delta': true,
-  'response.shell_call_command.delta': true,
-  'response.apply_patch_call_operation_diff.delta': true,
-} satisfies Record<Extract<OpenAIResponsesStreamEventEx, { delta: string }>['type'], true>));
-
-const isOpenAIResponsesOutputEvent = (event: Record<string, unknown>): boolean => {
-  // Function names are generated content even when arguments have not arrived.
-  // https://github.com/openai/openai-python/blob/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses/response_function_tool_call.py
-  if (event.type === 'response.output_item.added') {
-    const item = event.item as OpenAIResponsesOutputItemEx | undefined;
-    return (item?.type === 'function_call' || item?.type === 'custom_tool_call' || item?.type === 'mcp_call') && nonEmptyString(item.name);
-  }
-  if (typeof event.type !== 'string' || !OPENAI_RESPONSES_OUTPUT_EVENT_TYPES.has(event.type)) return false;
-  return nonEmptyString(event.delta);
-};
+// Item creation is the model-output boundary even before its content deltas.
+// Response lifecycle events do not announce output items.
+// https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L40-L56
+const isOpenAIResponsesOutputEvent = (event: Record<string, unknown>): boolean =>
+  event.type === 'response.output_item.added'
+  || (typeof event.type === 'string' && event.type.startsWith('response.') && event.type.endsWith('.delta') && nonEmptyString(event.delta));
 
 // Tool identity fields are envelopes; names and input are generated output.
 // https://github.com/openai/openai-python/blob/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/chat/chat_completion_chunk.py#L37-L79

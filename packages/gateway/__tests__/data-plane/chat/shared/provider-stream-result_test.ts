@@ -49,7 +49,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     const ctx = mockGatewayCtx();
     const frames: ProtocolFrame<unknown>[] = [
       { type: 'event', event: { type: 'response.created' } },
-      { type: 'event', event: { type: 'response.output_item.added' } },
+      { type: 'event', event: { type: 'response.in_progress' } },
     ];
     const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
     await drainEvents(result);
@@ -135,13 +135,13 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps.slice(0, 2)).toEqual([null, null]);
-  expect(stamps.slice(2)).toEqual(timeline.slice(2).map(() => 3598));
+  expect(stamps[0]).toBe(null);
+  expect(stamps.slice(1)).toEqual(timeline.slice(1).map(() => 3596));
   const metadata = await result.finalMetadata!;
   expect(metadata.billableUsage?.output).toBe(202);
   recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 5408);
   await Promise.all(pending);
-  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3283, tpotUs: 9005, success: true }));
+  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3281, tpotUs: 9015, success: true }));
   expect(await repo.performance.listAll()).toEqual([expect.objectContaining({ ttftSamplesOk: 1, tpotSamples: 1, neutral: 0 })]);
 });
 
