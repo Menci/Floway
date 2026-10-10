@@ -133,62 +133,32 @@ describe('first output across supported stream payloads', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.done', item }), 'openaiResponses')).toBe(false);
   });
 
-  describe.each(['response.output_item.added', 'response.output_item.done'])('known item data on %s', type => {
+  describe.each(['response.output_item.added', 'response.output_item.done'])('decode signals on %s', type => {
     it.each([
-      { type: 'message', content: [{ type: 'output_text', text: 'hello' }] },
-      { type: 'message', content: [{ type: 'refusal', refusal: 'declined' }] },
-      { type: 'reasoning', summary: [{ type: 'summary_text', text: 'thinking' }] },
-      { type: 'reasoning', summary: [], content: [{ type: 'reasoning_text', text: 'thinking' }] },
-      { type: 'function_call', name: 'search', arguments: '' },
-      { type: 'function_call', name: '', arguments: '{}' },
-      { type: 'custom_tool_call', name: 'shell', input: '' },
-      { type: 'custom_tool_call', name: '', input: 'ls' },
-      { type: 'mcp_call', name: 'search', arguments: '' },
-      { type: 'mcp_call', name: '', arguments: '{}' },
-      { type: 'mcp_approval_request', name: 'search', arguments: '' },
-      { type: 'web_search_call', action: { type: 'search', queries: ['search terms'] } },
-      { type: 'web_search_call', action: { type: 'search', query: 'search terms' } },
-      { type: 'web_search_call', action: { type: 'open_page', url: 'https://example.com' } },
-      { type: 'web_search_call', action: { type: 'find_in_page', url: '', pattern: 'match' } },
-      { type: 'file_search_call', queries: ['search terms'] },
-      { type: 'computer_call', action: { type: 'wait' } },
-      { type: 'computer_call', actions: [{ type: 'screenshot' }] },
-      { type: 'tool_search_call', arguments: { query: 'search tools' } },
+      { type: 'message', content: [] },
+      { type: 'reasoning', summary: [] },
+      { type: 'reasoning', summary: [], encrypted_content: 'private reasoning' },
+      { type: 'function_call', name: '', arguments: '' },
+      { type: 'custom_tool_call', name: '', input: '' },
+      { type: 'mcp_call', name: '', arguments: '' },
+      { type: 'mcp_approval_request', name: '', arguments: '' },
+      { type: 'web_search_call', action: null },
+      { type: 'file_search_call', queries: [] },
+      { type: 'computer_call', actions: [] },
       { type: 'tool_search_call', arguments: {} },
-      { type: 'program', code: 'print(1)' },
-      { type: 'agent_message', content: [{ type: 'text', text: 'hello' }] },
+      { type: 'program', code: '' },
+      { type: 'agent_message', content: [] },
       { type: 'multi_agent_call', action: 'list_agents', arguments: '' },
-      { type: 'code_interpreter_call', code: 'print(1)' },
-      { type: 'local_shell_call', action: { command: ['ls'] } },
-      { type: 'shell_call', action: { commands: ['ls'] } },
-      { type: 'apply_patch_call', operation: { type: 'delete_file', path: 'file.txt' } },
-      { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: 'content' } },
-      { type: 'image_generation_call', revised_prompt: 'A landscape' },
-    ])('recognizes generated data in %j', item => {
+      { type: 'code_interpreter_call', code: null },
+      { type: 'local_shell_call', action: { command: [] } },
+      { type: 'shell_call', action: { commands: [] } },
+      { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: '' } },
+      { type: 'image_generation_call', status: 'in_progress' },
+    ])('counts model-output item %j before its payload is streamed', item => {
       expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(true);
     });
 
     it.each([
-      { type: 'message', content: [] },
-      { type: 'reasoning', summary: [], encrypted_content: 'opaque' },
-      { type: 'function_call', name: '', arguments: '' },
-      { type: 'custom_tool_call', name: '', input: '' },
-      { type: 'mcp_call', name: '', arguments: '', output: 'tool output' },
-      { type: 'mcp_approval_request', name: '', arguments: '', server_label: 'server' },
-      { type: 'web_search_call', results: [{ text: 'tool output' }] },
-      { type: 'web_search_call', action: { type: 'search', queries: [], sources: [{ url: 'https://example.com' }] } },
-      { type: 'web_search_call', action: { type: 'open_page' } },
-      { type: 'file_search_call', queries: [], results: [{ text: 'tool output' }] },
-      { type: 'computer_call', actions: [], pending_safety_checks: [{ id: 'check_1' }] },
-      { type: 'tool_search_call', arguments: null, execution: 'server' },
-      { type: 'program', code: '', fingerprint: 'fingerprint' },
-      { type: 'agent_message', content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }], author: 'agent', recipient: 'agent' },
-      { type: 'multi_agent_call', action: '', arguments: '', agent: { agent_name: 'agent' } },
-      { type: 'code_interpreter_call', code: null, outputs: [{ type: 'logs', logs: 'tool output' }] },
-      { type: 'local_shell_call', action: { command: [], env: { PATH: '/bin' } } },
-      { type: 'shell_call', action: { commands: [], timeout_ms: 1000 } },
-      { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: '' } },
-      { type: 'image_generation_call', result: 'image', status: 'completed' },
       { type: 'function_call_output', output: 'tool output' },
       { type: 'custom_tool_call_output', output: 'tool output' },
       { type: 'computer_call_output', output: { type: 'computer_screenshot', image_url: 'data:image/png;base64,AAAA' } },
@@ -199,12 +169,13 @@ describe('first output across supported stream payloads', () => {
       { type: 'shell_call_output', output: [{ stdout: 'tool output' }] },
       { type: 'apply_patch_call_output', output: 'tool output' },
       { type: 'additional_tools', tools: [{ name: 'search' }] },
+      { type: 'mcp_list_tools', tools: [] },
       { type: 'mcp_list_tools', tools: [{ name: 'search' }] },
       { type: 'mcp_approval_response', approve: true },
       { type: 'compaction', encrypted_content: 'opaque' },
       { type: 'compaction_summary', encrypted_content: 'opaque' },
       { type: 'context_compaction', encrypted_content: 'opaque' },
-    ])('waits through metadata or returned data in %j', item => {
+    ])('ignores preparation, context, and execution results: %j', item => {
       expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(false);
     });
   });

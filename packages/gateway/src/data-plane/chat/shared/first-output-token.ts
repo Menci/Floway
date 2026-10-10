@@ -1,7 +1,7 @@
 import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesOutputItemEx, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
 export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): boolean => {
@@ -50,72 +50,60 @@ const hasResponsesText = (part: unknown): boolean => {
   return nonEmptyString(content.text) || nonEmptyString(content.refusal);
 };
 
-const hasWebSearchInput = (action: OpenAIResponsesWebSearchAction | undefined): boolean => {
-  switch (action?.type) {
-  case 'search': return nonEmptyString(action.query) || action.queries?.some(nonEmptyString) === true;
-  case 'open_page': return nonEmptyString(action.url);
-  case 'find_in_page': return nonEmptyString(action.url) || nonEmptyString(action.pattern);
-  default: return false;
-  }
-};
+// Model-output item announcements approximate decode starting, even when the
+// producer opens an empty body after receiving sampled output. Private reasoning
+// need not expose a summary, so waiting for its text would count decode as prefill.
+// https://github.com/vllm-project/vllm/blob/3709632ff2944a5f2ecdacc84ede5cd134b7ae08/vllm/entrypoints/openai/responses/streaming_events.py#L562-L595
+// https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries
+// Discovery can precede inference; execution results and supplied context are
+// not model-output signals. Unknown wire types start timing at their announcement.
+// https://github.com/sgl-project/sglang/blob/de487f8039e06853b5f376fd5f068ea9d7c400bb/sgl-model-gateway/src/routers/grpc/regular/responses/streaming.rs#L542-L613
+const RESPONSES_ITEM_DECODE_SIGNALS = {
+  message: true,
+  reasoning: true,
+  function_call: true,
+  custom_tool_call: true,
+  mcp_call: true,
+  mcp_approval_request: true,
+  web_search_call: true,
+  file_search_call: true,
+  computer_call: true,
+  tool_search_call: true,
+  program: true,
+  agent_message: true,
+  multi_agent_call: true,
+  code_interpreter_call: true,
+  local_shell_call: true,
+  shell_call: true,
+  apply_patch_call: true,
+  image_generation_call: true,
+  function_call_output: false,
+  custom_tool_call_output: false,
+  computer_call_output: false,
+  tool_search_output: false,
+  program_output: false,
+  multi_agent_call_output: false,
+  local_shell_call_output: false,
+  shell_call_output: false,
+  apply_patch_call_output: false,
+  additional_tools: false,
+  mcp_list_tools: false,
+  mcp_approval_response: false,
+  compaction: false,
+  compaction_summary: false,
+  context_compaction: false,
+} satisfies Record<OpenAIResponsesOutputItemEx['type'], boolean>;
 
-// Known items expose generated input separately from execution results and
-// replay metadata. New modeled types must state their output fields here;
-// unrecognized wire types use their item announcement as the timing boundary.
-// https://github.com/openai/openai-python/blob/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses/response_output_item.py#L46-L328
-const RESPONSES_ITEM_OUTPUT = {
-  message: item => item.content.some(hasResponsesText),
-  reasoning: item => item.summary.some(hasResponsesText) || item.content?.some(hasResponsesText) === true,
-  function_call: item => nonEmptyString(item.name) || nonEmptyString(item.arguments),
-  custom_tool_call: item => nonEmptyString(item.name) || nonEmptyString(item.input),
-  mcp_call: item => nonEmptyString(item.name) || nonEmptyString(item.arguments),
-  mcp_approval_request: item => nonEmptyString(item.name) || nonEmptyString(item.arguments),
-  web_search_call: item => hasWebSearchInput(item.action),
-  file_search_call: item => item.queries.some(nonEmptyString),
-  computer_call: item => item.action !== undefined || (item.actions !== undefined && item.actions.length > 0),
-  tool_search_call: item => item.arguments !== undefined && item.arguments !== null && (typeof item.arguments !== 'string' || nonEmptyString(item.arguments)),
-  program: item => nonEmptyString(item.code),
-  agent_message: item => item.content.some(hasResponsesText),
-  multi_agent_call: item => nonEmptyString(item.action) || nonEmptyString(item.arguments),
-  code_interpreter_call: item => nonEmptyString(item.code),
-  local_shell_call: item => item.action.command.some(nonEmptyString),
-  shell_call: item => item.action.commands.some(nonEmptyString),
-  apply_patch_call: item => nonEmptyString(item.operation.path) || ('diff' in item.operation && nonEmptyString(item.operation.diff)),
-  // The mainline model generates revised_prompt; result is the hosted image tool's output.
-  // https://developers.openai.com/api/docs/guides/tools-image-generation#revised-prompt
-  image_generation_call: item => nonEmptyString(item.revised_prompt),
-  function_call_output: () => false,
-  custom_tool_call_output: () => false,
-  computer_call_output: () => false,
-  tool_search_output: () => false,
-  program_output: () => false,
-  multi_agent_call_output: () => false,
-  local_shell_call_output: () => false,
-  shell_call_output: () => false,
-  apply_patch_call_output: () => false,
-  additional_tools: () => false,
-  mcp_list_tools: () => false,
-  mcp_approval_response: () => false,
-  compaction: () => false,
-  compaction_summary: () => false,
-  context_compaction: () => false,
-} satisfies {
-  [Type in OpenAIResponsesOutputItemEx['type']]: (item: OpenAIResponsesOutputItemEx & { type: Type }) => boolean;
-};
+const isResponsesDecodeItem = (item: OpenAIResponsesOutputItemEx, added: boolean): boolean =>
+  Object.hasOwn(RESPONSES_ITEM_DECODE_SIGNALS, item.type) ? RESPONSES_ITEM_DECODE_SIGNALS[item.type] : added;
 
-const isResponsesItemOutput = (item: OpenAIResponsesOutputItemEx, added: boolean): boolean => {
-  if (!Object.hasOwn(RESPONSES_ITEM_OUTPUT, item.type)) return added;
-  const read = RESPONSES_ITEM_OUTPUT[item.type] as (item: OpenAIResponsesOutputItemEx) => boolean;
-  return read(item);
-};
-
-// Some fields arrive atomically in item/part or content completion events.
-// Their payload still marks first output when no earlier delta carried data.
+// Streams can expose their first decode evidence as an item announcement or
+// atomically completed content. Both complement streamed string deltas.
 // https://github.com/openai/openai-python/tree/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses
 const isOpenAIResponsesOutputEvent = (event: Record<string, unknown>): boolean => {
   switch (event.type) {
   case 'response.output_item.added':
-  case 'response.output_item.done': return isResponsesItemOutput(event.item as OpenAIResponsesOutputItemEx, event.type === 'response.output_item.added');
+  case 'response.output_item.done': return isResponsesDecodeItem(event.item as OpenAIResponsesOutputItemEx, event.type === 'response.output_item.added');
   case 'response.content_part.added':
   case 'response.content_part.done':
   case 'response.reasoning_summary_part.added':

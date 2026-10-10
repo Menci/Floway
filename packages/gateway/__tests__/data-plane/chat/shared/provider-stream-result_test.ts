@@ -135,13 +135,13 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps.slice(0, 2)).toEqual([null, null]);
-  expect(stamps.slice(2)).toEqual(timeline.slice(2).map(() => 3598));
+  expect(stamps[0]).toBe(null);
+  expect(stamps.slice(1)).toEqual(timeline.slice(1).map(() => 3596));
   const metadata = await result.finalMetadata!;
   expect(metadata.billableUsage?.output).toBe(202);
   recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 5408);
   await Promise.all(pending);
-  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3283, tpotUs: 9005, success: true }));
+  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3281, tpotUs: 9015, success: true }));
   expect(await repo.performance.listAll()).toEqual([expect.objectContaining({ ttftSamplesOk: 1, tpotSamples: 1, neutral: 0 })]);
 });
 
@@ -169,9 +169,9 @@ test('waits for generated tool content after Chat Completions identity frames', 
 });
 
 test.each([
-  { item: { type: 'message', content: [] }, completed: { type: 'message', content: [{ type: 'output_text', text: 'hello' }] }, firstOutput: 600 },
-  { item: { type: 'future_model_output', id: 'item_1' }, completed: { type: 'future_model_output', id: 'item_1' }, firstOutput: 200 },
-])('distinguishes known data arrival from unknown item announcement: %j', async ({ item, completed, firstOutput }) => {
+  { item: { type: 'message', content: [] }, completed: { type: 'message', content: [{ type: 'output_text', text: 'hello' }] } },
+  { item: { type: 'future_model_output', id: 'item_1' }, completed: { type: 'future_model_output', id: 'item_1' } },
+])('uses known and unknown output item announcements as decode signals: %j', async ({ item, completed }) => {
   const ctx = mockGatewayCtx();
   let now = 0;
   vi.spyOn(performance, 'now').mockImplementation(() => now);
@@ -190,5 +190,52 @@ test.each([
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps).toEqual([null, firstOutput === 200 ? 200 : null, firstOutput]);
+  expect(stamps).toEqual([null, 200, 200]);
+});
+
+test('counts private reasoning as decode time while ignoring pre-inference tool discovery', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const pending: Promise<unknown>[] = [];
+  const ctx = mockGatewayCtx({ backgroundScheduler: promise => { pending.push(promise); } });
+  ctx.attempt.timing.upstreamCallStartedAt = 100;
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const recordSample = vi.spyOn(repo.performance, 'recordSample');
+  const timeline = [
+    { ts: 110, event: { type: 'response.created' } },
+    { ts: 120, event: { type: 'response.output_item.added', item: { type: 'mcp_list_tools', tools: [] } } },
+    { ts: 150, event: { type: 'response.output_item.done', item: { type: 'mcp_list_tools', tools: [{ name: 'search' }] } } },
+    { ts: 500, event: { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1', summary: [] } } },
+    { ts: 15000, event: { type: 'response.output_item.done', item: { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'private reasoning' } } },
+    { ts: 15001, event: { type: 'response.output_item.added', item: { type: 'message', content: [] } } },
+    { ts: 15002, event: { type: 'response.output_text.delta', delta: 'answer' } },
+    {
+      ts: 16000, event: {
+        type: 'response.completed', response: {
+          usage: { input_tokens: 10, output_tokens: 202, total_tokens: 212, output_tokens_details: { reasoning_tokens: 190 } },
+        },
+      },
+    },
+  ];
+  const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
+    for (const { ts, event } of timeline) {
+      now = ts;
+      yield { type: 'event', event };
+    }
+  })();
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(events), stubModelCandidate(), 'openaiResponses', ctx,
+    event => billableUsageFromOpenAIResponsesEvent(event as OpenAIResponsesStreamEventEx),
+  );
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+  const stamps: (number | null)[] = [];
+  for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
+  expect(stamps.slice(0, 3)).toEqual([null, null, null]);
+  expect(stamps.slice(3)).toEqual(timeline.slice(3).map(() => 500));
+  const metadata = await result.finalMetadata!;
+  expect(metadata.billableUsage?.output).toBe(202);
+  recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 16000);
+  await Promise.all(pending);
+  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 400, tpotUs: 77114, success: true }));
 });
