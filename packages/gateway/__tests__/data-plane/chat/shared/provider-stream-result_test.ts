@@ -16,6 +16,43 @@ import { mockPerfTelemetryContext, stubModelCandidate } from '@floway-dev/test-u
 
 afterEach(() => { vi.restoreAllMocks(); });
 
+test('measures output when it becomes observable through the provider result', async () => {
+  let now = 110;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  let releaseOutput!: () => void;
+  let releaseIdentity!: () => void;
+  const outputReady = new Promise<void>(resolve => { releaseOutput = resolve; });
+  const identityReady = new Promise<void>(resolve => { releaseIdentity = resolve; });
+  let buffered = false;
+  const opener: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.output_item.added', output_index: 0, item: null } };
+  const delta: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.output_text.delta', output_index: 0, item_id: 'message', delta: 'hello' } };
+  const done: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: 'message' } } };
+  const events = (async function* () {
+    yield opener;
+    await outputReady;
+    buffered = true;
+    await identityReady;
+    yield delta;
+    yield done;
+  })();
+  const ctx = mockGatewayCtx();
+  const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+  if (result.type !== 'events') throw new Error('Expected events');
+  const iterator = result.events[Symbol.asyncIterator]();
+  expect((await iterator.next()).value).toEqual(opener);
+  now = 500;
+  releaseOutput();
+  await vi.waitFor(() => { expect(buffered).toBe(true); });
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
+  now = 15000;
+  releaseIdentity();
+  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(15000); });
+  expect((await iterator.next()).value).toEqual(delta);
+  expect((await iterator.next()).value).toEqual(done);
+  expect(await iterator.next()).toEqual({ done: true, value: undefined });
+  await result.finalMetadata;
+});
+
 test.each([true, false])('timestamps parsed upstream output while downstream is stalled (same byte chunk: %s)', async sameChunk => {
   let now = 110;
   vi.spyOn(performance, 'now').mockImplementation(() => now);

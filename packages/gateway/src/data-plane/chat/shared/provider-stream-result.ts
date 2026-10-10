@@ -1,4 +1,4 @@
-import { observeFirstOutputToken } from './first-output-token-observer.ts';
+import { firstOutputTokenSignal } from './first-output-token.ts';
 import { observeStreamPrefix } from './observe-stream-prefix.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
@@ -40,8 +40,23 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   // abort settles it too; whichever fires first wins, and the later call is a
   // no-op.
   ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
+  // Provider normalization determines when a frame crosses this observation
+  // boundary. Its internal buffering remains included in the measurement.
   const stampedEvents = observeStreamPrefix(providerResult.events, frame => {
-    observeFirstOutputToken(frame, providerResult.modelKey, candidate, targetApi, ctx);
+    if (!ctx.abortSignal?.aborted && !ctx.attempt.outputObservationUnavailable && ctx.attempt.timing.firstOutputTokenAt === null) {
+      const signal = firstOutputTokenSignal(frame, targetApi);
+      if (signal !== null) {
+        ctx.attempt.timing.firstOutputTokenAt = performance.now();
+        if (signal.type === 'runtime-output') {
+          console.warn('Floway: first output timing started from runtime output without an earlier decode signal in this response', {
+            outputType: signal.outputType,
+            upstream: identity.upstream,
+            model: identity.model,
+            modelKey: identity.modelKey,
+          });
+        }
+      }
+    }
     if (frame.type === 'event') {
       const reported = readBillableUsage(frame.event);
       if (reported !== null) billableUsage = reported;

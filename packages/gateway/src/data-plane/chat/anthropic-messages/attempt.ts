@@ -1,6 +1,7 @@
 import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
+import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
@@ -9,7 +10,6 @@ import { providerStreamResultToExecuteResult } from '../shared/provider-stream-r
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
-import { buildChatUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -39,7 +39,7 @@ const buildAnthropicMessagesUpstreamCallOptions = (
   headers: Headers,
   anthropicBeta: readonly string[],
 ): AnthropicMessagesUpstreamCallOptions => ({
-  ...buildChatUpstreamCallOptions(candidate, ctx, headers, 'anthropicMessages'),
+  ...buildUpstreamCallOptions(candidate, ctx, headers),
   anthropicBeta,
 });
 

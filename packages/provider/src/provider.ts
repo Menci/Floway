@@ -119,9 +119,6 @@ export interface UpstreamCallOptions {
   // both timing anchors on failover, so the recorded interval can be shorter
   // than the latency the client observed.
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
-  // Observe parsed upstream evidence before provider interceptors can hold or
-  // suppress frames; the gateway owns timing and protocol classification.
-  observeStreamFrame?: (frame: ProtocolFrame<unknown>, modelKey: string) => void;
 }
 
 export interface AnthropicMessagesUpstreamCallOptions extends UpstreamCallOptions {

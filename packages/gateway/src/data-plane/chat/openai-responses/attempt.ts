@@ -7,6 +7,7 @@ import { syntheticEventsFromCompaction } from './items/output.ts';
 import { billableUsageFromOpenAIResponsesEvent, billableUsageFromOpenAIResponsesResult } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
@@ -15,7 +16,6 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
-import { buildChatUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -160,7 +160,7 @@ const dispatchOpenAIResponses = async (
       body,
       invocation.action,
       ctx.abortSignal,
-      buildChatUpstreamCallOptions(candidate, ctx, invocation.headers, targetApi),
+      buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
     return await providerOpenAIResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
   }
