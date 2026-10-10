@@ -1,6 +1,8 @@
 import { FIVE_HOUR_WINDOW_MINUTES, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
+import type { TFunction } from '../../i18n/translation';
 import { formatUsd } from '../../lib/decimal-display';
+import { shortDate } from '../../lib/format-time';
 import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
 import { ollamaUsageMetrics } from '@floway-dev/provider-ollama/browser';
 
@@ -49,6 +51,9 @@ export const readWindows = (data: unknown): UsageWindow[] => {
 export interface ActivityCost {
   amount: string;
   period: string | null;
+  from?: string;
+  until?: string;
+  scope?: string;
 }
 
 export const readActivityCost = (data: unknown): ActivityCost | null => {
@@ -57,13 +62,27 @@ export const readActivityCost = (data: unknown): ActivityCost | null => {
     if (!isRecordValue(data)) return null;
     for (const [key, amount] of ollamaUsageMetrics(data)) {
       const [kind, period] = JSON.parse(key) as [string, string];
-      if (kind === 'activity_cost') return { amount: String(amount), period };
+      if (kind === 'activity_cost') return {
+        amount: String(amount), period,
+        from: typeof data.from === 'string' ? data.from : undefined,
+        until: typeof data.until === 'string' ? data.until : undefined,
+        scope: typeof data.scope === 'string' ? data.scope : undefined,
+      };
     }
     return null;
   }
   const period = isRecordValue(activity.period) ? activity.period.type : null;
-  return { amount: activity.cost, period: typeof period === 'string' ? period : null };
+  return {
+    amount: activity.cost, period: typeof period === 'string' ? period : null,
+    from: isRecordValue(activity.period) && typeof activity.period.starting_at === 'string' ? activity.period.starting_at : undefined,
+    until: isRecordValue(activity.period) && typeof activity.period.ending_at === 'string' ? activity.period.ending_at : undefined,
+  };
 };
+
+export const activityCostHint = (cost: ActivityCost, t: TFunction, locale: string): string =>
+  cost.from !== undefined && cost.until !== undefined
+    ? t(cost.scope === 'self' ? 'dashboard.upstreams.signals.costRangeSelf' : 'dashboard.upstreams.signals.costRange', { from: shortDate(cost.from, locale), until: shortDate(cost.until, locale) })
+    : t(cost.period === 'last_4_weeks' ? 'dashboard.upstreams.signals.costLast4Weeks' : 'dashboard.upstreams.signals.cost');
 
 // The figure reaches the dashboard on the same money ladder every other cost
 // does -- "0.00000" reads as "$0", a sub-cent charge keeps its digits. The

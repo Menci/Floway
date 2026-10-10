@@ -13,7 +13,7 @@ import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
-import { activityCostText, type OllamaRecord, readActivityCost, readWindows, readBalances } from '../upstreams/ollama-usage';
+import { activityCostHint, activityCostText, type OllamaRecord, readActivityCost, readWindows, readBalances } from '../upstreams/ollama-usage';
 import { ProviderIcon } from '../upstreams/provider-badge';
 import { quotaBarColor } from '../upstreams/subscription-quota';
 
@@ -90,7 +90,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>)}
 
     {(balanceObservation ?? observation) && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Tooltip content={activityCost.period === 'last_4_weeks' ? t('dashboard.upstreams.signals.costLast4Weeks') : t('dashboard.upstreams.signals.cost')} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(activityCost.amount)}</Text></Tooltip>}
+      {activityCost !== null && <Tooltip content={activityCostHint(activityCost, t, locale)} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(activityCost.amount)}</Text></Tooltip>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime((balanceObservation ?? observation)!.fetchedAt, locale) })}
       </Text>

@@ -442,8 +442,10 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          cost: '这段时间用了多少额度，按美元显示。',
-          costLast4Weeks: '过去 4 周用了多少额度，按美元显示。',
+          cost: '使用模型消耗的额度。',
+          costLast4Weeks: '过去 4 周使用模型消耗的额度。',
+          costRange: '{{from}} 至 {{until}}，使用模型消耗的额度。',
+          costRangeSelf: '{{from}} 至 {{until}}，本账号使用模型消耗的额度（含套餐和购买额度）。',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -960,8 +962,8 @@ const zhHansCN = {
           usage: {
             balance: { included: '订阅余额', purchased: '购买余额' },
             balanceHint: {
-              included: '套餐里的额度还剩多少。每月重置，使用模型时先扣这部分。',
-              purchased: '另外买的额度还剩多少。套餐额度用完后，就扣这部分。',
+              included: '套餐剩余额度，每月重置；使用模型时优先扣减。',
+              purchased: '另外购买的剩余额度；套餐额度用完后扣减。',
             },
             title: '用量',
             load: '加载',

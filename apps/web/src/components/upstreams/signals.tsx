@@ -9,7 +9,7 @@ import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntr
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
-import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
+import { activityCostHint, activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
@@ -221,9 +221,7 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
       percent: null,
       value: activityCostText(cost.amount),
       label: null,
-      detail: cost.period === 'last_4_weeks'
-        ? t('dashboard.upstreams.signals.costLast4Weeks')
-        : t('dashboard.upstreams.signals.cost'),
+      detail: activityCostHint(cost, t, locale),
     });
   }
   return signals;

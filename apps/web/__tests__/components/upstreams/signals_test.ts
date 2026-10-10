@@ -284,7 +284,26 @@ describe('upstream readout by provider', () => {
     };
     expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
     const cost = readoutOf(record).signals.at(-1);
-    expect(cost?.detail).toBe('Credits used over the past four weeks, shown in US dollars.');
+    expect(cost?.detail).toBe('Credits consumed by model requests over the past four weeks.');
+  });
+
+  it('describes the reported self usage period independently of a monthly balance reset', () => {
+    const signals = readoutOf({
+      kind: 'ollama',
+      state: {
+        balanceProbe: { observation: { data: { included: { balance_usd: 57, period: { from: '2026-11-01T00:00:00Z', until: '2026-12-01T00:00:00Z' } }, purchased: { balance_usd: 25 } } } },
+        usageProbe: {
+          observation: {
+            fetchedAt: Date.parse('2026-11-03T04:00:00Z'), data: {
+              range: '7d', scope: 'self', from: '2026-10-27T00:00:00Z', until: '2026-11-03T04:00:00Z', totals: { usage_usd: 10 },
+            },
+          },
+        },
+      },
+    }).signals;
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.value).toBe('$10.00');
+    expect(signals[0]?.detail).toBe('Oct 27, 2026 to Nov 3, 2026: credits this account consumed through model requests, including plan and purchased credits.');
   });
 
   it('leaves USD usage unqualified when the upstream named no period for it', () => {
@@ -300,7 +319,7 @@ describe('upstream readout by provider', () => {
         },
       },
     }).signals;
-    expect(signals.at(-1)?.detail).toBe('Credits used during this period, shown in US dollars.');
+    expect(signals.at(-1)?.detail).toBe('Credits consumed by model requests.');
   });
 
   // The card keeps that zero; a row of live readings does not, because a figure

@@ -467,8 +467,10 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Credits used during this period, shown in US dollars.',
-          costLast4Weeks: 'Credits used over the past four weeks, shown in US dollars.',
+          cost: 'Credits consumed by model requests.',
+          costLast4Weeks: 'Credits consumed by model requests over the past four weeks.',
+          costRange: '{{from}} to {{until}}: credits consumed by model requests.',
+          costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -1005,8 +1007,8 @@ const en = {
           usage: {
             balance: { included: 'Included balance', purchased: 'Purchased balance' },
             balanceHint: {
-              included: 'Credits left in your plan. They reset each month and are used first.',
-              purchased: 'Credits left from your extra purchases. They are used after your plan credits.',
+              included: 'Remaining plan credits. Reset monthly and used first for model requests.',
+              purchased: 'Remaining purchased credits. Used after plan credits run out.',
             },
             title: 'Usage',
             load: 'Load',
