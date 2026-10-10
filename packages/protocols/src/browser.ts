@@ -4,17 +4,53 @@
 // the browser runtime API without an explicit review.
 
 export type * from './common/index.ts';
+export type * from './openai-completions/index.ts';
+export type * from './openai-chat-completions/index.ts';
+export type * from './openai-responses/index.ts';
+export type * from './anthropic-messages/index.ts';
+export type * from './gemini-generate-content/index.ts';
+export type * from './openai-embeddings/index.ts';
+export type * from './openai-images/index.ts';
+export type * from './openai-audio/index.ts';
+export type * from './rerank/index.ts';
+
+export { parseAnthropicBetaHeader } from './anthropic-messages/beta-header.ts';
 
 export {
-  isJsonObject,
-  jsonInteger,
-  captureExtras,
+  ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
+  ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES,
+} from './anthropic-messages/constants.ts';
+
+export { reassembleAnthropicMessagesEvents } from './anthropic-messages/reassemble.ts';
+
+export { parseAnthropicMessagesStream } from './anthropic-messages/stream.ts';
+
+export {
+  ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE,
+  collectAnthropicMessagesProtocolEventsToResult,
+} from './anthropic-messages/to-result.ts';
+
+export { anthropicMessagesProtocolFrameToSSEFrame } from './anthropic-messages/to-sse.ts';
+
+export {
+  createAnthropicMessagesUsage,
+  toAnthropicMessagesUsageDelta,
+  toAnthropicMessagesUsageDeltaEx,
+  mergeAnthropicMessagesUsageSnapshot,
+  anthropicMessagesUsageSnapshot,
+  splitAnthropicMessagesCacheCreationTokens,
+} from './anthropic-messages/usage.ts';
+
+export {
   isFastServiceTier,
   FAST_SERVICE_TIER,
   ALIAS_RULE_BADGE_FIELDS,
   formatAliasRuleBadges,
   formatAliasRulesInline,
   composeAliasDisplayName,
+} from './common/aliases.ts';
+
+export {
   normalizeForgivingBase64,
   decodeForgivingBase64,
   decodeForgivingBase64url,
@@ -24,9 +60,11 @@ export {
   decodeHex,
   decodeCanonicalBase64,
   decodeCanonicalBase64url,
-  MODEL_KINDS,
-  parseModelKind,
-  kindForEndpoints,
+} from './common/base-encoding.ts';
+
+export { PUBLIC_DATA_PLANE_ROUTES } from './common/data-plane-routes.ts';
+
+export {
   parseDecimalString,
   parseNonNegativeDecimalString,
   addDecimalStrings,
@@ -34,9 +72,13 @@ export {
   divideDecimalString,
   decimalStringIsZero,
   decimalStringToNumber,
-  PUBLIC_DATA_PLANE_ROUTES,
-  RERANK_PROTOCOLS,
-  materializeOpaqueBlobCompatibilityIdentity,
+} from './common/decimal.ts';
+
+export { MODEL_KINDS, parseModelKind, kindForEndpoints } from './common/endpoints.ts';
+
+export { isJsonObject, jsonInteger } from './common/json.ts';
+
+export {
   parseMediaType,
   mediaTypeEssence,
   isJsonMediaType,
@@ -45,6 +87,27 @@ export {
   isEventStreamMediaType,
   isImageMediaType,
   isMultipartFormDataMediaType,
+} from './common/media-type.ts';
+
+export { RERANK_PROTOCOLS, materializeOpaqueBlobCompatibilityIdentity } from './common/models.ts';
+
+export {
+  MAX_OPAQUE_TRAILER_BYTES,
+  concatBytes,
+  uint16be,
+  decodeOpaqueValue,
+  encodeOpaqueValue,
+  appendOpaqueTrailer,
+  splitOpaqueTrailer,
+} from './common/opaque-value.ts';
+
+export { isOpenAIUsageOnlyEventShape } from './common/openai-stream.ts';
+
+export { parseTargetStreamFrames } from './common/parse-events.ts';
+
+export { parseSSEStream } from './common/parse-sse.ts';
+
+export {
   BILLING_METRICS,
   parseBillingMetric,
   PRICING_AXES,
@@ -61,6 +124,13 @@ export {
   tokenPricingEntry,
   tokenBasePricing,
   priceRequest,
+} from './common/pricing.ts';
+
+export { captureExtras } from './common/reassemble-extras.ts';
+
+export { sseFrame, sseCommentFrame, eventFrame, doneFrame } from './common/sse.ts';
+
+export {
   usageUpstreamDimensionPrefix,
   usageWithoutUpstreamDimensionValue,
   tokenUsageUnattributedUserId,
@@ -71,112 +141,70 @@ export {
   splitCacheWriteTokens,
   splitInclusiveInputTokens,
   splitInclusiveOutputTokens,
-  isOpenAIUsageOnlyEventShape,
-  MAX_OPAQUE_TRAILER_BYTES,
-  concatBytes,
-  uint16be,
-  decodeOpaqueValue,
-  encodeOpaqueValue,
-  appendOpaqueTrailer,
-  splitOpaqueTrailer,
-  sseFrame,
-  sseCommentFrame,
-  eventFrame,
-  doneFrame,
-  parseSSEStream,
-  parseTargetStreamFrames,
-} from './common/index.ts';
-
-export type * from './openai-completions/index.ts';
-
-export {
-  reassembleOpenAICompletionsEvents,
-  openaiCompletionsProtocolFrameToSSEFrame,
-} from './openai-completions/index.ts';
-
-export type * from './openai-chat-completions/index.ts';
-
-export {
-  parseOpenAIChatCompletionsStream,
-  collectOpenAIChatCompletionsProtocolEventsToResult,
-  reassembleOpenAIChatCompletionsEvents,
-  openaiChatCompletionsProtocolFrameToSSEFrame,
-  openaiChatCompletionsErrorPayloadMessage,
-} from './openai-chat-completions/index.ts';
-
-export type * from './openai-responses/index.ts';
-
-export {
-  isOpenAIResponsesCompactionItem,
-  WEB_SEARCH_HOSTED_TYPE_NAMES,
-  collectOpenAIResponsesToolEntries,
-  collectOpenAIResponsesTools,
-  mapOpenAIResponsesTools,
-  isOpenAIResponsesTerminalEvent,
-  openaiResponsesResultFromStreamEvent,
-  toCompactPayloadShape,
-  openaiResponsesResultToEvents,
-  imageGenerationCallLifecycleEvents,
-  webSearchCallLifecycleEvents,
-  parseOpenAIResponsesStream,
-  OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE,
-  collectOpenAIResponsesProtocolEventsToResult,
-  createRandomOpenAIResponsesItemId,
-  reassembleOpenAIResponsesEvents,
-  openaiResponsesProtocolFrameToSSEFrame,
-} from './openai-responses/index.ts';
-
-export type * from './anthropic-messages/index.ts';
-
-export {
-  ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
-  ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES,
-  createAnthropicMessagesUsage,
-  toAnthropicMessagesUsageDelta,
-  toAnthropicMessagesUsageDeltaEx,
-  mergeAnthropicMessagesUsageSnapshot,
-  anthropicMessagesUsageSnapshot,
-  splitAnthropicMessagesCacheCreationTokens,
-  parseAnthropicMessagesStream,
-  parseAnthropicBetaHeader,
-  ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE,
-  collectAnthropicMessagesProtocolEventsToResult,
-  generateAnthropicId,
-  reassembleAnthropicMessagesEvents,
-  anthropicMessagesProtocolFrameToSSEFrame,
-  PROMPT_TOO_LONG_MESSAGE,
-  buildPromptTooLongBody,
-} from './anthropic-messages/index.ts';
-
-export type * from './gemini-generate-content/index.ts';
+} from './common/usage.ts';
 
 export {
   GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS,
   GEMINI_GENERATE_CONTENT_RESULT_KEYS,
+} from './gemini-generate-content/field-keys.ts';
+
+export { reassembleGeminiGenerateContentEvents } from './gemini-generate-content/reassemble.ts';
+
+export {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
   isGeminiGenerateContentErrorEvent,
   isGeminiGenerateContentTerminalEvent,
   collectGeminiGenerateContentProtocolEventsToResult,
-  reassembleGeminiGenerateContentEvents,
-  geminiGenerateContentProtocolFrameToSSEFrame,
-} from './gemini-generate-content/index.ts';
+} from './gemini-generate-content/to-result.ts';
 
-export type * from './openai-embeddings/index.ts';
-
-export type * from './openai-images/index.ts';
-
-export type * from './openai-audio/index.ts';
+export { geminiGenerateContentProtocolFrameToSSEFrame } from './gemini-generate-content/to-sse.ts';
 
 export { isOpenAIAudioTranscriptionDoneEvent } from './openai-audio/index.ts';
 
-export type * from './rerank/index.ts';
+export { openaiChatCompletionsErrorPayloadMessage } from './openai-chat-completions/errors.ts';
+
+export { reassembleOpenAIChatCompletionsEvents } from './openai-chat-completions/reassemble.ts';
+
+export { parseOpenAIChatCompletionsStream } from './openai-chat-completions/stream.ts';
+
+export { collectOpenAIChatCompletionsProtocolEventsToResult } from './openai-chat-completions/to-result.ts';
+
+export { openaiChatCompletionsProtocolFrameToSSEFrame } from './openai-chat-completions/to-sse.ts';
+
+export { reassembleOpenAICompletionsEvents } from './openai-completions/reassemble.ts';
+
+export { openaiCompletionsProtocolFrameToSSEFrame } from './openai-completions/to-sse.ts';
+
+export { isOpenAIResponsesCompactionItem, toCompactPayloadShape } from './openai-responses/compact.ts';
+
+export { reassembleOpenAIResponsesEvents } from './openai-responses/reassemble.ts';
 
 export {
-  DEFAULT_RERANK_PATHS,
+  isOpenAIResponsesTerminalEvent,
+  openaiResponsesResultFromStreamEvent,
+} from './openai-responses/terminal-event.ts';
+
+export {
+  OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE,
+  collectOpenAIResponsesProtocolEventsToResult,
+} from './openai-responses/to-result.ts';
+
+export { openaiResponsesProtocolFrameToSSEFrame } from './openai-responses/to-sse.ts';
+
+export {
+  WEB_SEARCH_HOSTED_TYPE_NAMES,
+  collectOpenAIResponsesToolEntries,
+  collectOpenAIResponsesTools,
+  mapOpenAIResponsesTools,
+} from './openai-responses/tools.ts';
+
+export { DEFAULT_RERANK_PATHS } from './rerank/default-paths.ts';
+
+export {
   parseRerankRequest,
   parseRerankResponse,
   parseRerankUsage,
   rerankRequestIncompatibility,
   renderRerankResponse,
   serializeRerankRequest,
-} from './rerank/index.ts';
+} from './rerank/translate.ts';

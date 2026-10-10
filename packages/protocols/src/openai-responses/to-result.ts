@@ -1,6 +1,7 @@
 import type { ClientResponseResource, ClientOpenAIResponsesStreamEvent } from './client-resource.ts';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from './index.ts';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 import { reassembleOpenAIResponsesEvents } from './reassemble.ts';
+import { isOpenAIResponsesTerminalEvent } from './terminal-event.ts';
 import { type ProtocolFrame } from '../common/index.ts';
 
 export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses stream ended without a terminal event.';
