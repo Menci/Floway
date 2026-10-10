@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
@@ -45,8 +45,7 @@ describe('OpenAI Chat Completions affinity egress', () => {
     expect(calls).toHaveLength(0);
 
     const pending = output.next();
-    await Promise.resolve();
-    expect(calls.map(call => [call.value, call.domain])).toEqual([['new', 'openai-chat-completions.reasoning_opaque']]);
+    await vi.waitFor(() => expect(calls.map(call => [call.value, call.domain])).toEqual([['new', 'openai-chat-completions.reasoning_opaque']]));
     calls[0].resolve('wrapped-new');
     expect((await pending).value).toEqual(eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'wrapped-new' }, finish_reason: null }])));
     expect((await output.next()).value).toEqual(eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])));

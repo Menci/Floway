@@ -85,7 +85,7 @@ describe('Anthropic Messages affinity egress', () => {
 
   test('preserves empty signature placeholders and adds no signature or block', async () => {
     const codec: AffinityEgressCodec = { wrap: vi.fn(async value => `wrapped:${value}`) };
-    const input = [
+    const input: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [
       eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),

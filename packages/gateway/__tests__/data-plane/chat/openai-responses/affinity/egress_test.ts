@@ -87,7 +87,7 @@ describe('OpenAI Responses affinity egress', () => {
   test('keeps gateway-owned compaction content portable without an extra carrier', async () => {
     const encrypted_content = encodeBase64UrlJson([{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'portable summary' }] }]);
     const item = { type: 'compaction' as const, id: 'cmp_shim', encrypted_content };
-    const input = eventFrame({ type: 'response.completed', response: response([item]) });
+    const input = eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.completed', response: response([item]) });
     expect(await collect([input])).toEqual([input]);
   });
 
