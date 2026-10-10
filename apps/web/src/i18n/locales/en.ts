@@ -1120,7 +1120,7 @@ const en = {
       telemetry: {
         currentUserOnly: 'Only me',
         range: {
-          to: 'to', oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
+          oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
         },
       },
       usage: {

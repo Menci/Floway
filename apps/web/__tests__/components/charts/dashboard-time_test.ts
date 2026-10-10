@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
+import { chartTickValues, dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 
 afterEach(() => vi.unstubAllEnvs());
@@ -78,4 +78,10 @@ test('whole local days retain DST and fractional-offset UTC hour coverage', () =
   vi.stubEnv('TZ', 'America/New_York');
   expect(dashboardBucketFrames({ start: '2026-11-01', end: '2026-11-01' }, 0)).toHaveLength(25);
   expect(dashboardBucketFrames({ start: '2026-03-08', end: '2026-03-08' }, 0)).toHaveLength(23);
+});
+
+test('chart ticks distribute both endpoints without crowding the final two labels', () => {
+  const buckets = Array.from({ length: 32 }, (_, index) => ({ date: new Date(2026, 9, 10 + index), index }));
+  expect(chartTickValues(buckets).map(bucket => bucket.index)).toEqual([0, 5, 10, 16, 21, 26, 31]);
+  expect(chartTickValues(buckets.slice(0, 7))).toEqual(buckets.slice(0, 7));
 });

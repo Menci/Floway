@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { CalendarNavigationIcon } from './calendar-navigation-icon';
 import { useTranslation } from '../../i18n/translation';
 import { calendarDate, parseCalendarDate } from '../../lib/calendar-date';
+import { formatDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { RANGE_CELL_BORDER, RANGE_CELL_STROKE, RANGE_CELL_SIZE, RANGE_CONTENT_SIZE, RANGE_DRILL_EASING, RANGE_DRILL_MS, RANGE_DRILL_OUT_MS, RANGE_HEADER_FADE_MS, RANGE_LARGE_COLUMNS, RANGE_NAVIGATION_MS, RANGE_SNAPSHOT_MS, rangeNavigationFrames } from '../../winui/calendar-range';
 
@@ -53,7 +54,7 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
       : mode === 'decade' ? dateAt(start.getFullYear() - (start.getFullYear() - 1) % RANGE_LARGE_COLUMNS)
         : dateAt(start.getFullYear() - start.getFullYear() / 10 % RANGE_LARGE_COLUMNS * 10);
   const cells = Array.from({ length: mode === 'month' ? 42 : 16 }, (_, index) => shiftDate(mode, origin, index));
-  const header = mode === 'month' ? date.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+  const header = mode === 'month' ? formatDate(date, locale, { month: 'long', year: 'numeric' })
     : mode === 'year' ? date.getFullYear().toLocaleString(locale, { useGrouping: false }) : `${start.getFullYear()} - ${end.getFullYear()}`;
 
   const transitionTo = (nextMode: Mode, nextDate: Date, nextFocus: string, transferFocus: boolean) => {
@@ -164,11 +165,11 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
             const inRange = value.start !== null && value.end !== null && key > value.start && last < value.end;
             const single = endpoint === 'start' && value.end !== null && key <= value.end && value.end <= last;
             const current = mode === 'month' ? calendarDate(today) === key : mode === 'year' ? cell.getFullYear() === today.getFullYear() && cell.getMonth() === today.getMonth() : today.getFullYear() >= cell.getFullYear() && today.getFullYear() < cell.getFullYear() + (mode === 'century' ? 10 : 1);
-            const label = mode === 'month' ? String(cell.getDate()) : mode === 'year' ? cell.toLocaleDateString(locale, { month: 'short' }) : mode === 'decade' ? String(cell.getFullYear()) : `${cell.getFullYear()}-\n${cell.getFullYear() + 9}`;
+            const label = mode === 'month' ? String(cell.getDate()) : mode === 'year' ? formatDate(cell, locale, { month: 'short' }) : mode === 'decade' ? String(cell.getFullYear()) : `${cell.getFullYear()}-\n${cell.getFullYear() + 9}`;
             const rangeStart = endpoint === 'start';
             const arcRadius = radius + (rangeStart ? -RANGE_CELL_STROKE : RANGE_CELL_STROKE);
             const bandEdge = rangeStart ? cellSize : 0;
-            return <button aria-current={current ? 'date' : undefined} aria-label={mode === 'month' ? cell.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' }) : label.replace('\n', '')} aria-selected={endpoint !== undefined || inRange} aria-hidden={!sameScope(mode, cell, date) || undefined} className="floway-range-cell" data-date={key} data-endpoint={endpoint} data-in-range={inRange || undefined} data-single={single || undefined} data-today={current || undefined} data-outside={!sameScope(mode, cell, date) || undefined} disabled={key > MAX_DATE || last < MIN_DATE || !sameScope(mode, cell, date)} key={key} onClick={() => select(cell)} onKeyDown={event => keyDown(event, cell)} role="gridcell" tabIndex={key === focusKey ? 0 : -1} type="button">
+            return <button aria-current={current ? 'date' : undefined} aria-label={mode === 'month' ? formatDate(cell, locale, { year: 'numeric', month: 'long', day: 'numeric' }) : label.replace('\n', '')} aria-selected={endpoint !== undefined || inRange} aria-hidden={!sameScope(mode, cell, date) || undefined} className="floway-range-cell" data-date={key} data-endpoint={endpoint} data-in-range={inRange || undefined} data-single={single || undefined} data-today={current || undefined} data-outside={!sameScope(mode, cell, date) || undefined} disabled={key > MAX_DATE || last < MIN_DATE || !sameScope(mode, cell, date)} key={key} onClick={() => select(cell)} onKeyDown={event => keyDown(event, cell)} role="gridcell" tabIndex={key === focusKey ? 0 : -1} type="button">
               <svg aria-hidden="true" className="floway-range-cell-paint" viewBox={`0 0 ${cellSize} ${cellSize}`}>
                 {inRange && <rect className="floway-range-band" width={cellSize} height={shapeLayoutSize} y={shapeOffset} />}
                 {endpoint && !single && value.end !== null && <path className="floway-range-band" d={`M ${bandEdge} ${shapeOffset} L ${circleSize / 2} ${shapeOffset} A ${arcRadius} ${radius} 0 0 ${rangeStart ? 0 : 1} ${circleSize / 2} ${shapeOffset + circleSize + RANGE_CELL_STROKE / 2} L ${bandEdge} ${shapeOffset + circleSize + RANGE_CELL_STROKE / 2} Z`} />}

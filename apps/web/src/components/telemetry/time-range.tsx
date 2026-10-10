@@ -2,13 +2,14 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { calendarDate, parseCalendarDate, type CalendarDateRange } from '../../lib/calendar-date';
+import { calendarDate, parseCalendarDate } from '../../lib/calendar-date';
+import { formatDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { sameDashboardRange, type DashboardPreset, type DashboardRange } from '../charts/dashboard-time';
 import { CalendarRange, type CalendarRangeSelection } from '../ui/calendar-range';
 import { ChoiceGroup } from '../ui/choice-group';
 
-const { Link, Popover, PopoverSurface } = fluentComponents;
+const { Popover, PopoverSurface } = fluentComponents;
 
 export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, onEditingChange, range }: {
   addressOf: (range: DashboardRange) => string;
@@ -25,8 +26,6 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
   const [editing, setEditing] = useState(false);
   const [session, setSession] = useState({ serial: 0, date: typeof range === 'string' ? calendarDate(new Date(loadedAt)) : range.start });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const [caption, setCaption] = useState<CalendarDateRange | null>(typeof range === 'string' ? null : range);
-  if (typeof range !== 'string' && caption !== range) setCaption(range);
   const groupRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<CalendarRangeSelection>(draft);
@@ -69,11 +68,16 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
     queueMicrotask(() => { if (document.hasFocus() && !owns(document.activeElement)) close(true); });
   };
   const showCaption = typeof range !== 'string';
-  const formatter = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  const formatEndpoint = (date: string) => formatDate(parseCalendarDate(date), locale, { year: 'numeric', month: 'short', day: 'numeric' });
   return <div className="floway-telemetry-range" ref={groupRef} onBlurCapture={event => blur(event.relatedTarget)} onKeyDown={event => {
     if (event.key !== 'Escape' || !editingRef.current) return;
     event.preventDefault(); event.stopPropagation(); close(false);
   }}>
+    <div className="floway-telemetry-range-caption">
+      {typeof range !== 'string' && <button aria-label={t('dashboard.telemetry.range.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={begin} type="button">
+        {formatEndpoint(range.start)}{' - '}{formatEndpoint(range.end)}
+      </button>}
+    </div>
     <ChoiceGroup ariaLabel={ariaLabel} items={[
       { value: 'today', label: t('dashboard.telemetry.range.oneDay'), to: addressOf('today') },
       { value: '7d', label: t('dashboard.telemetry.range.sevenDays'), to: addressOf('7d') },
@@ -83,13 +87,6 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
       if (value === 'custom') begin();
       else { close(false); onChange(value as DashboardPreset); }
     }} value={editing || showCaption ? 'custom' : range as DashboardPreset} />
-    <div aria-hidden={!showCaption} className="floway-telemetry-range-caption" data-expanded={showCaption || undefined}>
-      <div className="floway-telemetry-range-caption-content">
-        {caption !== null && <Link aria-label={t('dashboard.telemetry.range.choose')} as="button" onClick={begin} tabIndex={showCaption ? 0 : -1}>
-          {formatter.format(parseCalendarDate(caption.start))}{' '}{t('dashboard.telemetry.range.to')}{' '}{formatter.format(parseCalendarDate(caption.end))}
-        </Link>}
-      </div>
-    </div>
     <Popover open={editing} onOpenChange={(event, data) => {
       if (data.open) return;
       if (event.type === 'keydown' && 'key' in event && event.key === 'Escape') close(false);

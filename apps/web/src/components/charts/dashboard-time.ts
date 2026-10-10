@@ -1,4 +1,5 @@
 import { calendarDate, nextCalendarDate, parseCalendarDate, validateCalendarRange, type CalendarDateRange } from '../../lib/calendar-date';
+import { formatDate, formatDateParts } from '../../lib/format-time';
 import {
   createTelemetryBucket,
   TELEMETRY_HOUR_MS,
@@ -169,11 +170,8 @@ export const serializeDashboardRange = (search: URLSearchParams, range: Dashboar
 
 export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired = 7): T[] => {
   if (buckets.length <= 8) return buckets;
-  const step = Math.ceil((buckets.length - 1) / (desired - 1));
-  const ticks = buckets.filter((_, index) => index % step === 0);
-  const last = buckets.at(-1);
-  if (last && ticks.at(-1) !== last) ticks.push(last);
-  return ticks;
+  const count = Math.min(desired, buckets.length);
+  return Array.from({ length: count }, (_, index) => buckets[Math.round(index * (buckets.length - 1) / (count - 1))]!);
 };
 
 export const formatAxisDate = (date: Date, range: DashboardRange, locale: string) => {
@@ -183,7 +181,7 @@ export const formatAxisDate = (date: Date, range: DashboardRange, locale: string
     : granularity === '4h' || granularity === '8h' ? { month: 'short', day: 'numeric', hour: 'numeric' }
       : granularity === 'month' ? { year: 'numeric', month: 'short' }
         : granularity === 'year' ? { year: 'numeric' } : { month: 'short', day: 'numeric' };
-  return date.toLocaleString(locale, options);
+  return formatDate(date, locale, options);
 };
 
 export const formatBucketInterval = (frame: DashboardBucketFrame, locale: string): string => {
@@ -192,8 +190,8 @@ export const formatBucketInterval = (frame: DashboardBucketFrame, locale: string
   const end = new Date(frame.end);
   const parts = formatter.formatRangeToParts(start, end);
   return parts.some(part => part.type === 'year')
-    ? `${formatter.format(start)} – ${formatter.format(end)}`
-    : parts.map(part => part.value).join('');
+    ? `${formatDateParts(formatter.formatToParts(start))} – ${formatDateParts(formatter.formatToParts(end))}`
+    : formatDateParts(parts);
 };
 
 export const formatCalloutTitle = (

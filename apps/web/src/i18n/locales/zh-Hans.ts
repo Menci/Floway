@@ -1072,7 +1072,7 @@ const zhHansCN = {
       telemetry: {
         currentUserOnly: '仅自己',
         range: {
-          to: '到', oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
+          oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
         },
       },
       usage: {

@@ -2,15 +2,21 @@ import { NO_READING } from './no-reading';
 
 const toDate = (value: string | number): Date => new Date(value);
 
+export const formatDateParts = (parts: Intl.DateTimeFormatPart[]): string =>
+  parts.map(part => part.type === 'literal' || part.type === 'month' ? part.value.replace(/[年月日]/g, ' $& ') : part.value).join('').replace(/ +/g, ' ').trim();
+
+export const formatDate = (date: Date, locale: string, options: Intl.DateTimeFormatOptions): string =>
+  formatDateParts(new Intl.DateTimeFormat(locale, options).formatToParts(date));
+
 export const shortDate = (value: string | number | null | undefined, locale: string): string =>
   value === null || value === undefined
     ? NO_READING
-    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(toDate(value));
+    : formatDate(toDate(value), locale, { dateStyle: 'medium' });
 
 export const dateTime = (value: string | number | null | undefined, locale: string): string =>
   value === null || value === undefined
     ? NO_READING
-    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(toDate(value));
+    : formatDate(toDate(value), locale, { dateStyle: 'medium', timeStyle: 'medium' });
 
 const RELATIVE_UNITS: [limitSeconds: number, perUnitSeconds: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [60, 1, 'second'],
