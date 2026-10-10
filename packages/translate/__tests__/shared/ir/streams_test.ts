@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { collectIR, collect, completeIR, events, iterate } from './helpers.ts';
-import { codePointRangeToIR, irRangeToCodePoints } from '../../../src/shared/ir/shared/coordinates.ts';
 import type { IR } from '../../../src/shared/ir/ir.ts';
+import { codePointRangeToIR, irRangeToCodePoints } from '../../../src/shared/ir/shared/coordinates.ts';
 import { createIRProjection } from '../../../src/shared/ir/shared/projection.ts';
+import { usageFromIR, usageToIR } from '../../../src/shared/ir/shared/usage.ts';
 import { irFromAnthropicMessages } from '../../../src/shared/ir/sse-from/anthropic-messages/index.ts';
 import { irFromOpenAIChatCompletions } from '../../../src/shared/ir/sse-from/openai-chat-completions/index.ts';
 import { irFromOpenAIResponses, responsesItemToIR } from '../../../src/shared/ir/sse-from/openai-responses/index.ts';
@@ -11,7 +12,6 @@ import { anthropicMessagesFromIR } from '../../../src/shared/ir/sse-to/anthropic
 import { geminiGenerateContentFromIR } from '../../../src/shared/ir/sse-to/gemini-generatecontent/index.ts';
 import { openaiChatCompletionsFromIR } from '../../../src/shared/ir/sse-to/openai-chat-completions/index.ts';
 import { openaiResponsesFromIR } from '../../../src/shared/ir/sse-to/openai-responses/index.ts';
-import { usageFromIR, usageToIR } from '../../../src/shared/ir/shared/usage.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';
