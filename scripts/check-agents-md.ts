@@ -7,7 +7,7 @@ const AGENTS_PATH = resolve(ROOT, 'AGENTS.md');
 const EXPECTED_TITLE = '# Repository Agent Guide';
 const EXPECTED_SECTIONS = ['## Requirements', '## Index'] as const;
 const PACKAGE_ROOTS = ['packages', 'apps'] as const;
-const DIRECT_PACKAGES = ['tools', 'ir'] as const;
+const DIRECT_PACKAGES = ['tools'] as const;
 const EXPECTED_TABLE_HEADERS = [
   '| Scope | Requirement | Enforcement |',
   '| Category | Entry | Overview |',

@@ -58,7 +58,6 @@
 | Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
 | Package | `apps/platform-node` | Hosts Floway on Node. |
 | Package | `apps/web` | Provides the operator dashboard. |
-| Package | `ir` | Defines fit IR streaming and replay. |
 | Package | `packages/agent-setup` | Configures supported coding agents. |
 | Package | `packages/gateway` | Composes gateway services. |
 | Package | `packages/http` | Provides HTTP transport primitives. |

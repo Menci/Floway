@@ -63,7 +63,6 @@ const WEB_RESTRICTED_IMPORT_PATTERNS = [
 
 const projectList = [
   './tsconfig.scripts.json',
-  './ir/tsconfig.json',
   './apps/platform-cloudflare/tsconfig.json',
   './apps/platform-node/tsconfig.json',
   './apps/web/tsconfig.json',

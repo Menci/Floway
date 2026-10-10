@@ -1,6 +1,4 @@
-import type { GeminiGenerateContentPartData, GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentThinkingConfig, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
-
-const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+import type { GeminiGenerateContentPartData, GeminiGenerateContentContent, GeminiGenerateContentFunctionCallingConfig, GeminiGenerateContentFunctionDeclaration, GeminiGenerateContentPayload, GeminiGenerateContentPart, GeminiGenerateContentThinkingConfig } from '@floway-dev/protocols/gemini-generate-content';
 
 export type GeminiGenerateContentToolCallIds = Record<string, string[]>;
 
@@ -180,57 +178,3 @@ export const geminiGenerateContentFunctionCallingIntent = (config?: GeminiGenera
     return undefined;
   }
 };
-
-export interface GeminiGenerateContentThoughtSignatureState {
-  pendingThoughtSignature?: string;
-}
-
-export const setGeminiGenerateContentThoughtSignature = (state: GeminiGenerateContentThoughtSignatureState, signature: string): void => {
-  state.pendingThoughtSignature = signature;
-};
-
-export const signGeminiGenerateContentPart = (state: GeminiGenerateContentThoughtSignatureState, part: GeminiGenerateContentPart): GeminiGenerateContentPart => {
-  if (state.pendingThoughtSignature === undefined) return part;
-
-  const signedPart = {
-    ...part,
-    thoughtSignature: state.pendingThoughtSignature,
-  };
-  state.pendingThoughtSignature = undefined;
-  return signedPart;
-};
-
-export const flushGeminiGenerateContentThoughtSignature = (state: GeminiGenerateContentThoughtSignatureState): GeminiGenerateContentPart[] => (state.pendingThoughtSignature === undefined ? [] : [signGeminiGenerateContentPart(state, { text: '' })]);
-
-export const parseStrictJsonObject = (json: string, subject: string): Record<string, unknown> => {
-  if (!json) return {};
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json) as unknown;
-  } catch (error) {
-    throw new Error(`Upstream ${subject} was not valid JSON.`, {
-      cause: error,
-    });
-  }
-
-  if (!isJsonObject(parsed)) {
-    throw new Error(`Upstream ${subject} must be a JSON object.`);
-  }
-
-  return parsed;
-};
-
-// Shape a single-candidate Gemini generateContent stream event. Lives in shared because both
-// gemini-generate-content-via-anthropic-messages and gemini-generate-content-via-openai-responses produce the same envelope.
-export const geminiGenerateContentCandidateEvent = (parts: GeminiGenerateContentPart[], finishReason?: GeminiGenerateContentFinishReason, usageMetadata?: GeminiGenerateContentUsageMetadata, finishMessage?: string): GeminiGenerateContentStreamEvent => ({
-  candidates: [
-    {
-      index: 0,
-      content: { role: 'model', parts },
-      ...(finishReason !== undefined ? { finishReason } : {}),
-      ...(finishMessage !== undefined ? { finishMessage } : {}),
-    },
-  ],
-  ...(usageMetadata !== undefined ? { usageMetadata } : {}),
-});
