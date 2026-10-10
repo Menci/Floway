@@ -4,13 +4,24 @@ import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReason
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
-export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): boolean => {
-  if (frame.type === 'done') return false;
+type FirstOutputTokenSignal =
+  | { type: 'decode' }
+  | { type: 'runtime-result'; itemType: string };
+
+const decodeSignal = (hasOutput: boolean): FirstOutputTokenSignal | null => hasOutput ? { type: 'decode' } : null;
+
+export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): FirstOutputTokenSignal | null => {
+  if (frame.type === 'done') return null;
 
   const event = frame.event as Record<string, unknown>;
-  if (targetApi === 'anthropicMessages') return isAnthropicMessagesOutputEvent(event);
-  if (targetApi === 'openaiResponses') return isOpenAIResponsesOutputEvent(event);
-  return isOpenAIChatCompletionsOutputEvent(event);
+  if (targetApi === 'anthropicMessages') return decodeSignal(isAnthropicMessagesOutputEvent(event));
+  if (targetApi === 'openaiResponses') {
+    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+      return responsesItemTimingSignal(event.item as OpenAIResponsesOutputItemEx, event.type === 'response.output_item.added');
+    }
+    return decodeSignal(hasOpenAIResponsesOutputData(event));
+  }
+  return decodeSignal(isOpenAIChatCompletionsOutputEvent(event));
 };
 
 const nonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
@@ -56,25 +67,25 @@ const hasResponsesText = (part: unknown): boolean => {
 // https://github.com/vllm-project/vllm/blob/3709632ff2944a5f2ecdacc84ede5cd134b7ae08/vllm/entrypoints/openai/responses/streaming_events.py#L562-L595
 // https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries
 // Unknown wire types start timing at their announcement.
-const RESPONSES_ITEM_DECODE_SIGNALS = {
-  message: true,
-  reasoning: true,
-  function_call: true,
-  custom_tool_call: true,
-  mcp_call: true,
-  mcp_approval_request: true,
-  web_search_call: true,
-  file_search_call: true,
-  computer_call: true,
-  tool_search_call: true,
-  program: true,
-  agent_message: true,
-  multi_agent_call: true,
-  code_interpreter_call: true,
-  local_shell_call: true,
-  shell_call: true,
-  apply_patch_call: true,
-  image_generation_call: true,
+const RESPONSES_ITEM_TIMING_SIGNALS = {
+  message: 'decode',
+  reasoning: 'decode',
+  function_call: 'decode',
+  custom_tool_call: 'decode',
+  mcp_call: 'decode',
+  mcp_approval_request: 'decode',
+  web_search_call: 'decode',
+  file_search_call: 'decode',
+  computer_call: 'decode',
+  tool_search_call: 'decode',
+  program: 'decode',
+  agent_message: 'decode',
+  multi_agent_call: 'decode',
+  code_interpreter_call: 'decode',
+  local_shell_call: 'decode',
+  shell_call: 'decode',
+  apply_patch_call: 'decode',
+  image_generation_call: 'decode',
 
   // Client-tool results, supplied tool definitions, and approval decisions
   // normally enter request input, rather than response output. The output
@@ -84,31 +95,30 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   // https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input
   // https://developers.openai.com/api/docs/guides/tools-connectors-mcp#approvals
   // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5726-L5754
-  function_call_output: false,
-  custom_tool_call_output: false,
-  computer_call_output: false,
-  local_shell_call_output: false,
-  apply_patch_call_output: false,
-  additional_tools: false,
-  mcp_approval_response: false,
+  function_call_output: null,
+  custom_tool_call_output: null,
+  computer_call_output: null,
+  local_shell_call_output: null,
+  apply_patch_call_output: null,
+  additional_tools: null,
+  mcp_approval_response: null,
 
   // Hosted runtime results normally follow a call/program item that has already
-  // started timing, so they do not need to start it themselves. A result arriving
-  // before every decode signal is unexpected; using it to start timing requires
-  // a warning about the missing earlier signal. Client-executed tool search and
+  // started timing. If the earlier signal is missing, start timing at the result
+  // and warn about the unexpected ordering. Client-executed tool search and
   // shell results follow the input pattern above.
   // https://developers.openai.com/api/docs/guides/tools-tool-search#hosted-tool-search
   // https://developers.openai.com/api/docs/guides/tools-shell#shell-output-in-responses
   // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling#understand-program-response-items
-  tool_search_output: false,
-  program_output: false,
-  multi_agent_call_output: false,
-  shell_call_output: false,
+  tool_search_output: 'runtime-result',
+  program_output: 'runtime-result',
+  multi_agent_call_output: 'runtime-result',
+  shell_call_output: 'runtime-result',
 
   // MCP discovery can emit a populated tool list before inference is invoked;
   // it establishes available tools, not a model-selected call.
   // https://github.com/sgl-project/sglang/blob/de487f8039e06853b5f376fd5f068ea9d7c400bb/sgl-model-gateway/src/routers/grpc/regular/responses/streaming.rs#L542-L613
-  mcp_list_tools: false,
+  mcp_list_tools: null,
 
   // Compaction can involve inference and appear in the response stream before
   // normal inference continues. We exclude its context-maintenance boundary
@@ -116,21 +126,24 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   // as input in later turns.
   // https://developers.openai.com/api/docs/guides/compaction
   // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1252
-  compaction: false,
-  compaction_summary: false,
-  context_compaction: false,
-} satisfies Record<OpenAIResponsesOutputItemEx['type'], boolean>;
+  compaction: null,
+  compaction_summary: null,
+  context_compaction: null,
+} satisfies Record<OpenAIResponsesOutputItemEx['type'], 'decode' | 'runtime-result' | null>;
 
-const isResponsesDecodeItem = (item: OpenAIResponsesOutputItemEx, added: boolean): boolean =>
-  Object.hasOwn(RESPONSES_ITEM_DECODE_SIGNALS, item.type) ? RESPONSES_ITEM_DECODE_SIGNALS[item.type] : added;
+const responsesItemTimingSignal = (item: OpenAIResponsesOutputItemEx, added: boolean): FirstOutputTokenSignal | null => {
+  const disposition = Object.hasOwn(RESPONSES_ITEM_TIMING_SIGNALS, item.type)
+    ? RESPONSES_ITEM_TIMING_SIGNALS[item.type]
+    : added ? 'decode' : null;
+  if (disposition === null) return null;
+  return disposition === 'runtime-result' ? { type: disposition, itemType: item.type } : { type: disposition };
+};
 
-// Streams can expose their first decode evidence as an item announcement or
-// atomically completed content. Both complement streamed string deltas.
+// Content snapshots can expose first decode evidence atomically; they
+// complement streamed string deltas and item announcements.
 // https://github.com/openai/openai-python/tree/ef676dbc199bc09d12a1d051f3b8b2486aa53dc2/src/openai/types/responses
-const isOpenAIResponsesOutputEvent = (event: Record<string, unknown>): boolean => {
+const hasOpenAIResponsesOutputData = (event: Record<string, unknown>): boolean => {
   switch (event.type) {
-  case 'response.output_item.added':
-  case 'response.output_item.done': return isResponsesDecodeItem(event.item as OpenAIResponsesOutputItemEx, event.type === 'response.output_item.added');
   case 'response.content_part.added':
   case 'response.content_part.done':
   case 'response.reasoning_summary_part.added':

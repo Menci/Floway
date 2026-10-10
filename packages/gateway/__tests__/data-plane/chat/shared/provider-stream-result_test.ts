@@ -239,3 +239,51 @@ test('counts private reasoning as decode time while ignoring pre-inference tool 
   await Promise.all(pending);
   expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 400, tpotUs: 77114, success: true }));
 });
+
+describe.each([
+  { callType: 'tool_search_call', item: { type: 'tool_search_output', tools: [] } },
+  { callType: 'program', item: { type: 'program_output', result: 'result' } },
+  { callType: 'multi_agent_call', item: { type: 'multi_agent_call_output', output: [{ type: 'output_text', text: 'result' }] } },
+  { callType: 'shell_call', item: { type: 'shell_call_output', output: [{ stdout: 'result', stderr: '' }] } },
+])('runtime result timing for $item.type', ({ callType, item }) => {
+  describe.each(['response.output_item.added', 'response.output_item.done'])('first result event: %s', resultEventType => {
+    test.each([true, false])('warns only when no earlier item started timing (prior call: %s)', async withPriorCall => {
+      const ctx = mockGatewayCtx();
+      let now = 0;
+      vi.spyOn(performance, 'now').mockImplementation(() => now);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => { now += 50; });
+      const timeline = [
+        { ts: 100, event: { type: 'response.created' } },
+        { ts: 200, event: { type: 'response.output_item.added', item: { type: 'mcp_list_tools', tools: [] } } },
+        ...(withPriorCall ? [{ ts: 300, event: { type: 'response.output_item.added', item: { type: callType } } }] : []),
+        { ts: 500, event: { type: resultEventType, item } },
+        { ts: 700, event: { type: 'response.output_item.done', item } },
+        { ts: 900, event: { type: 'response.output_text.delta', delta: 'answer' } },
+      ];
+      const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
+        for (const { ts, event } of timeline) {
+          now = ts;
+          yield { type: 'event', event };
+        }
+      })();
+      const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+      if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+      const stamps: (number | null)[] = [];
+      const forwarded: ProtocolFrame<unknown>[] = [];
+      for await (const frame of result.events) {
+        stamps.push(ctx.attempt.timing.firstOutputTokenAt);
+        forwarded.push(frame);
+      }
+      expect(forwarded).toEqual(timeline.map(({ event }) => ({ type: 'event', event })));
+      expect(stamps).toEqual(withPriorCall ? [null, null, 300, 300, 300, 300] : [null, null, 500, 500, 500]);
+      if (withPriorCall) {
+        expect(warn).not.toHaveBeenCalled();
+      } else {
+        expect(warn).toHaveBeenCalledExactlyOnceWith(
+          'Floway: first output timing started from a runtime result without an earlier decode signal',
+          { itemType: item.type, upstream: 'test-upstream', model: 'test-model', modelKey: 'test-model-key' },
+        );
+      }
+    });
+  });
+});

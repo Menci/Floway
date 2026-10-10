@@ -1,108 +1,108 @@
 import { describe, expect, it } from 'vitest';
 
-import { isFirstOutputTokenFrame } from '../../../../src/data-plane/chat/shared/first-output-token.ts';
+import { firstOutputTokenSignal } from '../../../../src/data-plane/chat/shared/first-output-token.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const eventFrame = <T>(event: T): ProtocolFrame<T> => ({ type: 'event', event });
 
-describe('isFirstOutputTokenFrame — messages', () => {
+describe('firstOutputTokenSignal — messages', () => {
   it('accepts text_delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } }), 'anthropicMessages')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
 
   it('accepts input_json_delta (tool-call argument delta)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{' } }), 'anthropicMessages')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{' } }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
 
   it('accepts citations_delta (Anthropic citations / web-search)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'citations_delta', citation: {} } }), 'anthropicMessages')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'citations_delta', citation: {} } }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
 
   it('accepts thinking_delta (extended thinking)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '...' } }), 'anthropicMessages')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '...' } }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
 
   it('rejects message_start / content_block_start (envelope frames)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'message_start' }), 'anthropicMessages')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_start', content_block: { type: 'text' } }), 'anthropicMessages')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'message_start' }), 'anthropicMessages')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block: { type: 'text' } }), 'anthropicMessages')).toBeNull();
   });
 
   it('rejects empty delta payload (keepalive-style frames)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: '' } }), 'anthropicMessages')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '' } }), 'anthropicMessages')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '' } }), 'anthropicMessages')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'citations_delta' } }), 'anthropicMessages')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: '' } }), 'anthropicMessages')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '' } }), 'anthropicMessages')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '' } }), 'anthropicMessages')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'citations_delta' } }), 'anthropicMessages')).toBeNull();
   });
 });
 
-describe('isFirstOutputTokenFrame — responses', () => {
+describe('firstOutputTokenSignal — responses', () => {
   it('accepts response.output_text.delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_text.delta', delta: 'hi' }), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_text.delta', delta: 'hi' }), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it('accepts response.function_call_arguments.delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.function_call_arguments.delta', delta: '{' }), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.function_call_arguments.delta', delta: '{' }), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it('accepts response.custom_tool_call_input.delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.custom_tool_call_input.delta', delta: 'hi' }), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.custom_tool_call_input.delta', delta: 'hi' }), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it('accepts response.refusal.delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.refusal.delta', delta: 'sorry' }), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.refusal.delta', delta: 'sorry' }), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it('accepts response.reasoning_text.delta and response.reasoning_summary_text.delta', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_text.delta', delta: '...' }), 'openaiResponses')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_summary_text.delta', delta: '...' }), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_text.delta', delta: '...' }), 'openaiResponses')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_summary_text.delta', delta: '...' }), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it.each(['response.created', 'response.queued', 'response.in_progress', 'response.completed'])('rejects response lifecycle metadata: %s', type => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type }), 'openaiResponses')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type }), 'openaiResponses')).toBeNull();
   });
 
   it('rejects known event type with empty delta string', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_text.delta', delta: '' }), 'openaiResponses')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_text.delta', delta: '' }), 'openaiResponses')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_text.delta', delta: '' }), 'openaiResponses')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.reasoning_text.delta', delta: '' }), 'openaiResponses')).toBeNull();
   });
 });
 
-describe('isFirstOutputTokenFrame — openai-chat-completions', () => {
+describe('firstOutputTokenSignal — openai-chat-completions', () => {
   it('accepts chunk with delta.content', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: 'hi' } }] }), 'openaiChatCompletions')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { content: 'hi' } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });
 
   it('accepts chunk with delta.tool_calls', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{' } }] } }] }), 'openaiChatCompletions')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{' } }] } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });
 
   it('accepts reasoning-only chunk (delta.reasoning / delta.reasoning_content / delta.reasoning_text)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning: '...' } }] }), 'openaiChatCompletions')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_content: '...' } }] }), 'openaiChatCompletions')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_text: '...' } }] }), 'openaiChatCompletions')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { reasoning: '...' } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { reasoning_content: '...' } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { reasoning_text: '...' } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });
 
   it('accepts refusal delta (safety refusals are legitimate generated output)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: "I can't help with that." } }] }), 'openaiChatCompletions')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { refusal: "I can't help with that." } }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });
 
   it('rejects role-only chunk', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { role: 'assistant' } }] }), 'openaiChatCompletions')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { role: 'assistant' } }] }), 'openaiChatCompletions')).toBeNull();
   });
 
   it('rejects empty-content chunk', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: '' } }] }), 'openaiChatCompletions')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: '' } }] }), 'openaiChatCompletions')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: {} }] }), 'openaiChatCompletions')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { content: '' } }] }), 'openaiChatCompletions')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: { refusal: '' } }] }), 'openaiChatCompletions')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta: {} }] }), 'openaiChatCompletions')).toBeNull();
   });
 });
 
-describe('isFirstOutputTokenFrame — done sentinel', () => {
-  it('always returns false', () => {
+describe('firstOutputTokenSignal — done sentinel', () => {
+  it('always returns null', () => {
     const done = { type: 'done' as const };
-    expect(isFirstOutputTokenFrame(done, 'anthropicMessages')).toBe(false);
-    expect(isFirstOutputTokenFrame(done, 'openaiResponses')).toBe(false);
-    expect(isFirstOutputTokenFrame(done, 'openaiChatCompletions')).toBe(false);
+    expect(firstOutputTokenSignal(done, 'anthropicMessages')).toBeNull();
+    expect(firstOutputTokenSignal(done, 'openaiResponses')).toBeNull();
+    expect(firstOutputTokenSignal(done, 'openaiChatCompletions')).toBeNull();
   });
 });
 
@@ -123,17 +123,26 @@ describe('first output across supported stream payloads', () => {
     'response.apply_patch_call_operation_diff.delta',
     'response.future_model_output.delta',
   ])('recognizes generated %s content and rejects its empty envelope', type => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type, delta: 'output' }), 'openaiResponses')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ type, delta: '' }), 'openaiResponses')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type, delta: 'output' }), 'openaiResponses')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ type, delta: '' }), 'openaiResponses')).toBeNull();
   });
 
   it.each(['future_model_output', 'constructor'])('recognizes unknown %s items only on added', type => {
     const item = { type, id: 'item_1' };
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item }), 'openaiResponses')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.done', item }), 'openaiResponses')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_item.added', item }), 'openaiResponses')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_item.done', item }), 'openaiResponses')).toBeNull();
   });
 
-  describe.each(['response.output_item.added', 'response.output_item.done'])('decode signals on %s', type => {
+  describe.each(['response.output_item.added', 'response.output_item.done'])('item timing signals on %s', type => {
+    it.each([
+      { type: 'tool_search_output', tools: [{ name: 'search' }] },
+      { type: 'program_output', result: 'tool output' },
+      { type: 'multi_agent_call_output', output: [{ type: 'output_text', text: 'tool output' }] },
+      { type: 'shell_call_output', output: [{ stdout: 'tool output' }] },
+    ])('identifies runtime results that require a warning if they start timing: %j', item => {
+      expect(firstOutputTokenSignal(eventFrame({ type, item }), 'openaiResponses')).toEqual({ type: 'runtime-result', itemType: item.type });
+    });
+
     it.each([
       { type: 'message', content: [] },
       { type: 'reasoning', summary: [] },
@@ -155,18 +164,14 @@ describe('first output across supported stream payloads', () => {
       { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: '' } },
       { type: 'image_generation_call', status: 'in_progress' },
     ])('counts model-output item %j before its payload is streamed', item => {
-      expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(true);
+      expect(firstOutputTokenSignal(eventFrame({ type, item }), 'openaiResponses')).toEqual({ type: 'decode' });
     });
 
     it.each([
       { type: 'function_call_output', output: 'tool output' },
       { type: 'custom_tool_call_output', output: 'tool output' },
       { type: 'computer_call_output', output: { type: 'computer_screenshot', image_url: 'data:image/png;base64,AAAA' } },
-      { type: 'tool_search_output', tools: [{ name: 'search' }] },
-      { type: 'program_output', result: 'tool output' },
-      { type: 'multi_agent_call_output', output: [{ type: 'output_text', text: 'tool output' }] },
       { type: 'local_shell_call_output', output: 'tool output' },
-      { type: 'shell_call_output', output: [{ stdout: 'tool output' }] },
       { type: 'apply_patch_call_output', output: 'tool output' },
       { type: 'additional_tools', tools: [{ name: 'search' }] },
       { type: 'mcp_list_tools', tools: [] },
@@ -175,8 +180,8 @@ describe('first output across supported stream payloads', () => {
       { type: 'compaction', encrypted_content: 'opaque' },
       { type: 'compaction_summary', encrypted_content: 'opaque' },
       { type: 'context_compaction', encrypted_content: 'opaque' },
-    ])('ignores preparation, context, and execution results: %j', item => {
-      expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(false);
+    ])('ignores input, discovery, and compaction items: %j', item => {
+      expect(firstOutputTokenSignal(eventFrame({ type, item }), 'openaiResponses')).toBeNull();
     });
   });
 
@@ -198,7 +203,7 @@ describe('first output across supported stream payloads', () => {
     { type: 'response.shell_call_command.done', command: 'ls' },
     { type: 'response.apply_patch_call_operation_diff.done', diff: 'content' },
   ])('recognizes known content arriving on %j', event => {
-    expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toEqual({ type: 'decode' });
   });
 
   it.each([
@@ -207,7 +212,7 @@ describe('first output across supported stream payloads', () => {
     { type: 'response.future_model_output.done', delta: 'snapshot' },
     { type: 'unrelated.delta', delta: 'text' },
   ])('rejects events outside nonempty Responses string deltas: %j', event => {
-    expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toBeNull();
   });
 
   it('excludes execution output, progress, and empty content snapshots', () => {
@@ -219,7 +224,7 @@ describe('first output across supported stream payloads', () => {
       { type: 'response.content_part.added', part: { type: 'output_text', text: '' } },
       { type: 'response.reasoning_summary_part.added', part: { type: 'summary_text', text: '' } },
       { type: 'response.shell_call_command.added', command: '' },
-    ]) expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
+    ]) expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toBeNull();
   });
 
   it.each([
@@ -235,7 +240,7 @@ describe('first output across supported stream payloads', () => {
     { reasoning_details: [{ type: 'reasoning.summary', summary: 'summary' }] },
     { reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'thinking' }] }] },
   ])('recognizes generated Chat Completions payload %j', delta => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
   });
 
   it.each([
@@ -251,17 +256,17 @@ describe('first output across supported stream payloads', () => {
     { reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: '' }] }] },
     { reasoning_opaque: 'opaque' },
   ])('rejects Chat Completions metadata-only payload %j', delta => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toBeNull();
   });
 
   it('finds the first generated output across all choices', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({
+    expect(firstOutputTokenSignal(eventFrame({
       choices: [
         { index: 0, delta: { role: 'assistant' } },
         { index: 1, delta: { reasoning_content: 'thinking' } },
       ],
-    }), 'openaiChatCompletions')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [] }), 'openaiChatCompletions')).toBe(false);
+    }), 'openaiChatCompletions')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ choices: [] }), 'openaiChatCompletions')).toBeNull();
   });
 
   it.each([
@@ -270,11 +275,11 @@ describe('first output across supported stream payloads', () => {
     { type: 'text', text: 'hello' },
     { type: 'thinking', thinking: 'thinking' },
   ])('recognizes content already present on an Anthropic block start: %j', content_block => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBe(true);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
 
   it('excludes compaction iterations from ordinary output-token timing', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'compaction_delta', content: 'summary' } }), 'anthropicMessages')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'compaction_delta', content: 'summary' } }), 'anthropicMessages')).toBeNull();
   });
 
   it.each([
@@ -282,7 +287,7 @@ describe('first output across supported stream payloads', () => {
     { type: 'compaction_delta', content: '', encrypted_content: 'opaque' },
     { type: 'compaction_delta', content: null, encrypted_content: 'opaque' },
   ])('rejects Anthropic integrity and replay metadata: %j', delta => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta }), 'anthropicMessages')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta }), 'anthropicMessages')).toBeNull();
   });
 
   it.each([
@@ -294,6 +299,6 @@ describe('first output across supported stream payloads', () => {
     { type: 'redacted_thinking', data: 'opaque' },
     { type: 'web_search_tool_result', content: [{ title: 'tool output' }] },
   ])('rejects Anthropic empty starts and tool results: %j', content_block => {
-    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBe(false);
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBeNull();
   });
 });

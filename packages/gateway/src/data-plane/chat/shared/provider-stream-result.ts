@@ -1,4 +1,4 @@
-import { isFirstOutputTokenFrame } from './first-output-token.ts';
+import { firstOutputTokenSignal } from './first-output-token.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -39,8 +39,19 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   const stampedEvents = (async function* () {
     try {
       for await (const frame of providerResult.events) {
-        if (ctx.attempt.timing.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-          ctx.attempt.timing.firstOutputTokenAt = performance.now();
+        if (ctx.attempt.timing.firstOutputTokenAt === null) {
+          const signal = firstOutputTokenSignal(frame, targetApi);
+          if (signal !== null) {
+            ctx.attempt.timing.firstOutputTokenAt = performance.now();
+            if (signal.type === 'runtime-result') {
+              console.warn('Floway: first output timing started from a runtime result without an earlier decode signal', {
+                itemType: signal.itemType,
+                upstream: identity.upstream,
+                model: identity.model,
+                modelKey: identity.modelKey,
+              });
+            }
+          }
         }
         if (frame.type === 'event') {
           const reported = readBillableUsage(frame.event);
