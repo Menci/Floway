@@ -92,11 +92,11 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   additional_tools: false,
   mcp_approval_response: false,
 
-  // Hosted runtime results can appear in a response, but normally follow a
-  // call/program item that already establishes decode onset, rather than open
-  // an assistant turn. Waiting for a result would count earlier model generation
-  // and tool execution as prefill. Client-executed tool search and shell results
-  // follow the input pattern above.
+  // Hosted runtime results normally follow a call/program item that has already
+  // started timing, so they do not need to start it themselves. A result arriving
+  // before every decode signal is unexpected; using it to start timing requires
+  // a warning about the missing earlier signal. Client-executed tool search and
+  // shell results follow the input pattern above.
   // https://developers.openai.com/api/docs/guides/tools-tool-search#hosted-tool-search
   // https://developers.openai.com/api/docs/guides/tools-shell#shell-output-in-responses
   // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling#understand-program-response-items
