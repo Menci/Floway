@@ -19,8 +19,8 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceOverviewGroupBy } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 

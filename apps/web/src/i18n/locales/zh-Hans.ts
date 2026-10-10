@@ -5,6 +5,10 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      calendar: {
+        previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
+        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseDecade: '{0}，选择十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
+      },
       bodyViewer: {
         options: '正文选项',
         find: '搜索正文',
@@ -1067,7 +1071,12 @@ const zhHansCN = {
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
       },
-      telemetry: { currentUserOnly: '仅自己' },
+      telemetry: {
+        currentUserOnly: '仅自己',
+        range: {
+          oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
+        },
+      },
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
@@ -1084,12 +1093,7 @@ const zhHansCN = {
           unknownUser: '未知用户',
           selected_other: '已选择 {{count, number}} 项',
         },
-        range: {
-          label: '使用量范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '使用量范围' },
         actions: { refresh: '刷新使用量' },
         charts: {
           search: '搜索使用量',
@@ -1126,12 +1130,7 @@ const zhHansCN = {
           userId: '用户',
           keyId: 'API 密钥',
         },
-        range: {
-          label: '性能数据范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '性能数据范围' },
         percentile: { label: '百分位' },
         summary: {
           requests: '请求数',

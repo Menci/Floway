@@ -120,6 +120,8 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L228 */
 :root {
   --winui-control-strong-fill-default: rgba(0, 0, 0, 0.447059);
+  /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L227 */
+  --winui-control-strong-fill-disabled: rgba(0, 0, 0, 0.317647);
   --winui-control-solid-fill-default: #ffffff;
 }
 
@@ -128,6 +130,8 @@ export const winuiTokenCss = `
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-control-strong-fill-default: rgba(255, 255, 255, 0.545098);
+    /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L23 */
+    --winui-control-strong-fill-disabled: rgba(255, 255, 255, 0.247059);
     --winui-control-solid-fill-default: #454545;
   }
 }
@@ -276,22 +280,20 @@ export const winuiTokenCss = `
   }
 }
 
-/* The description line's own step. SystemControlDescriptionTextForegroundBrush
-   is not part of the modern ramp above -- it comes from the legacy
-   system-brush layer, carrying SystemBaseMediumColor at 60%, distinct from the
-   62% and 77% the secondary text fill carries, so it is not folded onto a
-   neighbour. The dictionaries write these as AARRGGBB, which CSS reads as
-   RRGGBBAA, so the alpha moves to the end here.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L321-L327
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134 */
+/* Legacy text steps remain separate from the modern text ramp. Descriptions
+   use SystemBaseMediumColor (60%); the range calendar's weekdays use
+   SystemBaseMediumHighColor (80%).
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134-L4135 */
 :root {
   --winui-text-base-medium: rgba(0, 0, 0, 0.6);
+  --winui-text-base-medium-high: rgba(0, 0, 0, 0.8);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209-L210 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-text-base-medium: rgba(255, 255, 255, 0.6);
+    --winui-text-base-medium-high: rgba(255, 255, 255, 0.8);
   }
 }
 
@@ -308,12 +310,13 @@ export const winuiTokenCss = `
    #0078D4 -- the one assumption in this file, since a user who picked a
    different accent sees Windows' default blue rather than theirs. The generation
    algorithm changed between Windows 10 and 11; these are the 11 ones.
-   https://valer100.github.io/winaccent/colors/accent-color-and-shades/
+   https://github.com/Valer100/winaccent/blob/d68754f515aac9e5acbe07be07654082d7e3ea01/docs/colors/accent-color-and-shades.md#L11-L37
    https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.uicolortype */
 :root {
   --winui-system-accent-light-3: #99ebff;
   --winui-system-accent-light-2: #4cc2ff;
   --winui-system-accent-light-2-rgb: 76, 194, 255;
+  --winui-system-accent-light-1: #0091f8;
   --winui-system-accent: #0078d4;
   --winui-system-accent-dark-1: #0067c0;
   --winui-system-accent-dark-1-rgb: 0, 103, 192;
