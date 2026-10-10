@@ -93,12 +93,8 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
     }
   };
   for await (const frame of frames) {
-    if (frame.type === 'done') {
-      if (!finished) throw new Error('Responses done arrived without a terminal response');
-      continue;
-    }
+    if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event as unknown as IRWire;
-    if (finished) throw new Error('Responses event arrived after terminal response');
     if (e.type === 'error') { b.event({ type: 'error', error: e.error ?? e }); yield b.drain(); return; }
     if (e.type === 'response.failed' && e.response.error?.code !== 'bio_policy' && e.response.error?.code !== 'cyber_policy') {
       b.event({ type: 'error', error: e.response.error }); yield b.drain(); return;
@@ -173,5 +169,5 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
     yield b.drain();
     if (finished) return;
   }
-  if (!finished) throw new Error('Responses stream ended without a terminal response');
+  throw new Error('Responses stream ended without a terminal response');
 };

@@ -21,11 +21,11 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
   let finishReason = 'stop';
   let extension: IRWire = {};
   let sourceIds: IRWire = {};
-  let chatReasoningId: string | undefined;
+  let chatReasoningIds: IRWire = {};
   const emit = (event: IRWire): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: sequence++ } as OpenAIResponsesStreamEventEx);
   const response = (status: string, usage: unknown = null): IRWire => ({ ...extension, id: metadata.id, object: 'response', created_at: metadata.created, model: metadata.model, status, output: cloneIRJSON(output), usage, error: null, incomplete_details: status === 'incomplete' ? extension.incomplete_details ?? { reason: finishReason === 'content_filter' ? 'content_filter' : 'max_output_tokens' } : null });
   const targetItem = (item: IRItem, sourceIndex: number, closed: boolean, partIndex?: number): IRWire | undefined => {
-    const id = (item.type === 'reasoning' ? chatReasoningId : undefined) ?? sourceIds[sourceIndex] ?? createRandomOpenAIResponsesItemId(item.type === 'message' && partIndex !== undefined && item.content[partIndex].type === 'image' ? 'image_generation_call' : item.type);
+    const id = (item.type === 'reasoning' ? chatReasoningIds[`0/${sourceIndex}`] : undefined) ?? sourceIds[sourceIndex] ?? createRandomOpenAIResponsesItemId(item.type === 'message' && partIndex !== undefined && item.content[partIndex].type === 'image' ? 'image_generation_call' : item.type);
     if (partIndex !== undefined && item.type === 'message') {
       const part = item.content[partIndex];
       if (part.type === 'image') return { type: 'image_generation_call', id, status: 'in_progress', result: null };
@@ -49,7 +49,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
     extension = { ...state.extensions?.openaiResponses };
     delete extension.item_ids;
     sourceIds = state.extensions?.openaiResponses?.item_ids as IRWire ?? {};
-    chatReasoningId = (state.extensions?.openaiChatCompletions as IRWire | undefined)?.reasoning_id;
+    chatReasoningIds = (state.extensions?.openaiChatCompletions as IRWire | undefined)?.reasoning_item_ids ?? {};
     const tier = irServiceTier(state);
     if (tier !== undefined) extension.service_tier = tier;
     if (record.type === 'error') {
@@ -66,7 +66,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
         const item = state.choices[0].items[sourceIndex];
         const source: IRPath = ['choices', 0, 'items', sourceIndex];
         const closing = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
-        if (item.type === 'reasoning' && state.extensions?.openaiChatCompletions !== undefined && !closing && chatReasoningId === undefined) break;
+        if (item.type === 'reasoning' && state.extensions?.openaiChatCompletions !== undefined && !closing && chatReasoningIds[`0/${sourceIndex}`] === undefined) break;
         if (item.type === 'message') for (let p = 0; p < item.content.length; p++) {
           const part = item.content[p]; if (part.type !== 'audio') continue;
           for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {

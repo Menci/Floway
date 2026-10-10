@@ -14,7 +14,6 @@ export interface IRProjectedContent { path: IRPath; text: string }
 export interface IRProjectionResult { contents: IRProjectedContent[]; projections: IRStringProjection[] }
 export interface IROutputOptions {
   id?: string;
-  model?: string;
   created?: number;
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   parseToolArguments?: (text: string) => IRJSONObject;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { collect, completeIR, events, iterate } from './helpers.ts';
+import { collectIR, collect, completeIR, events, iterate } from './helpers.ts';
 import { codePointRangeToIR, irRangeToCodePoints } from '../../../src/shared/ir/coordinates.ts';
 import type { IR } from '../../../src/shared/ir/ir.ts';
 import { createIRProjection } from '../../../src/shared/ir/projection.ts';
@@ -11,7 +11,6 @@ import { anthropicMessagesFromIR } from '../../../src/shared/ir/sse-to/anthropic
 import { geminiGenerateContentFromIR } from '../../../src/shared/ir/sse-to/gemini-generatecontent/index.ts';
 import { openaiChatCompletionsFromIR } from '../../../src/shared/ir/sse-to/openai-chat-completions/index.ts';
 import { openaiResponsesFromIR } from '../../../src/shared/ir/sse-to/openai-responses/index.ts';
-import { collectIR } from '../../../src/shared/ir/stream.ts';
 import { usageFromIR, usageToIR } from '../../../src/shared/ir/usage.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -19,7 +18,7 @@ import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gem
 import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, reassembleOpenAIResponsesEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const options = { id: 'target', model: 'model', created: 1 };
+const options = { id: 'target', created: 1 };
 const chatFrame = (choices: any[], usage?: any) => eventFrame({ id: 'source', object: 'chat.completion.chunk', model: 'model', created: 1, choices, ...(usage === undefined ? {} : { usage }) } as OpenAIChatCompletionsStreamEvent);
 const chat = () => irFromOpenAIChatCompletions(iterate([
   chatFrame([{ index: 0, delta: { reasoning_text: 'think' } }]),

@@ -43,13 +43,13 @@ export type IRContentPart = IRTextPart | IRRefusalPart | IRImagePart | IRAudioPa
 export interface IRTextPart {
   type: 'text'; // All
   text: string; // All
-  annotations?: IRAnnotation[] | null; // All
+  annotations?: IRSourceCitation[] | null; // All
 }
 
-// ChatCompletions, Responses
+// All
 export interface IRRefusalPart {
-  type: 'refusal'; // ChatCompletions, Responses
-  refusal: string; // ChatCompletions, Responses
+  type: 'refusal'; // All
+  refusal: string; // All
 }
 
 // All
@@ -57,7 +57,7 @@ export interface IRReasoningItem {
   type: 'reasoning'; // All
   summary?: string[]; // All
   content?: string[]; // All
-  encrypted_content?: string | null; // Responses, Messages, GenerateContent
+  encrypted_content?: string | null; // All
 }
 
 // All
@@ -68,12 +68,12 @@ export interface IRFunctionCallItem {
   arguments?: string | IRJSONObject; // All
 }
 
-// ChatCompletions, Responses
+// ChatCompletions, Responses, Messages
 export interface IRCustomToolCallItem {
-  type: 'custom_tool_call'; // ChatCompletions, Responses
-  call_id: string; // ChatCompletions, Responses
-  name: string; // ChatCompletions, Responses
-  input: string; // ChatCompletions, Responses
+  type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
+  call_id: string; // ChatCompletions, Responses, Messages
+  name: string; // ChatCompletions, Responses, Messages
+  input: string; // ChatCompletions, Responses, Messages
 }
 
 // Responses, GenerateContent
@@ -107,9 +107,6 @@ export type IRAudio = {
     transcript: string; // ChatCompletions, Responses, GenerateContent
   }
 );
-
-// All
-export type IRAnnotation = IRSourceCitation;
 
 // All
 export type IRSourceCitation = {

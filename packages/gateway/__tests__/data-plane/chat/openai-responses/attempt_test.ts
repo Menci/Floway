@@ -766,6 +766,15 @@ test('generate lowers agent_message to a framed user message across translation 
           return {
             ok: true,
             events: (async function* () {
+              yield eventFrame<AnthropicMessagesStreamEventEx>({
+                type: 'message_start',
+                message: {
+                  container: null, diagnostics: null, stop_details: null,
+                  id: 'msg_agent', type: 'message', role: 'assistant', content: [],
+                  model: 'test-model', stop_reason: null, stop_sequence: null,
+                  usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
+                },
+              });
               yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
               yield doneFrame();
             })(),
@@ -807,7 +816,10 @@ test('generate lowers agent_message to a framed user message across translation 
           observedBody = body;
           return {
             ok: true,
-            events: (async function* () { yield doneFrame(); })(),
+            events: (async function* () {
+              yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chatcmpl_agent', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
+              yield doneFrame();
+            })(),
             modelKey: 'k',
             headers: new Headers(),
           };
