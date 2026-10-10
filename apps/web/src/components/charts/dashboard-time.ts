@@ -5,7 +5,7 @@ import {
   TELEMETRY_HOUR_MS,
   telemetryHourKey,
   type TelemetryBucketGranularity,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 export type DashboardPreset = 'today' | '7d' | '30d';
 export type DashboardRange = DashboardPreset | CalendarDateRange;
