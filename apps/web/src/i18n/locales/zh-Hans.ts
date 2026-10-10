@@ -497,7 +497,9 @@ const zhHansCN = {
       upstreamEditor: {
         usageRefresh: {
           title: '后台刷新用量',
-          description: '填 0 或留空禁用后台刷新，保留请求时更新用量的逻辑。跳过新鲜读数。Claude Code 需要 OAuth，Ollama 需要开启云用量。',
+          description: '填 0 或留空禁用后台刷新。不会额外产生模型用量。',
+          claudeCodeRequirement: '需要使用 OAuth 登录。',
+          ollamaRequirement: '需要开启「获取账号用量」功能。',
           interval: '刷新间隔（分钟）',
           invalid: '请输入大于或等于 0 的整数分钟数。',
         },

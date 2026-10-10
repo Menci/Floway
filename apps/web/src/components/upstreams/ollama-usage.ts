@@ -43,10 +43,9 @@ export const readWindows = (data: unknown): UsageWindow[] => {
   });
 };
 
-// What the account has been charged, as a plain decimal string in USD, over the
-// period the same block names. The period is Ollama's own identifier and is
-// forwarded as it arrived, so a period this dashboard cannot name leaves the
-// figure unqualified rather than claiming a window the upstream did not state.
+// Upstream-reported USD value of requests for the supplied period, including
+// plan-covered usage; this is consumption rather than an extra cash bill.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/openapi.yaml#L1028-L1030
 export interface ActivityCost {
   amount: string;
   period: string | null;

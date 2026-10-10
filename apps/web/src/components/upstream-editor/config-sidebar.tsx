@@ -48,6 +48,12 @@ export function UpstreamConfigSidebar({
 }) {
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
+  const [config, state] = useWatch({ control, name: ['config', 'state'] });
+  const usageRefreshDisabled = record.kind === 'claude-code'
+    ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
+    : record.kind === 'ollama' && (config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).cloudUsage !== true;
+  const usageRefreshInfo = [t('dashboard.upstreamEditor.usageRefresh.description'),
+    record.kind === 'claude-code' ? t('dashboard.upstreamEditor.usageRefresh.claudeCodeRequirement') : record.kind === 'ollama' ? t('dashboard.upstreamEditor.usageRefresh.ollamaRequirement') : ''].filter(Boolean).join(' ');
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
@@ -91,12 +97,13 @@ export function UpstreamConfigSidebar({
         >
           <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
             <Field
-              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), t('dashboard.upstreamEditor.usageRefresh.description')) }}
+              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
               validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
               validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
             >
               <Input
                 type="number"
+                disabled={usageRefreshDisabled}
                 min={0}
                 step={1}
                 placeholder="0"
