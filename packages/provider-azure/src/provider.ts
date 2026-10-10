@@ -46,6 +46,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: async () => {},
     callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {

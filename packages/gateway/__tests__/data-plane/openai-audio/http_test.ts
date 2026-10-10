@@ -18,6 +18,7 @@ const registerAudioModel = async (
     kind: 'custom',
     name: 'Audio Provider',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 1,
     createdAt: '2026-07-21T00:00:00.000Z',
     updatedAt: '2026-07-21T00:00:00.000Z',

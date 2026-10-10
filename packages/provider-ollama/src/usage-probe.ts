@@ -4,10 +4,10 @@
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 
 import { readOllamaAccountUsage } from './account-usage.ts';
-import { type OllamaUpstreamConfig } from './config.ts';
+import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Reading account usage takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
@@ -91,4 +91,13 @@ export const scheduleOllamaUsageProbe = (
   waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
     console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);
   }));
+};
+
+export const runOllamaScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
+  const { config } = assertOllamaUpstreamRecord(record);
+  if (!isOllamaUsageEnabled(config)) return;
+  const state = readOllamaUpstreamState(record.state);
+  await runScheduledUsageRefresh(record, options, state.usageProbe?.observation?.fetchedAt ?? null, async (fresh, fetcher) => {
+    await refreshOllamaUsageProbe(fresh.id, config, fetcher);
+  });
 };

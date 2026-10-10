@@ -349,6 +349,7 @@ const upstreamHueSchema = z.number().int().min(0).max(UPSTREAM_HUE_DEGREES - 1);
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
@@ -388,6 +389,7 @@ export const updateUpstreamBody = z.object({
   kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
@@ -524,6 +526,7 @@ export const previewModelsBody = z.object({
     proxy_fallback_list: proxyFallbackListSchema,
     name: z.string().optional(),
     enabled: z.boolean().optional(),
+    usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
     sort_order: z.number().int().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),

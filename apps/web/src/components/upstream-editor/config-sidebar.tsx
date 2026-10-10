@@ -10,6 +10,7 @@ import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderHandle, useReorderList } from '../ui/reorder-list';
@@ -47,6 +48,12 @@ export function UpstreamConfigSidebar({
 }) {
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
+  const [config, state] = useWatch({ control, name: ['config', 'state'] });
+  const usageRefreshDisabled = record.kind === 'claude-code'
+    ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
+    : record.kind === 'ollama' && (config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).cloudUsage !== true;
+  const usageRefreshInfo = [t('dashboard.upstreamEditor.usageRefresh.description'),
+    record.kind === 'claude-code' ? t('dashboard.upstreamEditor.usageRefresh.claudeCodeRequirement') : record.kind === 'ollama' ? t('dashboard.upstreamEditor.usageRefresh.ollamaRequirement') : ''].filter(Boolean).join(' ');
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
@@ -85,6 +92,30 @@ export function UpstreamConfigSidebar({
         >
           <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
         </EditorSection>
+        {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+          title={t('dashboard.upstreamEditor.usageRefresh.title')}
+        >
+          <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
+            <Field
+              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
+              validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
+              validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
+            >
+              <Input
+                type="number"
+                disabled={usageRefreshDisabled}
+                min={0}
+                step={1}
+                placeholder="0"
+                name={field.name}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                value={field.value === 0 ? '' : String(field.value)}
+                onChange={(_, data) => field.onChange(Number(data.value))}
+              />
+            </Field>
+          )} />
+        </EditorSection>}
         <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
           <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
         </EditorSection>

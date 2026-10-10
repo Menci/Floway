@@ -991,6 +991,14 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        usageRefresh: {
+          title: 'Background usage refresh',
+          description: '0 or blank disables background refresh. No additional model usage is incurred.',
+          claudeCodeRequirement: 'Requires OAuth sign-in.',
+          ollamaRequirement: 'Requires “Fetch account usage” to be enabled.',
+          interval: 'Refresh interval (minutes)',
+          invalid: 'Enter a nonnegative whole number of minutes.',
+        },
         ollama: {
           cloudUsage: 'Fetch account usage',
           cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',

@@ -10,6 +10,7 @@ const azureUpstream = (): UpstreamRecord => ({
   kind: 'azure',
   name: 'Azure Models',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 200,
   createdAt: '2026-05-21T00:00:00.000Z',
   updatedAt: '2026-05-21T00:00:00.000Z',

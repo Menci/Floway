@@ -946,6 +946,14 @@ const zhHansCN = {
             'uuid-mismatch': '所配置的账号不在状态中，请重新导入以恢复',
           },
         },
+        usageRefresh: {
+          title: '后台刷新用量',
+          description: '填 0 或留空禁用后台刷新。不会额外产生模型用量。',
+          claudeCodeRequirement: '需要使用 OAuth 登录。',
+          ollamaRequirement: '需要开启「获取账号用量」功能。',
+          interval: '刷新间隔（分钟）',
+          invalid: '请输入大于或等于 0 的整数分钟数。',
+        },
         ollama: {
           cloudUsage: '获取账号用量',
           cloudUsageHint: '在模型请求后更新账号余额和期间用量。需要配置 Ollama Cloud API Key。',

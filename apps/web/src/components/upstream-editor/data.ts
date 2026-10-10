@@ -67,6 +67,7 @@ export interface ModelRow {
 export interface UpstreamEditorValues {
   name: string;
   enabled: boolean;
+  usageRefreshIntervalMinutes: number;
   hue: UpstreamRecord['hue'];
   proxyFallbackList: UpstreamRecord['proxy_fallback_list'];
   modelPrefix: UpstreamRecord['model_prefix'];
@@ -210,6 +211,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
   return {
     name: record.name,
     enabled: record.enabled,
+    usageRefreshIntervalMinutes: record.usage_refresh_interval_minutes,
     hue: record.hue,
     proxyFallbackList: structuredClone(record.proxy_fallback_list).map(entry => withRegisteredKey('colos', entry)),
     modelPrefix: structuredClone(record.model_prefix),
@@ -261,6 +263,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     ...record,
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     config: configFromValues(record, values, { preserveStoredSecret: true }),
     state: values.state,
@@ -278,6 +281,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     kind: record.kind,
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
@@ -294,6 +298,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
   return {
     name: values.name.trim(),
     enabled: values.enabled,
+    usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,

@@ -15,6 +15,7 @@ import { mergeCopilotVariants } from './merge-variants.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastVariant, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { copilotVariantIndex } from './model-variants.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
+import { runCopilotScheduledTask } from './scheduled.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -303,6 +304,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runCopilotScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);

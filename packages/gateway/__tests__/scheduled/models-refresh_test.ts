@@ -13,6 +13,7 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   id,
   kind: 'custom',
   name: id,
+  usageRefreshIntervalMinutes: 0,
   enabled,
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',

@@ -18,6 +18,7 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   kind: 'azure',
   name: id,
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
