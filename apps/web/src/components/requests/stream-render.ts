@@ -4,7 +4,7 @@ import {
   collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, SseFrame, SseTrailerFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
   geminiGenerateContentProtocolFrameToSSEFrame,
@@ -96,11 +96,12 @@ export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamE
   return events.map(({ frame, ts }) => {
     const sse = frameToSse(kind, frame);
     if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
-    if (frame.type === 'done') return { event: sse.event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts };
+    const event = sse.type === 'sse' ? sse.event ?? null : null;
+    if (frame.type === 'done') return { event: event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts };
     try {
-      return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
+      return { event, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
     } catch (error) {
-      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(error), timestamp: ts };
+      return { event, text: sse.data, parseError: errorMessage(error), timestamp: ts };
     }
   });
 };
@@ -108,7 +109,9 @@ export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamE
 export const streamEventsCopyText = (kind: CollectKind | null, events: DumpStreamEvent[]): string => {
   return events.map(({ frame }) => {
     const sse = frameToSse(kind, frame);
-    return sse ? `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n` : '';
+    if (!sse) return '';
+    if (sse.type === 'sse-trailer') return sse.data;
+    return `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n`;
   }).filter(Boolean).join('\n');
 };
 
@@ -116,7 +119,7 @@ async function* frames(events: DumpStreamEvent[]) {
   for (const event of events) yield event.frame;
 }
 
-const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
+const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | SseTrailerFrame | null => {
   try {
     switch (kind) {
     case 'openai-chat-completions': return openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });

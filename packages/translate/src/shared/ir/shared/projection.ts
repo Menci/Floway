@@ -1,5 +1,6 @@
 import type { IRJSONObject } from '../ir.ts';
 import { cloneIRJSON, parseIRJSON } from './json.ts';
+import type { IRTextUpdate } from './text.ts';
 import type { IRPath } from '../stream.ts';
 
 export interface IRStringProjection {
@@ -55,5 +56,11 @@ export const createIRProjection = () => {
     projections.push({ source_path: source, source_start: 0, source_end_exclusive: text.length, target_path: target, target_start: 0, target_end_exclusive: text.length });
   };
   const result = (): IRProjectionResult => cloneIRJSON({ contents: [...contents.values()], projections });
-  return { append, assign, result };
+  const appendText = (update: IRTextUpdate, target: IRPath): string => {
+    if (update.replacement) return append(update.path, update.text, target);
+    const old = previous.get(JSON.stringify(update.path)) ?? '';
+    if (old.length !== update.start) throw new Error('IR text projection received an out-of-order fragment');
+    return append(update.path, old + update.text, target);
+  };
+  return { append, appendText, assign, result };
 };

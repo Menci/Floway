@@ -1,9 +1,10 @@
 import { packReasoningSignature } from '../../../anthropic-messages-and-openai-responses/reasoning.ts';
 import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
 import type { IRJSONObject, IRContentPart, IRItem, IRSourceCitation } from '../../ir.ts';
-import { cloneIRJSON, parseIRJSONObject } from '../../shared/json.ts';
+import { cloneIRJSON, isCompleteIRJSONObject, parseIRJSONObject } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
 import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
+import { createIRTextStream } from '../../shared/text.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
 import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesStreamEventEx, type AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
@@ -13,7 +14,7 @@ const irMessagesError = (error: IRJSONObject): IRJSONObject => isContextExceeded
   ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
   : { type: ['invalid_request_error', 'authentication_error', 'permission_error', 'not_found_error', 'rate_limit_error', 'api_error', 'overloaded_error'].includes(error.type as string) ? error.type : 'api_error', message: error.message };
 
-interface IRMessagesUnit { item: number; part?: number; block?: IRWire; index?: number; closed: boolean; citations: number }
+interface IRMessagesUnit { item: number; part?: number; block?: IRWire; index?: number; closed: boolean; stopped: boolean; citations: number }
 
 export interface IRMessagesOutputOptions extends IROutputOptions {
   // Source document/search-result indexes belong to the translated request context.
@@ -25,9 +26,9 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const projection = createIRProjection();
+  const textStream = createIRTextStream();
   const units: IRMessagesUnit[] = [];
   const keys = new Set<string>();
-  let cursor = 0;
   let blockIndex = 0;
   let finishReason = 'end_turn';
   let messageStarted = false;
@@ -38,7 +39,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     if (item.type === 'reasoning') {
       const text = [...item.summary ?? [], ...item.content ?? []].join('');
       const signature = sourceIds[index] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[index], item.encrypted_content ?? '');
-      if (text !== '') return { type: 'thinking', thinking: '', signature: '' };
+      if (text !== '' || (item.summary?.length ?? 0) + (item.content?.length ?? 0) > 0) return { type: 'thinking', thinking: '', signature: '' };
       if (!closed || signature == null) return undefined;
       return { type: 'redacted_thinking', data: signature };
     }
@@ -46,6 +47,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     return undefined;
   };
   for await (const { state, record } of consumeIRRecords(frames)) {
+    textStream.update(state);
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); started = true; }
     if (!started && record.type !== 'error') continue;
     metadata.model = irServingModel(state, metadata.model);
@@ -68,14 +70,15 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       const parts = item.type === 'message' ? item.content.map((_, p) => p) : [undefined];
       for (const part of parts) {
         const key = `${index}/${part ?? 'item'}`;
-        if (!keys.has(key)) { units.push({ item: index, part, closed: false, citations: 0 }); keys.add(key); }
+        if (!keys.has(key)) { units.push({ item: index, part, closed: false, stopped: false, citations: 0 }); keys.add(key); }
       }
     });
     for (const unit of units) {
       if (record.type === 'finish' || record.type === 'item_end' && record.item === unit.item || record.type === 'part_end' && record.item === unit.item && record.part === unit.part) unit.closed = true;
     }
-    while (cursor < units.length) {
-      const unit = units[cursor];
+    let startsBlocked = false;
+    for (const unit of units) {
+      if (unit.stopped) continue;
       const item = state.choices[0].items[unit.item];
       const part = item.type === 'message' && unit.part !== undefined ? item.content[unit.part] : undefined;
       const source: IRPath = ['choices', 0, 'items', unit.item];
@@ -83,12 +86,19 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       if (block === undefined) {
         if (item.type === 'function_call' && item.name === '') {
           if (unit.closed) throw new TypeError('Completed tool calls require a name');
-          break;
+          startsBlocked = true;
+          continue;
         }
-        if (!unit.closed && (part?.type === 'audio' || item.type === 'reasoning')) break;
-        cursor++; continue;
+        if (!unit.closed && (part?.type === 'audio' || item.type === 'reasoning')) startsBlocked = true;
+        continue;
       }
       if (unit.index === undefined) {
+        if (startsBlocked) continue;
+        if (item.type === 'function_call' && state.extensions?.openaiChatCompletions !== undefined && !item.call_id) {
+          if (unit.closed) throw new TypeError('Completed tool calls require an id');
+          startsBlocked = true;
+          continue;
+        }
         unit.index = blockIndex++; unit.block = block;
         yield emit({ type: 'content_block_start', index: unit.index, content_block: cloneIRJSON(block) });
       }
@@ -96,10 +106,11 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       const target: IRPath = ['content', unit.index];
       const delta = (value: IRWire): EventFrame<AnthropicMessagesStreamEventEx> => emit({ type: 'content_block_delta', index: unit.index, delta: value });
       if (item.type === 'message' && part !== undefined) {
-        const text = part.type === 'text' ? part.text : part.type === 'refusal' ? part.refusal : part.type === 'audio' ? part.audio.transcript! : '';
         const field = part.type === 'text' ? ['text'] : part.type === 'refusal' ? ['refusal'] : ['audio', 'transcript'];
-        const value = projection.append([...source, 'content', unit.part!, ...field], text, [...target, 'text']);
-        if (value !== '') { native.text += value; yield delta({ type: 'text_delta', text: value }); }
+        for (const update of textStream.take([...source, 'content', unit.part!, ...field])) {
+          const value = projection.appendText(update, [...target, 'text']);
+          if (value !== '') { native.text += value; yield delta({ type: 'text_delta', text: value }); }
+        }
         if (part.type === 'text') {
           const citations = (part.annotations ?? []).flatMap(a => {
             const converted = options.resolveCitation?.(a);
@@ -112,8 +123,10 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
         }
       } else if (item.type === 'reasoning') {
         if (native.type === 'thinking') {
-          const value = projection.append([...source, 'readable_text'], [...item.summary ?? [], ...item.content ?? []].join(''), [...target, 'thinking']);
-          if (value !== '') { native.thinking += value; yield delta({ type: 'thinking_delta', thinking: value }); }
+          for (const update of textStream.take(source)) {
+            const value = projection.appendText(update, [...target, 'thinking']);
+            if (value !== '') { native.thinking += value; yield delta({ type: 'thinking_delta', thinking: value }); }
+          }
         }
         const signature = sourceIds[unit.item] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[unit.item], item.encrypted_content ?? '');
         if (unit.closed && signature != null) {
@@ -122,18 +135,23 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
           if (native.type === 'thinking') yield delta({ type: 'signature_delta', signature });
         }
       } else if (item.type === 'function_call') {
-        if (typeof item.arguments === 'string' && options.parseToolArguments === undefined || unit.closed) {
-          const parsedArguments = unit.closed ? typeof item.arguments === 'string' ? parseIRJSONObject(item.arguments, options.parseToolArguments) : item.arguments ?? {} : undefined;
-          const args = typeof item.arguments === 'string' && options.parseToolArguments === undefined ? item.arguments : JSON.stringify(parsedArguments);
-          const value = projection.append([...source, 'arguments'], args, [...target, 'input']);
+        if (typeof item.arguments === 'string' && options.parseToolArguments === undefined) {
+          const value = projection.append([...source, 'arguments'], item.arguments, [...target, 'input']);
           if (value !== '') yield delta({ type: 'input_json_delta', partial_json: value });
-          if (unit.closed) {
-            projection.assign([...source, 'arguments'], JSON.stringify(parsedArguments), [...target, 'input']);
-          }
+          if (unit.closed && isCompleteIRJSONObject(item.arguments)) projection.assign([...source, 'arguments'], JSON.stringify(parseIRJSONObject(item.arguments)), [...target, 'input']);
+        } else if (unit.closed) {
+          const args = typeof item.arguments === 'string' ? parseIRJSONObject(item.arguments, options.parseToolArguments) : item.arguments ?? {};
+          const value = projection.append([...source, 'arguments'], JSON.stringify(args), [...target, 'input']);
+          if (value !== '') yield delta({ type: 'input_json_delta', partial_json: value });
         }
       }
-      if (!unit.closed) break;
-      yield emit({ type: 'content_block_stop', index: unit.index }); cursor++;
+      if (unit.closed) {
+        yield emit({ type: 'content_block_stop', index: unit.index });
+        unit.stopped = true;
+      }
+    }
+    if (record.type === 'choice_end' && record.finish_reason !== 'length') for (const item of state.choices[0]?.items ?? []) {
+      if (item.type === 'function_call' && typeof item.arguments === 'string') parseIRJSONObject(item.arguments, options.parseToolArguments);
     }
     if (messageStarted && record.type === 'operation' && record.path[0] === 'usage') yield emit({ type: 'message_delta', delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null }, usage });
     if (record.type === 'finish') {

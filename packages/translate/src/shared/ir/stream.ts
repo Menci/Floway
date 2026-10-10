@@ -7,7 +7,8 @@ export type IROperation =
   | { type: 'operation'; operation: 'append'; path: IRPath; value: string | IRJSONValue[] };
 export type IREvent =
   | { type: 'start'; id: string; model: string; created?: number }
-  | { type: 'item_start' | 'item_end'; choice: number; item: number }
+  | { type: 'item_start'; choice: number; item: number }
+  | { type: 'item_end'; choice: number; item: number; status?: 'completed' | 'incomplete' }
   | { type: 'part_start' | 'part_end'; choice: number; item: number; part: number }
   | { type: 'choice_end'; choice: number; finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' }
   | { type: 'finish'; status: 'completed' | 'incomplete' | 'failed'; error?: IRJSONObject }

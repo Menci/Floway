@@ -65,3 +65,8 @@ test('geminiGenerateContentProtocolFrameToSSEFrame serializes events without own
     false,
   );
 });
+
+test('GenerateContent errors are compact bare JSON trailers', () => {
+  const error = { error: { code: 503, message: 'overloaded', status: 'UNAVAILABLE' } } satisfies GeminiGenerateContentStreamEvent;
+  assertEquals(geminiGenerateContentProtocolFrameToSSEFrame(eventFrame(error)), { type: 'sse-trailer', data: JSON.stringify(error) });
+});

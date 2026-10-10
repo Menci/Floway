@@ -75,14 +75,15 @@ test('a late readable reasoning carrier does not duplicate the scalar text', asy
   expect(result.content.filter((part: any) => part.type === 'thinking').map((part: any) => part.thinking).join('')).toBe('firstsecond');
 });
 
-test('multiple readable ChatCompletions carriers retain separate IR groups and original Responses identities', async () => {
+test('ignores ChatCompletions readable carriers and retains scalar interruption items', async () => {
   const frames = fixtureFrames('openai-chat-completions', { thinking: ['ab'], text: ['answer'] });
   const carrier = [{ type: 'reasoning', id: 'rs_a', summary: [{ type: 'summary_text', text: 'a' }] }, { type: 'reasoning', id: 'rs_b', summary: [{ type: 'summary_text', text: 'b' }] }];
   frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: carrier }, finish_reason: null }] }));
   const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames)));
-  expect(ir.choices[0].items.filter(item => item.type === 'reasoning')).toEqual([{ type: 'reasoning', summary: ['a'] }, { type: 'reasoning', summary: ['b'] }]);
+  expect(ir.choices[0].items.filter(item => item.type === 'reasoning')).toEqual([{ type: 'reasoning', summary: ['ab'] }]);
   const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames))));
-  expect(result.output.filter((item: any) => item.type === 'reasoning')).toMatchObject(carrier);
+  expect(result.output.filter((item: any) => item.type === 'reasoning')).toMatchObject([{ summary: [{ text: 'ab' }] }]);
+  expect(result.output.some((item: any) => ['rs_a', 'rs_b'].includes(item.id))).toBe(false);
   expect(result.output.filter((item: any) => item.type === 'message')[0].content[0].text).toBe('answer');
 });
 

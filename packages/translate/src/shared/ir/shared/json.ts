@@ -23,3 +23,42 @@ export const parseIRJSONObject = (text: string, parser: (text: string) => unknow
   if (typeof value !== 'object' || value === null || Array.isArray(value) || irJSON.isRawJSON(value)) throw new TypeError('Tool arguments require a JSON object');
   return value as IRJSONObject;
 };
+
+export const isCompleteIRJSONObject = (text: string): boolean => {
+  try {
+    const value = parseIRJSON(text);
+    return typeof value === 'object' && value !== null && !Array.isArray(value) && !irJSON.isRawJSON(value);
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+};
+
+export const createIRJSONObjectDraft = () => {
+  let text = '';
+  let depth = 0;
+  let started = false;
+  let quoted = false;
+  let escaped = false;
+  let invalid = false;
+  const append = (delta: string): boolean => {
+    text += delta;
+    for (const char of delta) {
+      if (!started) {
+        if (/\s/u.test(char)) continue;
+        started = true;
+        if (char !== '{') invalid = true;
+      }
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '{' || char === '[') depth++;
+      else if (char === '}' || char === ']') depth--;
+      else if (depth === 0 && !/\s/u.test(char)) invalid = true;
+    }
+    return started && !invalid && depth === 0 && !quoted && isCompleteIRJSONObject(text);
+  };
+  return { append };
+};
