@@ -67,7 +67,6 @@ import {
 } from './upstream-codecs.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
-import { SqlUpstreamScheduledTasksRepo } from './upstream-scheduled-tasks-sql.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
@@ -1708,7 +1707,6 @@ export class SqlRepo implements Repo {
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
-  upstreamScheduledTasks: SqlUpstreamScheduledTasksRepo;
   agentSetup: AgentSetupRepository;
 
   constructor(db: SqlDatabase) {
@@ -1728,7 +1726,6 @@ export class SqlRepo implements Repo {
     this.spilledFiles = new SqlSpilledFilesRepo(db);
     this.expirationSweeps = new SqlExpirationSweepsRepo(db);
     this.scheduledMaintenance = new SqlScheduledMaintenanceRepo(db);
-    this.upstreamScheduledTasks = new SqlUpstreamScheduledTasksRepo(db);
     this.agentSetup = new SqlAgentSetupRepo(db);
   }
 }

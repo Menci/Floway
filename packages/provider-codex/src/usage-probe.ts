@@ -71,8 +71,6 @@ export const runCodexScheduledTask = async (record: UpstreamRecord, options: Pro
   const observations = Object.values(account.quotaSnapshot ?? {}).map(snapshot => snapshot.fetchedAt);
   await runScheduledUsageRefresh(record, options, observations.length === 0 ? null : Math.min(...observations), async (fresh, fetcher) => {
     assertCodexUpstreamRecord(fresh);
-    const credential = readCodexUpstreamState(fresh.state).accounts[0];
-    if (credential.state !== 'active') return;
     const accountId = fresh.config.accounts[0].chatgptAccountId;
     let access;
     try {

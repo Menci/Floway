@@ -524,7 +524,7 @@ const en = {
       upstreamEditor: {
         usageRefresh: {
           title: 'Background usage refresh',
-          description: '0 or blank disables background refresh and keeps usage updates on requests. Fresh observations are skipped; failures and upstream rate limits delay retries. Requires OAuth for Claude Code and cloud usage for Ollama.',
+          description: '0 or blank disables background refresh and keeps usage updates on requests. Fresh observations are skipped. Requires OAuth for Claude Code and cloud usage for Ollama.',
           interval: 'Refresh interval (minutes)',
           invalid: 'Enter a nonnegative whole number of minutes.',
         },

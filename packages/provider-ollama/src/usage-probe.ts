@@ -126,8 +126,6 @@ export const runOllamaScheduledTask = async (record: UpstreamRecord, options: Pr
   if (!isOllamaUsageEnabled(config)) return;
   const observedAt = readOllamaUpstreamState(record.state).balanceProbe?.observation?.fetchedAt ?? null;
   await runScheduledUsageRefresh(record, options, observedAt, async (fresh, fetcher) => {
-    const currentConfig = assertOllamaUpstreamRecord(fresh).config;
-    if (!isOllamaUsageEnabled(currentConfig)) return;
-    await refreshOllamaBalanceProbe(fresh.id, currentConfig, fetcher);
+    await refreshOllamaBalanceProbe(fresh.id, config, fetcher);
   });
 };

@@ -578,6 +578,5 @@ export interface Repo {
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
-  upstreamScheduledTasks: import('@floway-dev/provider').ProviderScheduledTasksRepo;
   agentSetup: AgentSetupRepository;
 }

@@ -67,7 +67,7 @@ export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 
 export { runScheduledUsageRefresh } from './scheduled.ts';
-export type { ProviderScheduledOptions, ProviderScheduledTasksRepo, ScheduledTaskClaim } from './scheduled.ts';
+export type { ProviderScheduledOptions } from './scheduled.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';

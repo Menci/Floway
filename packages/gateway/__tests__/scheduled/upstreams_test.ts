@@ -75,40 +75,13 @@ test('opt-out, disabled upstreams, setup tokens, local Ollama and scoped-only eg
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
 
-test('concurrent ticks use a durable claim and an abandoned claim becomes eligible', async () => {
-  await repo.upstreams.insertForModels(copilot());
-  let release!: (response: Response) => void;
-  mocks.fetch.mockImplementation(() => new Promise<Response>(resolve => { release = resolve; }));
-  const first = runUpstreamScheduledTasks('TEST');
-  await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(1));
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(1);
-  release(Response.json({}));
-  await first;
-  const tasks = repo.upstreamScheduledTasks;
-  const due = Date.now() + 300_000;
-  vi.setSystemTime(due);
-  const claim = { upstreamId: 'copilot', task: 'usage-refresh', token: 'abandoned', intervalMs: 300_000, now: due, nextAttemptAt: due + 300_000 };
-  expect(await tasks.tryClaim(claim)).toBe(0);
-  expect(await tasks.tryClaim({ ...claim, token: 'second' })).toBeNull();
-  expect(await tasks.tryClaim({ ...claim, token: 'replacement', now: due + 300_000, nextAttemptAt: due + 600_000 })).toBe(0);
-  await tasks.finish(claim, { nextAttemptAt: 0, completedAt: null, failureCount: 0, error: null });
-  expect(await tasks.tryClaim({ ...claim, now: due + 300_000 })).toBeNull();
-});
-
-test('Retry-After survives a scheduler restart and keeps the previous observation', async () => {
+test('a failed refresh keeps the previous usage observation', async () => {
   await repo.upstreams.insertForModels(ollama());
   await repo.upstreams.saveState('ollama', () => ({ account: null, usageProbe: null, balanceProbe: { attemptedAt: NOW - 300_000, observation: { fetchedAt: NOW - 300_000, data: { included: { balance_usd: 42 } } }, error: null } }));
   mocks.fetch.mockResolvedValue(new Response('slow down', { status: 429, headers: { 'retry-after': '3600' } }));
   await expect(runUpstreamScheduledTasks('TEST')).rejects.toThrow('Upstream scheduled tasks failed');
   const stored = await repo.upstreams.getById('ollama');
   expect(stored?.state).toMatchObject({ balanceProbe: { observation: { data: { included: { balance_usd: 42 } } }, error: expect.stringContaining('429') } });
-  const task = await repo.upstreamScheduledTasks.tryClaim({ upstreamId: 'ollama', task: 'usage-refresh', token: 'restart', intervalMs: 300_000, now: NOW + 3599_000, nextAttemptAt: NOW + 4000_000 });
-  expect(task).toBeNull();
-  vi.setSystemTime(NOW + 3600_000);
-  mocks.fetch.mockResolvedValue(Response.json({ included: { balance_usd: 41 } }));
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(2);
 });
 
 test('a usage endpoint auth failure preserves inference credential health and other upstreams still run', async () => {
@@ -122,26 +95,21 @@ test('a usage endpoint auth failure preserves inference credential health and ot
   expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ balanceProbe: { observation: { fetchedAt: NOW } } });
 });
 
-test('a queued task observes opt-out after claiming and propagates original network failures', async () => {
+test('scheduled refresh propagates original network failures', async () => {
   const record = copilot();
   await repo.upstreams.insertForModels(record);
   const refresh = vi.fn();
-  vi.spyOn(repo.upstreams, 'getById').mockResolvedValueOnce({ ...record, configVersion: 1, usageRefreshIntervalMinutes: 0 });
-  const options = { tasks: repo.upstreamScheduledTasks, fetcher: async () => mocks.fetch };
-  await runScheduledUsageRefresh(record, options, null, refresh);
-  expect(refresh).not.toHaveBeenCalled();
+  const options = { fetcher: async () => mocks.fetch };
   const failure = new Error('network unavailable');
   refresh.mockRejectedValue(failure);
   await expect(runScheduledUsageRefresh(record, options, null, refresh)).rejects.toBe(failure);
 });
 
-test('a fresh passive observation avoids resolving egress or acquiring a task', async () => {
+test('a fresh passive observation avoids resolving egress', async () => {
   const record = copilot();
   await repo.upstreams.insertForModels(record);
-  const tasks = { tryClaim: vi.fn(), finish: vi.fn() };
   const fetcher = vi.fn();
-  await runScheduledUsageRefresh(record, { tasks, fetcher }, NOW - 60_000, vi.fn());
-  expect(tasks.tryClaim).not.toHaveBeenCalled();
+  await runScheduledUsageRefresh(record, { fetcher }, NOW - 60_000, vi.fn());
   expect(fetcher).not.toHaveBeenCalled();
 });
 
@@ -178,18 +146,10 @@ test('a fresh Codex bucket does not suppress a stale sibling bucket', async () =
   expect((await repo.upstreams.getById(record.id))?.state).toMatchObject({ accounts: [{ quotaSnapshot: { images: { data: { primary_used_percent: 20 } } } }] });
 });
 
-test('locationless scheduling rechecks a newly scoped-only egress policy', async () => {
-  const record = copilot();
-  await repo.upstreams.insertForModels(record);
-  vi.spyOn(repo.upstreams, 'getById').mockResolvedValueOnce({ ...record, configVersion: 1, proxyFallbackList: [{ id: 'direct_fetch', colos: ['TEST'] }] });
-  await runUpstreamScheduledTasks(null);
-  expect(mocks.fetch).not.toHaveBeenCalled();
-});
-
-test('configured minutes control polling and interval edits take effect against the last completion', async () => {
+test('configured minutes control polling using existing usage observations', async () => {
   const record = { ...copilot(), usageRefreshIntervalMinutes: 15 };
   await repo.upstreams.insertForModels(record);
-  mocks.fetch.mockImplementation(async () => Response.json({}));
+  mocks.fetch.mockImplementation(async () => Response.json({ quota_snapshots: { premium_interactions: { entitlement: 300, quota_remaining: 200, percent_remaining: 200 / 3, unlimited: false } } }));
   await runUpstreamScheduledTasks('TEST');
   vi.setSystemTime(NOW + 60_000);
   await runUpstreamScheduledTasks('TEST');
@@ -212,30 +172,4 @@ test('configured minutes control polling and interval edits take effect against 
   vi.setSystemTime(NOW + 24 * 60 * 60_000);
   await runUpstreamScheduledTasks('TEST');
   expect(mocks.fetch).toHaveBeenCalledTimes(3);
-});
-
-test('a shorter interval cannot bypass a successful response polling hint', async () => {
-  const record = copilot();
-  await repo.upstreams.insertForModels(record);
-  mocks.fetch.mockImplementation(async () => Response.json({}, { headers: { 'x-poll-interval': '600' } }));
-  await runUpstreamScheduledTasks('TEST');
-  const stored = (await repo.upstreams.getById(record.id))!;
-  expect(await repo.upstreams.replaceForModels({ previous: stored, upstream: { ...stored, usageRefreshIntervalMinutes: 1 } })).not.toBeNull();
-  vi.setSystemTime(NOW + 9 * 60_000);
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(1);
-  vi.setSystemTime(NOW + 10 * 60_000);
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(2);
-});
-
-test('a queued task defers to the next tick when its configured interval changes after claiming', async () => {
-  const record = copilot();
-  await repo.upstreams.insertForModels(record);
-  const refresh = vi.fn();
-  vi.spyOn(repo.upstreams, 'getById').mockResolvedValueOnce({ ...record, configVersion: 1, usageRefreshIntervalMinutes: 15 });
-  await runScheduledUsageRefresh(record, { tasks: repo.upstreamScheduledTasks, fetcher: async () => mocks.fetch }, null, refresh);
-  expect(refresh).not.toHaveBeenCalled();
-  await runScheduledUsageRefresh(record, { tasks: repo.upstreamScheduledTasks, fetcher: async () => mocks.fetch }, null, refresh);
-  expect(refresh).toHaveBeenCalledTimes(1);
 });
