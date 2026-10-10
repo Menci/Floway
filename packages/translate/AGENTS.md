@@ -21,14 +21,16 @@ files at the top level of either `shared/` tree.
    `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
    OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
 
-6. **Output IR, `ir/`** — shared by every translation pair. Its native readers and
-   writers own output streaming; the representation stays internal to translate.
+6. **Output IR and assistant-turn round trips, `ir/`** — shared by every
+   translation pair. Its native readers and writers own output streaming;
+   IAT, thin turns, and protocol replay helpers stay internal to translate.
    Native IR readers/writers may consume the protocol helpers above within
    the protocols of their input or output boundary.
 
 ## Current Production Subdirectories
 
-- `ir/` — output SSE representation and native protocol readers/writers.
+- `ir/` — output SSE representation, native protocol readers/writers, and
+  assistant-turn round-trip helpers.
 - `openai-chat-completions-and-openai-responses/` — available only to
   `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
 - `openai-chat-completions-and-anthropic-messages/` — available only to

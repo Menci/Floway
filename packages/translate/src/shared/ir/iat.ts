@@ -1,10 +1,22 @@
-import type { IR } from './ir.ts';
-import type { IRProjectionResult, IRStringProjection } from './round-trip-projection.ts';
-import { cloneIRJSON, irJSON, parseIRJSONObject } from './shared/json.ts';
-import type { IRPath } from './stream.ts';
-import type { IRReferencePayload } from './thin-types.ts';
+import { Tag } from 'cbor-x';
 
-export type IRContentHasher = (text: string) => Promise<Uint8Array>;
+import type { IRProjectionResult, IRProjectedContent, IRStringProjection } from './round-trip-projection.ts';
+import { cloneIRJSON, irJSON, isCompleteIRJSONObject, parseIRJSONObject } from './shared/json.ts';
+import type { IRPath } from './stream.ts';
+import { IATReference, IR_THIN_TAGS, type IATId, type IATOriginal, type IATRestorationFor, type IRReferencePayload, type ReplaceIATReferences, type ThinAssistantTurn } from './thin-types.ts';
+
+export interface IATEntry<T extends IATOriginal = IATOriginal> {
+  id: IATId;
+  path: IRPath;
+  view: string;
+  original: T;
+  restoration: IATRestorationFor<T>;
+}
+
+export interface IAT {
+  entries: Map<IATId, IATEntry>;
+  projection?: IRProjectionResult;
+}
 
 export const irUTF16Bytes = (text: string): Uint8Array => {
   const bytes = new Uint8Array(text.length * 2);
@@ -13,72 +25,133 @@ export const irUTF16Bytes = (text: string): Uint8Array => {
   return bytes;
 };
 
-export const hashIRContent: IRContentHasher = async text => new Uint8Array(await crypto.subtle.digest('SHA-256', irUTF16Bytes(text) as Uint8Array<ArrayBuffer>));
+export const hashIRContent = async (text: string): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest('SHA-256', irUTF16Bytes(text) as Uint8Array<ArrayBuffer>));
 export const irHashKey = (hash: Uint8Array): string => Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');
 
-export interface IRIATEntry { path: IRPath; text: string; json?: true }
-export interface IRIAT { entries: IRIATEntry[]; projection?: IRProjectionResult }
+export const createIAT = (): IAT => ({ entries: new Map() });
 
-export const createIRIAT = (ir: IR): IRIAT => {
-  const entries: IRIATEntry[] = [];
-  const walk = (value: unknown, path: IRPath): void => {
-    if (typeof value === 'string') entries.push({ path, text: value });
-    else if (typeof value === 'object' && value !== null) {
-      if (irJSON.isRawJSON(value)) return;
-      if (path.at(-1) === 'arguments' && !Array.isArray(value)) entries.push({ path, text: JSON.stringify(value), json: true });
-      for (const [key, child] of Object.entries(value)) walk(child, [...path, Array.isArray(value) ? Number(key) : key]);
-    }
-  };
-  walk(ir, []);
-  return { entries };
+export const registerIAT = <T extends IATOriginal>(iat: IAT, path: IRPath, view: string, original: T, restoration: IATRestorationFor<T>): IATReference<T> => {
+  const id = JSON.stringify([restoration, path]) as IATId;
+  const source = cloneIRJSON(original);
+  iat.entries.set(id, { id, path: [...path], view, original: source, restoration });
+  return new IATReference<T>(id);
 };
 
-export const fillIRIAT = (iat: IRIAT, projection: IRProjectionResult): void => { iat.projection = cloneIRJSON(projection); };
+export const updateIAT = (iat: IAT, projection: IRProjectionResult): void => {
+  iat.projection = cloneIRJSON(projection);
+};
 
-export interface IRResolvedIAT { references: Map<number, IRReferencePayload>; referencedContents: Uint8Array[] }
+interface IATSegment { text: string; start: number; end: number }
 
-export const resolveIRIAT = async (iat: IRIAT, entryIndices: readonly number[], hasher: IRContentHasher = hashIRContent): Promise<IRResolvedIAT> => {
-  if (iat.projection === undefined) throw new Error('IAT projection has not been filled');
-  const projection = iat.projection;
-  const referencedContents: Uint8Array[] = [];
-  const hashes = new Map<string, { index: number; text: string }>();
-  const hashIndex = async (text: string): Promise<number> => {
-    const hash = await hasher(text); const key = irHashKey(hash); const known = hashes.get(key);
-    if (known !== undefined) {
-      if (known.text !== text) throw new Error('Referenced content hash collision');
-      return known.index;
-    }
-    const index = referencedContents.length;
-    referencedContents.push(hash); hashes.set(key, { index, text }); return index;
-  };
-  const references = new Map<number, IRReferencePayload>();
-  for (const entryIndex of new Set(entryIndices)) {
-    const entry = iat.entries[entryIndex];
-    if (entry === undefined) throw new RangeError('Unknown IAT entry');
-    const spans: IRStringProjection[] = projection.projections.filter(p => p.round_trip && JSON.stringify(p.source_path) === JSON.stringify(entry.path)).toSorted((a, b) => a.source_start - b.source_start);
-    const segments: { text: string; start: number; end: number }[] = [];
-    let cursor = 0;
-    for (const span of spans) {
-      const target = projection.contents.find(c => c.round_trip && JSON.stringify(c.path) === JSON.stringify(span.target_path));
-      if (target === undefined) throw new Error('IAT projection target is missing');
-      if (entry.json && JSON.stringify(parseIRJSONObject(target.text)) === entry.text) {
-        segments.length = 0; segments.push({ text: target.text, start: 0, end: target.text.length }); cursor = entry.text.length; break;
-      }
-      if (span.source_start < cursor) continue;
-      if (span.source_start !== cursor || span.source_end_exclusive > entry.text.length || entry.text.slice(span.source_start, span.source_end_exclusive) !== target.text.slice(span.target_start, span.target_end_exclusive)) break;
-      segments.push({ text: target.text, start: span.target_start, end: span.target_end_exclusive });
-      cursor = span.source_end_exclusive;
-    }
-    if (cursor !== entry.text.length || segments.length === 0) continue;
-    const payload: IRReferencePayload = [];
-    for (const segment of segments) {
-      const index = await hashIndex(segment.text);
-      const part = segment.start === 0 && segment.end === segment.text.length ? index : [index, segment.start, segment.end] as [number, number, number];
-      const previous = payload.at(-1);
-      if (Array.isArray(previous) && Array.isArray(part) && previous[0] === part[0] && previous[2] === part[1]) previous[2] = part[2];
-      else payload.push(part);
-    }
-    references.set(entryIndex, payload);
+const pathKey = (path: IRPath): string => JSON.stringify(path);
+
+const restoresOriginal = (entry: IATEntry, text: string): boolean => entry.restoration === 'text'
+  ? text === entry.original
+  : isCompleteIRJSONObject(text) && JSON.stringify(parseIRJSONObject(text)) === JSON.stringify(entry.original);
+
+const projectIATEntry = (iat: IAT, entry: IATEntry): IATSegment[] | undefined => {
+  if (iat.projection === undefined || entry.view.length === 0) return undefined;
+  const targetTextByPath = new Map<string, IRProjectedContent['text']>(iat.projection.contents
+    .filter(content => content.round_trip)
+    .map(content => [pathKey(content.path), content.text]));
+  const spansByStart = new Map<number, IRStringProjection[]>();
+  for (const span of iat.projection.projections
+    .filter(span => span.round_trip && pathKey(span.source_path) === pathKey(entry.path))
+    .toSorted((a, b) => a.source_start - b.source_start)) {
+    const candidates = spansByStart.get(span.source_start) ?? [];
+    candidates.push(span);
+    spansByStart.set(span.source_start, candidates);
   }
-  return { references, referencedContents };
+  interface SearchFrame { cursor: number; prefix: string; candidates: IRStringProjection[]; next: number; segment?: IATSegment }
+  const stack: SearchFrame[] = [{ cursor: 0, prefix: '', candidates: spansByStart.get(0) ?? [], next: 0 }];
+  const failed = new Set<string>();
+  const stateKey = (cursor: number, prefix: string): string => JSON.stringify([cursor, prefix]);
+  while (stack.length > 0) {
+    const frame = stack.at(-1)!;
+    if (restoresOriginal(entry, frame.prefix) && (entry.restoration === 'json' || frame.cursor === entry.view.length)) return stack.slice(1).map(part => part.segment!);
+    if (entry.restoration === 'text' && frame.cursor >= entry.view.length) {
+      failed.add(stateKey(frame.cursor, frame.prefix));
+      stack.pop();
+      continue;
+    }
+    if (frame.next === frame.candidates.length) {
+      failed.add(stateKey(frame.cursor, frame.prefix));
+      stack.pop();
+      continue;
+    }
+    const span = frame.candidates[frame.next++];
+    if (span.source_end_exclusive <= frame.cursor) continue;
+    const targetText = targetTextByPath.get(pathKey(span.target_path));
+    if (targetText === undefined) continue;
+    const prefix = frame.prefix + targetText.slice(span.target_start, span.target_end_exclusive);
+    if (failed.has(stateKey(span.source_end_exclusive, prefix))) continue;
+    stack.push({
+      cursor: span.source_end_exclusive,
+      prefix,
+      candidates: spansByStart.get(span.source_end_exclusive) ?? [],
+      next: 0,
+      segment: { text: targetText, start: span.target_start, end: span.target_end_exclusive },
+    });
+  }
+  return undefined;
+};
+
+interface FinalizationState { referencedContents: Uint8Array[]; hashes: Map<string, number> }
+
+const referenceForEntry = async (iat: IAT, entry: IATEntry, state: FinalizationState): Promise<unknown> => {
+  const segments = projectIATEntry(iat, entry);
+  if (segments === undefined) return cloneIRJSON(entry.original);
+  const payload: IRReferencePayload = [];
+  for (const segment of segments) {
+    const hash = await hashIRContent(segment.text);
+    const key = irHashKey(hash);
+    let index = state.hashes.get(key);
+    if (index === undefined) {
+      index = state.referencedContents.length;
+      state.hashes.set(key, index);
+      state.referencedContents.push(hash);
+    }
+    const part = segment.start === 0 && segment.end === segment.text.length
+      ? index
+      : [index, segment.start, segment.end] as [number, number, number];
+    const previous = payload.at(-1);
+    if (Array.isArray(previous) && Array.isArray(part) && previous[0] === part[0] && previous[2] === part[1]) previous[2] = part[2];
+    else payload.push(part);
+  }
+  return new Tag(payload, entry.restoration === 'text' ? IR_THIN_TAGS.text : IR_THIN_TAGS.json);
+};
+
+const finalizeValue = async (value: unknown, iat: IAT, state: FinalizationState): Promise<unknown> => {
+  if (value instanceof IATReference) {
+    const entry = iat.entries.get(value.id) as IATEntry;
+    return await referenceForEntry(iat, entry, state);
+  }
+  if (irJSON.isRawJSON(value) || value instanceof Tag || value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) {
+    const result: unknown[] = [];
+    for (const child of value) result.push(await finalizeValue(child, iat, state));
+    return result;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const result: [string, unknown][] = [];
+    for (const [key, child] of Object.entries(value)) result.push([key, await finalizeValue(child, iat, state)]);
+    return Object.fromEntries(result);
+  }
+  return value;
+};
+
+export interface FinalizedThinAssistantTurn<T> {
+  thinAssistantTurn: T;
+  referencedContents: Uint8Array[];
+}
+
+export const finalizeThinAssistantTurn = async <T extends ThinAssistantTurn<IATReference>>(
+  thinAssistantTurn: T,
+  iat: IAT,
+): Promise<FinalizedThinAssistantTurn<ReplaceIATReferences<T>>> => {
+  const state: FinalizationState = { referencedContents: [], hashes: new Map() };
+  return {
+    thinAssistantTurn: await finalizeValue(thinAssistantTurn, iat, state) as ReplaceIATReferences<T>,
+    referencedContents: state.referencedContents,
+  };
 };

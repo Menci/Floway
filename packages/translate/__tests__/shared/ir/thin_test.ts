@@ -1,180 +1,357 @@
-import { Encoder, Tag } from 'cbor-x';
+import { Tag } from 'cbor-x';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { createIRIAT, fillIRIAT, hashIRContent } from '../../../src/shared/ir/iat.ts';
-import type { IR } from '../../../src/shared/ir/ir.ts';
+import { createIAT, finalizeThinAssistantTurn, hashIRContent, registerIAT, updateIAT } from '../../../src/shared/ir/iat.ts';
+import type { IRJSONObject } from '../../../src/shared/ir/ir.ts';
 import type { IRProjectionResult } from '../../../src/shared/ir/round-trip-projection.ts';
-import { cloneIRJSON, irJSON, parseIRJSONObject } from '../../../src/shared/ir/shared/json.ts';
-import type { IRTextReference, IRThinResponsesItem, IRThinValue } from '../../../src/shared/ir/thin-types.ts';
-import { buildIRReplayItems, createIRPendingThinItems, createIRThinCodec, finalizeIRThinItems } from '../../../src/shared/ir/thin.ts';
+import { parseIRJSONObject } from '../../../src/shared/ir/shared/json.ts';
+import { createIRProjection } from '../../../src/shared/ir/shared/projection.ts';
+import type { IRPath } from '../../../src/shared/ir/stream.ts';
+import { IR_THIN_TAGS, type IATReference, type AnthropicMessagesThinAssistantTurn, type GeminiGenerateContentThinAssistantTurn, type IRJSONReference, type IRThinValue, type IRTextReference, type IRTextRule, type IRJSONRule, type OpenAIChatCompletionsThinAssistantTurn, type OpenAIResponsesThinAssistantTurn, type ReplaceIATReferences, type ThinReference } from '../../../src/shared/ir/thin-types.ts';
+import { hydrate } from '../../../src/shared/ir/thin.ts';
 
-const tags = { text: 70000, json: 70001, utf16: 70002 };
-const codec = createIRThinCodec(tags);
-const source = (text: string): IR => ({ choices: [{ items: [{ type: 'reasoning', summary: [text] }] }] });
-const path = ['choices', 0, 'items', 0, 'summary', 0];
-const projectionFor = (text: string, roundTrip = true): IRProjectionResult => ({ contents: [{ path: ['content'], text, round_trip: roundTrip }], projections: [{ source_path: path, source_start: 0, source_end_exclusive: text.length, target_path: ['content'], target_start: 0, target_end_exclusive: text.length, round_trip: roundTrip }] });
-
-describe('thin items and IAT', () => {
-  it('derives nested arrays, objects, optional and nullable leaves', () => {
-    type Source = { summary?: { text: string; kind: 'summary_text' }[] | null };
-    type Thin = IRThinValue<Source, { summary: [{ text: { $text: true } }] }>;
-    expectTypeOf<Thin>().toEqualTypeOf<{ summary?: { text: string | IRTextReference; kind: 'summary_text' }[] | null }>();
-  });
-
-  it('stores hashes once and restores selected reasoning leaves', async () => {
-    const iat = createIRIAT(source('hello'));
-    const pending = createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'hello' }], encrypted_content: 'hidden' }], iat);
-    fillIRIAT(iat, projectionFor('hello'));
-    const thin = await finalizeIRThinItems(pending, iat, tags);
-    expect(thin.referencedContents).toHaveLength(1);
-    const item = thin.items[0] as any;
-    expect(item.summary[0].text).toBeInstanceOf(Tag);
-    expect(item.summary[0].text.value).toEqual([0]);
-    expect(item.encrypted_content).toBe('hidden');
-    expect(await codec.restore(codec.decode(codec.encode(thin)), ['hello'])).toEqual([{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'hello' }], encrypted_content: 'hidden' }]);
-  });
-
-  it('remaps fragmented source strings into final concatenated target ranges', async () => {
-    const iat = createIRIAT(source('ac'));
-    const pending = createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'ac' }] }], iat);
-    fillIRIAT(iat, {
-      contents: [{ path: ['content'], text: 'abc', round_trip: true }], projections: [
-        { source_path: path, source_start: 0, source_end_exclusive: 1, target_path: ['content'], target_start: 0, target_end_exclusive: 1, round_trip: true },
-        { source_path: path, source_start: 1, source_end_exclusive: 2, target_path: ['content'], target_start: 2, target_end_exclusive: 3, round_trip: true },
-      ],
-    });
-    const thin = await finalizeIRThinItems(pending, iat, tags);
-    expect((thin.items[0] as any).summary[0].text.value).toEqual([[0, 0, 1], [0, 2, 3]]);
-    expect(await codec.restore(thin, ['abc'])).toMatchObject([{ summary: [{ text: 'ac' }] }]);
-  });
-
-  it('keeps the whole original string when projection is partial or not round-tripped', async () => {
-    for (const partial of [false, true]) {
-      const iat = createIRIAT(source('hello'));
-      const pending = createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'hello' }] }], iat);
-      const projection = projectionFor('hello', partial);
-      if (partial) projection.projections[0].source_end_exclusive = 2;
-      fillIRIAT(iat, projection);
-      const thin = await finalizeIRThinItems(pending, iat, tags);
-      expect((thin.items[0] as any).summary[0].text).toBe('hello');
-    }
-  });
-
-  it('restores object arguments through a JSON tag and preserves key order', async () => {
-    const input = { b: 2, a: 1 };
-    const ir: IR = { choices: [{ items: [{ type: 'function_call', name: 'tool', arguments: input }] }] };
-    const iat = createIRIAT(ir);
-    const pending = createIRPendingThinItems('anthropicMessages', [{ type: 'tool_use', id: 'call', name: 'tool', input }], iat);
-    const text = JSON.stringify(input);
-    fillIRIAT(iat, { contents: [{ path: ['arguments'], text, round_trip: true }], projections: [{ source_path: ['choices', 0, 'items', 0, 'arguments'], source_start: 0, source_end_exclusive: text.length, target_path: ['arguments'], target_start: 0, target_end_exclusive: text.length, round_trip: true }] });
-    const thin = await finalizeIRThinItems(pending, iat, tags);
-    expect((thin.items[0] as any).input.tag).toBe(tags.json);
-    const restored = await codec.restore(thin, [text]);
-    expect(JSON.stringify((restored[0] as any).input)).toBe(text);
-  });
-
-  it('retains noncanonical JSON strings when the target object loses their spelling', async () => {
-    const original = '{ "b": 2, "a": 1 }';
-    const ir: IR = { choices: [{ items: [{ type: 'function_call', name: 'tool', arguments: original }] }] };
-    const iat = createIRIAT(ir);
-    const pending = createIRPendingThinItems('openaiResponses', [{ type: 'function_call', name: 'tool', call_id: 'call', arguments: original }], iat);
-    const text = JSON.stringify(JSON.parse(original));
-    fillIRIAT(iat, { contents: [{ path: ['input'], text, round_trip: true }], projections: [{ source_path: ['choices', 0, 'items', 0, 'arguments'], source_start: 0, source_end_exclusive: text.length, target_path: ['input'], target_start: 0, target_end_exclusive: text.length, round_trip: true }] });
-    const thin = await finalizeIRThinItems(pending, iat, tags);
-    expect((thin.items[0] as any).arguments).toBe(original);
-  });
-
-  it('rejects altered or missing referenced text', async () => {
-    const iat = createIRIAT(source('hello')); fillIRIAT(iat, projectionFor('hello'));
-    const thin = await finalizeIRThinItems(createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: 'hello' }] }], iat), iat, tags);
-    await expect(codec.restore(thin, ['changed'])).rejects.toThrow('checksum');
-  });
-
-  it('preserves short and long isolated surrogates, metadata keys and hashes', async () => {
-    for (const text of ['\ud800', `\ud800${'x'.repeat(100)}`]) {
-      expect(await hashIRContent(text)).not.toEqual(await hashIRContent(text.toWellFormed()));
-      const original = JSON.parse('{"__proto__":{"x":1}}');
-      original.reasoning_text = text;
-      const envelope: any = { protocol: 'openaiChatCompletions', referencedContents: [], items: [{ role: 'assistant', content: text, ...original }] };
-      const decoded = codec.decode(codec.encode(envelope));
-      expect(decoded.items).toEqual(envelope.items);
-      expect(Object.hasOwn(decoded.items[0], '__proto__')).toBe(true);
-    }
-  });
-
-  it('reduces output-only replay fields without touching input objects', () => {
-    const result = { choices: [{ message: { role: 'assistant', content: 'text', annotations: [], audio: { id: 'audio', data: 'bytes', transcript: 'words', expires_at: 1 } } }] };
-    expect(buildIRReplayItems('openaiChatCompletions', result)).toEqual([{ role: 'assistant', content: 'text', audio: { id: 'audio' } }]);
-    expect(result.choices[0].message.audio.data).toBe('bytes');
-    expect(buildIRReplayItems('openaiResponses', { output: [{ type: 'web_search_call', id: 'w', results: [{ text: 'output-only' }] }] })).toEqual([{ type: 'web_search_call', id: 'w' }]);
-  });
-
-  it('keeps server and MCP tool fields literal even when their strings match IR', async () => {
-    const iat = createIRIAT(source('hello')); fillIRIAT(iat, projectionFor('hello'));
-    const replay: any = [{ type: 'mcp_call', id: 'm', name: 'tool', arguments: 'hello' }];
-    const thin = await finalizeIRThinItems(createIRPendingThinItems('openaiResponses', replay, iat), iat, tags);
-    expect(thin.items).toEqual(replay);
-  });
-
-  it('requires distinct tags that do not collide with cbor-x built-ins', () => {
-    expect(() => createIRThinCodec({ text: 258, json: 70001, utf16: 70002 })).toThrow();
-    expect(() => createIRThinCodec({ text: 70000, json: 70000, utf16: 70002 })).toThrow();
-  });
-  it('keeps MCP argument types literal', () => {
-    expectTypeOf<Extract<IRThinResponsesItem, { type: 'mcp_call' }>['arguments']>().toEqualTypeOf<string>();
-  });
-
-  it('preserves raw unsafe integers through JSON cloning and CBOR', async () => {
-    const input = parseIRJSONObject('{"n":9007199254740993}');
-    expect(JSON.stringify(cloneIRJSON(input))).toBe('{"n":9007199254740993}');
-    const rawCodec = createIRThinCodec({ ...tags, rawJSON: 70003 });
-    const envelope: any = { protocol: 'anthropicMessages', referencedContents: [], items: [{ type: 'tool_use', id: 'c', name: 't', input }] };
-    const decoded = rawCodec.decode(rawCodec.encode(envelope));
-    expect(irJSON.isRawJSON((decoded.items[0] as any).input.n)).toBe(true);
-    expect(JSON.stringify(await rawCodec.restore(decoded, []))).toBe(JSON.stringify(envelope.items));
-    expect(() => codec.encode(envelope)).toThrow('rawJSON tag');
-  });
-
-  it('validates decoded envelopes', () => {
-    const encoder = new Encoder({ useRecords: false });
-    for (const value of [{}, { protocol: 'unknown', referencedContents: [], items: [] }, { protocol: 'openaiResponses', referencedContents: ['hash'], items: [] }]) {
-      expect(() => codec.decode(encoder.encode(value))).toThrow('envelope');
-    }
-  });
-
-  it('references object arguments through a noncanonical target JSON string', async () => {
-    const input = { b: 2, a: 1 };
-    const text = '{ "b": 2, "a": 1 }';
-    const iat = createIRIAT({ choices: [{ items: [{ type: 'function_call', name: 't', arguments: input }] }] });
-    const pending = createIRPendingThinItems('anthropicMessages', [{ type: 'tool_use', id: 'c', name: 't', input }], iat);
-    fillIRIAT(iat, { contents: [{ path: ['args'], text, round_trip: true }], projections: [{ source_path: ['choices', 0, 'items', 0, 'arguments'], source_start: 0, source_end_exclusive: text.length, target_path: ['args'], target_start: 0, target_end_exclusive: text.length, round_trip: true }] });
-    const thin = await finalizeIRThinItems(pending, iat, tags);
-    expect((thin.items[0] as any).input).toBeInstanceOf(Tag);
-    expect(await codec.restore(thin, [text])).toMatchObject([{ input }]);
-  });
-
-  it('omits unused hashes and preserves empty literals', async () => {
-    for (const text of ['hello', '']) {
-      const iat = createIRIAT(source(text));
-      fillIRIAT(iat, projectionFor(text, false));
-      const thin = await finalizeIRThinItems(createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text }] }], iat), iat, tags);
-      expect(thin.referencedContents).toEqual([]);
-      expect((thin.items[0] as any).summary[0].text).toBe(text);
-    }
-  });
-
-  it.each(['1e400', '9007199254740993.0'])('preserves out-of-range numeric lexeme %s', token => {
-    const text = `{"n":${token}}`;
-    expect(JSON.stringify(cloneIRJSON(parseIRJSONObject(text)))).toBe(text);
-  });
-
+const projection = (
+  sourcePath: IRPath,
+  sourceText: string,
+  targetPath: IRPath,
+  targetText: string,
+  sourceStart = 0,
+  sourceEndExclusive = sourceText.length,
+  targetStart = 0,
+  targetEndExclusive = targetText.length,
+  roundTrip = true,
+): IRProjectionResult => ({
+  contents: [{ path: targetPath, text: targetText, round_trip: roundTrip }],
+  projections: [{
+    source_path: sourcePath,
+    source_start: sourceStart,
+    source_end_exclusive: sourceEndExclusive,
+    target_path: targetPath,
+    target_start: targetStart,
+    target_end_exclusive: targetEndExclusive,
+    round_trip: roundTrip,
+  }],
 });
 
-it('references ChatCompletions structured reasoning carrier leaves', async () => {
-  const iat = createIRIAT(source('hello'));
-  const pending = createIRPendingThinItems('openaiChatCompletions', [{ role: 'assistant', content: 'answer', reasoning_items: [{ type: 'reasoning', id: 'rs_carrier', summary: [{ type: 'summary_text', text: 'hello' }] }] }], iat);
-  fillIRIAT(iat, projectionFor('hello'));
-  const thin = await finalizeIRThinItems(pending, iat, tags);
-  expect((thin.items[0] as any).reasoning_items[0].summary[0].text).toBeInstanceOf(Tag);
-  expect(await codec.restore(codec.decode(codec.encode(thin)), ['hello'])).toMatchObject([{ reasoning_items: [{ id: 'rs_carrier', summary: [{ text: 'hello' }] }] }]);
+describe('IAT and thin assistant turns', () => {
+  it('recursively replaces selected text and JSON fields while preserving protocol shapes', () => {
+    type Source = {
+      text: string;
+      items: { text: string; type: 'summary_text' }[];
+      input: { ordered: number };
+      encrypted_content: string;
+    };
+    type Thin = IRThinValue<Source, {
+      text: IRTextRule;
+      items: [{ text: IRTextRule }];
+      input: IRJSONRule;
+    }, IATReference>;
+    expectTypeOf<Thin>().toEqualTypeOf<{
+      text: string | IATReference<string>;
+      items: { text: string | IATReference<string>; type: 'summary_text' }[];
+      input: { ordered: number } | IATReference<IRJSONObject>;
+      encrypted_content: string;
+    }>();
+    expectTypeOf<ReplaceIATReferences<IATReference<string>>>().toEqualTypeOf<string | IRTextReference>();
+    expectTypeOf<ReplaceIATReferences<IATReference<IRJSONObject>>>().toEqualTypeOf<IRJSONObject | IRJSONReference>();
+
+    type Chat = OpenAIChatCompletionsThinAssistantTurn<IATReference>;
+    type Messages = AnthropicMessagesThinAssistantTurn<IATReference>;
+    type Responses = OpenAIResponsesThinAssistantTurn<IATReference>;
+    type Gemini = GeminiGenerateContentThinAssistantTurn<IATReference>;
+    expectTypeOf<Chat['role']>().toEqualTypeOf<'assistant'>();
+    expectTypeOf<Messages['role']>().toEqualTypeOf<'assistant'>();
+    expectTypeOf<Messages['content']>().toExtend<unknown[]>();
+    expectTypeOf<Responses>().toExtend<unknown[]>();
+    expectTypeOf<Gemini>().toExtend<unknown[]>();
+    expectTypeOf<Gemini[number]['role']>().toEqualTypeOf<'model'>();
+    type ChatContentReference = Extract<Chat['content'], IATReference>;
+    expectTypeOf<ChatContentReference>().toEqualTypeOf<IATReference<string>>();
+    type MessagesToolInput = Extract<Messages['content'][number], { type: 'tool_use' }>['input'];
+    expectTypeOf<Extract<MessagesToolInput, IATReference>>().toEqualTypeOf<IATReference<IRJSONObject>>();
+    type GeminiAudioTranscriptionText = NonNullable<NonNullable<Gemini[number]['parts']>[number]['audioTranscription']>['text'];
+    expectTypeOf<GeminiAudioTranscriptionText>().toEqualTypeOf<string | IATReference<string>>();
+  });
+
+  it('keeps a stable source ID while retaining its independent view and original B value', () => {
+    const iat = createIAT();
+    const path = ['choices', 0, 'items', 1, 'arguments'] as const;
+    const original = parseIRJSONObject('{"x":1}');
+    const view = '{ "x": 1 }';
+    const first = registerIAT(iat, path, view, original, 'json');
+    const second = registerIAT(iat, path, view, original, 'json');
+
+    expect(first.id).toBe(second.id);
+    expect(iat.entries.get(first.id)).toMatchObject({ view, restoration: 'json', original });
+    expect(iat.entries.get(first.id)?.original).not.toBe(original);
+  });
+
+  it('references a B JSON object through an equivalent canonical A view', async () => {
+    const iat = createIAT();
+    const path = ['choices', 0, 'items', 0, 'arguments'] as const;
+    const view = '{ "x": 1, "x": 2 }';
+    const targetText = '{"x":2}';
+    const original = parseIRJSONObject(view);
+    const input = registerIAT(iat, path, view, original, 'json');
+    updateIAT(iat, projection(path, view, ['arguments'], targetText));
+
+    const turn: AnthropicMessagesThinAssistantTurn<IATReference> = {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'call', name: 'tool', input }],
+    };
+    const finalized = await finalizeThinAssistantTurn(turn, iat);
+    const thinInput = (finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>).content[0];
+    expect(thinInput.type).toBe('tool_use');
+    if (thinInput.type !== 'tool_use') throw new Error('Expected a tool-use block');
+    expect(thinInput.input).toBeInstanceOf(Tag);
+    expect((thinInput.input as Tag).tag).toBe(IR_THIN_TAGS.json);
+
+    const restored = await hydrate([targetText], finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>, finalized.referencedContents);
+    expect(restored).toEqual({ ok: true, turn: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input: original }] } });
+  });
+
+  it('references a B JSON object when A assigns its canonical serialization', async () => {
+    const iat = createIAT();
+    const path = ['choices', 0, 'items', 0, 'arguments'] as const;
+    const view = '{ "x": 1 }';
+    const original = parseIRJSONObject(view);
+    const targetText = JSON.stringify(original);
+    const projection = createIRProjection();
+    projection.assign(path, targetText, ['arguments']);
+    const assigned = projection.result();
+    updateIAT(iat, {
+      contents: assigned.contents.map(content => ({ ...content, round_trip: true })),
+      projections: assigned.projections.map(span => ({ ...span, round_trip: true })),
+    });
+    const input = registerIAT(iat, path, view, original, 'json');
+    const finalized = await finalizeThinAssistantTurn({
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'call', name: 'tool', input }],
+    } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
+
+    const thinInput = (finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>).content[0];
+    expect(thinInput.type).toBe('tool_use');
+    if (thinInput.type !== 'tool_use') throw new Error('Expected a tool-use block');
+    expect(thinInput.input).toBeInstanceOf(Tag);
+
+    const restored = await hydrate([original], finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>, finalized.referencedContents);
+    expect(restored).toEqual({ ok: true, turn: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input: original }] } });
+  });
+
+  it('binds a B string only when the projected A text reconstructs the entire original string', async () => {
+    const iat = createIAT();
+    const path = ['source', 'text'] as const;
+    const original = 'R1R2';
+    const reference = registerIAT(iat, path, 'R1', original, 'text');
+    updateIAT(iat, projection(path, 'R1', ['target'], original, 0, 2, 0, original.length));
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', reasoning_text: reference }, iat);
+
+    expect(finalized.thinAssistantTurn.reasoning_text).toBeInstanceOf(Tag);
+    expect(await hydrate([original], finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>, finalized.referencedContents)).toMatchObject({
+      ok: true,
+      turn: { role: 'assistant', reasoning_text: original },
+    });
+  });
+
+  it('selects one exact full-field cover when A replays the same source in multiple fields', async () => {
+    const iat = createIAT();
+    const path = ['source', 'reasoning'] as const;
+    const text = 'reasoning';
+    const reference = registerIAT(iat, path, text, text, 'text');
+    updateIAT(iat, {
+      contents: [
+        { path: ['target', 'reasoning'], text, round_trip: true },
+        { path: ['target', 'reasoning_details', 0, 'summary'], text, round_trip: true },
+      ],
+      projections: [
+        { source_path: path, source_start: 0, source_end_exclusive: text.length, target_path: ['target', 'reasoning'], target_start: 0, target_end_exclusive: text.length, round_trip: true },
+        { source_path: path, source_start: 0, source_end_exclusive: text.length, target_path: ['target', 'reasoning_details', 0, 'summary'], target_start: 0, target_end_exclusive: text.length, round_trip: true },
+      ],
+    });
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', reasoning_text: reference }, iat);
+
+    expect(finalized.referencedContents).toHaveLength(1);
+    expect(finalized.thinAssistantTurn.reasoning_text).toBeInstanceOf(Tag);
+  });
+
+  it('stringifies A object candidates before restoring a referenced B JSON object', async () => {
+    const iat = createIAT();
+    const path = ['choices', 0, 'items', 0, 'arguments'] as const;
+    const view = '{"x":1}';
+    const original = parseIRJSONObject(view);
+    const input = registerIAT(iat, path, view, original, 'json');
+    updateIAT(iat, projection(path, view, ['arguments'], view));
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input }] } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
+
+    const restored = await hydrate([{ x: 1 }], finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>, finalized.referencedContents);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error('Expected the object candidate to resolve');
+    expect(restored.turn.content[0]).toMatchObject({ type: 'tool_use', input: { x: 1 } });
+  });
+
+  it('restores raw numeric JSON tokens from a whitespace-preserving source view', async () => {
+    const iat = createIAT();
+    const path = ['source', 'arguments'] as const;
+    const view = '{ "n" : 9007199254740993 }';
+    const targetText = '{"n":9007199254740993}';
+    const original = parseIRJSONObject('{"n":9007199254740993}');
+    const input = registerIAT(iat, path, view, original, 'json');
+    updateIAT(iat, projection(path, view, ['target'], targetText));
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input }] } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
+    const restored = await hydrate([parseIRJSONObject(targetText)], finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>, finalized.referencedContents);
+
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error('Expected the exact JSON source view to resolve');
+    expect(JSON.stringify(restored.turn.content[0])).toContain('"n":9007199254740993');
+  });
+
+  it('keeps the whole B value when text or JSON restoration cannot recover it', async () => {
+    const textCases: { view: string; target: string; start: number; end: number; original: string }[] = [
+      { view: 'hello', target: 'hello', start: 0, end: 2, original: 'hello' },
+      { view: 'R1', target: 'R1', start: 0, end: 2, original: 'R1R2' },
+    ];
+    for (const [index, testCase] of textCases.entries()) {
+      const iat = createIAT();
+      const path = ['source', index] as const;
+      const reference = registerIAT(iat, path, testCase.view, testCase.original, 'text');
+      updateIAT(iat, projection(path, testCase.view, ['target'], testCase.target, testCase.start, testCase.end));
+      const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: reference } satisfies OpenAIChatCompletionsThinAssistantTurn<IATReference>, iat);
+      expect((finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>).content).toEqual(testCase.original);
+      expect(finalized.referencedContents).toEqual([]);
+    }
+
+    const jsonCases: { view: string; target: string; start: number; end: number; original: IRJSONObject }[] = [
+      { view: '{"x":1', target: '{"x":1', start: 0, end: '{"x":1'.length, original: { x: 1 } },
+      { view: 'code', target: 'code', start: 0, end: 'code'.length, original: { input: 'code' } },
+      { view: '{"x":1}', target: '{"x":1}', start: 0, end: '{"x":1}'.length, original: { x: 2 } },
+      { view: '{"a":1,"b":2}', target: '{"a":1,"b":2}', start: 0, end: '{"a":1,"b":2}'.length, original: { b: 2, a: 1 } },
+    ];
+    for (const [index, testCase] of jsonCases.entries()) {
+      const iat = createIAT();
+      const path = ['source', index] as const;
+      const reference = registerIAT(iat, path, testCase.view, testCase.original, 'json');
+      updateIAT(iat, projection(path, testCase.view, ['target'], testCase.target, testCase.start, testCase.end));
+      const finalized = await finalizeThinAssistantTurn({
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'call', name: 'tool', input: reference }],
+      } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
+      expect((finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>).content[0]).toMatchObject({ input: testCase.original });
+      expect(finalized.referencedContents).toEqual([]);
+    }
+  });
+
+  it('concatenates target ranges with UTF-16 offsets and preserves isolated surrogates', async () => {
+    const iat = createIAT();
+    const path = ['source', 'reasoning'] as const;
+    const text = '\ud800a\udc00?';
+    const first = text.slice(0, 2);
+    const second = text.slice(2);
+    const firstTarget = `x${first}y`;
+    const secondTarget = `[${second}]`;
+    const reference = registerIAT(iat, path, text, text, 'text');
+    updateIAT(iat, {
+      contents: [
+        { path: ['target', 0], text: firstTarget, round_trip: true },
+        { path: ['target', 1], text: secondTarget, round_trip: true },
+      ],
+      projections: [
+        { source_path: path, source_start: 0, source_end_exclusive: first.length, target_path: ['target', 0], target_start: 1, target_end_exclusive: 1 + first.length, round_trip: true },
+        { source_path: path, source_start: first.length, source_end_exclusive: text.length, target_path: ['target', 1], target_start: 1, target_end_exclusive: 1 + second.length, round_trip: true },
+      ],
+    });
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: reference } satisfies OpenAIChatCompletionsThinAssistantTurn<IATReference>, iat);
+    const thinContent = (finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>).content;
+    expect(thinContent).toBeInstanceOf(Tag);
+    expect((thinContent as Tag).value).toEqual([[0, 1, 3], [1, 1, 3]]);
+    expect(finalized.referencedContents).toHaveLength(2);
+
+    const restored = await hydrate([firstTarget, secondTarget], finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>, finalized.referencedContents);
+    expect(restored).toEqual({ ok: true, turn: { role: 'assistant', content: text } });
+    expect(await hashIRContent(text)).not.toEqual(await hashIRContent(text.toWellFormed()));
+  });
+
+  it('deduplicates shared content hashes and keeps encrypted B fields literal', async () => {
+    const iat = createIAT();
+    const summaryPath = ['source', 'summary'] as const;
+    const reasoningPath = ['source', 'reasoning'] as const;
+    const summary = registerIAT(iat, summaryPath, 'same', 'same', 'text');
+    const reasoning = registerIAT(iat, reasoningPath, 'same', 'same', 'text');
+    updateIAT(iat, {
+      contents: [
+        { path: ['target', 'summary'], text: 'same', round_trip: true },
+        { path: ['target', 'reasoning'], text: 'same', round_trip: true },
+      ],
+      projections: [
+        { source_path: summaryPath, source_start: 0, source_end_exclusive: 4, target_path: ['target', 'summary'], target_start: 0, target_end_exclusive: 4, round_trip: true },
+        { source_path: reasoningPath, source_start: 0, source_end_exclusive: 4, target_path: ['target', 'reasoning'], target_start: 0, target_end_exclusive: 4, round_trip: true },
+      ],
+    });
+    const turn: OpenAIResponsesThinAssistantTurn<IATReference> = [
+      { type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text: summary }], encrypted_content: 'same' },
+      { type: 'reasoning', id: 'r2', summary: [{ type: 'summary_text', text: reasoning }], encrypted_content: 'native-signature-value' },
+    ];
+    const finalized = await finalizeThinAssistantTurn(turn, iat);
+
+    expect(finalized.referencedContents).toHaveLength(1);
+    const items = finalized.thinAssistantTurn as OpenAIResponsesThinAssistantTurn<ThinReference>;
+    expect((items[0] as { type: 'reasoning'; summary: { text: Tag }[] }).summary[0].text.value).toEqual([0]);
+    expect((items[1] as { type: 'reasoning'; summary: { text: Tag }[] }).summary[0].text.value).toEqual([0]);
+    expect((items[0] as { type: 'reasoning'; encrypted_content: string }).encrypted_content).toBe('same');
+    expect((items[1] as { type: 'reasoning'; encrypted_content: string }).encrypted_content).toBe('native-signature-value');
+  });
+
+  it('references optional Gemini audio-transcription metadata on a model Part', async () => {
+    const iat = createIAT();
+    const path = ['source', 'audio_transcription'] as const;
+    const text = 'recognized speech';
+    const reference = registerIAT(iat, path, text, text, 'text');
+    updateIAT(iat, projection(path, text, ['target', 'audioTranscription', 'text'], text));
+    const turn: GeminiGenerateContentThinAssistantTurn<IATReference> = [{
+      role: 'model',
+      parts: [{ text: 'spoken response', audioTranscription: { text: reference } }],
+    }];
+    const finalized = await finalizeThinAssistantTurn(turn, iat);
+    const part = finalized.thinAssistantTurn[0].parts?.[0];
+
+    expect(part?.audioTranscription?.text).toBeInstanceOf(Tag);
+    const restored = await hydrate([text], finalized.thinAssistantTurn, finalized.referencedContents);
+    expect(restored).toMatchObject({ ok: true, turn: [{ role: 'model', parts: [{ text: 'spoken response', audioTranscription: { text } }] }] });
+  });
+
+  it('fails the whole hydration when any referenced candidate is missing', async () => {
+    const iat = createIAT();
+    const firstPath = ['source', 0] as const;
+    const secondPath = ['source', 1] as const;
+    const first = registerIAT(iat, firstPath, 'first', 'first', 'text');
+    const second = registerIAT(iat, secondPath, 'second', 'second', 'text');
+    updateIAT(iat, {
+      contents: [
+        { path: ['target', 0], text: 'first', round_trip: true },
+        { path: ['target', 1], text: 'second', round_trip: true },
+      ],
+      projections: [
+        { source_path: firstPath, source_start: 0, source_end_exclusive: 5, target_path: ['target', 0], target_start: 0, target_end_exclusive: 5, round_trip: true },
+        { source_path: secondPath, source_start: 0, source_end_exclusive: 6, target_path: ['target', 1], target_start: 0, target_end_exclusive: 6, round_trip: true },
+      ],
+    });
+    const finalized = await finalizeThinAssistantTurn([
+      { type: 'reasoning', id: 'r1', summary: [{ type: 'summary_text', text: first }] },
+      { type: 'reasoning', id: 'r2', summary: [{ type: 'summary_text', text: second }] },
+    ] satisfies OpenAIResponsesThinAssistantTurn<IATReference>, iat);
+    const responses = finalized.thinAssistantTurn as OpenAIResponsesThinAssistantTurn<ThinReference>;
+
+    expect(await hydrate(['first'], responses, finalized.referencedContents)).toEqual({ ok: false, reason: 'missing-reference' });
+    expect(responses.every(item => item.type === 'reasoning' && item.summary?.[0]?.text instanceof Tag)).toBe(true);
+  });
+
+  it('lets invalid JSON reference errors propagate', async () => {
+    const malformed = {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'call', name: 'tool', input: new Tag([0], IR_THIN_TAGS.json) }],
+    } as AnthropicMessagesThinAssistantTurn<ThinReference>;
+    const hash = await hashIRContent('{');
+
+    await expect(hydrate(['{'], malformed, [hash])).rejects.toThrow();
+  });
+
 });
