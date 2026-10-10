@@ -6,8 +6,17 @@ import { openAIServiceTierFromAnthropicMessages } from '../shared/anthropic-mess
 import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthropic-messages-via/structured-output.ts';
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
+import {
+  cleanAnthropicMessagesAssistantTurn,
+  inspectAnthropicMessagesAssistantTurn,
+  partitionAnthropicMessagesTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyAnthropicMessagesReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
@@ -211,7 +220,16 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined): OpenAIChatCompletionsMessage[] => {
+type PreparedMessagesAssistantTurn = PreparedIRRoundTripAssistantTurn<AnthropicMessagesAssistantMessage[], 'openaiChatCompletions'>;
+type RestoredChatAssistantTurn = Extract<PreparedMessagesAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredMessagesAssistantTurn { sourceCount: number; turn: RestoredChatAssistantTurn }
+
+const translateAnthropicMessagesInput = (
+  messages: AnthropicMessagesMessage[],
+  system: string | AnthropicMessagesTextBlockParam[] | undefined,
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): OpenAIChatCompletionsMessage[] => {
   const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
   const systemMessages: OpenAIChatCompletionsMessage[] = isEmptySystem
     ? []
@@ -222,17 +240,23 @@ const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], s
         },
       ];
 
-  return [
-    ...systemMessages,
-    ...messages.flatMap((message, messageIdx): OpenAIChatCompletionsMessage[] => {
-      switch (message.role) {
-      case 'user': return translateAnthropicMessagesUser(message, messageIdx);
-      case 'assistant': return translateAnthropicMessagesAssistant(message, messageIdx);
-      case 'system': return translateAnthropicMessagesSystem(message);
-      default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
-      }
-    }),
-  ];
+  const translated = [...systemMessages];
+  for (let messageIdx = 0; messageIdx < messages.length; messageIdx++) {
+    const restored = restoredTurns.get(messageIdx);
+    if (restored !== undefined) {
+      translated.push(restored.turn as OpenAIChatCompletionsMessage);
+      messageIdx += restored.sourceCount - 1;
+      continue;
+    }
+    const message = messages[messageIdx];
+    switch (message.role) {
+    case 'user': translated.push(...translateAnthropicMessagesUser(message, messageIdx)); break;
+    case 'assistant': translated.push(...translateAnthropicMessagesAssistant(message, messageIdx)); break;
+    case 'system': translated.push(...translateAnthropicMessagesSystem(message)); break;
+    default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+    }
+  }
+  return translated;
 };
 
 const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsTool[] | undefined =>
@@ -263,7 +287,10 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
   }
 };
 
-export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => {
+const buildTargetRequestWithReplay = (
+  payload: AnthropicMessagesPayload,
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): OpenAIChatCompletionsPayload => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
@@ -275,7 +302,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
 
   return {
     model: payload.model,
-    messages: translateAnthropicMessagesInput(payload.messages, payload.system),
+    messages: translateAnthropicMessagesInput(payload.messages, payload.system, restoredTurns),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
     stop: klona(payload.stop_sequences),
@@ -297,4 +324,30 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
     ...(responseFormat ? { response_format: responseFormat } : {}),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
+};
+
+export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => buildTargetRequestWithReplay(payload, new Map());
+
+export const buildRoundTripTargetRequest = async (payload: AnthropicMessagesPayload, codec: AssistantTurnSidecarCodec): Promise<OpenAIChatCompletionsPayload> => {
+  const messages = [...payload.messages];
+  const restoredTurns = new Map<number, RestoredMessagesAssistantTurn>();
+  let messageIndex = 0;
+  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+    const start = messageIndex;
+    messageIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const assistantTurn = turn.items as AnthropicMessagesAssistantMessage[];
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'anthropicMessages',
+      'openaiChatCompletions',
+      assistantTurn,
+      codec,
+      inspectAnthropicMessagesAssistantTurn,
+      verifyAnthropicMessagesReplayCheck,
+      cleanAnthropicMessagesAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, { sourceCount: turn.items.length, turn: prepared.turn });
+    else prepared.turn.forEach((message, index) => { messages[start + index] = message; });
+  }
+  return buildTargetRequestWithReplay({ ...payload, messages }, restoredTurns);
 };

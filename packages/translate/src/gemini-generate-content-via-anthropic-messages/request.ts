@@ -15,9 +15,18 @@ import {
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
+import {
+  cleanGeminiGenerateContentAssistantTurn,
+  inspectGeminiGenerateContentAssistantTurn,
+  partitionGeminiGenerateContentTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyGeminiGenerateContentReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantInputContentBlock,
@@ -209,10 +218,16 @@ const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesToo
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (
+type PreparedGeminiAssistantTurn = PreparedIRRoundTripAssistantTurn<GeminiGenerateContentContent[], 'anthropicMessages'>;
+type RestoredMessagesAssistantTurn = Extract<PreparedGeminiAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredGeminiAssistantTurn { sourceCount: number; turn: RestoredMessagesAssistantTurn }
+
+const buildTargetRequestWithReplay = (
   payload: GeminiGenerateContentPayload,
   model: string,
   options: { fallbackMaxOutputTokens?: number },
+  restoredTurns: ReadonlyMap<number, RestoredGeminiAssistantTurn>,
 ): AnthropicMessagesPayload => {
   // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
@@ -234,7 +249,21 @@ export const buildTargetRequest = (
     request.system = systemBlocks;
   }
 
-  payload.contents?.forEach((content, turnIndex) => {
+  const restoredMessages = new Set<AnthropicMessagesPayload['messages'][number]>();
+  for (let turnIndex = 0; turnIndex < (payload.contents?.length ?? 0); turnIndex++) {
+    const restored = restoredTurns.get(turnIndex);
+    if (restored !== undefined) {
+      request.messages.push(restored.turn as AnthropicMessagesPayload['messages'][number]);
+      restoredMessages.add(restored.turn as AnthropicMessagesPayload['messages'][number]);
+      if (Array.isArray(restored.turn.content)) for (const block of restored.turn.content) {
+        if (block.type !== 'tool_use' && block.type !== 'server_tool_use') continue;
+        unmatchedToolCallIds[block.name] ??= [];
+        unmatchedToolCallIds[block.name].push(block.id);
+      }
+      turnIndex += restored.sourceCount - 1;
+      continue;
+    }
+    const content = payload.contents![turnIndex];
     let message: AnthropicMessagesPayload['messages'][number] | null;
     switch (content.role) {
     case 'model':
@@ -248,7 +277,7 @@ export const buildTargetRequest = (
       throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
     }
     if (message) request.messages.push(message);
-  });
+  }
 
   const generationOutputConfig = applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
   const { thinking, outputConfig: thinkingOutputConfig } = applyThinkingConfig(payload.generationConfig?.thinkingConfig);
@@ -267,7 +296,7 @@ export const buildTargetRequest = (
   const tools = buildTools(payload);
   if (tools) request.tools = tools;
   applyLastToolCacheBreakpoint(request.tools);
-  applyLastMessageCacheBreakpoint(request.messages);
+  applyLastMessageCacheBreakpoint(request.messages.filter(message => !restoredMessages.has(message)));
 
   const intent = geminiGenerateContentFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {
@@ -286,4 +315,38 @@ export const buildTargetRequest = (
   }
 
   return request;
+};
+
+export const buildTargetRequest = (
+  payload: GeminiGenerateContentPayload,
+  model: string,
+  options: { fallbackMaxOutputTokens?: number },
+): AnthropicMessagesPayload => buildTargetRequestWithReplay(payload, model, options, new Map());
+
+export const buildRoundTripTargetRequest = async (
+  payload: GeminiGenerateContentPayload,
+  model: string,
+  codec: AssistantTurnSidecarCodec,
+  options: { fallbackMaxOutputTokens?: number },
+): Promise<AnthropicMessagesPayload> => {
+  const contents = [...(payload.contents ?? [])];
+  const restoredTurns = new Map<number, RestoredGeminiAssistantTurn>();
+  let contentIndex = 0;
+  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+    const start = contentIndex;
+    contentIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'geminiGenerateContent',
+      'anthropicMessages',
+      turn.items,
+      codec,
+      inspectGeminiGenerateContentAssistantTurn,
+      verifyGeminiGenerateContentReplayCheck,
+      cleanGeminiGenerateContentAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, { sourceCount: turn.items.length, turn: prepared.turn });
+    else prepared.turn.forEach((content, index) => { contents[start + index] = content; });
+  }
+  return buildTargetRequestWithReplay({ ...payload, contents }, model, options, restoredTurns);
 };

@@ -196,21 +196,15 @@ const responsesThinReferencePaths = (turn: readonly CanonicalOpenAIResponsesInpu
   return paths;
 };
 
-const outputContentToHistoryContent = (part: OpenAIResponsesOutputContentBlock): OpenAIResponsesInputContent => part.type === 'output_text'
-  ? { type: 'output_text', text: part.text }
-  : part;
-
-const outputItemToHistoryItem = (item: OpenAIResponsesAssistantOutputItem): CanonicalOpenAIResponsesInputItem => {
-  if (item.type === 'message') return {
-    type: 'message',
-    role: item.role,
-    ...(item.id === undefined ? {} : { id: item.id }),
-    ...(item.status === undefined ? {} : { status: item.status }),
-    ...(item.phase === undefined ? {} : { phase: item.phase }),
-    content: item.content.map(outputContentToHistoryContent),
-  };
-  return item;
+const outputContentToHistoryContent = (part: OpenAIResponsesOutputContentBlock): OpenAIResponsesInputContent => {
+  if (part.type !== 'output_text') return part;
+  const { annotations: _annotations, logprobs: _logprobs, ...content } = part;
+  return content;
 };
+
+const outputItemToHistoryItem = (item: OpenAIResponsesAssistantOutputItem): CanonicalOpenAIResponsesInputItem => item.type === 'message'
+  ? { ...item, content: item.content.map(outputContentToHistoryContent) }
+  : item;
 
 export const buildOpenAIResponsesThinAssistantTurn = (
   turn: readonly OpenAIResponsesAssistantOutputItem[],

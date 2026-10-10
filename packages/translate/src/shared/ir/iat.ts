@@ -1,16 +1,24 @@
 import { Tag } from 'cbor-x';
 
-import type { IRProjectionResult, IRProjectedContent, IRStringProjection } from './round-trip-projection.ts';
+import type { IRProjectionResult, IRProjectedContent } from './round-trip-projection.ts';
 import { cloneIRJSON, irJSON, isCompleteIRJSONObject, parseIRJSONObject } from './shared/json.ts';
 import type { IRPath } from './stream.ts';
 import { IATReference, IR_THIN_TAGS, type IATId, type IATOriginal, type IATRestorationFor, type IRReferencePayload, type ReplaceIATReferences, type ThinAssistantTurn } from './thin-types.ts';
 
 export interface IATEntry<T extends IATOriginal = IATOriginal> {
   id: IATId;
-  path: IRPath;
+  nativePath: IRPath;
+  sources: IATSource[];
   view: string;
   original: T;
   restoration: IATRestorationFor<T>;
+}
+
+export interface IATSource {
+  path: IRPath;
+  sourceStart: number;
+  sourceEndExclusive: number;
+  viewStart: number;
 }
 
 export interface IAT {
@@ -30,10 +38,9 @@ export const irHashKey = (hash: Uint8Array): string => Array.from(hash, byte => 
 
 export const createIAT = (): IAT => ({ entries: new Map() });
 
-export const registerIAT = <T extends IATOriginal>(iat: IAT, path: IRPath, view: string, original: T, restoration: IATRestorationFor<T>): IATReference<T> => {
-  const id = JSON.stringify([restoration, path]) as IATId;
-  const source = cloneIRJSON(original);
-  iat.entries.set(id, { id, path: [...path], view, original: source, restoration });
+export const registerIAT = <T extends IATOriginal>(iat: IAT, nativePath: IRPath, sources: readonly IATSource[], view: string, original: T, restoration: IATRestorationFor<T>): IATReference<T> => {
+  const id = JSON.stringify([restoration, nativePath]) as IATId;
+  iat.entries.set(id, { id, nativePath: [...nativePath], sources: sources.map(source => ({ ...source, path: [...source.path] })), view, original: cloneIRJSON(original), restoration });
   return new IATReference<T>(id);
 };
 
@@ -54,15 +61,30 @@ const projectIATEntry = (iat: IAT, entry: IATEntry): IATSegment[] | undefined =>
   const targetTextByPath = new Map<string, IRProjectedContent['text']>(iat.projection.contents
     .filter(content => content.round_trip)
     .map(content => [pathKey(content.path), content.text]));
-  const spansByStart = new Map<number, IRStringProjection[]>();
-  for (const span of iat.projection.projections
-    .filter(span => span.round_trip && pathKey(span.source_path) === pathKey(entry.path))
-    .toSorted((a, b) => a.source_start - b.source_start)) {
-    const candidates = spansByStart.get(span.source_start) ?? [];
-    candidates.push(span);
-    spansByStart.set(span.source_start, candidates);
+  const spansByStart = new Map<number, (IATSegment & { viewEnd: number })[]>();
+  for (const source of entry.sources) {
+    for (const span of iat.projection.projections) {
+      if (!span.round_trip || pathKey(span.source_path) !== pathKey(source.path)) continue;
+      const sourceStart = Math.max(source.sourceStart, span.source_start);
+      const sourceEnd = Math.min(source.sourceEndExclusive, span.source_end_exclusive);
+      if (sourceEnd <= sourceStart) continue;
+      const targetText = targetTextByPath.get(pathKey(span.target_path));
+      if (targetText === undefined) continue;
+      const fullSpan = sourceStart === span.source_start && sourceEnd === span.source_end_exclusive;
+      if (!fullSpan && span.target_end_exclusive - span.target_start !== span.source_end_exclusive - span.source_start) continue;
+      const viewStart = source.viewStart + sourceStart - source.sourceStart;
+      const viewEnd = viewStart + sourceEnd - sourceStart;
+      const candidates = spansByStart.get(viewStart) ?? [];
+      candidates.push({
+        text: targetText,
+        start: fullSpan ? span.target_start : span.target_start + sourceStart - span.source_start,
+        end: fullSpan ? span.target_end_exclusive : span.target_start + sourceEnd - span.source_start,
+        viewEnd,
+      });
+      spansByStart.set(viewStart, candidates);
+    }
   }
-  interface SearchFrame { cursor: number; prefix: string; candidates: IRStringProjection[]; next: number; segment?: IATSegment }
+  interface SearchFrame { cursor: number; prefix: string; candidates: (IATSegment & { viewEnd: number })[]; next: number; segment?: IATSegment }
   const stack: SearchFrame[] = [{ cursor: 0, prefix: '', candidates: spansByStart.get(0) ?? [], next: 0 }];
   const failed = new Set<string>();
   const stateKey = (cursor: number, prefix: string): string => JSON.stringify([cursor, prefix]);
@@ -79,18 +101,15 @@ const projectIATEntry = (iat: IAT, entry: IATEntry): IATSegment[] | undefined =>
       stack.pop();
       continue;
     }
-    const span = frame.candidates[frame.next++];
-    if (span.source_end_exclusive <= frame.cursor) continue;
-    const targetText = targetTextByPath.get(pathKey(span.target_path));
-    if (targetText === undefined) continue;
-    const prefix = frame.prefix + targetText.slice(span.target_start, span.target_end_exclusive);
-    if (failed.has(stateKey(span.source_end_exclusive, prefix))) continue;
+    const segment = frame.candidates[frame.next++];
+    const prefix = frame.prefix + segment.text.slice(segment.start, segment.end);
+    if (failed.has(stateKey(segment.viewEnd, prefix))) continue;
     stack.push({
-      cursor: span.source_end_exclusive,
+      cursor: segment.viewEnd,
       prefix,
-      candidates: spansByStart.get(span.source_end_exclusive) ?? [],
+      candidates: spansByStart.get(segment.viewEnd) ?? [],
       next: 0,
-      segment: { text: targetText, start: span.target_start, end: span.target_end_exclusive },
+      segment,
     });
   }
   return undefined;

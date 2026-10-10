@@ -167,5 +167,5 @@ export interface OpenAIChatCompletionsStreamEvent {
 export * from './errors.ts';
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
-export { reassembleOpenAIChatCompletionsEvents } from './reassemble.ts';
+export { createOpenAIChatCompletionsReassembler, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsReassembler } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

@@ -2,6 +2,15 @@ import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
+import {
+  cleanOpenAIResponsesAssistantTurn,
+  inspectOpenAIResponsesAssistantTurn,
+  partitionOpenAIResponsesTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyOpenAIResponsesReplayCheck,
+  type OpenAIResponsesAssistantTurn,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
@@ -13,7 +22,7 @@ import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anth
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
 import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { RemoteImageLoader } from '../types.ts';
+import type { AssistantTurnSidecarCodec, RemoteImageLoader } from '../types.ts';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,
@@ -34,6 +43,7 @@ import type {
   CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesInputMessageEx,
   CanonicalOpenAIResponsesText,
+  CanonicalOpenAIResponsesPayload,
   OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
@@ -204,7 +214,8 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
 const translateOpenAIResponsesInput = async (
   input: CanonicalOpenAIResponsesInputItem[],
   loadRemoteImage: RemoteImageLoader,
-): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlockParam[] }> => {
+  restoredTurns: ReadonlyMap<number, RestoredResponsesAssistantTurn>,
+): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlockParam[]; restoredMessages: Set<AnthropicMessagesMessage> }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
   // part as its own AnthropicMessagesTextBlockParam so part boundaries survive the hoist.
@@ -218,8 +229,17 @@ const translateOpenAIResponsesInput = async (
   }
 
   const messages: AnthropicMessagesMessage[] = [];
+  const restoredMessages = new Set<AnthropicMessagesMessage>();
 
-  for (const item of input.slice(prefixEnd)) {
+  for (let itemIndex = prefixEnd; itemIndex < input.length; itemIndex++) {
+    const restored = restoredTurns.get(itemIndex);
+    if (restored !== undefined) {
+      messages.push(restored.turn as AnthropicMessagesMessage);
+      restoredMessages.add(restored.turn as AnthropicMessagesMessage);
+      itemIndex += restored.sourceCount - 1;
+      continue;
+    }
+    const item = input[itemIndex];
     rejectProgramCaller(item);
     switch (item.type) {
     case 'message':
@@ -292,7 +312,7 @@ const translateOpenAIResponsesInput = async (
     }
   }
 
-  return { messages, systemBlocks };
+  return { messages, systemBlocks, restoredMessages };
 };
 
 const translateTools = (
@@ -358,15 +378,25 @@ const translateToolChoice = (
   return undefined;
 };
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
-  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
+type PreparedResponsesAssistantTurn = PreparedIRRoundTripAssistantTurn<OpenAIResponsesAssistantTurn, 'anthropicMessages'>;
+type RestoredMessagesAssistantTurn = Extract<PreparedResponsesAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredResponsesAssistantTurn { sourceCount: number; turn: RestoredMessagesAssistantTurn }
+
+const buildTargetRequestFromPayload = async (
+  payload: CanonicalOpenAIResponsesPayload,
+  namespaceToolNames: NamespaceToolNames,
+  options: BuildTargetRequestOptions,
+  restoredTurns: ReadonlyMap<number, RestoredResponsesAssistantTurn>,
+): Promise<TargetRequestResult> => {
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateTools(allowed.tools, customToolNames);
-  const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
+  const { messages, systemBlocks: hoistedSystemBlocks, restoredMessages } = await translateOpenAIResponsesInput(
     payload.input,
     options.loadRemoteImage ?? unavailableRemoteImageLoader,
+    restoredTurns,
   );
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
@@ -382,7 +412,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  applyLastMessageCacheBreakpoint(messages.filter(message => !restoredMessages.has(message)));
 
   // Merge reasoning effort + structured-output format into a single
   // `output_config`. `effort === 'none'` still maps to `thinking: {type:
@@ -423,4 +453,57 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   };
 
   return { target, customToolNames, namespaceToolNames };
+};
+
+export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
+  return await buildTargetRequestFromPayload(payload, namespaceToolNames, options, new Map());
+};
+
+export const buildRoundTripTargetRequest = async (
+  source: OpenAIResponsesRequestPayloadEx,
+  codec: AssistantTurnSidecarCodec,
+  options: BuildTargetRequestOptions = {},
+): Promise<TargetRequestResult> => {
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  const replayBySanitizedStart = new Map<number, RestoredResponsesAssistantTurn>();
+  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+    if (turn.role !== 'assistant') {
+      input.push(...turn.items);
+      continue;
+    }
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'openaiResponses',
+      'anthropicMessages',
+      turn.items,
+      codec,
+      inspectOpenAIResponsesAssistantTurn,
+      verifyOpenAIResponsesReplayCheck,
+      cleanOpenAIResponsesAssistantTurn,
+    );
+    if (prepared.kind === 'target') {
+      replayBySanitizedStart.set(input.length, { sourceCount: turn.items.length, turn: prepared.turn });
+      input.push(...turn.items);
+    } else input.push(...prepared.turn as CanonicalOpenAIResponsesInputItem[]);
+  }
+
+  const flattenedReplayTurns = new Map<number, RestoredResponsesAssistantTurn>();
+  let inputIndex = 0;
+  let flattenedIndex = 0;
+  while (inputIndex < input.length) {
+    const restored = replayBySanitizedStart.get(inputIndex);
+    if (restored !== undefined) {
+      flattenedReplayTurns.set(flattenedIndex, restored);
+      inputIndex += restored.sourceCount;
+      flattenedIndex += restored.sourceCount;
+      continue;
+    }
+    const item = input[inputIndex++];
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') continue;
+    flattenedIndex++;
+  }
+
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools({ ...canonical, input });
+  return await buildTargetRequestFromPayload(payload, namespaceToolNames, options, flattenedReplayTurns);
 };

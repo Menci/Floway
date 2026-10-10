@@ -1,6 +1,15 @@
 import { klona } from 'klona/json';
 
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
+import {
+  cleanOpenAIResponsesAssistantTurn,
+  inspectOpenAIResponsesAssistantTurn,
+  partitionOpenAIResponsesTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyOpenAIResponsesReplayCheck,
+  type OpenAIResponsesAssistantTurn,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
@@ -8,8 +17,9 @@ import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custo
 import { flattenNamespaceTools, type NamespaceToolNames } from '../shared/openai-responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 interface AssistantAccumulator {
   message: OpenAIChatCompletionsAssistantMessage;
@@ -171,8 +181,16 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
 }
 
-export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): TargetRequestResult => {
-  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
+type PreparedResponsesAssistantTurn = PreparedIRRoundTripAssistantTurn<OpenAIResponsesAssistantTurn, 'openaiChatCompletions'>;
+type RestoredChatAssistantTurn = Extract<PreparedResponsesAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredResponsesAssistantTurn { sourceCount: number; turn: RestoredChatAssistantTurn }
+
+const buildTargetRequestFromPayload = (
+  payload: CanonicalOpenAIResponsesPayload,
+  namespaceToolNames: NamespaceToolNames,
+  restoredTurns: ReadonlyMap<number, RestoredResponsesAssistantTurn>,
+): TargetRequestResult => {
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const responseFormat = buildOpenAIChatCompletionsResponseFormat(payload.text);
@@ -195,7 +213,16 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
     pendingToolOutputImages.length = 0;
   };
 
-  for (const item of payload.input) {
+  for (let itemIndex = 0; itemIndex < payload.input.length; itemIndex++) {
+    const restored = restoredTurns.get(itemIndex);
+    if (restored !== undefined) {
+      flushToolOutputImages();
+      flushAssistant();
+      messages.push(restored.turn as OpenAIChatCompletionsMessage);
+      itemIndex += restored.sourceCount - 1;
+      continue;
+    }
+    const item = payload.input[itemIndex];
     if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
     rejectProgramCaller(item);
     if (item.type === 'reasoning') {
@@ -295,4 +322,53 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): Tar
   };
 
   return { target, customToolNames, namespaceToolNames };
+};
+
+export const buildTargetRequest = (source: OpenAIResponsesRequestPayloadEx): TargetRequestResult => {
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
+  return buildTargetRequestFromPayload(payload, namespaceToolNames, new Map());
+};
+
+export const buildRoundTripTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: AssistantTurnSidecarCodec): Promise<TargetRequestResult> => {
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  const replayBySanitizedStart = new Map<number, RestoredResponsesAssistantTurn>();
+  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+    if (turn.role !== 'assistant') {
+      input.push(...turn.items);
+      continue;
+    }
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'openaiResponses',
+      'openaiChatCompletions',
+      turn.items,
+      codec,
+      inspectOpenAIResponsesAssistantTurn,
+      verifyOpenAIResponsesReplayCheck,
+      cleanOpenAIResponsesAssistantTurn,
+    );
+    if (prepared.kind === 'target') {
+      replayBySanitizedStart.set(input.length, { sourceCount: turn.items.length, turn: prepared.turn });
+      input.push(...turn.items);
+    } else input.push(...prepared.turn as CanonicalOpenAIResponsesInputItem[]);
+  }
+
+  const flattenedReplayTurns = new Map<number, RestoredResponsesAssistantTurn>();
+  let inputIndex = 0;
+  let flattenedIndex = 0;
+  while (inputIndex < input.length) {
+    const restored = replayBySanitizedStart.get(inputIndex);
+    if (restored !== undefined) {
+      flattenedReplayTurns.set(flattenedIndex, restored);
+      inputIndex += restored.sourceCount;
+      flattenedIndex += restored.sourceCount;
+      continue;
+    }
+    const item = input[inputIndex++];
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') continue;
+    flattenedIndex++;
+  }
+
+  const { payload, names: namespaceToolNames } = flattenNamespaceTools({ ...canonical, input });
+  return buildTargetRequestFromPayload(payload, namespaceToolNames, flattenedReplayTurns);
 };

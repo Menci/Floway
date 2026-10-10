@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildAnthropicMessagesThinAssistantTurn,
-  buildGeminiGenerateContentThinAssistantTurn,
   buildOpenAIChatCompletionsThinAssistantTurn,
   buildOpenAIResponsesThinAssistantTurn,
   cleanAnthropicMessagesAssistantTurn,
@@ -432,23 +431,13 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyGeminiGenerateContentReplayCheck(turn, { ...check!, version: 99 })).toBe(false);
   });
 
-  it('removes Gemini signatures and signature-only parts on bare fallback and registers only content-bearing Part paths', () => {
+  it('removes Gemini signatures and signature-only parts on bare fallback', () => {
     const turn = geminiTurn();
     const clean = cleanGeminiGenerateContentAssistantTurn(turn);
     expect(clean).toEqual([
       { role: 'model', parts: turn[0].parts },
       { role: 'model', parts: [] },
     ]);
-    const reference = new IATReference('function-args');
-    const thin = buildGeminiGenerateContentThinAssistantTurn(turn, new Map([
-      [JSON.stringify([0, 'parts', 0, 'text']), new IATReference('text')],
-      [JSON.stringify([0, 'parts', 1, 'functionCall', 'args']), reference],
-      [JSON.stringify([1, 'parts', 0, 'thoughtSignature']), new IATReference('signature')],
-    ]));
-    expect(thin[0].role).toBe('model');
-    expect(thin[0].parts?.[0].text).toBeInstanceOf(IATReference);
-    expect(thin[0].parts?.[1].functionCall?.args).toBe(reference);
-    expect(thin[1].parts?.[0].thoughtSignature).toBe('opaque-sidecar');
     const emptyPartTurn = [{ role: 'model' as const, parts: [{}] }];
     expect(cleanGeminiGenerateContentAssistantTurn(emptyPartTurn)).toEqual(emptyPartTurn);
   });

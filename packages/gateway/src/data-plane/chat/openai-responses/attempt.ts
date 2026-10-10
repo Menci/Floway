@@ -178,6 +178,7 @@ const dispatchOpenAIResponses = async (
       invocation.payload,
       p => translateOpenAIResponsesViaAnthropicMessages(p, {
         model: candidate.model.id,
+        assistantTurnSidecar: ctx.assistantTurnSidecar,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
@@ -192,7 +193,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id }),
+      p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id, assistantTurnSidecar: ctx.assistantTurnSidecar }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),

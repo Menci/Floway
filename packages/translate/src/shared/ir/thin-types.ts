@@ -116,13 +116,13 @@ export type ThinAssistantTurnFor<Protocol extends IRProtocol, Reference> = ThinA
 export type IRReplayCandidate = string | IRJSONObject;
 
 export type ReplaceIATReferences<T> = T extends IATReference<infer Original> ? Original | (Original extends string ? IRTextReference : IRJSONReference)
-  : T extends null | undefined ? T
+  : T extends string | number | boolean | null | undefined ? T
     : T extends readonly unknown[] ? { [K in keyof T]: ReplaceIATReferences<T[K]> }
       : T extends object ? { [K in keyof T]: ReplaceIATReferences<T[K]> }
         : T;
 
 export type RemoveThinReferences<T> = T extends ThinReference ? never
-  : T extends null | undefined ? T
+  : T extends string | number | boolean | null | undefined ? T
     : T extends readonly unknown[] ? { [K in keyof T]: RemoveThinReferences<T[K]> }
       : T extends object ? { [K in keyof T]: RemoveThinReferences<T[K]> }
         : T;

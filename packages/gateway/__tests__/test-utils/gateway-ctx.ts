@@ -1,5 +1,6 @@
 import { createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityRequestContext } from '../../src/data-plane/chat/shared/affinity/index.ts';
+import { createAssistantTurnSidecarCodec } from '../../src/data-plane/chat/shared/assistant-turn-sidecar/codec.ts';
 import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ctx.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -22,7 +23,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   ...overrides,
 });
 
-// Chat-protocol counterpart: adds the affinity membrane and the OpenAI Responses item
+// Chat-protocol counterpart: adds affinity, assistant-turn sidecars, and the OpenAI Responses item
 // store. Tests that exercise durable OpenAI Responses behavior override `.store`
 // explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: OpenAIResponsesStatefulStore } => {
@@ -32,6 +33,7 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
+    assistantTurnSidecar: overrides.assistantTurnSidecar ?? createAssistantTurnSidecarCodec({ serverSecret: '00'.repeat(32) }),
     store: overrides.store ?? createOpenAIResponsesHttpStore({ id: base.apiKeyId, openaiResponsesRetentionSeconds: 0 }, base.requestStartedAt, false),
   };
 };

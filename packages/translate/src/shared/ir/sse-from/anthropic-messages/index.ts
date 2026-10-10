@@ -1,9 +1,13 @@
 import { unwrapCustomToolInput } from '../../../openai-responses-via/custom-tool-wrap.ts';
-import type { IRItem, IRSourceCitation } from '../../ir.ts';
-import { cloneIRJSON } from '../../shared/json.ts';
+import { registerIAT, type IATSource } from '../../iat.ts';
+import type { IRItem, IRJSONObject, IRSourceCitation } from '../../ir.ts';
+import { buildAnthropicMessagesThinAssistantTurn } from '../../round-trip/anthropic-messages.ts';
+import type { IRRoundTripReader } from '../../round-trip/stream.ts';
+import { cloneIRJSON, parseIRJSONObject } from '../../shared/json.ts';
 import { usageToIR, type IRWire } from '../../shared/usage.ts';
-import { createIRBuilder, reconcileIRValue, type IRFrame } from '../../stream.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { createIRBuilder, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
+import type { IATReference } from '../../thin-types.ts';
+import type { AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export const messagesCitationToIR = (citation: IRWire): IRSourceCitation => ({
@@ -34,12 +38,16 @@ export const messagesBlockToIR = (block: IRWire): IRItem | undefined => {
   }
 };
 
-export const irFromAnthropicMessages = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, options: { customToolNames?: ReadonlySet<string> } = {}): AsyncGenerator<IRFrame> {
+export const irFromAnthropicMessages = async function* (
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+  options: { customToolNames?: ReadonlySet<string>; roundTrip?: IRRoundTripReader<'anthropicMessages'> } = {},
+): AsyncGenerator<IRFrame> {
   const b = createIRBuilder();
   b.choice(0);
   b.assign(['extensions', 'anthropicMessages'], {});
   const blocks = new Map<number, IRWire>();
   const indices = new Map<number, number>();
+  const closedBlocks = new Set<number>();
   let usage: IRWire | undefined;
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
   let finished = false;
@@ -85,6 +93,7 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     case 'content_block_stop': {
       const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
+      closedBlocks.add(e.index);
       if (block.type === 'tool_use') sync(e.index, block, true);
       const index = indices.get(e.index);
       if (index !== undefined) {
@@ -103,10 +112,60 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
       for (const [key, value] of Object.entries(e.delta)) b.assign(['extensions', 'anthropicMessages', key], value);
       if (e.delta.stop_reason != null) finishReason = e.delta.stop_reason === 'max_tokens' || e.delta.stop_reason === 'model_context_window_exceeded' ? 'length' : e.delta.stop_reason === 'tool_use' ? 'tool_calls' : e.delta.stop_reason === 'refusal' ? 'content_filter' : 'stop';
       break;
-    case 'message_stop':
+    case 'message_stop': {
       if (usage === undefined) throw new Error('Messages message_stop arrived before message_start');
+      const roundTrip = options.roundTrip;
+      if (roundTrip !== undefined) {
+        const referencesByProtocolPath = new Map<string, IATReference>();
+        const addTextReference = (nativePath: IRPath, sourcePath: IRPath, view: string): void => {
+          if (view.length === 0) return;
+          const sources: IATSource[] = [{ path: sourcePath, sourceStart: 0, sourceEndExclusive: view.length, viewStart: 0 }];
+          const reference = registerIAT(roundTrip.iat, nativePath, sources, view, view, 'text');
+          referencesByProtocolPath.set(JSON.stringify(nativePath), reference);
+        };
+        const nativeBlocks = [...blocks.entries()].toSorted(([left], [right]) => left - right).map(([sourceIndex, block]) => {
+          if (block.type === 'text') return [sourceIndex, { ...block, citations: (block.citations ?? []).length > 0 ? block.citations : null }] as const;
+          if (block.type === 'tool_use' || block.type === 'server_tool_use') {
+            const { inputJson: _inputJson, ...nativeBlock } = block;
+            if (closedBlocks.has(sourceIndex) && typeof block.inputJson === 'string' && block.inputJson !== '') nativeBlock.input = parseIRJSONObject(block.inputJson);
+            return [sourceIndex, nativeBlock] as const;
+          }
+          return [sourceIndex, block] as const;
+        });
+        const nativeResult = { content: nativeBlocks.map(([, block]) => block) } as unknown as AnthropicMessagesResult;
+        for (const [blockIndex, [sourceIndex, block]] of nativeBlocks.entries()) {
+          const irIndex = indices.get(sourceIndex);
+          if (irIndex === undefined) continue;
+          const item = b.state.choices[0].items[irIndex];
+          if (block.type === 'text' && item.type === 'message' && item.content[0]?.type === 'text') {
+            addTextReference(['content', blockIndex, 'text'], ['choices', 0, 'items', irIndex, 'content', 0, 'text'], block.text);
+            for (const [citationIndex, citation] of (block.citations ?? []).entries()) {
+              addTextReference(
+                ['content', blockIndex, 'citations', citationIndex, 'cited_text'],
+                ['choices', 0, 'items', irIndex, 'content', 0, 'annotations', citationIndex, 'source_text', 'text'],
+                citation.cited_text,
+              );
+            }
+          } else if (block.type === 'thinking' && item.type === 'reasoning') {
+            addTextReference(['content', blockIndex, 'thinking'], ['choices', 0, 'items', irIndex, 'summary', 0], block.thinking);
+          } else if (block.type === 'tool_use' && item.type === 'function_call' && !options.customToolNames?.has(block.name)) {
+            const input = block.input as IRJSONObject;
+            const argumentsValue = item.arguments;
+            const view = typeof argumentsValue === 'string' ? argumentsValue : JSON.stringify(argumentsValue);
+            if (view.length > 0) {
+              const sourcePath: IRPath = ['choices', 0, 'items', irIndex, 'arguments'];
+              const sources: IATSource[] = [{ path: sourcePath, sourceStart: 0, sourceEndExclusive: view.length, viewStart: 0 }];
+              const nativePath: IRPath = ['content', blockIndex, 'input'];
+              const reference = registerIAT(roundTrip.iat, nativePath, sources, view, input, 'json');
+              referencesByProtocolPath.set(JSON.stringify(nativePath), reference);
+            }
+          }
+        }
+        roundTrip.onAssistantTurn(0, buildAnthropicMessagesThinAssistantTurn(nativeResult, referencesByProtocolPath));
+      }
       b.event({ type: 'choice_end', choice: 0, finish_reason: finishReason });
       b.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' }); finished = true; break;
+    }
     case 'error': b.event({ type: 'error', error: e.error }); yield b.drain(); return;
     case 'ping': b.event({ type: 'ping' }); break;
     }

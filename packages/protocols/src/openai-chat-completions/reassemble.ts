@@ -132,6 +132,18 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
 };
 
 export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResult> {
+  const reassembler = createOpenAIChatCompletionsReassembler();
+  for await (const chunk of chunks) reassembler.accept(chunk);
+  return reassembler.result();
+}
+
+export interface OpenAIChatCompletionsReassembler {
+  accept: (chunk: OpenAIChatCompletionsStreamEvent) => void;
+  choiceMessage: (index: number) => OpenAIChatCompletionsChoiceNonStreaming['message'];
+  result: () => OpenAIChatCompletionsResult;
+}
+
+export const createOpenAIChatCompletionsReassembler = (): OpenAIChatCompletionsReassembler => {
   let id = '';
   let model = '';
   let created = 0;
@@ -141,7 +153,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
   const choices = new Map<number, ChoiceAccumulator>();
   const chunkExtras: Record<string, unknown> = {};
 
-  for await (const chunk of chunks) {
+  const accept = (chunk: OpenAIChatCompletionsStreamEvent): void => {
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(chunk);
     if (errorMessage) throw new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
 
@@ -187,9 +199,13 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
       accumulateAudio(choice, delta.audio);
       if (streamed.finish_reason != null) choice.finishReason = streamed.finish_reason;
     }
-  }
+  };
 
-  return {
+  const choiceMessage = (index: number): OpenAIChatCompletionsChoiceNonStreaming['message'] => {
+    return finalizeChoice(choices.get(index)!).message;
+  };
+
+  const result = (): OpenAIChatCompletionsResult => ({
     id,
     object: 'chat.completion',
     created,
@@ -199,5 +215,7 @@ export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterabl
     ...(serviceTier ? { service_tier: serviceTier } : {}),
     ...(lastUsage ? { usage: lastUsage } : {}),
     ...chunkExtras,
-  } as OpenAIChatCompletionsResult;
-}
+  } as OpenAIChatCompletionsResult);
+
+  return { accept, choiceMessage, result };
+};

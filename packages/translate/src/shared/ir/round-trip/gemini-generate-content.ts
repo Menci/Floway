@@ -1,9 +1,7 @@
 
 import type { IRJSONObject } from '../ir.ts';
-import type { IRPath } from '../stream.ts';
-import type { GeminiGenerateContentThinAssistantTurn, IATReference, IRReplayCandidate } from '../thin-types.ts';
+import type { IRReplayCandidate } from '../thin-types.ts';
 import { createIRRoundTripReplayCheck, verifyIRRoundTripReplayCheck } from './replay-check.ts';
-import { replaceIRRoundTripReferences } from './thin-builder.ts';
 import type { IRRoundTripAssistantTurnInspection, IRRoundTripConversationTurn, IRRoundTripReplayCheck } from './types.ts';
 import type {
   GeminiGenerateContentContent,
@@ -81,25 +79,6 @@ export const cleanGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateCont
     }),
   }),
 }));
-
-const geminiThinReferencePaths = (turn: GeminiGenerateContentAssistantTurn): IRPath[] => {
-  const paths: IRPath[] = [];
-  turn.forEach((content, contentIndex) => content.parts?.forEach((part, partIndex) => {
-    if (typeof part.text === 'string') paths.push([contentIndex, 'parts', partIndex, 'text']);
-    if (part.inlineData !== undefined) paths.push([contentIndex, 'parts', partIndex, 'inlineData', 'data']);
-    if (part.audioTranscription !== undefined) paths.push([contentIndex, 'parts', partIndex, 'audioTranscription', 'text']);
-    if (part.functionCall?.args !== undefined) paths.push([contentIndex, 'parts', partIndex, 'functionCall', 'args']);
-  }));
-  return paths;
-};
-
-export const buildGeminiGenerateContentThinAssistantTurn = (
-  turn: GeminiGenerateContentAssistantTurn,
-  referencesByProtocolPath: ReadonlyMap<string, IATReference>,
-): GeminiGenerateContentThinAssistantTurn<IATReference> => {
-  const modelTurn = turn.map(content => ({ ...content, role: 'model' as const }));
-  return replaceIRRoundTripReferences(modelTurn, referencesByProtocolPath, geminiThinReferencePaths(modelTurn)) as GeminiGenerateContentThinAssistantTurn<IATReference>;
-};
 
 // Gemini returns model-side thought signatures as Part metadata.
 // https://ai.google.dev/gemini-api/docs/thought-signatures

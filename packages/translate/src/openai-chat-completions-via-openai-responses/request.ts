@@ -1,8 +1,17 @@
 import { klona } from 'klona/json';
 
+import {
+  cleanOpenAIChatCompletionsAssistantTurn,
+  inspectOpenAIChatCompletionsAssistantTurn,
+  partitionOpenAIChatCompletionsTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyOpenAIChatCompletionsReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { openAIChatCompletionsScalarReasoningText, scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
@@ -56,13 +65,19 @@ const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessag
   return content;
 };
 
-export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => {
+type PreparedChatAssistantTurn = PreparedIRRoundTripAssistantTurn<OpenAIChatCompletionsAssistantMessageEx, 'openaiResponses'>;
+type RestoredResponsesAssistantTurn = Extract<PreparedChatAssistantTurn, { kind: 'target' }>['turn'];
+
+const buildTargetRequestWithReplay = (
+  payload: OpenAIChatCompletionsPayload,
+  restoredTurns: ReadonlyMap<number, RestoredResponsesAssistantTurn>,
+): CanonicalOpenAIResponsesPayload => {
   const instructions: string[] = [];
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
   let hoistSystemPrefix = true;
 
-  for (const message of payload.messages) {
+  for (const [messageIndex, message] of payload.messages.entries()) {
     // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
     // `instructions`; later `system` and `developer` turns are
     // chronology-bearing input items.
@@ -84,6 +99,12 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     }
 
     if (message.role === 'assistant') {
+      const restoredTurn = restoredTurns.get(messageIndex);
+      if (restoredTurn !== undefined) {
+        input.push(...restoredTurn);
+        for (const item of restoredTurn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
+        continue;
+      }
       const assistantContent = translateAssistantContent(message);
       const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
       const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
@@ -191,4 +212,30 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
   };
+};
+
+export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => buildTargetRequestWithReplay(payload, new Map());
+
+export const buildRoundTripTargetRequest = async (payload: OpenAIChatCompletionsPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
+  const messages = [...payload.messages];
+  const restoredTurns = new Map<number, RestoredResponsesAssistantTurn>();
+  let messageIndex = 0;
+  for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
+    const start = messageIndex;
+    messageIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const assistantTurn = turn.items[0] as OpenAIChatCompletionsAssistantMessageEx;
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'openaiChatCompletions',
+      'openaiResponses',
+      assistantTurn,
+      codec,
+      inspectOpenAIChatCompletionsAssistantTurn,
+      verifyOpenAIChatCompletionsReplayCheck,
+      cleanOpenAIChatCompletionsAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, prepared.turn);
+    else messages[start] = prepared.turn;
+  }
+  return buildTargetRequestWithReplay({ ...payload, messages }, restoredTurns);
 };

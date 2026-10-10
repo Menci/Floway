@@ -33,6 +33,8 @@ const projection = (
   }],
 });
 
+const wholeViewSource = (path: IRPath, view: string) => [{ path, sourceStart: 0, sourceEndExclusive: view.length, viewStart: 0 }];
+
 describe('IAT and thin assistant turns', () => {
   it('recursively replaces selected text and JSON fields while preserving protocol shapes', () => {
     type Source = {
@@ -75,14 +77,16 @@ describe('IAT and thin assistant turns', () => {
 
   it('keeps a stable source ID while retaining its independent view and original B value', () => {
     const iat = createIAT();
-    const path = ['choices', 0, 'items', 1, 'arguments'] as const;
+    const nativePath = ['content', 0, 'input'] as const;
+    const sourcePath = ['choices', 0, 'items', 1, 'arguments'] as const;
     const original = parseIRJSONObject('{"x":1}');
     const view = '{ "x": 1 }';
-    const first = registerIAT(iat, path, view, original, 'json');
-    const second = registerIAT(iat, path, view, original, 'json');
+    const sources = wholeViewSource(sourcePath, view);
+    const first = registerIAT(iat, nativePath, sources, view, original, 'json');
+    const second = registerIAT(iat, nativePath, sources, view, original, 'json');
 
     expect(first.id).toBe(second.id);
-    expect(iat.entries.get(first.id)).toMatchObject({ view, restoration: 'json', original });
+    expect(iat.entries.get(first.id)).toMatchObject({ nativePath, sources, view, restoration: 'json', original });
     expect(iat.entries.get(first.id)?.original).not.toBe(original);
   });
 
@@ -92,7 +96,7 @@ describe('IAT and thin assistant turns', () => {
     const view = '{ "x": 1, "x": 2 }';
     const targetText = '{"x":2}';
     const original = parseIRJSONObject(view);
-    const input = registerIAT(iat, path, view, original, 'json');
+    const input = registerIAT(iat, path, wholeViewSource(path, view), view, original, 'json');
     updateIAT(iat, projection(path, view, ['arguments'], targetText));
 
     const turn: AnthropicMessagesThinAssistantTurn<IATReference> = {
@@ -123,7 +127,7 @@ describe('IAT and thin assistant turns', () => {
       contents: assigned.contents.map(content => ({ ...content, round_trip: true })),
       projections: assigned.projections.map(span => ({ ...span, round_trip: true })),
     });
-    const input = registerIAT(iat, path, view, original, 'json');
+    const input = registerIAT(iat, path, wholeViewSource(path, view), view, original, 'json');
     const finalized = await finalizeThinAssistantTurn({
       role: 'assistant',
       content: [{ type: 'tool_use', id: 'call', name: 'tool', input }],
@@ -142,7 +146,7 @@ describe('IAT and thin assistant turns', () => {
     const iat = createIAT();
     const path = ['source', 'text'] as const;
     const original = 'R1R2';
-    const reference = registerIAT(iat, path, 'R1', original, 'text');
+    const reference = registerIAT(iat, path, wholeViewSource(path, 'R1'), 'R1', original, 'text');
     updateIAT(iat, projection(path, 'R1', ['target'], original, 0, 2, 0, original.length));
     const finalized = await finalizeThinAssistantTurn({ role: 'assistant', reasoning_text: reference }, iat);
 
@@ -153,11 +157,79 @@ describe('IAT and thin assistant turns', () => {
     });
   });
 
+  it('reconstructs one native B field from round-trip projections on multiple IR paths', async () => {
+    const iat = createIAT();
+    const nativePath = ['choices', 0, 'message', 'content'] as const;
+    const firstPath = ['choices', 0, 'items', 0, 'content', 0, 'text'] as const;
+    const secondPath = ['choices', 0, 'items', 1, 'content', 0, 'text'] as const;
+    const firstText = 'first ';
+    const secondText = 'second';
+    const view = firstText + secondText;
+    const reference = registerIAT(iat, nativePath, [
+      { path: firstPath, sourceStart: 0, sourceEndExclusive: firstText.length, viewStart: 0 },
+      { path: secondPath, sourceStart: 0, sourceEndExclusive: secondText.length, viewStart: firstText.length },
+    ], view, view, 'text');
+    const projection = createIRProjection();
+    projection.assign(firstPath, firstText, ['candidate', 0]);
+    projection.assign(secondPath, secondText, ['candidate', 1]);
+    const assigned = projection.result();
+    updateIAT(iat, {
+      contents: assigned.contents.map(content => ({ ...content, round_trip: true })),
+      projections: assigned.projections.map(span => ({ ...span, round_trip: true })),
+    });
+
+    const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: reference } satisfies OpenAIChatCompletionsThinAssistantTurn<IATReference>, iat);
+    expect(finalized.thinAssistantTurn.content).toBeInstanceOf(Tag);
+    expect((finalized.thinAssistantTurn.content as Tag).value).toEqual([0, 1]);
+    expect(await hydrate([firstText, secondText], finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>, finalized.referencedContents)).toMatchObject({
+      ok: true,
+      turn: { role: 'assistant', content: view },
+    });
+  });
+
+  it('clips one IR source into distinct native fields using their own paths', async () => {
+    const iat = createIAT();
+    const sourcePath = ['choices', 0, 'items', 0, 'reasoning_text'] as const;
+    const firstNativePath = ['choices', 0, 'message', 'reasoning'] as const;
+    const secondNativePath = ['choices', 0, 'message', 'reasoning_content'] as const;
+    const sourceText = 'summary|reasoning';
+    const firstText = 'summary';
+    const secondStart = firstText.length + 1;
+    const secondText = sourceText.slice(secondStart);
+    const firstReference = registerIAT(iat, firstNativePath, [
+      { path: sourcePath, sourceStart: 0, sourceEndExclusive: firstText.length, viewStart: 0 },
+    ], firstText, firstText, 'text');
+    const secondReference = registerIAT(iat, secondNativePath, [
+      { path: sourcePath, sourceStart: secondStart, sourceEndExclusive: sourceText.length, viewStart: 0 },
+    ], secondText, secondText, 'text');
+    const projection = createIRProjection();
+    projection.assign(sourcePath, sourceText, ['candidate', 'reasoning']);
+    const assigned = projection.result();
+    updateIAT(iat, {
+      contents: assigned.contents.map(content => ({ ...content, round_trip: true })),
+      projections: assigned.projections.map(span => ({ ...span, round_trip: true })),
+    });
+
+    expect(firstReference.id).not.toBe(secondReference.id);
+    const finalized = await finalizeThinAssistantTurn({
+      role: 'assistant',
+      reasoning: firstReference,
+      reasoning_text: secondReference,
+    } satisfies OpenAIChatCompletionsThinAssistantTurn<IATReference>, iat);
+    expect((finalized.thinAssistantTurn.reasoning as Tag).value).toEqual([[0, 0, firstText.length]]);
+    expect((finalized.thinAssistantTurn.reasoning_text as Tag).value).toEqual([[0, secondStart, sourceText.length]]);
+    expect(finalized.referencedContents).toHaveLength(1);
+    expect(await hydrate([sourceText], finalized.thinAssistantTurn, finalized.referencedContents)).toMatchObject({
+      ok: true,
+      turn: { role: 'assistant', reasoning: firstText, reasoning_text: secondText },
+    });
+  });
+
   it('selects one exact full-field cover when A replays the same source in multiple fields', async () => {
     const iat = createIAT();
     const path = ['source', 'reasoning'] as const;
     const text = 'reasoning';
-    const reference = registerIAT(iat, path, text, text, 'text');
+    const reference = registerIAT(iat, path, wholeViewSource(path, text), text, text, 'text');
     updateIAT(iat, {
       contents: [
         { path: ['target', 'reasoning'], text, round_trip: true },
@@ -179,7 +251,7 @@ describe('IAT and thin assistant turns', () => {
     const path = ['choices', 0, 'items', 0, 'arguments'] as const;
     const view = '{"x":1}';
     const original = parseIRJSONObject(view);
-    const input = registerIAT(iat, path, view, original, 'json');
+    const input = registerIAT(iat, path, wholeViewSource(path, view), view, original, 'json');
     updateIAT(iat, projection(path, view, ['arguments'], view));
     const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input }] } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
 
@@ -195,7 +267,7 @@ describe('IAT and thin assistant turns', () => {
     const view = '{ "n" : 9007199254740993 }';
     const targetText = '{"n":9007199254740993}';
     const original = parseIRJSONObject('{"n":9007199254740993}');
-    const input = registerIAT(iat, path, view, original, 'json');
+    const input = registerIAT(iat, path, wholeViewSource(path, view), view, original, 'json');
     updateIAT(iat, projection(path, view, ['target'], targetText));
     const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'tool', input }] } satisfies AnthropicMessagesThinAssistantTurn<IATReference>, iat);
     const restored = await hydrate([parseIRJSONObject(targetText)], finalized.thinAssistantTurn as AnthropicMessagesThinAssistantTurn<ThinReference>, finalized.referencedContents);
@@ -213,7 +285,7 @@ describe('IAT and thin assistant turns', () => {
     for (const [index, testCase] of textCases.entries()) {
       const iat = createIAT();
       const path = ['source', index] as const;
-      const reference = registerIAT(iat, path, testCase.view, testCase.original, 'text');
+      const reference = registerIAT(iat, path, wholeViewSource(path, testCase.view), testCase.view, testCase.original, 'text');
       updateIAT(iat, projection(path, testCase.view, ['target'], testCase.target, testCase.start, testCase.end));
       const finalized = await finalizeThinAssistantTurn({ role: 'assistant', content: reference } satisfies OpenAIChatCompletionsThinAssistantTurn<IATReference>, iat);
       expect((finalized.thinAssistantTurn as OpenAIChatCompletionsThinAssistantTurn<ThinReference>).content).toEqual(testCase.original);
@@ -229,7 +301,7 @@ describe('IAT and thin assistant turns', () => {
     for (const [index, testCase] of jsonCases.entries()) {
       const iat = createIAT();
       const path = ['source', index] as const;
-      const reference = registerIAT(iat, path, testCase.view, testCase.original, 'json');
+      const reference = registerIAT(iat, path, wholeViewSource(path, testCase.view), testCase.view, testCase.original, 'json');
       updateIAT(iat, projection(path, testCase.view, ['target'], testCase.target, testCase.start, testCase.end));
       const finalized = await finalizeThinAssistantTurn({
         role: 'assistant',
@@ -248,7 +320,7 @@ describe('IAT and thin assistant turns', () => {
     const second = text.slice(2);
     const firstTarget = `x${first}y`;
     const secondTarget = `[${second}]`;
-    const reference = registerIAT(iat, path, text, text, 'text');
+    const reference = registerIAT(iat, path, wholeViewSource(path, text), text, text, 'text');
     updateIAT(iat, {
       contents: [
         { path: ['target', 0], text: firstTarget, round_trip: true },
@@ -274,8 +346,8 @@ describe('IAT and thin assistant turns', () => {
     const iat = createIAT();
     const summaryPath = ['source', 'summary'] as const;
     const reasoningPath = ['source', 'reasoning'] as const;
-    const summary = registerIAT(iat, summaryPath, 'same', 'same', 'text');
-    const reasoning = registerIAT(iat, reasoningPath, 'same', 'same', 'text');
+    const summary = registerIAT(iat, summaryPath, wholeViewSource(summaryPath, 'same'), 'same', 'same', 'text');
+    const reasoning = registerIAT(iat, reasoningPath, wholeViewSource(reasoningPath, 'same'), 'same', 'same', 'text');
     updateIAT(iat, {
       contents: [
         { path: ['target', 'summary'], text: 'same', round_trip: true },
@@ -304,7 +376,7 @@ describe('IAT and thin assistant turns', () => {
     const iat = createIAT();
     const path = ['source', 'audio_transcription'] as const;
     const text = 'recognized speech';
-    const reference = registerIAT(iat, path, text, text, 'text');
+    const reference = registerIAT(iat, path, wholeViewSource(path, text), text, text, 'text');
     updateIAT(iat, projection(path, text, ['target', 'audioTranscription', 'text'], text));
     const turn: GeminiGenerateContentThinAssistantTurn<IATReference> = [{
       role: 'model',
@@ -322,8 +394,8 @@ describe('IAT and thin assistant turns', () => {
     const iat = createIAT();
     const firstPath = ['source', 0] as const;
     const secondPath = ['source', 1] as const;
-    const first = registerIAT(iat, firstPath, 'first', 'first', 'text');
-    const second = registerIAT(iat, secondPath, 'second', 'second', 'text');
+    const first = registerIAT(iat, firstPath, wholeViewSource(firstPath, 'first'), 'first', 'first', 'text');
+    const second = registerIAT(iat, secondPath, wholeViewSource(secondPath, 'second'), 'second', 'second', 'text');
     updateIAT(iat, {
       contents: [
         { path: ['target', 0], text: 'first', round_trip: true },

@@ -9,7 +9,8 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantInputContentBlock, AnthropicMessagesPayload, AnthropicMessagesToolUseBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
 
@@ -62,8 +63,22 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-const parsePayload = (requestBody: RequestBody): AnthropicMessagesPayload =>
-  JSON.parse(new TextDecoder().decode(requestBody.bytes)) as AnthropicMessagesPayload;
+const parsePayload = (requestBody: RequestBody): AnthropicMessagesPayload => {
+  const text = new TextDecoder().decode(requestBody.bytes);
+  const payload = JSON.parse(text) as AnthropicMessagesPayload;
+  const sourcePayload = parseJSONWithRawNumbers(text) as AnthropicMessagesPayload;
+
+  payload.messages.forEach((message, messageIndex) => {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) return;
+    const sourceContent = sourcePayload.messages[messageIndex]!.content as AnthropicMessagesAssistantInputContentBlock[];
+    message.content.forEach((block, blockIndex) => {
+      if (block.type !== 'tool_use') return;
+      block.input = (sourceContent[blockIndex] as AnthropicMessagesToolUseBlockParam).input;
+    });
+  });
+
+  return payload;
+};
 
 export const anthropicMessagesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

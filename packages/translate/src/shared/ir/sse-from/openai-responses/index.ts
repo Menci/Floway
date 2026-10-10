@@ -1,8 +1,12 @@
+import { registerIAT, type IATSource } from '../../iat.ts';
 import type { IRAudioPart, IRItem, IRMessageItem, IRSourceCitation } from '../../ir.ts';
+import { buildOpenAIResponsesThinAssistantTurn } from '../../round-trip/openai-responses.ts';
+import type { IRRoundTripReader } from '../../round-trip/stream.ts';
 import { codePointRangeToIR } from '../../shared/coordinates.ts';
 import { cloneIRJSON } from '../../shared/json.ts';
 import { usageToIR, type IRWire } from '../../shared/usage.ts';
-import { createIRBuilder, reconcileIRValue, type IRFrame } from '../../stream.ts';
+import { createIRBuilder, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
+import type { IATReference } from '../../thin-types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
@@ -45,7 +49,10 @@ interface IRResponsesNode {
   ended: boolean;
 }
 
-export const irFromOpenAIResponses = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<IRFrame> {
+export const irFromOpenAIResponses = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  options: { roundTrip?: IRRoundTripReader<'openaiResponses'> } = {},
+): AsyncGenerator<IRFrame> {
   const b = createIRBuilder();
   b.choice(0);
   b.assign(['extensions', 'openaiResponses'], {});
@@ -54,6 +61,63 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
   let finished = false;
   let audioIndex: number | undefined;
   const audioDone = new Set<string>();
+  const captureAssistantTurn = (): void => {
+    const roundTrip = options.roundTrip;
+    if (roundTrip === undefined) return;
+    const orderedNodes = [...nodes.entries()].toSorted(([left], [right]) => left - right);
+    const nativeTurn = orderedNodes.map(([, node]) => node.item) as unknown as Parameters<typeof buildOpenAIResponsesThinAssistantTurn>[0];
+    const referencesByProtocolPath = new Map<string, IATReference>();
+    const addTextReference = (nativePath: IRPath, sourcePath: IRPath, view: string): void => {
+      if (view.length === 0) return;
+      const sources: IATSource[] = [{ path: sourcePath, sourceStart: 0, sourceEndExclusive: view.length, viewStart: 0 }];
+      const reference = registerIAT(roundTrip.iat, nativePath, sources, view, view, 'text');
+      referencesByProtocolPath.set(JSON.stringify(nativePath), reference);
+    };
+    for (const [turnIndex, [, node]] of orderedNodes.entries()) {
+      const item = node.item;
+      const irIndex = node.index;
+      if (irIndex === undefined) continue;
+      const source: IRPath = ['choices', 0, 'items', irIndex];
+      if (item.type === 'message') {
+        let irPartIndex = 0;
+        for (const [contentIndex, part] of item.content.entries()) {
+          if (part.type === 'output_text') {
+            addTextReference(
+              [turnIndex, 'content', contentIndex, 'text'],
+              [...source, 'content', irPartIndex, 'text'],
+              part.text,
+            );
+            irPartIndex++;
+          } else if (part.type === 'refusal') {
+            addTextReference(
+              [turnIndex, 'content', contentIndex, 'refusal'],
+              [...source, 'content', irPartIndex, 'refusal'],
+              part.refusal,
+            );
+            irPartIndex++;
+          }
+        }
+      } else if (item.type === 'reasoning') {
+        (item.summary as IRWire[] | undefined)?.forEach((part: IRWire, summaryIndex: number) => addTextReference(
+          [turnIndex, 'summary', summaryIndex, 'text'],
+          [...source, 'summary', summaryIndex],
+          part.text,
+        ));
+        (item.content as IRWire[] | undefined)?.forEach((part: IRWire, contentIndex: number) => addTextReference(
+          [turnIndex, 'content', contentIndex, 'text'],
+          [...source, 'content', contentIndex],
+          part.text,
+        ));
+      } else if (item.type === 'function_call') {
+        if (typeof item.arguments === 'string') addTextReference([turnIndex, 'arguments'], [...source, 'arguments'], item.arguments);
+      } else if (item.type === 'custom_tool_call') {
+        if (typeof item.input === 'string') addTextReference([turnIndex, 'input'], [...source, 'input'], item.input);
+      } else if (item.type === 'image_generation_call' && typeof item.result === 'string') {
+        addTextReference([turnIndex, 'result'], [...source, 'content', 0, 'image', 'data'], item.result);
+      }
+    }
+    roundTrip.onAssistantTurn(0, buildOpenAIResponsesThinAssistantTurn(nativeTurn, referencesByProtocolPath));
+  };
   const replace = (output: number, item: IRWire, done: boolean): void => {
     const node = nodes.get(output);
     if (node === undefined) nodes.set(output, { item: cloneIRJSON(item), done, closedParts: new Set(), sentParts: new Set(), ended: false });
@@ -114,6 +178,7 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
         }
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
         if (policy !== undefined) b.assign(['choices', 0, 'refusal'], { category: policy, explanation: response.error.message });
+        captureAssistantTurn();
         b.event({ type: 'choice_end', choice: 0, finish_reason: policy !== undefined ? 'content_filter' : e.type === 'response.incomplete' ? response.incomplete_details?.reason === 'content_filter' ? 'content_filter' : 'length' : b.state.choices[0].items.some(i => i.type === 'function_call' || i.type === 'custom_tool_call') ? 'tool_calls' : 'stop' });
         b.event({ type: 'finish', status: policy === undefined ? e.type.slice('response.'.length) : 'completed', ...(response.error == null ? {} : { error: response.error }) });
         finished = true;

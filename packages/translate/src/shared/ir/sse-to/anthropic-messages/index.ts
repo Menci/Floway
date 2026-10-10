@@ -1,13 +1,14 @@
 import { packReasoningSignature } from '../../../anthropic-messages-and-openai-responses/reasoning.ts';
 import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
 import type { IRJSONObject, IRContentPart, IRItem, IRSourceCitation } from '../../ir.ts';
+import { createAnthropicMessagesReplayCheck, createAnthropicMessagesSidecarCarrier, type AnthropicMessagesAssistantHistoryTurn } from '../../round-trip/anthropic-messages.ts';
 import { cloneIRJSON, isCompleteIRJSONObject, parseIRJSONObject } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
 import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
 import { createIRTextStream } from '../../shared/text.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
-import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesStreamEventEx, type AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx, type AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 
 const irMessagesError = (error: IRJSONObject): IRJSONObject => isContextExceededError(error)
@@ -38,7 +39,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     if (item.type === 'message') return part?.type === 'text' || part?.type === 'refusal' || part?.type === 'audio' && part.audio.transcript !== undefined ? { type: 'text', text: '', citations: [] } : undefined;
     if (item.type === 'reasoning') {
       const text = [...item.summary ?? [], ...item.content ?? []].join('');
-      const signature = sourceIds[index] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[index], item.encrypted_content ?? '');
+      const signature = options.roundTrip !== undefined ? undefined : sourceIds[index] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[index], item.encrypted_content ?? '');
       if (text !== '' || (item.summary?.length ?? 0) + (item.content?.length ?? 0) > 0) return { type: 'thinking', thinking: '', signature: '' };
       if (!closed || signature == null) return undefined;
       return { type: 'redacted_thinking', data: signature };
@@ -108,13 +109,23 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       if (item.type === 'message' && part !== undefined) {
         const field = part.type === 'text' ? ['text'] : part.type === 'refusal' ? ['refusal'] : ['audio', 'transcript'];
         for (const update of textStream.take([...source, 'content', unit.part!, ...field])) {
-          const value = projection.appendText(update, [...target, 'text']);
+          const targetPath = [...target, 'text'];
+          const value = projection.appendText(update, targetPath);
+          projection.markRoundTrip(targetPath);
           if (value !== '') { native.text += value; yield delta({ type: 'text_delta', text: value }); }
         }
         if (part.type === 'text') {
-          const citations = (part.annotations ?? []).flatMap(a => {
-            const converted = options.resolveCitation?.(a);
-            return converted === undefined ? [] : [converted];
+          const citations: AnthropicMessagesTextCitation[] = [];
+          (part.annotations ?? []).forEach((annotation, annotationIndex) => {
+            const converted = options.resolveCitation?.(annotation);
+            if (converted === undefined) return;
+            const citationIndex = citations.length;
+            citations.push(converted);
+            if (annotation.source_text !== undefined) {
+              const targetPath = [...target, 'citations', citationIndex, 'cited_text'];
+              projection.assign([...source, 'content', unit.part!, 'annotations', annotationIndex, 'source_text', 'text'], converted.cited_text, targetPath);
+              projection.markRoundTrip(targetPath);
+            }
           });
           for (let c = unit.citations; c < citations.length; c++) {
             native.citations.push(citations[c]); yield delta({ type: 'citations_delta', citation: citations[c] });
@@ -124,11 +135,13 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       } else if (item.type === 'reasoning') {
         if (native.type === 'thinking') {
           for (const update of textStream.take(source)) {
-            const value = projection.appendText(update, [...target, 'thinking']);
+            const targetPath = [...target, 'thinking'];
+            const value = projection.appendText(update, targetPath);
+            projection.markRoundTrip(targetPath);
             if (value !== '') { native.thinking += value; yield delta({ type: 'thinking_delta', thinking: value }); }
           }
         }
-        const signature = sourceIds[unit.item] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[unit.item], item.encrypted_content ?? '');
+        const signature = options.roundTrip !== undefined ? undefined : sourceIds[unit.item] === undefined ? item.encrypted_content : packReasoningSignature(sourceIds[unit.item], item.encrypted_content ?? '');
         if (unit.closed && signature != null) {
           const field = native.type === 'thinking' ? 'signature' : 'data';
           projection.assign([...source, 'encrypted_content'], signature, [...target, field]);
@@ -138,10 +151,19 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
         if (typeof item.arguments === 'string' && options.parseToolArguments === undefined) {
           const value = projection.append([...source, 'arguments'], item.arguments, [...target, 'input']);
           if (value !== '') yield delta({ type: 'input_json_delta', partial_json: value });
-          if (unit.closed && isCompleteIRJSONObject(item.arguments)) projection.assign([...source, 'arguments'], JSON.stringify(parseIRJSONObject(item.arguments)), [...target, 'input']);
+          if (unit.closed && isCompleteIRJSONObject(item.arguments)) {
+            const args = parseIRJSONObject(item.arguments);
+            const targetPath = [...target, 'input'];
+            projection.assign([...source, 'arguments'], JSON.stringify(args), targetPath);
+            projection.markRoundTrip(targetPath);
+            native.input = args;
+          }
         } else if (unit.closed) {
           const args = typeof item.arguments === 'string' ? parseIRJSONObject(item.arguments, options.parseToolArguments) : item.arguments ?? {};
-          const value = projection.append([...source, 'arguments'], JSON.stringify(args), [...target, 'input']);
+          const targetPath = [...target, 'input'];
+          const value = projection.append([...source, 'arguments'], JSON.stringify(args), targetPath);
+          projection.markRoundTrip(targetPath);
+          native.input = args;
           if (value !== '') yield delta({ type: 'input_json_delta', partial_json: value });
         }
       }
@@ -155,6 +177,23 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     }
     if (messageStarted && record.type === 'operation' && record.path[0] === 'usage') yield emit({ type: 'message_delta', delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null }, usage });
     if (record.type === 'finish') {
+      if (options.roundTrip !== undefined) {
+        const content = units
+          .filter((unit): unit is IRMessagesUnit & { block: IRWire; index: number } => unit.block !== undefined && unit.index !== undefined)
+          .toSorted((left, right) => left.index - right.index)
+          .map(unit => {
+            const block = unit.block;
+            return (block.type === 'text' && block.citations.length === 0 ? { ...block, citations: null } : block) as unknown as AnthropicMessagesAssistantContentBlock;
+          });
+        const plannedCarrier = createAnthropicMessagesSidecarCarrier('');
+        const plannedTurn = [{ role: 'assistant' as const, content: [...content, plannedCarrier] }] as unknown as AnthropicMessagesAssistantHistoryTurn;
+        const replayCheck = await createAnthropicMessagesReplayCheck(plannedTurn);
+        const data = await options.roundTrip.prepareSidecar(0, replayCheck!, projection.roundTripResult());
+        const carrierIndex = blockIndex++;
+        const carrier = createAnthropicMessagesSidecarCarrier(data);
+        yield emit({ type: 'content_block_start', index: carrierIndex, content_block: carrier });
+        yield emit({ type: 'content_block_stop', index: carrierIndex });
+      }
       const extension = state.extensions?.anthropicMessages;
       yield emit({ type: 'message_delta', delta: { stop_reason: finishReason, stop_sequence: extension?.stop_sequence ?? null, stop_details: state.choices[0]?.refusal === undefined ? extension?.stop_details ?? null : { type: 'refusal', ...state.choices[0].refusal }, container: extension?.container ?? null }, usage });
 

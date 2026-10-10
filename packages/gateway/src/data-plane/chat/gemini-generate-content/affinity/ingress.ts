@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -32,7 +34,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
       preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
+        const candidatePayload = klona(payload);
         if (candidatePayload.contents === undefined) return candidatePayload;
         const byContent = Map.groupBy(projections, item => item.location.contentIndex);
         const emptiedByAffinity = new Set<number>();

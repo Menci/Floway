@@ -1,5 +1,6 @@
 import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
 import type { IRJSONObject, IRSourceCitation } from '../../ir.ts';
+import { createGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier, type GeminiGenerateContentAssistantTurn } from '../../round-trip/gemini-generate-content.ts';
 import { irRangeToUTF8 } from '../../shared/coordinates.ts';
 import { isCompleteIRJSONObject, parseIRJSONObject } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
@@ -61,7 +62,9 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
             const kind = thought ? 'thought' : 'text';
             const merge = !thought && lastKind.get(choice) === kind;
             const position = merge ? native!.length - 1 : native!.length;
-            const delta = projection.appendText(update, ['candidates', choice, 'content', 'parts', position, 'text']);
+            const targetPath = ['candidates', choice, 'content', 'parts', position, 'text'];
+            const delta = projection.appendText(update, targetPath);
+            projection.markRoundTrip(targetPath);
             if (delta === '') return undefined;
             if (merge) native![position].text += delta;
             else native!.push({ text: delta, ...(thought ? { thought: true } : {}) });
@@ -90,9 +93,12 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
                 const value: IRWire = { inlineData: { mimeType: mime, data: media.data } };
                 const target = ['candidates', choice, 'content', 'parts', native.length, 'inlineData', 'data'];
                 projection.assign([...path, part.type === 'image' ? 'image' : 'audio', 'data'], media.data!, target);
+                projection.markRoundTrip(target);
                 if (part.type === 'audio' && part.audio.transcript !== undefined) {
                   value.audioTranscription = { text: part.audio.transcript };
-                  projection.assign([...path, 'audio', 'transcript'], part.audio.transcript, ['candidates', choice, 'content', 'parts', native.length, 'audioTranscription', 'text']);
+                  const targetPath = ['candidates', choice, 'content', 'parts', native.length, 'audioTranscription', 'text'];
+                  projection.assign([...path, 'audio', 'transcript'], part.audio.transcript, targetPath);
+                  projection.markRoundTrip(targetPath);
                 }
                 native.push(value); lastKind.set(choice, 'media'); yield emitPart(choice, value);
               } else if (part.type === 'audio' && part.audio.transcript !== undefined) {
@@ -109,7 +115,7 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
               if (delta !== undefined) yield emitPart(choice, delta);
             }
             const key = `${choice}/${index}/signature`;
-            if (closed && item.encrypted_content != null && !emitted.has(key)) {
+            if (options.roundTrip === undefined && closed && item.encrypted_content != null && !emitted.has(key)) {
               const value = { thoughtSignature: item.encrypted_content };
               projection.assign([...source, 'encrypted_content'], item.encrypted_content, ['candidates', choice, 'content', 'parts', native.length, 'thoughtSignature']);
               native.push(value); lastKind.set(choice, 'signature'); emitted.add(key); yield emitPart(choice, value);
@@ -124,7 +130,11 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
             }
             const args: unknown = typeof item.arguments === 'string' ? parseIRJSONObject(item.arguments, options.parseToolArguments) : item.arguments;
             const value = { functionCall: { name: item.name, ...(item.call_id === undefined ? {} : { id: item.call_id }), ...(args === undefined ? {} : { args }) } };
-            if (args !== undefined) projection.assign([...source, 'arguments'], JSON.stringify(args), ['candidates', choice, 'content', 'parts', native.length, 'functionCall', 'args']);
+            if (args !== undefined) {
+              const targetPath = ['candidates', choice, 'content', 'parts', native.length, 'functionCall', 'args'];
+              projection.assign([...source, 'arguments'], JSON.stringify(args), targetPath);
+              projection.markRoundTrip(targetPath);
+            }
             native.push(value); lastKind.set(choice, 'function'); emitted.add(key); yield emitPart(choice, value);
           }
           if (!closed) break;
@@ -158,6 +168,15 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
       const tokens = state.choices[record.choice].logprobs?.flatMap(group => group.tokens);
       const refusal = state.choices[record.choice].refusal;
       terminalCandidates.push({ ...(refusal?.explanation == null ? {} : { finishMessage: refusal.explanation }), index: record.choice, finishReason: record.finish_reason === 'length' ? 'MAX_TOKENS' : record.finish_reason === 'content_filter' ? 'SAFETY' : 'STOP', ...(chunks.length === 0 ? {} : { groundingMetadata: { groundingChunks: chunks, groundingSupports: supports } }), ...(tokens === undefined ? {} : { logprobsResult: { chosenCandidates: tokens.map(t => ({ token: t.token, logProbability: t.logprob })), topCandidates: tokens.map(t => ({ candidates: (t.top_logprobs ?? []).map(a => ({ token: a.token, logProbability: a.logprob })) })) } }) });
+      if (options.roundTrip !== undefined) {
+        const plannedCarrier = createGeminiGenerateContentSidecarCarrier('');
+        const plannedTurn = [{ role: 'model' as const, parts: [...native, plannedCarrier] }] as GeminiGenerateContentAssistantTurn;
+        const replayCheck = await createGeminiGenerateContentReplayCheck(plannedTurn);
+        const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck!, projection.roundTripResult());
+        const carrier = createGeminiGenerateContentSidecarCarrier(data);
+        native.push(carrier);
+        yield emitPart(record.choice, carrier);
+      }
     }
     if (record.type === 'finish') {
 

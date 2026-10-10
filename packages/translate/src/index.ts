@@ -9,5 +9,5 @@ export { translateGeminiGenerateContentViaOpenAIResponses } from './gemini-gener
 export { translateGeminiGenerateContentViaOpenAIChatCompletions } from './gemini-generate-content-via-openai-chat-completions/translate.ts';
 
 export { canonicalizeOpenAIResponsesPayload } from './canonicalize-openai-responses-payload.ts';
-export type { RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
+export type { AssistantTurnSidecarCodec, RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
 export { TranslatorInputError } from './translator-input-error.ts';

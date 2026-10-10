@@ -1,15 +1,18 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
+import { createAssistantTurnSidecarCodec } from '../../../../src/data-plane/chat/shared/assistant-turn-sidecar/codec.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { translateAnthropicMessagesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -107,11 +110,13 @@ const makeCandidate = (overrides: {
   endpoints?: ModelEndpoints;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+    callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
   });
   return {
     provider: {
@@ -317,4 +322,54 @@ test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when 
   assertEquals(body.type, 'error');
   assertEquals(body.error.type, 'invalid_request_error');
   assert(body.error.message.includes('does not support'));
+});
+
+test('POST /v1/messages restores unchanged numeric tool-input tokens from a signed assistant turn', async () => {
+  installRepo();
+  const argumentsText = '{"large":900719925474099312345,"overflow":1e999}';
+  const codec = createAssistantTurnSidecarCodec(buildApiKey());
+  const trip = await translateAnthropicMessagesViaOpenAIChatCompletions(
+    { model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hi' }] },
+    { model: 'test-model', assistantTurnSidecar: codec },
+  );
+  const events: OpenAIChatCompletionsStreamEvent[] = [
+    { id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'lookup', arguments: argumentsText } }] }, finish_reason: null }] },
+    { id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] },
+  ];
+  const generated = await collectAnthropicMessagesProtocolEventsToResult(trip.events(makeProtocolFrames(events)));
+  const assistantMessage = { role: 'assistant' as const, content: generated.content };
+  let upstreamArguments: string | undefined;
+  let upstreamMaxTokens: unknown;
+  const callOpenAIChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    const payload = body as { max_tokens: unknown; messages: { tool_calls?: { function: { arguments: string } }[] }[] };
+    upstreamArguments = payload.messages[0]!.tool_calls![0]!.function.arguments;
+    upstreamMaxTokens = payload.max_tokens;
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        { id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }] },
+        { id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+      ]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+  queueCandidates([makeCandidate({ endpoints: { openaiChatCompletions: {} }, callOpenAIChatCompletions })]);
+
+  const json = JSON as typeof JSON & { rawJSON: (text: string) => unknown };
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      max_tokens: json.rawJSON('9007199254740993'),
+      messages: [assistantMessage],
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  await response.text();
+  assertEquals(upstreamArguments, argumentsText);
+  assertEquals(typeof upstreamMaxTokens, 'number');
+  assertEquals(upstreamMaxTokens, Number('9007199254740993'));
 });
