@@ -1,3 +1,5 @@
+import { focusRectStrokes } from '../focus-rect.css';
+
 export const calendarRangeCss = `
 /* Syncfusion.Calendar.WinUI 35.1.39 original Themes/calendar.xaml,
    calendarheader.xaml, navigationbutton.xaml and calendaritem.xaml; Core's
@@ -60,7 +62,7 @@ export const calendarRangeCss = `
 .floway-range-cell[data-endpoint][data-today]:hover .floway-range-inner-circle { display: block; fill: var(--winui-system-accent-light-1); }
 .floway-range-cell[data-endpoint][data-today]:active .floway-range-circle { stroke: var(--winui-system-accent-light-2); }
 .floway-range-cell[data-endpoint][data-today]:active .floway-range-inner-circle { fill: var(--winui-system-accent-light-2); }
-.floway-range-cell:focus-visible, .floway-range-header button:focus-visible { outline: 2px solid var(--winui-focus-stroke-outer); outline-offset: -2px; box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner); }
+.floway-range-cell:focus-visible, .floway-range-header button:focus-visible { ${focusRectStrokes} }
 .floway-range-snapshots { position: absolute; inset: 0; pointer-events: none; }
 .floway-range-snapshot { position: absolute; left: 0; transform-origin: center; pointer-events: none; }
 @media (forced-colors: active) {

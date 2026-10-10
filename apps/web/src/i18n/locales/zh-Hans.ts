@@ -7,7 +7,7 @@ const zhHansCN = {
     common: {
       calendar: {
         previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
-        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
+        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseDecade: '{0}，选择十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
       },
       bodyViewer: {
         options: '正文选项',

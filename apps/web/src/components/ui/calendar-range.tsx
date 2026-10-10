@@ -150,7 +150,7 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
   return <div className="floway-range-calendar" data-view={mode}>
     <div className="floway-range-header">
       <button aria-label={t(mode === 'month' ? 'common.calendar.previousMonth' : mode === 'year' ? 'common.calendar.previousYear' : mode === 'decade' ? 'common.calendar.previousDecade' : 'common.calendar.previousCentury')} className="floway-range-navigation" disabled={calendarDate(start) <= MIN_DATE} onClick={() => navigate(-1)} type="button"><CalendarNavigationIcon direction="left" /></button>
-      <button aria-label={t(mode === 'month' ? 'common.calendar.chooseMonth' : 'common.calendar.chooseYear').replace('{0}', header)} className="floway-range-heading" disabled={mode === 'century'} onClick={() => transitionTo(modes[modes.indexOf(mode) + 1], date, focused, false)} ref={headerRef} type="button">{header}</button>
+      <button aria-label={mode === 'century' ? header : t(mode === 'month' ? 'common.calendar.chooseMonth' : mode === 'year' ? 'common.calendar.chooseYear' : 'common.calendar.chooseDecade').replace('{0}', header)} className="floway-range-heading" disabled={mode === 'century'} onClick={() => transitionTo(modes[modes.indexOf(mode) + 1], date, focused, false)} ref={headerRef} type="button">{header}</button>
       <button aria-label={t(mode === 'month' ? 'common.calendar.nextMonth' : mode === 'year' ? 'common.calendar.nextYear' : mode === 'decade' ? 'common.calendar.nextDecade' : 'common.calendar.nextCentury')} className="floway-range-navigation" disabled={calendarDate(end) >= MAX_DATE} onClick={() => navigate(1)} type="button"><CalendarNavigationIcon direction="right" /></button>
     </div>
     <div className="floway-range-viewport">

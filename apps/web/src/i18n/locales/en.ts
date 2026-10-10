@@ -9,7 +9,7 @@ const en = {
     common: {
       calendar: {
         previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
-        previousDecade: 'Previous decade', previousCentury: 'Previous century', nextDecade: 'Next decade', nextCentury: 'Next century', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
+        previousDecade: 'Previous decade', previousCentury: 'Previous century', nextDecade: 'Next decade', nextCentury: 'Next century', chooseDecade: '{0}, choose a decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
       },
       bodyViewer: {
         options: 'Body options',
