@@ -442,8 +442,8 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          cost: '该账号已产生的费用',
-          costLast4Weeks: '该账号最近 4 周产生的费用',
+          costRange: '{{from}} 至 {{until}}，使用模型消耗的额度。',
+          costRangeSelf: '{{from}} 至 {{until}}，本账号使用模型消耗的额度（含套餐和购买额度）。',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -948,8 +948,18 @@ const zhHansCN = {
         },
         ollama: {
           cloudUsage: '获取账号用量',
-          cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
+          cloudUsageHint: '在模型请求后更新账号余额和期间用量。需要配置 Ollama Cloud API Key。',
           usage: {
+            billing: { credits: '月度额度', legacy: '5 小时与每周限额' },
+            allowance: '本期额度 {{amount}}',
+            resets: '{{time}} 重置',
+            requests: '{{count, number}} 次请求',
+            requestsHint: '{{from}} 至 {{until}}，统计期间的模型请求次数。',
+            balance: { included: '订阅余额', purchased: '购买余额' },
+            balanceHint: {
+              included: '套餐剩余额度，每月重置；使用模型时优先扣减。',
+              purchased: '另外购买的剩余额度；套餐额度用完后扣减。',
+            },
             title: '用量',
             load: '加载',
             refresh: '刷新',
@@ -960,7 +970,6 @@ const zhHansCN = {
             },
             observed: '观测于 {{time}}',
             empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
-            unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',
             backgroundFailed: '最近一次后台刷新失败：{{message}}',
           },
         },

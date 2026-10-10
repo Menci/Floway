@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
+import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import {
   OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS,
-  fetchOllamaUsageProbe,
   isOllamaUsageEnabled,
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
@@ -33,70 +33,64 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   ...overrides,
 });
 
-// A live ollama.com reading, per the shape an account holder posted upstream.
-// https://github.com/ollama/ollama/issues/12532#issuecomment-5117969589
-const USAGE_BODY = {
-  activity: {
-    cost: '0.00000',
-    period: { type: 'last_4_weeks', starting_at: '2026-07-06T00:00:00Z', ending_at: '2026-07-29T12:45:50Z' },
-    models: [],
-  },
-  limits: {
-    session: { usage: 0.046, models: [{ name: 'glm-5.2', request_count: 34 }] },
-    weekly: { usage: 0.051, models: [{ name: 'glm-5.2', request_count: 254 }] },
-  },
-};
-
 // Installs a repo whose single row starts from `state` and records every write.
 const withStateRepo = (state: unknown = null) => {
   let current = state;
+  const writes: unknown[] = [];
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => ({ ...cloudRecord(), state: current }),
       saveState: async (_id, mutate) => {
         current = mutate(current);
+        writes.push(current);
       },
     },
   }));
-  return { read: () => readOllamaUpstreamState(current) };
+  return { read: () => readOllamaUpstreamState(current), writes };
 };
 
-test('the usage probe reads ollama.com with the upstream API key', async () => {
+test('the usage refresh reads both Ollama endpoints with the upstream API key for an unsaved draft', async () => {
   const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const paths: string[] = [];
   await withMockedFetch(
     request => {
-      assertEquals(request.url, 'https://ollama.com/api/usage');
+      const path = new URL(request.url).pathname;
+      paths.push(path);
       assertEquals(request.method, 'GET');
       assertEquals(request.headers.get('authorization'), 'Bearer ollama_test');
-      return new Response(JSON.stringify(USAGE_BODY), { status: 200 });
+      return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
     },
     async () => {
-      const observation = await fetchOllamaUsageProbe(config, directFetcher);
-      assertEquals(observation.data, USAGE_BODY);
+      const reading = await refreshOllamaUsageProbe('', config, directFetcher);
+      assertEquals(reading.data.usage, USAGE_BODY);
+      assertEquals(reading.data.balance, BALANCE_BODY);
     },
   );
+  assertEquals(paths.toSorted(), ['/api/balance', '/api/usage']);
 });
 
-test('a probe failure keeps the last reading and records the error', async () => {
+test.each(['/api/usage', '/api/balance'])('a failure of %s preserves both prior readings and records one refresh outcome', async failedPath => {
   const { config } = assertOllamaUpstreamRecord(cloudRecord());
   const repo = withStateRepo();
-
   await withMockedFetch(
-    () => new Response(JSON.stringify(USAGE_BODY), { status: 200 }),
+    request => Response.json(new URL(request.url).pathname === '/api/usage' ? USAGE_BODY : BALANCE_BODY),
     () => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher),
   );
-  const observed = repo.read().usageProbe?.observation;
-  assertEquals(observed?.data, USAGE_BODY);
+  const observed = repo.read();
+  assertEquals(observed.usageProbe?.observation?.data.usage, USAGE_BODY);
+  assertEquals(observed.usageProbe?.observation?.data.balance, BALANCE_BODY);
+  assertEquals(repo.writes.length, 1);
 
   await withMockedFetch(
-    () => new Response('{"error":"invalid credentials"}', { status: 401 }),
-    async () => {
-      await assertRejects(() => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher));
-    },
+    request => new URL(request.url).pathname === failedPath
+      ? new Response('invalid credentials', { status: 401 })
+      : Response.json({ changed: true }),
+    () => assertRejects(() => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher)),
   );
-  const after = repo.read().usageProbe;
-  assertEquals(after?.observation, observed);
-  assertEquals(after?.error, 'Ollama /api/usage returned 401: {"error":"invalid credentials"}');
+  const after = repo.read();
+  assertEquals(after.usageProbe?.observation, observed.usageProbe?.observation);
+  assertEquals(after.usageProbe?.error, `Ollama ${failedPath} returned 401: invalid credentials`);
+  assertEquals(repo.writes.length, 2);
 });
 
 test('usage is probed when the operator enabled it and a key is configured, and not otherwise', () => {
@@ -116,14 +110,15 @@ test('usage is probed when the operator enabled it and a key is configured, and 
 // Drives the provider rather than the probe helpers so the arming decision —
 // which call consumes the account's windows, and what the debounce reads — is
 // exercised where it is made.
-const callChat = async (record: UpstreamRecord, onUsageProbe: () => void): Promise<void> => {
+const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
   const provider = createOllamaProvider(record);
   const pending: Promise<unknown>[] = [];
   await withMockedFetch(
     request => {
-      if (new URL(request.url).pathname === '/api/usage') {
-        onUsageProbe();
-        return new Response(JSON.stringify(USAGE_BODY), { status: 200 });
+      const path = new URL(request.url).pathname;
+      if (path === '/api/usage' || path === '/api/balance') {
+        onUsageProbe(path);
+        return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
       }
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
@@ -141,17 +136,17 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: () => void): Promi
 
 test('an inference call arms the probe, and the stored attempt time debounces the next one', async () => {
   withStateRepo();
-  let probes = 0;
-  await callChat(cloudRecord(), () => { probes++; });
-  assertEquals(probes, 1);
+  const probes: string[] = [];
+  await callChat(cloudRecord(), path => { probes.push(path); });
+  assertEquals(probes, ['/api/usage', '/api/balance']);
 
   const justProbed = { usageProbe: { attemptedAt: Date.now(), observation: null, error: null } };
-  await callChat(cloudRecord({ state: justProbed }), () => { probes++; });
-  assertEquals(probes, 1);
+  await callChat(cloudRecord({ state: justProbed }), path => { probes.push(path); });
+  assertEquals(probes.length, 2);
 
   const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
-  await callChat(cloudRecord({ state: stale }), () => { probes++; });
-  assertEquals(probes, 2);
+  await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
+  assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
 });
 
 test('token counting leaves the account windows untouched and arms no probe', async () => {
@@ -161,7 +156,7 @@ test('token counting leaves the account windows untouched and arms no probe', as
   let probes = 0;
   await withMockedFetch(
     request => {
-      if (new URL(request.url).pathname === '/api/usage') probes++;
+      if (['/api/usage', '/api/balance'].includes(new URL(request.url).pathname)) probes++;
       return new Response('{"input_tokens":1}', { status: 200 });
     },
     async () => {

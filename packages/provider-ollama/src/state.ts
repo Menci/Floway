@@ -1,7 +1,4 @@
-// Gateway-managed Ollama upstream state, persisted in upstreams.state_json.
-// One slot: the most recent Ollama Cloud usage probe. Writes go through
-// UpstreamRepo.saveState as a mutator that spreads the state it is handed and
-// replaces its own slot, so a concurrent write on another slot survives.
+import { readOllamaAccountUsage, type OllamaUsageData } from './account-usage.ts';
 
 // The probe's outcome, kept as three fields rather than one nullable snapshot
 // because the data-plane trigger needs all three:
@@ -21,14 +18,13 @@ export interface OllamaUsageProbeEntry {
   error: string | null;
 }
 
-// `data` is the upstream body verbatim. Ollama serves the usage endpoint
-// undocumented (docs.ollama.com covers /api/usage as per-response performance
-// metrics, not account quota) and has already changed its per-model field
-// naming once, so the gateway stores what it received and lets the dashboard
-// walk the keys it knows. `fetchedAt` is unix ms.
+// Persist both usage history and current balance bodies verbatim. The dashboard
+// selects the fields appropriate to the account's plan; `fetchedAt` is unix ms.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 export interface OllamaUsageObservation {
   fetchedAt: number;
-  data: unknown;
+  data: OllamaUsageData;
 }
 
 // The account behind the API key. It sits in its own slot rather than inside
@@ -95,11 +91,7 @@ const assertUnixMs = (value: unknown, where: string): void => {
 const assertOllamaUsageObservation = (value: unknown, where: string): void => {
   const obj = assertClosedObject(value, where, ALLOWED_OBSERVATION_KEYS_MAP);
   assertUnixMs(obj.fetchedAt, `${where}.fetchedAt`);
-  // The body's inner shape is upstream-owned; confirming it is a plain object
-  // is the whole contract the dashboard relies on.
-  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
-    throw new TypeError(`${where}.data must be a plain object`);
-  }
+  readOllamaAccountUsage(obj.data);
 };
 
 const assertOptionalString = (value: unknown, where: string): void => {

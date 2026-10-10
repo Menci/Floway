@@ -1,21 +1,23 @@
 ---
 name: fetching-models-pricing
-description: Refresh per-model pricing tables for Floway providers whose upstream does not bill per token or publish usable token rates, especially Copilot, Codex, Claude Code, and Ollama. Manual research procedure; no script.
+description: Refresh provider model pricing for Floway, including API-equivalent subscription valuation and Ollama official standard rates. Manual research procedure; no script.
 ---
 
 # Fetching Models Pricing
 
-Maintain the notional per-token rate cards in:
+Maintain the per-token rate cards in:
 
 | Provider | Table | Live catalog | Preferred rate source |
 |---|---|---|---|
 | Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
 | Codex | `packages/provider-codex/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
 | Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
-| Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | vendor API or a credible commodity host |
+| Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
 
-These providers are subscription-backed or self-hosted. Floway records
-notional API-equivalent value so the usage dashboard remains comparable.
+Copilot, Codex and Claude Code use API-equivalent valuation. Ollama uses its
+published standard token rates for covered models and retains vendor/host
+valuation for other models. These are request estimates; account consumption
+from `/api/usage` includes Ollama billing adjustments such as off-peak discounts.
 
 `ModelPricing.entries[].rates` stores decimal-string USD prices per one base
 `BillingMetric` unit. The ten-member `BILLING_METRICS` array in
@@ -29,7 +31,8 @@ subset for a model.
 1. Fetch the provider's live catalog and diff its ids against the table's
    string and RegExp keys. Record new, retired, and renamed models.
 2. Find a defensible rate source for every new id:
-   - Prefer the model vendor's first-party API.
+   - For Ollama, prefer its own published standard rates at https://ollama.com/pricing; verify cloud aliases against official model tag pages.
+   - Otherwise prefer the model vendor's first-party API.
    - For open weights with no vendor API, use the cheapest credible commodity
      host that publishes the required metrics.
    - For retired versions, use a permalink or dated archive from when that
@@ -102,7 +105,7 @@ subset for a model.
    - Return `null` when no defensible price exists. Never extrapolate from an
      adjacent version or similarly named model.
 5. Increment `MODEL_CATALOG_REVISION` in
-   `packages/gateway/src/data-plane/providers/models-cache.ts`. Static pricing
+   `packages/gateway/src/repo/models-cache-contract.ts`. Static pricing
    is serialized inside cached `ProviderModel` rows; a mismatch makes every
    older row cold before TTL evaluation.
 6. Add boundary tests for exact ids, aliases, dated releases, RegExp coverage,
@@ -140,8 +143,10 @@ ineligible.
 
 - Ignore LiteLLM's zero-valued `ollama/*` entries; those are placeholders, not
   market prices.
-- Do not confuse Ollama library labels such as Light, Medium, High, or Extra
-  High with token prices; they are subscription GPU-time weights.
+- Ollama legacy subscribers still use session/weekly limits. Identify billing
+  mode from `/api/balance`, not the tier name. Its inference APIs report cached
+  token counts; keep their normal protocol accounting. Standard-rate estimates
+  do not infer peak/off-peak billing from a response service tier.
 - Do not use a cheaper OpenRouter mirror when the vendor itself sells the
   model; that is another host's price.
 - Verify ambiguous version names against release notes before sharing a rate.

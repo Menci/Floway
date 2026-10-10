@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { creditBalance, legacyBalance, usageTotals } from './ollama-usage-fixture';
 import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamReadout } from '../../../src/components/upstreams/signals';
 import en from '../../../src/i18n/locales/en';
@@ -266,73 +267,32 @@ describe('upstream readout by provider', () => {
     expect(planFor(null)).toBe('Ollama');
   });
 
-  it('reads the Ollama Cloud windows and the activity cost the probe stored', () => {
-    const record = {
-      kind: 'ollama',
-      state: {
-        account: { fetchedAt: Date.parse(OBSERVED), plan: 'pro', name: null, email: null },
-        usageProbe: {
-          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: {
-              activity: { cost: '24.34000', period: { type: 'last_4_weeks' } },
-              limits: { session: { usage: 0.25 }, weekly: { usage: 0.4 } },
-            },
-          },
-        },
-      },
-    };
-    expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
-    const cost = readoutOf(record).signals.at(-1);
-    expect(cost?.detail).toBe('Charged to this account in the last 4 weeks');
+  const ollamaRecord = (data: unknown) => ({ kind: 'ollama', state: { account: { plan: 'pro' }, usageProbe: { observation: { fetchedAt: Date.parse(OBSERVED), data } } } });
+
+  it('keeps legacy percentage signals while using current balance reset times', () => {
+    const record = ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15 } } });
+    expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d');
+    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 11, 2026');
   });
 
-  it('leaves the charge unqualified when the upstream named no period for it', () => {
-    const signals = readoutOf({
-      kind: 'ollama',
-      state: {
-        account: { fetchedAt: Date.parse(OBSERVED), plan: 'pro', name: null, email: null },
-        usageProbe: {
-          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: { activity: { cost: '1.00' }, limits: {} },
-          },
-        },
-      },
-    }).signals;
-    expect(signals.at(-1)?.detail).toBe('Charged to this account');
+  it('shows current consumption without adding monthly balances to the list', () => {
+    const record = ollamaRecord({ balance: creditBalance, usage: usageTotals });
+    expect(rowOf(record)).toBe('Ollama Pro | $3.25');
+    expect(readoutOf(record).signals[0]?.detail).toBe('Oct 4, 2026 to Oct 11, 2026: credits this account consumed through model requests, including plan and purchased credits.');
   });
 
-  // The card keeps that zero; a row of live readings does not, because a figure
-  // saying nothing happened earns none of the width.
-  it('leaves an Ollama Cloud account that has spent nothing off the row', () => {
-    expect(rowOf({
-      kind: 'ollama',
-      state: {
-        usageProbe: {
-          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: { activity: { cost: '0.00000' }, limits: {} },
-          },
-        },
-      },
-    })).toBe('Ollama');
+  it('keeps the consumption reporting interval independent of the monthly balance period', () => {
+    const signals = readoutOf(ollamaRecord({
+      balance: { ...creditBalance, included: { ...creditBalance.included, balance_usd: 57, period: { from: '2026-11-01T00:00:00Z', until: '2026-12-01T00:00:00Z' } } },
+      usage: { ...usageTotals, from: '2026-10-27T00:00:00Z', until: '2026-11-03T04:00:00Z', totals: { request_count: 15, usage_usd: 10 } },
+    })).signals;
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.value).toBe('$10.00');
+    expect(signals[0]?.detail).toBe('Oct 27, 2026 to Nov 3, 2026: credits this account consumed through model requests, including plan and purchased credits.');
   });
 
-  // Not zero -- unreadable. It stays, rather than being hidden as if the account
-  // had spent nothing.
-  it('keeps a charge the money ladder cannot read', () => {
-    expect(rowOf({
-      kind: 'ollama',
-      state: {
-        usageProbe: {
-          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: { activity: { cost: 'unknown' }, limits: {} },
-          },
-        },
-      },
-    })).toBe('Ollama | $unknown');
+  it('leaves zero consumption off the list while retaining legacy percentages', () => {
+    expect(rowOf(ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15, usage_usd: 0 } } }))).toBe('Ollama Pro | 25% 5h | 40% 7d');
   });
 
   it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {
