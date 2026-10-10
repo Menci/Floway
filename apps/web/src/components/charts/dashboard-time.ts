@@ -1,5 +1,5 @@
 import { calendarDate, nextCalendarDate, parseCalendarDate, validateCalendarRange, type CalendarDateRange } from '../../lib/calendar-date';
-import { formatDate, formatDateParts } from '../../lib/format-time';
+import { numericDateTime, numericTime } from '../../lib/format-time';
 import {
   createTelemetryBucket,
   TELEMETRY_HOUR_MS,
@@ -174,31 +174,18 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
   return Array.from({ length: count }, (_, index) => buckets[Math.round(index * (buckets.length - 1) / (count - 1))]!);
 };
 
-export const formatAxisDate = (date: Date, range: DashboardRange, locale: string) => {
-  const granularity = dashboardGranularity(range, date.getTime());
-  const options: Intl.DateTimeFormatOptions = granularity === 'hour'
-    ? typeof range === 'string' ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric' }
-    : granularity === '4h' || granularity === '8h' ? { month: 'short', day: 'numeric', hour: 'numeric' }
-      : granularity === 'month' ? { year: 'numeric', month: 'short' }
-        : granularity === 'year' ? { year: 'numeric' } : { month: 'short', day: 'numeric' };
-  return formatDate(date, locale, options);
-};
+export const formatAxisDate = numericDateTime;
 
-export const formatBucketInterval = (frame: DashboardBucketFrame, locale: string): string => {
-  const formatter = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+export const formatBucketInterval = (frame: DashboardBucketFrame): string => {
   const start = new Date(frame.start);
   const end = new Date(frame.end);
-  const parts = formatter.formatRangeToParts(start, end);
-  return parts.some(part => part.type === 'year')
-    ? `${formatDateParts(formatter.formatToParts(start))} – ${formatDateParts(formatter.formatToParts(end))}`
-    : formatDateParts(parts);
+  return `${numericDateTime(start)}–${calendarDate(start) === calendarDate(end) ? numericTime(end) : numericDateTime(end)}`;
 };
 
 export const formatCalloutTitle = (
   value: Date | number | string,
   labels: ReadonlyMap<number, string>,
-  range: DashboardRange,
   locale: string,
 ) => value instanceof Date
-  ? labels.get(value.getTime()) ?? formatAxisDate(value, range, locale)
+  ? labels.get(value.getTime()) ?? formatAxisDate(value)
   : typeof value === 'number' ? value.toLocaleString(locale) : value;

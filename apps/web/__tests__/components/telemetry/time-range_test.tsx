@@ -52,7 +52,7 @@ test('the date caption appears only after a successful load and both entries reo
   expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
   commit({ start: '2026-10-06', end: '2026-10-16' });
   const caption = screen.getByRole('button', { name: 'Choose date range' });
-  expect(caption.textContent).toBe('Oct 6, 2026 - Oct 16, 2026');
+  expect(caption.textContent).toBe('2026/10/06 - 2026/10/16');
   expect(caption.compareDocumentPosition(screen.getByRole('radiogroup')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   caption.focus(); fireEvent.click(caption);
   expect(screen.getByRole('grid')).toBeTruthy();
@@ -92,7 +92,7 @@ test('clicking within the selected range clears it without replacing loaded data
   open(); day(10); outside();
   await Promise.resolve();
   expect(change).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Choose date range' }).textContent).toContain('Oct 6');
+  expect(screen.getByRole('button', { name: 'Choose date range' }).textContent).toContain('2026/10/06');
 });
 
 test('switching to a loaded preset removes the date caption immediately', () => {

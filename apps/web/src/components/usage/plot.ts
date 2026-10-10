@@ -19,10 +19,9 @@ import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common'
 export const dashboardBuckets = (
   range: UsageRange,
   nowMs: number,
-  locale: string,
 ): ChartBucket[] => {
   return dashboardBucketFrames(range, nowMs)
-    .map(frame => ({ ...frame, label: formatBucketInterval(frame, locale) }));
+    .map(frame => ({ ...frame, label: formatBucketInterval(frame) }));
 };
 
 export const buildTokenChart = ({

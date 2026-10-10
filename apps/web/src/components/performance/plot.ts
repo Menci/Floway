@@ -75,5 +75,5 @@ export const buildPerformanceChart = (
   };
 };
 
-export const performanceBuckets = (range: PerformanceRange, now: number, locale: string): ChartBucket[] =>
-  dashboardBucketFrames(range, now).map(frame => ({ ...frame, label: formatBucketInterval(frame, locale) }));
+export const performanceBuckets = (range: PerformanceRange, now: number): ChartBucket[] =>
+  dashboardBucketFrames(range, now).map(frame => ({ ...frame, label: formatBucketInterval(frame) }));

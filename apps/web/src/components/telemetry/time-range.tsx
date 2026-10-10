@@ -3,8 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { calendarDate, parseCalendarDate } from '../../lib/calendar-date';
-import { formatDate } from '../../lib/format-time';
-import { useLocale } from '../../lib/use-locale';
+import { numericDate } from '../../lib/format-time';
 import { sameDashboardRange, type DashboardPreset, type DashboardRange } from '../charts/dashboard-time';
 import { CalendarRange, type CalendarRangeSelection } from '../ui/calendar-range';
 import { ChoiceGroup } from '../ui/choice-group';
@@ -20,7 +19,6 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
   range: DashboardRange;
 }) {
   const { t } = useTranslation();
-  const locale = useLocale();
   const popupId = useId();
   const [draft, setDraft] = useState<CalendarRangeSelection>(typeof range === 'string' ? { start: null, end: null } : range);
   const [editing, setEditing] = useState(false);
@@ -68,7 +66,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
     queueMicrotask(() => { if (document.hasFocus() && !owns(document.activeElement)) close(true); });
   };
   const showCaption = typeof range !== 'string';
-  const formatEndpoint = (date: string) => formatDate(parseCalendarDate(date), locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  const formatEndpoint = (date: string) => numericDate(parseCalendarDate(date), true);
   return <div className="floway-telemetry-range" ref={groupRef} onBlurCapture={event => blur(event.relatedTarget)} onKeyDown={event => {
     if (event.key !== 'Escape' || !editingRef.current) return;
     event.preventDefault(); event.stopPropagation(); close(false);

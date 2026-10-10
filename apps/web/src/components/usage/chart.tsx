@@ -5,7 +5,6 @@ import { UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
@@ -37,11 +36,9 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
   const { t } = useTranslation();
   const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useChartFrame();
-  const locale = useLocale();
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.plot.data, hidden), [chart.entries, chart.plot.data, hidden]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
 
   const renderCallout = useCallback((point: CalloutPoint | null) => (
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
@@ -69,7 +66,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
 
         return chart.plot.form === 'area' ? (
           <StackedAreaChart
-            customDateTimeFormatter={dateFormatter}
+            customDateTimeFormatter={formatAxisDate}
             data={visibleData}
             element={element}
             enablePerfOptimization
@@ -86,7 +83,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
           />
         ) : (
           <LineChart
-            customDateTimeFormatter={dateFormatter}
+            customDateTimeFormatter={formatAxisDate}
             data={visibleData}
             enablePerfOptimization
             height={size.height}

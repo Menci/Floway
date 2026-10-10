@@ -18,6 +18,15 @@ export const dateTime = (value: string | number | null | undefined, locale: stri
     ? NO_READING
     : formatDate(toDate(value), locale, { dateStyle: 'medium', timeStyle: 'medium' });
 
+const twoDigits = (value: number): string => String(value).padStart(2, '0');
+
+export const numericDate = (date: Date, includeYear = false): string =>
+  `${includeYear ? `${String(date.getFullYear()).padStart(4, '0')}/` : ''}${twoDigits(date.getMonth() + 1)}/${twoDigits(date.getDate())}`;
+
+export const numericTime = (date: Date): string => `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+
+export const numericDateTime = (date: Date): string => `${numericDate(date)} ${numericTime(date)}`;
+
 const RELATIVE_UNITS: [limitSeconds: number, perUnitSeconds: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [60, 1, 'second'],
   [3600, 60, 'minute'],

@@ -259,7 +259,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...current,
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
-  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
+  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const labels = useMemo(() => overview && upstreams && performanceLabels(overview, upstreams), [overview, upstreams]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
   const summary = overview?.axes.none[0];

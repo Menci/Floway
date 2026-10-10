@@ -1,16 +1,16 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { chartTickValues, dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
+import { chartTickValues, dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, formatAxisDate, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 
 afterEach(() => vi.unstubAllEnvs());
 
-test.each(['en-US', 'zh-Hans'])('bucket tooltip omits years across year boundaries in %s', locale => {
+test('bucket tooltip omits years across year boundaries', () => {
   vi.stubEnv('TZ', 'Asia/Singapore');
   const range = { start: '2026-12-31', end: '2027-01-01' };
   const interval = dashboardInterval(range, 0);
   const frame = { ...dashboardBucketFrames(range, 0)[0]!, ...interval };
-  expect(formatBucketInterval(frame, locale)).not.toMatch(/2026|2027|年/);
+  expect(formatBucketInterval(frame)).not.toMatch(/2026|2027|年/);
 });
 
 test('presets retain their original windows and aggregation densities', () => {
@@ -84,4 +84,14 @@ test('chart ticks distribute both endpoints without crowding the final two label
   const buckets = Array.from({ length: 32 }, (_, index) => ({ date: new Date(2026, 9, 10 + index), index }));
   expect(chartTickValues(buckets).map(bucket => bucket.index)).toEqual([0, 5, 10, 16, 21, 26, 31]);
   expect(chartTickValues(buckets.slice(0, 7))).toEqual(buckets.slice(0, 7));
+});
+
+test('telemetry axes and tooltips share local numeric dates and 24-hour times', () => {
+  const start = new Date(2026, 8, 1, 0);
+  const end = new Date(2026, 8, 1, 8);
+  const frame = { date: start, key: '', start: start.getTime(), end: end.getTime() };
+  expect(formatAxisDate(start)).toBe('09/01 00:00');
+  expect(formatBucketInterval(frame)).toBe('09/01 00:00–08:00');
+  const nextDay = new Date(2026, 8, 2, 0);
+  expect(formatBucketInterval({ ...frame, end: nextDay.getTime() })).toBe('09/01 00:00–09/02 00:00');
 });

@@ -133,7 +133,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [rewrite, setSearchParams, urlState]);
   const addressOf = (patch: Partial<UsageUrlState>) => `?${serializeUsageUrlState({ ...urlState, ...patch })}`;
 
-  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
+  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
     if (!usage) return null;
     const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
