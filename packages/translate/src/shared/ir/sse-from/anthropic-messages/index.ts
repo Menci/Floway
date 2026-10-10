@@ -54,8 +54,7 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     } else reconcileIRValue(b, ['choices', 0, 'items', mapped], b.state.choices[0].items[mapped], item);
   };
   for await (const frame of frames) {
-    if (frame.type === 'done') { if (!finished) throw new Error('Messages done arrived without message_stop'); continue; }
-    if (finished) throw new Error('Messages event arrived after message_stop');
+    if (frame.type === 'done') throw new Error('Messages done arrived without message_stop');
     const e = frame.event as unknown as IRWire;
     switch (e.type) {
     case 'message_start':
@@ -89,8 +88,8 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
       if (block.type === 'tool_use' && block.inputJson !== undefined) {
         const parsed = parseIRJSONObject(block.inputJson);
         block.input = parsed; delete block.inputJson;
-      }
-      if (block.type === 'tool_use') { parseIRJSONObject(JSON.stringify(block.input)); sync(e.index, block, true); }
+      } else if (block.type === 'tool_use') parseIRJSONObject(JSON.stringify(block.input));
+      if (block.type === 'tool_use') sync(e.index, block, true);
       const index = indices.get(e.index);
       if (index !== undefined) {
         if (b.state.choices[0].items[index].type === 'message') b.event({ type: 'part_end', choice: 0, item: index, part: 0 });
@@ -118,5 +117,5 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     yield b.drain();
     if (finished) return;
   }
-  if (!finished) throw new Error('Messages stream ended without message_stop');
+  throw new Error('Messages stream ended without message_stop');
 };

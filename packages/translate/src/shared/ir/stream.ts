@@ -1,6 +1,5 @@
 import type { IR, IRJSONValue, IRJSONObject } from './ir.ts';
-import { cloneIRJSON, parseIRJSON } from './json.ts';
-import { parseSSEStream, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { cloneIRJSON } from './json.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IROperation =
@@ -102,54 +101,4 @@ export const consumeIRRecords = async function* (frames: AsyncIterable<IRFrame>)
     yield { state, record };
   }
   if (!finished) throw new Error('IR stream ended without finish');
-};
-
-export const collectIR = async (frames: AsyncIterable<IRFrame>): Promise<IR> => {
-  let state: IR = { choices: [], extensions: {} };
-  for await (const value of consumeIRRecords(frames)) {
-    state = value.state;
-    if (value.record.type === 'error' || value.record.type === 'finish' && value.record.status === 'failed') throw new Error('IR generation failed', { cause: value.record.error });
-  }
-  return state;
-};
-
-export const irFrameToSSEFrame = (frame: IRFrame): SseFrame => sseFrame(JSON.stringify(frame), 'ir');
-
-const validateIRRecord = (value: unknown): void => {
-  if (typeof value !== 'object' || value === null || !('type' in value)) throw new TypeError('Invalid IR record');
-  const record = value as Record<string, unknown>;
-  const integer = (key: string): void => { if (!Number.isInteger(record[key]) || (record[key] as number) < 0) throw new TypeError(`Invalid IR ${key}`); };
-  switch (record.type) {
-  case 'operation':
-    if (record.operation !== 'assign' && record.operation !== 'append' || !Array.isArray(record.path) || record.path.length === 0 || !Object.hasOwn(record, 'value')) throw new TypeError('Invalid IR operation');
-    for (const key of record.path) if (typeof key !== 'string' && (typeof key !== 'number' || !Number.isInteger(key) || key < 0)) throw new TypeError('Invalid IR path segment');
-    if (record.operation === 'append' && typeof record.value !== 'string' && !Array.isArray(record.value)) throw new TypeError('Invalid IR append value');
-    break;
-  case 'start':
-    if (typeof record.id !== 'string' || typeof record.model !== 'string' || record.created !== undefined && typeof record.created !== 'number') throw new TypeError('Invalid IR start');
-    break;
-  case 'item_start': case 'item_end': integer('choice'); integer('item'); break;
-  case 'part_start': case 'part_end': integer('choice'); integer('item'); integer('part'); break;
-  case 'choice_end':
-    integer('choice');
-    if (!['stop', 'length', 'tool_calls', 'content_filter'].includes(record.finish_reason as string)) throw new TypeError('Invalid IR finish reason');
-    break;
-  case 'finish':
-    if (!['completed', 'incomplete', 'failed'].includes(record.status as string)) throw new TypeError('Invalid IR finish status');
-    break;
-  case 'error':
-    if (typeof record.error !== 'object' || record.error === null || Array.isArray(record.error)) throw new TypeError('Invalid IR error');
-    break;
-  case 'ping': break;
-  default: throw new TypeError('Unknown IR record type');
-  }
-};
-
-export const parseIRStream = async function* (body: ReadableStream<Uint8Array>, options: { signal?: AbortSignal } = {}): AsyncGenerator<IRFrame> {
-  for await (const frame of parseSSEStream(body, options)) {
-    const value: unknown = parseIRJSON(frame.data);
-    if (typeof value !== 'object' || value === null || !('records' in value) || !Array.isArray(value.records)) throw new TypeError('Invalid IR SSE frame');
-    value.records.forEach(validateIRRecord);
-    yield value as IRFrame;
-  }
 };

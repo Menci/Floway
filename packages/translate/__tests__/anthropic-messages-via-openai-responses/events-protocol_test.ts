@@ -39,10 +39,6 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
 };
 
 test('translateToSourceEvents emits structured Anthropic Messages events from the target-expanded sequence', async () => {
-  // The target boundary (openaiResponsesStreamFramesToEvents) is responsible for
-  // expanding upstream fast-path (created+completed only) into a full
-  // structured event sequence via openaiResponsesResultToEvents. Translate now sees
-  // only that expanded sequence and is a pure mapping.
   async function* stream() {
     for (const frame of openaiResponsesResultToEvents(makeResponse('completed'))) {
       yield frame;

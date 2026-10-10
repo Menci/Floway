@@ -102,7 +102,7 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
       }
     }
     if (record.type === 'choice_end') {
-      const native = parts.get(record.choice) ?? [];
+      const native = parts.get(record.choice)!;
       const final = projection.result();
       const chunks: IRWire[] = []; const supports: IRWire[] = [];
       state.choices[record.choice].items.forEach((item, index) => {

@@ -27,7 +27,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
     metadata.model = irServingModel(state, metadata.model);
     if (record.type === 'item_end') completedItems.add(`${record.choice}/${record.item}`);
     extension = { ...state.extensions?.openaiChatCompletions };
-    delete extension.reasoning_items; delete extension.reasoning_id;
+    delete extension.reasoning_items; delete extension.reasoning_id; delete extension.reasoning_item_ids;
     const tier = irServiceTier(state);
     if (tier !== undefined) extension.service_tier = tier;
     if (record.type === 'error' || record.type === 'finish' && record.status === 'failed') {

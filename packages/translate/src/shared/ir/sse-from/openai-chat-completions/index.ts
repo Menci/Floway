@@ -3,8 +3,8 @@ import { unwrapCustomToolInput } from '../../custom-tools.ts';
 import type { IRMessageItem, IRReasoningItem } from '../../ir.ts';
 import { createIRBuilder, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
 import { usageToIR, type IRWire } from '../../usage.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
 
 interface IRChatTool { item?: number; id?: string; name: string; arguments: string; custom: boolean; wrapped: boolean }
 interface IRChatChoice {
@@ -13,12 +13,55 @@ interface IRChatChoice {
   refusal?: number;
   audio?: number;
   reasoning?: number;
+  reasoningGroups: number[];
   tools: Map<number, IRChatTool>;
   annotations: IRWire[];
   closed: Set<number>;
   ended: boolean;
   incomplete: boolean;
 }
+
+// Compatibility carriers can finish as multiple reasoning items after scalar
+// fragments. Settle the carrier before assigning IR item identities.
+const canonicalChatReasoningFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+  const pending = new Map<number, { chunk: OpenAIChatCompletionsStreamEvent; entry: IRWire }[]>();
+  const flush = function* (index: number): Generator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+    const buffered = pending.get(index)!;
+    const carrier = buffered.findLast(({ entry }) => entry.delta.reasoning_items != null)?.entry.delta.reasoning_items;
+    const opaque = buffered.findLast(({ entry }) => entry.delta.reasoning_opaque != null)?.entry.delta.reasoning_opaque;
+    if (carrier?.length) {
+      const delta: OpenAIChatCompletionsAssistantDeltaEx = { reasoning_items: carrier, ...(opaque === undefined ? {} : { reasoning_opaque: opaque }) };
+      yield eventFrame({ ...buffered[0].chunk, choices: [{ index, delta, finish_reason: null }] });
+    }
+    for (const { chunk, entry } of buffered) {
+      const delta = { ...entry.delta };
+      if (carrier?.length) for (const field of ['reasoning_text', 'reasoning_content', 'reasoning', 'reasoning_items', 'reasoning_opaque']) delete delta[field];
+      yield eventFrame({ ...chunk, choices: [{ ...entry, delta }] } as OpenAIChatCompletionsStreamEvent);
+    }
+    pending.delete(index);
+  };
+  for await (const frame of frames) {
+    if (frame.type === 'done' || (frame.event as IRWire).error !== undefined) {
+      for (const index of pending.keys()) yield* flush(index);
+      yield frame;
+      return;
+    }
+    const chunk = frame.event;
+    const ready: IRWire[] = [];
+    for (const entry of chunk.choices) {
+      const delta = entry.delta as IRWire;
+      const reasoning = (delta.reasoning_items?.length ?? 0) > 0 || delta.reasoning_opaque != null || ['reasoning_text', 'reasoning_content', 'reasoning'].some(field => typeof delta[field] === 'string' && delta[field] !== '');
+      if (reasoning && !pending.has(entry.index)) pending.set(entry.index, []);
+      const buffered = pending.get(entry.index);
+      if (buffered === undefined) ready.push(entry);
+      else {
+        buffered.push({ chunk, entry });
+      }
+    }
+    if (ready.length > 0 || chunk.choices.length === 0) yield eventFrame({ ...chunk, choices: ready } as OpenAIChatCompletionsStreamEvent);
+  }
+  for (const index of pending.keys()) yield* flush(index);
+};
 
 export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
@@ -52,7 +95,7 @@ export const irFromOpenAIChatCompletions = async function* (
     b.event({ type: 'finish', status: [...choices.values()].some(choice => choice.incomplete) ? 'incomplete' : 'completed' });
     return b.drain();
   };
-  for await (const frame of frames) {
+  for await (const frame of canonicalChatReasoningFrames(frames)) {
     if (frame.type === 'done') { yield finish(); return; }
     const chunk = frame.event as unknown as IRWire;
     if (chunk.error !== undefined) { b.event({ type: 'error', error: chunk.error }); yield b.drain(); return; }
@@ -66,7 +109,7 @@ export const irFromOpenAIChatCompletions = async function* (
       const index = entry.index as number;
       b.choice(index);
       let choice = choices.get(index);
-      if (choice === undefined) { choice = { tools: new Map(), annotations: [], closed: new Set(), ended: false, incomplete: false }; choices.set(index, choice); }
+      if (choice === undefined) { choice = { tools: new Map(), reasoningGroups: [], annotations: [], closed: new Set(), ended: false, incomplete: false }; choices.set(index, choice); }
       const delta = entry.delta as IRWire;
       const part = (kind: 'text' | 'refusal' | 'audio'): IRPath => {
         if (choice!.reasoning !== undefined && (b.state.choices[index].items[choice!.reasoning] as IRReasoningItem).encrypted_content != null) closeItem(index, choice!, choice!.reasoning);
@@ -90,14 +133,21 @@ export const irFromOpenAIChatCompletions = async function* (
         b.assign(['choices', index, 'items', choice.reasoning, 'encrypted_content'], delta.reasoning_opaque);
       }
       if (delta.reasoning_items?.length) {
-        const first = delta.reasoning_items[0];
-        const value: IRReasoningItem = { type: 'reasoning', summary: delta.reasoning_items.flatMap((item: IRWire) => (item.summary ?? []).map((p: IRWire) => p.text)) };
-        if (choice.reasoning === undefined) choice.reasoning = b.item(index, value);
-        else {
-          b.assign(['choices', index, 'items', choice.reasoning, 'summary'], value.summary);
+        closeMessage(index, choice);
+        if ((b.state.extensions!.openaiChatCompletions as IRWire).reasoning_item_ids === undefined) b.assign(['extensions', 'openaiChatCompletions', 'reasoning_item_ids'], {});
+        for (let group = 0; group < delta.reasoning_items.length; group++) {
+          const native = delta.reasoning_items[group];
+          const value: IRReasoningItem = { type: 'reasoning', summary: (native.summary ?? []).map((part: IRWire) => part.text) };
+          let position = choice.reasoningGroups[group];
+          if (position === undefined) {
+            position = group === 0 && choice.reasoning !== undefined ? choice.reasoning : b.state.choices[index].items.length;
+            choice.reasoningGroups.push(position);
+            if (native.id !== undefined) b.assign(['extensions', 'openaiChatCompletions', 'reasoning_item_ids', `${index}/${position}`], native.id);
+            if (position === b.state.choices[index].items.length) b.item(index, value);
+            else b.assign(['choices', index, 'items', position, 'summary'], value.summary);
+          } else b.assign(['choices', index, 'items', position, 'summary'], value.summary);
+          choice.reasoning ??= position;
         }
-        b.assign(['extensions', 'openaiChatCompletions', 'reasoning_items'], delta.reasoning_items);
-        if (first.id !== undefined) b.assign(['extensions', 'openaiChatCompletions', 'reasoning_id'], first.id);
       }
       if (typeof delta.content === 'string') b.append([...part('text'), 'text'], delta.content);
       if (typeof delta.refusal === 'string') b.append([...part('refusal'), 'refusal'], delta.refusal);
@@ -121,7 +171,7 @@ export const irFromOpenAIChatCompletions = async function* (
         if (fn?.name !== undefined) tool.name = fn.name;
         if (fn?.arguments !== undefined) tool.arguments += fn.arguments;
         if (fn?.input !== undefined) tool.arguments += fn.input;
-        tool.wrapped = options.customToolNames?.has(tool.name) === true;
+        tool.wrapped = !tool.custom && options.customToolNames?.has(tool.name) === true;
         if (tool.item === undefined && tool.name !== '') tool.item = b.item(index, tool.custom || tool.wrapped ? { type: 'custom_tool_call', call_id: tool.id ?? '', name: tool.name, input: tool.wrapped ? '' : tool.arguments } : { type: 'function_call', name: tool.name, ...(tool.id === undefined ? {} : { call_id: tool.id }), arguments: tool.arguments });
         else if (tool.item !== undefined) {
           const path: IRPath = ['choices', index, 'items', tool.item];

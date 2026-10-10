@@ -1,8 +1,8 @@
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-// Older mapping tests specify only the deltas under test. Supply their native
-// item/part lifecycle so they exercise the same reader as complete SSE streams.
+// Delta-focused fixtures supply native item/part lifecycle frames so they
+// exercise the same reader as complete SSE streams.
 export const structuredResponsesFixture = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const items = new Set<number>();
   const parts = new Set<string>();

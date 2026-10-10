@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { collect, iterate } from './helpers.ts';
+import { collectIR, collect, iterate } from './helpers.ts';
 import { fixtureFrames, nativeResult } from './translation-cases.ts';
 import { translateToSourceEvents as messagesViaChat } from '../../../src/anthropic-messages-via-openai-chat-completions/events.ts';
 import { translateToSourceEvents as messagesViaResponses } from '../../../src/anthropic-messages-via-openai-responses/events.ts';
@@ -9,7 +9,6 @@ import { translateToSourceEvents as generateContentViaResponses } from '../../..
 import { translateToSourceEvents as responsesViaMessages } from '../../../src/openai-responses-via-anthropic-messages/events.ts';
 import { translateToSourceEvents as responsesViaChat } from '../../../src/openai-responses-via-openai-chat-completions/events.ts';
 import { irFromOpenAIChatCompletions } from '../../../src/shared/ir/sse-from/openai-chat-completions/index.ts';
-import { collectIR } from '../../../src/shared/ir/stream.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 for (const [code, category] of [['bio_policy', 'bio'], ['cyber_policy', 'cyber']] as const) {
@@ -48,7 +47,7 @@ for (const source of ['openai-chat-completions', 'anthropic-messages'] as const)
       const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const frames = fixtureFrames(source, { tools: [{ name: 'run_code', id: 'call_custom', args: wrapped }] });
-        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code'])) : responsesViaMessages(iterate(frames), 'resp_custom', 'requested', new Set(['run_code']));
+        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code'])) : responsesViaMessages(iterate(frames), 'resp_custom', new Set(['run_code']));
         const result = await nativeResult('openai-responses', await collect(output));
         expect(result.output).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
         expect(warning).toHaveBeenCalledTimes('input' in wrapped ? 0 : 1);
@@ -71,7 +70,25 @@ test.each([messagesViaChat, generateContentViaChat])('completed empty function J
 
 test('a late readable reasoning carrier does not duplicate the scalar text', async () => {
   const frames = fixtureFrames('openai-chat-completions', { thinking: ['firstsecond'], text: ['answer'] });
-  frames.splice(-2, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: [{ type: 'reasoning', id: 'rs_original', summary: [{ type: 'summary_text', text: 'first' }, { type: 'summary_text', text: 'second' }] }] }, finish_reason: null }] }));
+  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: [{ type: 'reasoning', id: 'rs_original', summary: [{ type: 'summary_text', text: 'first' }, { type: 'summary_text', text: 'second' }] }] }, finish_reason: null }] }));
   const result = await nativeResult('anthropic-messages', await collect(messagesViaChat(iterate(frames))));
   expect(result.content.filter((part: any) => part.type === 'thinking').map((part: any) => part.thinking).join('')).toBe('firstsecond');
+});
+
+test('multiple readable ChatCompletions carriers retain separate IR groups and original Responses identities', async () => {
+  const frames = fixtureFrames('openai-chat-completions', { thinking: ['ab'], text: ['answer'] });
+  const carrier = [{ type: 'reasoning', id: 'rs_a', summary: [{ type: 'summary_text', text: 'a' }] }, { type: 'reasoning', id: 'rs_b', summary: [{ type: 'summary_text', text: 'b' }] }];
+  frames.splice(-1, 0, eventFrame({ id: 'chatcmpl_test', model: 'served-model', created: 100, choices: [{ index: 0, delta: { reasoning_items: carrier }, finish_reason: null }] }));
+  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames)));
+  expect(ir.choices[0].items.filter(item => item.type === 'reasoning')).toEqual([{ type: 'reasoning', summary: ['a'] }, { type: 'reasoning', summary: ['b'] }]);
+  const result = await nativeResult('openai-responses', await collect(responsesViaChat(iterate(frames))));
+  expect(result.output.filter((item: any) => item.type === 'reasoning')).toMatchObject(carrier);
+  expect(result.output.filter((item: any) => item.type === 'message')[0].content[0].text).toBe('answer');
+});
+
+test('late reasoning carriers preserve messages on either side of reasoning', async () => {
+  const chunk = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_order', model: 'served-model', created: 100, choices: [{ index: 0, delta, finish_reason }] });
+  const frames = [chunk({ content: 'before' }), chunk({ reasoning_text: 'think' }), chunk({ content: 'after' }), chunk({}, 'stop'), chunk({ reasoning_items: [{ type: 'reasoning', id: 'rs_order', summary: [{ type: 'summary_text', text: 'think' }] }] }), { type: 'done' as const }];
+  const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames as any)));
+  expect(ir.choices[0].items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'before' }] }, { type: 'reasoning', summary: ['think'] }, { type: 'message', content: [{ type: 'text', text: 'after' }] }]);
 });

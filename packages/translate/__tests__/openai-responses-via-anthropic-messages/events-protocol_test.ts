@@ -30,7 +30,7 @@ test('translateToSourceEvents stops after Anthropic Messages message_stop', asyn
     });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', 'gpt-test'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
 
   assertEquals(
     frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
@@ -50,7 +50,7 @@ test('translateToSourceEvents translates Anthropic Messages error terminal and s
     yield eventFrame({ type: 'message_stop' });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', 'gpt-test'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
 
   assertEquals(frames.length, 1);
   assertEquals(
@@ -82,5 +82,5 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123', 'gpt-test')), Error, 'Messages stream ended without message_stop');
+  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123')), Error, 'Messages stream ended without message_stop');
 });

@@ -4,5 +4,5 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, responseId: string, model: string, customToolNames: ReadonlySet<string> = new Set()): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> =>
-  openaiResponsesFromIR(irFromAnthropicMessages(frames, { customToolNames }), { id: responseId, model });
+export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, responseId: string, customToolNames: ReadonlySet<string> = new Set()): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> =>
+  openaiResponsesFromIR(irFromAnthropicMessages(frames, { customToolNames }), { id: responseId });
