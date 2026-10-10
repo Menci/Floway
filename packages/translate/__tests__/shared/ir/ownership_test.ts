@@ -12,11 +12,17 @@ const citation = (start: number, end: number) => ({ type: 'url_citation', url_ci
 
 test('ChatCompletions logprobs retain their text owner when a tool appears in the same chunk', async () => {
   const token = { token: 'hello', logprob: -0.1, bytes: [104, 101, 108, 108, 111], top_logprobs: [] };
-  const source = [chunk({ content: 'hello', tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'lookup', arguments: '{}' } }] }, { logprobs: { content: [token], refusal: null }, finish_reason: 'tool_calls' }), doneFrame()];
+  const source = [chunk({ content: 'hello', annotations: [citation(0, 5)], tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'lookup', arguments: '{}' } }] }, { logprobs: { content: [token], refusal: null }, finish_reason: 'tool_calls' }), doneFrame()];
   const ir = await collectIR(irFromOpenAIChatCompletions(iterate(source)));
   expect(ir.choices[0].items).toHaveLength(2);
   expect(ir.choices[0].logprobs).toEqual([{ scope: 'text_part', item_index: 0, content_index: 0, tokens: [token] }]);
-  const result = await nativeResult('openai-responses', await collect(openaiResponsesFromIR(irFromOpenAIChatCompletions(iterate(source)))));
+  const frames = await collect(openaiResponsesFromIR(irFromOpenAIChatCompletions(iterate(source))));
+  expect(frames.find(frame => frame.type === 'event' && frame.event.type === 'response.output_text.done')).toMatchObject({ event: { logprobs: [token] } });
+  const annotation = frames.findIndex(frame => frame.type === 'event' && frame.event.type === 'response.output_text.annotation.added');
+  const end = frames.findIndex(frame => frame.type === 'event' && frame.event.type === 'response.output_item.done');
+  expect(annotation).toBeGreaterThanOrEqual(0);
+  expect(annotation).toBeLessThan(end);
+  const result = await nativeResult('openai-responses', frames);
   expect(result.output).toHaveLength(2);
   expect(result.output[0].content[0]).toMatchObject({ text: 'hello', logprobs: [token] });
 });

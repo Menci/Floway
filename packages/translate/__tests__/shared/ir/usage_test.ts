@@ -7,6 +7,7 @@ import { irFromAnthropicMessages } from '../../../src/shared/ir/sse-from/anthrop
 import { irFromOpenAIChatCompletions } from '../../../src/shared/ir/sse-from/openai-chat-completions/index.ts';
 import { irFromOpenAIResponses } from '../../../src/shared/ir/sse-from/openai-responses/index.ts';
 import { geminiGenerateContentFromIR } from '../../../src/shared/ir/sse-to/gemini-generatecontent/index.ts';
+import { openaiChatCompletionsFromIR } from '../../../src/shared/ir/sse-to/openai-chat-completions/index.ts';
 import { openaiResponsesFromIR } from '../../../src/shared/ir/sse-to/openai-responses/index.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
@@ -46,6 +47,22 @@ test('Responses preserves absent initial accounting and later measured usage', a
   expect(output[0]).toMatchObject({ event: { response: { usage: null } } });
   expect(output[0].type === 'event' && output[0].event.type === 'response.created' && output[0].event.response).not.toHaveProperty('service_tier');
   expect(output.at(-1)).toMatchObject({ event: { type: 'response.completed', response: { usage: initialUsage, service_tier: 'fast' } } });
+});
+
+test('ChatCompletions via Messages publishes its initial role with already-known metadata', async () => {
+  let pulledNext = false;
+  const upstream = async function* () {
+    yield eventFrame({ type: 'message_start', message: { id: 'msg_usage', model: 'served', usage: { input_tokens: 10, output_tokens: 0, speed: 'fast' } } } as any);
+    pulledNext = true;
+    throw new Error('The converter pulled past message_start');
+  };
+  const stream = openaiChatCompletionsFromIR(irFromAnthropicMessages(upstream()));
+  try {
+    expect((await stream.next()).value).toMatchObject({ event: { model: 'served', service_tier: 'fast', choices: [{ delta: { role: 'assistant' } }] } });
+    expect(pulledNext).toBe(false);
+  } finally {
+    await stream.return(undefined);
+  }
 });
 
 test.each([['fast', 'priority'], ['default', 'standard']])('GenerateContent maps the %s alias to its %s tier', async (tier, serviceTier) => {

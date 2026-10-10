@@ -47,7 +47,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
       yield eventFrame({ error: irChatError(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
       return;
     }
-    if (record.type === 'operation' || record.type === 'part_end' || record.type === 'item_end' || record.type === 'choice_end' || record.type === 'finish') {
+    if (record.type === 'start' || record.type === 'operation' || record.type === 'part_end' || record.type === 'item_end' || record.type === 'choice_end' || record.type === 'finish') {
       for (let choice = 0; choice < state.choices.length; choice++) {
         if (state.choices[choice].items.length === 0 && state.usage === undefined && record.type !== 'choice_end' && record.type !== 'finish') continue;
         if (!startedChoices.has(choice)) { yield deltaFrame(choice, { role: 'assistant', content: '' }); startedChoices.add(choice); }

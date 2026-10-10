@@ -128,6 +128,18 @@ export const irFromOpenAIChatCompletions = async function* (
         while (extension.choices.length <= index) b.append(['extensions', 'openaiChatCompletions', 'choices'], [{ message: { audio: {} } }]);
         b.assign(['extensions', 'openaiChatCompletions', 'choices', index, 'message', 'audio'], { ...extension.choices[index].message.audio, ...metadata });
       }
+      if (delta.annotations != null) { choice.annotations = delta.annotations; syncAnnotations(index, choice); }
+      if (entry.logprobs != null) {
+        if (b.state.choices[index].logprobs == null) b.assign(['choices', index, 'logprobs'], []);
+        for (const kind of ['content', 'refusal']) if (entry.logprobs[kind]?.length > 0) {
+          const path = choice.logprobPaths.get(kind);
+          if (path === undefined) throw new TypeError('ChatCompletions logprobs require a matching text part');
+          const groups = b.state.choices[index].logprobs!;
+          let group = groups.findIndex(g => g.scope === 'text_part' && g.item_index === path[3] && g.content_index === path[5]);
+          if (group < 0) { group = groups.length; b.append(['choices', index, 'logprobs'], [{ scope: 'text_part', item_index: path[3], content_index: path[5], tokens: [] }]); }
+          b.append(['choices', index, 'logprobs', group, 'tokens'], entry.logprobs[kind]);
+        }
+      }
       const calls = [...(delta.tool_calls ?? []), ...(delta.function_call === undefined ? [] : [{ index: -1, type: 'function', function: delta.function_call }])];
       for (const call of calls) {
         let tool = choice.tools.get(call.index);
@@ -159,18 +171,6 @@ export const irFromOpenAIChatCompletions = async function* (
         if (tool.item !== undefined && complete && tool.id !== undefined) {
           if (tool.wrapped) b.assign(['choices', index, 'items', tool.item, 'input'], unwrapCustomToolInput(tool.arguments));
           closeItem(index, choice, tool.item);
-        }
-      }
-      if (delta.annotations != null) { choice.annotations = delta.annotations; syncAnnotations(index, choice); }
-      if (entry.logprobs != null) {
-        if (b.state.choices[index].logprobs == null) b.assign(['choices', index, 'logprobs'], []);
-        for (const kind of ['content', 'refusal']) if (entry.logprobs[kind]?.length > 0) {
-          const path = choice.logprobPaths.get(kind);
-          if (path === undefined) throw new TypeError('ChatCompletions logprobs require a matching text part');
-          const groups = b.state.choices[index].logprobs!;
-          let group = groups.findIndex(g => g.scope === 'text_part' && g.item_index === path[3] && g.content_index === path[5]);
-          if (group < 0) { group = groups.length; b.append(['choices', index, 'logprobs'], [{ scope: 'text_part', item_index: path[3], content_index: path[5], tokens: [] }]); }
-          b.append(['choices', index, 'logprobs', group, 'tokens'], entry.logprobs[kind]);
         }
       }
       if (entry.finish_reason != null) {
