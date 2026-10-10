@@ -1,4 +1,5 @@
-import type { IR, IRProtocol } from './ir.ts';
+import type { IR, IRJSONObject } from './ir.ts';
+import { cloneIRJSON, parseIRJSON } from './json.ts';
 import { applyIROperation, type IRFrame, type IRPath, type IRRecord } from './stream.ts';
 
 export interface IRStringProjection {
@@ -16,7 +17,9 @@ export interface IROutputOptions {
   id: string;
   model: string;
   created: number;
-  onProjection?: (result: IRProjectionResult) => void;
+  onProjection?: (result: IRProjectionResult) => void | Promise<void>;
+  audioMetadata?: (choice: number) => { id: string; expires_at: number };
+  parseToolArguments?: (text: string) => IRJSONObject;
 }
 
 export const createIRProjection = () => {
@@ -29,7 +32,7 @@ export const createIRProjection = () => {
     if (!text.startsWith(old)) {
       if (allowReplacement) { assign(source, text, target, roundTrip); previous.set(sourceKey, text); return ''; }
       if (source.at(-1) === 'arguments') {
-        const parsed: unknown = JSON.parse(old);
+        const parsed: unknown = parseIRJSON(old);
         if (JSON.stringify(parsed) === text) return '';
       }
       throw new Error(`Downstream SSE cannot replace emitted text at ${sourceKey}`);
@@ -40,7 +43,11 @@ export const createIRProjection = () => {
     let content = contents.get(key);
     if (content === undefined) { content = { path: target, text: '', round_trip: roundTrip }; contents.set(key, content); }
     if (delta !== '') {
-      projections.push({ source_path: source, source_start: old.length, source_end_exclusive: text.length, target_path: target, target_start: content.text.length, target_end_exclusive: content.text.length + delta.length, round_trip: roundTrip });
+      const previousProjection = projections.at(-1);
+      if (previousProjection !== undefined && JSON.stringify(previousProjection.source_path) === sourceKey && JSON.stringify(previousProjection.target_path) === key && previousProjection.source_end_exclusive === old.length && previousProjection.target_end_exclusive === content.text.length && previousProjection.round_trip === roundTrip) {
+        previousProjection.source_end_exclusive = text.length;
+        previousProjection.target_end_exclusive += delta.length;
+      } else projections.push({ source_path: source, source_start: old.length, source_end_exclusive: text.length, target_path: target, target_start: content.text.length, target_end_exclusive: content.text.length + delta.length, round_trip: roundTrip });
       content.text += delta;
     }
     return delta;
@@ -51,7 +58,7 @@ export const createIRProjection = () => {
     for (let i = projections.length - 1; i >= 0; i--) if (JSON.stringify(projections[i].target_path) === key) projections.splice(i, 1);
     projections.push({ source_path: source, source_start: 0, source_end_exclusive: text.length, target_path: target, target_start: 0, target_end_exclusive: text.length, round_trip: roundTrip });
   };
-  const result = (): IRProjectionResult => structuredClone({ contents: [...contents.values()], projections });
+  const result = (): IRProjectionResult => cloneIRJSON({ contents: [...contents.values()], projections });
   return { append, assign, result };
 };
 
@@ -73,5 +80,3 @@ export const consumeIRRecords = async function* (frames: AsyncIterable<IRFrame>)
   }
   if (!finished) throw new Error('IR stream ended without finish');
 };
-
-export const irProtocolExtension = (state: IR, protocol: IRProtocol): Record<string, unknown> => state.extensions?.[protocol] ?? {};

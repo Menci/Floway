@@ -30,7 +30,7 @@ export const irSSEToProtocol = async function* (protocol: IRProtocol, body: Read
   case 'openaiChatCompletions':
     for await (const frame of openaiChatCompletionsFromIR(stream, options)) {
       const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true });
-      if (sse !== null) yield sse;
+      yield sse!;
     }
     break;
   case 'openaiResponses':
@@ -39,13 +39,13 @@ export const irSSEToProtocol = async function* (protocol: IRProtocol, body: Read
   case 'anthropicMessages':
     for await (const frame of anthropicMessagesFromIR(stream, options)) {
       const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
-      if (sse !== null) yield sse;
+      yield sse!;
     }
     break;
   case 'geminiGenerateContent':
     for await (const frame of geminiGenerateContentFromIR(stream, options)) {
       const sse = geminiGenerateContentProtocolFrameToSSEFrame(frame);
-      if (sse !== null) yield sse;
+      yield sse!;
     }
     break;
   }

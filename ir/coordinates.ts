@@ -1,8 +1,9 @@
 import type { IRUTF16TextRange } from './ir.ts';
 
 // Native Responses probes with 😀 and 📖 select complete links by code-point offsets.
+// https://github.com/Menci/Floway/pull/594
 // ChatCompletions uses the same interpretation provisionally: actual captures prove half-open
-// character ranges, while the gateway explicitly slices runes. JS consumers disagree and lack astral tests.
+// character ranges; new-api slices runes, while Promptfoo uses UTF-16 with ASCII-only tests.
 // https://github.com/achappey/aihappey-ai/blob/8d791a6dc9696ade9876cfcbd3bb16bd4f17d7a6/Core/AIHappey.Tests/Fixtures/chat-completions/raw/openai-web-search-chat-completions.jsonl
 // https://github.com/QuantumNous/new-api/blob/1d4328e97417a043a161a0dd30a5b129be3ace49/relaykit/relayconvert/internal/oai_chat/citations.go#L56-L66
 // https://github.com/promptfoo/promptfoo/blob/69e0c140de5e3d08c0def5ee028946a718d16a1a/src/providers/openai/chat.ts#L125-L134

@@ -11,12 +11,13 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   const tools = new Map<string, number>();
   const names = new Map<string, string>();
   const logprobLengths = new Map<string, number>();
+  const audioMetadata = new Map<number, IRWire>();
   const startedChoices = new Set<number>();
   let extension: IRWire = {};
   const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => eventFrame({ ...extension, id: options.id, object: 'chat.completion.chunk', model: options.model, created: options.created, choices, ...fields } as OpenAIChatCompletionsStreamEvent);
   const deltaFrame = (choice: number, delta: IRWire): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => chunk([{ index: choice, delta, finish_reason: null }]);
   for await (const { state, record } of consumeIRRecords(frames)) {
-    extension = Object.fromEntries(Object.entries(state.extensions?.openaiChatCompletions ?? {}).filter(([key]) => !key.startsWith('audio_')));
+    extension = state.extensions?.openaiChatCompletions ?? {};
     if (record.type === 'finish' && record.status === 'failed') throw new Error('IR generation failed', { cause: record.error });
     if (record.type === 'operation' || record.type === 'item_end' || record.type === 'finish') {
       for (let choice = 0; choice < state.choices.length; choice++) {
@@ -34,7 +35,17 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
               const delta = projection.append([...source, part.type === 'text' ? 'text' : 'refusal'], text, [...target, key], true);
               if (delta !== '') yield deltaFrame(choice, { [key]: delta });
             } else if (part.type === 'audio') {
+              if (part.audio.data === undefined) {
+                const text = projection.append([...source, 'audio', 'transcript'], part.audio.transcript!, [...target, 'content'], true);
+                if (text !== '') yield deltaFrame(choice, { content: text });
+                continue;
+              }
               const delta: IRWire = {};
+              const metadata: IRWire | undefined = options.audioMetadata?.(choice) ?? (state.extensions?.openaiChatCompletions as IRWire | undefined)?.choices?.[choice]?.message?.audio;
+              const sent = audioMetadata.get(choice) ?? {};
+              for (const field of ['id', 'expires_at']) if (metadata?.[field] !== undefined && metadata[field] !== sent[field]) { delta[field] = metadata[field]; sent[field] = metadata[field]; }
+              audioMetadata.set(choice, sent);
+              if (part.audio.transcript === undefined && !('transcript' in sent)) { delta.transcript = ''; sent.transcript = ''; }
               for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {
                 const value = projection.append([...source, 'audio', field], part.audio[field]!, [...target, 'audio', field], false);
                 if (value !== '') delta[field] = value;
@@ -68,7 +79,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
           const length = logprobLengths.get(key) ?? 0;
           if (value.tokens.length > length) {
             const item = value.scope === 'text_part' ? state.choices[choice].items[value.item_index] : undefined;
-            const refusal = value.scope === 'text_part' && item?.type === 'message' && item.content[value.content_index].type === 'refusal';
+            const refusal = value.scope === 'text_part' && item!.type === 'message' && item!.content[value.content_index].type === 'refusal';
             yield chunk([{ index: choice, delta: {}, logprobs: { content: refusal ? null : value.tokens.slice(length), refusal: refusal ? value.tokens.slice(length) : null } }]);
             logprobLengths.set(key, value.tokens.length);
           }
@@ -77,6 +88,10 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
     }
     if (record.type === 'choice_end') {
       const choice = record.choice;
+      if (state.choices[choice].items.some(item => item.type === 'message' && item.content.some(part => part.type === 'audio' && part.audio.data !== undefined))) {
+        const metadata = audioMetadata.get(choice);
+        if (metadata?.id === undefined || metadata.expires_at === undefined) throw new Error('ChatCompletions audio requires replay ID and expiry metadata');
+      }
       const result = projection.result();
       const content = result.contents.find(v => JSON.stringify(v.path) === JSON.stringify(['choices', choice, 'message', 'content']))?.text ?? '';
       const annotations: IRWire[] = [];
@@ -102,7 +117,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
     }
     if (record.type === 'finish') {
       if (state.usage !== undefined) yield chunk([], { usage: usageFromIR(state.usage, 'openaiChatCompletions') });
-      options.onProjection?.(projection.result());
+      await options.onProjection?.(projection.result());
       yield doneFrame();
     }
   }

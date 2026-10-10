@@ -1,4 +1,5 @@
 export * from './ir.ts';
+export * from './json.ts';
 export * from './stream.ts';
 export * from './sse.ts';
 export * from './coordinates.ts';

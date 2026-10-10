@@ -10,6 +10,7 @@ export const usageToIR = (protocol: 'openaiChatCompletions' | 'openaiResponses' 
     put('output_tokens_inclusive', usage.output_tokens);
     put('cached_input_tokens', usage.cache_read_input_tokens);
     put('cache_creation_input_tokens', usage.cache_creation_input_tokens);
+    put('reasoning_tokens', usage.output_tokens_details?.thinking_tokens);
   } else {
     const chat = protocol === 'openaiChatCompletions';
     put('input_tokens_inclusive', chat ? usage.prompt_tokens : usage.input_tokens);
@@ -18,7 +19,7 @@ export const usageToIR = (protocol: 'openaiChatCompletions' | 'openaiResponses' 
     const input = chat ? usage.prompt_tokens_details : usage.input_tokens_details;
     const output = chat ? usage.completion_tokens_details : usage.output_tokens_details;
     put('cached_input_tokens', input?.cached_tokens);
-    put('cache_creation_input_tokens', input?.cache_creation_input_tokens);
+    put('cache_creation_input_tokens', chat ? input?.cache_creation_input_tokens : input?.cache_write_tokens);
     put('reasoning_tokens', output?.reasoning_tokens);
     put('input_audio_tokens', input?.audio_tokens);
     put('input_text_tokens', input?.text_tokens);
@@ -35,6 +36,7 @@ export const usageFromIR = (usage: IRUsage, protocol: 'openaiChatCompletions' | 
     output_tokens: usage.output_tokens_inclusive ?? 0,
     cache_read_input_tokens: usage.cached_input_tokens ?? 0,
     cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+    output_tokens_details: usage.reasoning_tokens === undefined ? null : { thinking_tokens: usage.reasoning_tokens },
   };
   if (protocol === 'geminiGenerateContent') return {
     promptTokenCount: usage.input_tokens_inclusive ?? 0,
@@ -56,7 +58,7 @@ export const usageFromIR = (usage: IRUsage, protocol: 'openaiChatCompletions' | 
     [chat ? 'prompt_tokens' : 'input_tokens']: usage.input_tokens_inclusive ?? 0,
     [chat ? 'completion_tokens' : 'output_tokens']: usage.output_tokens_inclusive ?? 0,
     total_tokens: usage.total_tokens ?? ((usage.input_tokens_inclusive ?? 0) + (usage.output_tokens_inclusive ?? 0)),
-    [chat ? 'prompt_tokens_details' : 'input_tokens_details']: { cached_tokens: usage.cached_input_tokens ?? 0, ...(chat && usage.input_audio_tokens !== undefined ? { audio_tokens: usage.input_audio_tokens } : {}) },
+    [chat ? 'prompt_tokens_details' : 'input_tokens_details']: { cached_tokens: usage.cached_input_tokens ?? 0, ...(usage.cache_creation_input_tokens === undefined ? {} : { [chat ? 'cache_creation_input_tokens' : 'cache_write_tokens']: usage.cache_creation_input_tokens }), ...(chat && usage.input_audio_tokens !== undefined ? { audio_tokens: usage.input_audio_tokens } : {}) },
     [chat ? 'completion_tokens_details' : 'output_tokens_details']: { reasoning_tokens: usage.reasoning_tokens ?? 0, ...(chat && usage.output_audio_tokens !== undefined ? { audio_tokens: usage.output_audio_tokens } : {}) },
   };
 };

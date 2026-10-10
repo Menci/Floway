@@ -1,5 +1,5 @@
-
 import type { IRItem, IRSourceCitation } from './ir.ts';
+import { cloneIRJSON, parseIRJSONObject } from './json.ts';
 import { createIRBuilder, reconcileIRValue, type IRFrame } from './stream.ts';
 import { usageToIR, type IRWire } from './usage.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -33,9 +33,7 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
   let usage: IRWire | undefined;
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
   let finished = false;
-  const sync = (index: number): void => {
-    const block = blocks.get(index);
-    if (block === undefined) throw new Error('Messages delta arrived before content_block_start');
+  const sync = (index: number, block: IRWire): void => {
     const item = messagesBlockToIR(block);
     if (item === undefined) return;
     const mapped = indices.get(index);
@@ -54,11 +52,11 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
       if (usage !== undefined) throw new Error('Duplicate Messages message_start');
       b.event({ type: 'start', id: e.message.id, model: e.message.model });
       for (const [key, value] of Object.entries(e.message)) if (!['content', 'usage'].includes(key)) b.assign(['extensions', 'anthropicMessages', key], value);
-      usage = structuredClone(e.message.usage);
+      usage = cloneIRJSON(e.message.usage);
       b.assign(['usage'], usageToIR('anthropicMessages', usage!));
       break;
     case 'content_block_start':
-      blocks.set(e.index, structuredClone(e.content_block)); sync(e.index); break;
+      blocks.set(e.index, cloneIRJSON(e.content_block)); sync(e.index, blocks.get(e.index)!); break;
     case 'content_block_delta': {
       const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages delta arrived before content_block_start');
@@ -68,18 +66,17 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
       case 'thinking_delta': block.thinking += d.thinking; break;
       case 'signature_delta': block.signature = d.signature; break;
       case 'input_json_delta': block.inputJson = (block.inputJson ?? '') + d.partial_json; break;
-      case 'citations_delta': (block.citations ??= []).push(structuredClone(d.citation)); break;
+      case 'citations_delta': (block.citations ??= []).push(cloneIRJSON(d.citation)); break;
       case 'compaction_delta': block.content = d.content; if (d.encrypted_content !== undefined) block.encrypted_content = d.encrypted_content; break;
       }
-      sync(e.index); break;
+      sync(e.index, block); break;
     }
     case 'content_block_stop': {
       const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
       if (block.type === 'tool_use' && block.inputJson !== undefined) {
-        const parsed: unknown = JSON.parse(block.inputJson);
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('Messages tool input must be a JSON object');
-        block.input = parsed; delete block.inputJson; sync(e.index);
+        const parsed = parseIRJSONObject(block.inputJson);
+        block.input = parsed; delete block.inputJson; sync(e.index, block);
       }
       const index = indices.get(e.index);
       if (index !== undefined) {

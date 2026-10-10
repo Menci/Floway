@@ -1,10 +1,11 @@
-import { Tag } from 'cbor-x';
+import { Encoder, Tag } from 'cbor-x';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { createIRIAT, fillIRIAT, hashIRContent } from '../iat.ts';
 import type { IR } from '../ir.ts';
+import { cloneIRJSON, irJSON, parseIRJSONObject } from '../json.ts';
 import type { IRProjectionResult } from '../projection.ts';
-import type { IRTextReference, IRThinValue } from '../thin-types.ts';
+import type { IRTextReference, IRThinResponsesItem, IRThinValue } from '../thin-types.ts';
 import { buildIRReplayItems, createIRPendingThinItems, createIRThinCodec, finalizeIRThinItems } from '../thin.ts';
 
 const tags = { text: 70000, json: 70001, utf16: 70002 };
@@ -119,4 +120,47 @@ describe('thin items and IAT', () => {
     expect(() => createIRThinCodec({ text: 258, json: 70001, utf16: 70002 })).toThrow();
     expect(() => createIRThinCodec({ text: 70000, json: 70000, utf16: 70002 })).toThrow();
   });
+  it('keeps MCP argument types literal', () => {
+    expectTypeOf<Extract<IRThinResponsesItem, { type: 'mcp_call' }>['arguments']>().toEqualTypeOf<string>();
+  });
+
+  it('preserves raw unsafe integers through JSON cloning and CBOR', async () => {
+    const input = parseIRJSONObject('{"n":9007199254740993}');
+    expect(JSON.stringify(cloneIRJSON(input))).toBe('{"n":9007199254740993}');
+    const rawCodec = createIRThinCodec({ ...tags, rawJSON: 70003 });
+    const envelope: any = { protocol: 'anthropicMessages', referencedContents: [], items: [{ type: 'tool_use', id: 'c', name: 't', input }] };
+    const decoded = rawCodec.decode(rawCodec.encode(envelope));
+    expect(irJSON.isRawJSON((decoded.items[0] as any).input.n)).toBe(true);
+    expect(JSON.stringify(await rawCodec.restore(decoded, []))).toBe(JSON.stringify(envelope.items));
+    expect(() => codec.encode(envelope)).toThrow('rawJSON tag');
+  });
+
+  it('validates decoded envelopes', () => {
+    const encoder = new Encoder({ useRecords: false });
+    for (const value of [{}, { protocol: 'unknown', referencedContents: [], items: [] }, { protocol: 'openaiResponses', referencedContents: ['hash'], items: [] }]) {
+      expect(() => codec.decode(encoder.encode(value))).toThrow('envelope');
+    }
+  });
+
+  it('references object arguments through a noncanonical target JSON string', async () => {
+    const input = { b: 2, a: 1 };
+    const text = '{ "b": 2, "a": 1 }';
+    const iat = createIRIAT({ choices: [{ items: [{ type: 'function_call', name: 't', arguments: input }] }] });
+    const pending = createIRPendingThinItems('anthropicMessages', [{ type: 'tool_use', id: 'c', name: 't', input }], iat);
+    fillIRIAT(iat, { contents: [{ path: ['args'], text, round_trip: true }], projections: [{ source_path: ['choices', 0, 'items', 0, 'arguments'], source_start: 0, source_end_exclusive: text.length, target_path: ['args'], target_start: 0, target_end_exclusive: text.length, round_trip: true }] });
+    const thin = await finalizeIRThinItems(pending, iat, tags);
+    expect((thin.items[0] as any).input).toBeInstanceOf(Tag);
+    expect(await codec.restore(thin, [text])).toMatchObject([{ input }]);
+  });
+
+  it('omits unused hashes and preserves empty literals', async () => {
+    for (const text of ['hello', '']) {
+      const iat = createIRIAT(source(text));
+      fillIRIAT(iat, projectionFor(text, false));
+      const thin = await finalizeIRThinItems(createIRPendingThinItems('openaiResponses', [{ type: 'reasoning', id: 'r', summary: [{ type: 'summary_text', text }] }], iat), iat, tags);
+      expect(thin.referencedContents).toEqual([]);
+      expect((thin.items[0] as any).summary[0].text).toBe(text);
+    }
+  });
+
 });

@@ -132,7 +132,7 @@ export interface IRSourceText {
 // Messages, GenerateContent
 export interface IRSourcePageRange {
   start_one_based: number; // Messages, GenerateContent
-  end_one_based_exclusive: number; // Messages, GenerateContent
+  end_one_based_exclusive: number; // Messages
 }
 
 // ChatCompletions, Responses, GenerateContent

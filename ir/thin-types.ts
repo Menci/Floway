@@ -28,22 +28,17 @@ export type IRThinChatCompletionsItem = IRThinValue<OpenAIChatCompletionsAssista
   function_call: { arguments: IRTextRule };
   tool_calls: [{ function: { arguments: IRTextRule }; custom: { input: IRTextRule } }];
 }>;
-export type IRThinResponsesItem = IRThinValue<CanonicalOpenAIResponsesInputItem, {
-  content: IRTextRule | [{ text: IRTextRule; refusal: IRTextRule }];
-  summary: [{ text: IRTextRule }];
-  encrypted_content: IRTextRule;
-  arguments: IRTextRule;
-  input: IRTextRule;
-  result: IRTextRule;
-}>;
-export type IRThinMessagesItem = IRThinValue<AnthropicMessagesAssistantInputContentBlock, {
-  text: IRTextRule;
-  citations: [{ cited_text: IRTextRule }];
-  thinking: IRTextRule;
-  signature: IRTextRule;
-  data: IRTextRule;
-  input: IRJSONRule;
-}>;
+type IRThinResponsesValue<T> = T extends { type: 'message' } ? IRThinValue<T, { content: IRTextRule | [{ text: IRTextRule; refusal: IRTextRule }] }>
+  : T extends { type: 'reasoning' } ? IRThinValue<T, { summary: [{ text: IRTextRule }]; content: [{ text: IRTextRule }]; encrypted_content: IRTextRule }>
+    : T extends { type: 'function_call' } ? IRThinValue<T, { arguments: IRTextRule }>
+      : T extends { type: 'custom_tool_call' } ? IRThinValue<T, { input: IRTextRule }>
+        : T extends { type: 'image_generation_call' } ? IRThinValue<T, { result: IRTextRule }> : T;
+export type IRThinResponsesItem = IRThinResponsesValue<CanonicalOpenAIResponsesInputItem>;
+type IRThinMessagesValue<T> = T extends { type: 'text' } ? IRThinValue<T, { text: IRTextRule; citations: [{ cited_text: IRTextRule }] }>
+  : T extends { type: 'thinking' } ? IRThinValue<T, { thinking: IRTextRule; signature: IRTextRule }>
+    : T extends { type: 'redacted_thinking' } ? IRThinValue<T, { data: IRTextRule }>
+      : T extends { type: 'tool_use' } ? IRThinValue<T, { input: IRJSONRule }> : T;
+export type IRThinMessagesItem = IRThinMessagesValue<AnthropicMessagesAssistantInputContentBlock>;
 export type IRThinGenerateContentItem = IRThinValue<GeminiGenerateContentContent, {
   parts: [{ text: IRTextRule; thoughtSignature: IRTextRule; inlineData: { data: IRTextRule }; audioTranscription: { text: IRTextRule }; functionCall: { args: IRJSONRule } }];
 }>;
@@ -59,4 +54,4 @@ export interface IRThinItems {
   anthropicMessages: IRThinMessagesItem[];
   geminiGenerateContent: IRThinGenerateContentItem[];
 }
-export interface IRReferenceTags { text: number; json: number; utf16: number }
+export interface IRReferenceTags { text: number; json: number; utf16: number; rawJSON?: number }

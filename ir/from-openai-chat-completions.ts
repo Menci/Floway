@@ -1,6 +1,6 @@
 
 import { codePointRangeToIR } from './coordinates.ts';
-import type { IRSourceCitation } from './ir.ts';
+import type { IRMessageItem, IRSourceCitation } from './ir.ts';
 import { createIRBuilder, type IRFrame, type IRPath } from './stream.ts';
 import { usageToIR, type IRWire } from './usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -8,7 +8,7 @@ import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/ope
 
 export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): AsyncGenerator<IRFrame> {
   const b = createIRBuilder();
-  const choices = new Map<number, { message?: number; text?: number; refusal?: number; audio?: number; reasoning?: number; tools: Map<number, number>; annotations: IRWire[]; ended: boolean }>();
+  const choices = new Map<number, { message?: number; text?: number; refusal?: number; audio?: number; reasoning?: number; tools: Map<number, number>; annotations: IRWire[]; ended: boolean; incomplete: boolean }>();
   b.assign(['extensions', 'openaiChatCompletions'], {});
   let started = false;
   let done = false;
@@ -16,7 +16,7 @@ export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterabl
     if (done) throw new Error('ChatCompletions frame arrived after done');
     if (frame.type === 'done') {
       for (const [index, choice] of choices) if (!choice.ended) throw new Error(`ChatCompletions choice ${index} ended without finish_reason`);
-      b.event({ type: 'finish', status: 'completed' });
+      b.event({ type: 'finish', status: [...choices.values()].some(choice => choice.incomplete) ? 'incomplete' : 'completed' });
       done = true;
       yield b.drain();
       continue;
@@ -33,13 +33,12 @@ export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterabl
       const index = entry.index as number;
       b.choice(index);
       let choice = choices.get(index);
-      if (choice === undefined) { choice = { tools: new Map(), annotations: [], ended: false }; choices.set(index, choice); }
+      if (choice === undefined) { choice = { tools: new Map(), annotations: [], ended: false, incomplete: false }; choices.set(index, choice); }
       const delta = entry.delta as IRWire;
       const message = (): number => choice!.message ??= b.item(index, { type: 'message', content: [] });
       const part = (kind: 'text' | 'refusal' | 'audio'): IRPath => {
         const itemIndex = message();
-        const item = b.state.choices[index].items[itemIndex];
-        if (item.type !== 'message') throw new TypeError('ChatCompletions message mapping failed');
+        const item = b.state.choices[index].items[itemIndex] as IRMessageItem;
         if (choice![kind] === undefined) {
           choice![kind] = item.content.length;
           b.append(['choices', index, 'items', itemIndex, 'content'], [kind === 'audio' ? { type: 'audio', audio: { data: '', transcript: '' } } : { type: kind, [kind]: '' }]);
@@ -69,7 +68,10 @@ export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterabl
         if (delta.audio.data !== undefined) b.append([...path, 'data'], delta.audio.data);
         if (delta.audio.transcript !== undefined) b.append([...path, 'transcript'], delta.audio.transcript);
         const metadata = { ...delta.audio }; delete metadata.data; delete metadata.transcript;
-        b.assign(['extensions', 'openaiChatCompletions', `audio_${index}`], metadata);
+        const extension = b.state.extensions!.openaiChatCompletions as IRWire;
+        if (extension.choices === undefined) b.assign(['extensions', 'openaiChatCompletions', 'choices'], []);
+        while (extension.choices.length <= index) b.append(['extensions', 'openaiChatCompletions', 'choices'], [{ message: { audio: {} } }]);
+        b.assign(['extensions', 'openaiChatCompletions', 'choices', index, 'message', 'audio'], { ...extension.choices[index].message.audio, ...metadata });
       }
       const calls = [...(delta.tool_calls ?? []), ...(delta.function_call === undefined ? [] : [{ index: -1, type: 'function', function: delta.function_call }])];
       for (const call of calls) {
@@ -103,10 +105,8 @@ export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterabl
       }
       if (entry.finish_reason != null) {
         if (choice.text !== undefined && choice.message !== undefined) {
-          const item = b.state.choices[index].items[choice.message];
-          if (item.type !== 'message' || item.content[choice.text].type !== 'text') throw new TypeError('ChatCompletions citation text mapping failed');
-          const textPart = item.content[choice.text];
-          if (textPart.type !== 'text') throw new TypeError('ChatCompletions annotation requires text');
+          const item = b.state.choices[index].items[choice.message] as IRMessageItem;
+          const textPart = item.content[choice.text] as Extract<IRMessageItem['content'][number], { type: 'text' }>;
           const text = textPart.text;
           const annotations: IRSourceCitation[] = choice.annotations.map(a => ({ type: 'source_citation', source_kind: 'url', source: a.url_citation.url, source_label: a.url_citation.title, output_text_range: codePointRangeToIR(text, a.url_citation.start_index, a.url_citation.end_index) }));
           if (annotations.length > 0) b.assign(['choices', index, 'items', choice.message, 'content', choice.text, 'annotations'], annotations);
@@ -118,6 +118,7 @@ export const irFromOpenAIChatCompletions = async function* (frames: AsyncIterabl
         }
         b.event({ type: 'choice_end', choice: index, finish_reason: entry.finish_reason === 'function_call' ? 'tool_calls' : entry.finish_reason });
         choice.ended = true;
+        choice.incomplete = entry.finish_reason === 'length';
       }
     }
     yield b.drain();

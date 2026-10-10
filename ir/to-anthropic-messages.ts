@@ -1,12 +1,12 @@
-
 import type { IRContentPart, IRItem, IRSourceCitation } from './ir.ts';
+import { cloneIRJSON, parseIRJSONObject } from './json.ts';
 import { consumeIRRecords, createIRProjection, type IROutputOptions } from './projection.ts';
 import type { IRFrame, IRPath } from './stream.ts';
 import { usageFromIR, type IRWire } from './usage.ts';
 import type { AnthropicMessagesStreamEventEx, AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 
-interface IRMessagesUnit { item: number; part?: number; block?: IRWire; index?: number; closed: boolean; ended: boolean; citations: number }
+interface IRMessagesUnit { item: number; part?: number; block?: IRWire; index?: number; closed: boolean; citations: number }
 
 export interface IRMessagesOutputOptions extends IROutputOptions {
   // Source document/search-result indexes belong to the translated request context.
@@ -14,14 +14,14 @@ export interface IRMessagesOutputOptions extends IROutputOptions {
   resolveCitation?: (citation: IRSourceCitation) => AnthropicMessagesTextCitation | undefined;
 }
 
-export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IRMessagesOutputOptions): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IRMessagesOutputOptions): AsyncGenerator<EventFrame<AnthropicMessagesStreamEventEx>> {
   const projection = createIRProjection();
   const units: IRMessagesUnit[] = [];
   const keys = new Set<string>();
   let cursor = 0;
   let blockIndex = 0;
   let finishReason = 'end_turn';
-  const emit = (event: IRWire): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame(event as AnthropicMessagesStreamEventEx);
+  const emit = (event: IRWire): EventFrame<AnthropicMessagesStreamEventEx> => eventFrame(event as AnthropicMessagesStreamEventEx);
   const blockFor = (item: IRItem, part: IRContentPart | undefined, index: number): IRWire | undefined => {
     if (item.type === 'message') return part?.type === 'text' || part?.type === 'refusal' || part?.type === 'audio' && part.audio.transcript !== undefined ? { type: 'text', text: '', citations: [] } : undefined;
     if (item.type === 'reasoning') return item.content === undefined && item.summary === undefined && item.encrypted_content != null ? { type: 'redacted_thinking', data: item.encrypted_content } : { type: 'thinking', thinking: '', signature: '' };
@@ -38,7 +38,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       const parts = item.type === 'message' ? item.content.map((_, p) => p) : [undefined];
       for (const part of parts) {
         const key = `${index}/${part ?? 'item'}`;
-        if (!keys.has(key)) { units.push({ item: index, part, closed: false, ended: false, citations: 0 }); keys.add(key); }
+        if (!keys.has(key)) { units.push({ item: index, part, closed: false, citations: 0 }); keys.add(key); }
       }
     });
     for (const unit of units) {
@@ -52,15 +52,15 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
       const block = blockFor(item, part, unit.item);
       if (block === undefined) {
         if (item.type === 'function_call' && item.name === '' && !unit.closed) break;
-        unit.ended = true; cursor++; continue;
+        cursor++; continue;
       }
       if (unit.index === undefined) {
         unit.index = blockIndex++; unit.block = block;
-        yield emit({ type: 'content_block_start', index: unit.index, content_block: structuredClone(block) });
+        yield emit({ type: 'content_block_start', index: unit.index, content_block: cloneIRJSON(block) });
       }
       const native = unit.block!;
       const target: IRPath = ['content', unit.index];
-      const delta = (value: IRWire): ProtocolFrame<AnthropicMessagesStreamEventEx> => emit({ type: 'content_block_delta', index: unit.index, delta: value });
+      const delta = (value: IRWire): EventFrame<AnthropicMessagesStreamEventEx> => emit({ type: 'content_block_delta', index: unit.index, delta: value });
       if (item.type === 'message' && part !== undefined) {
         const text = part.type === 'text' ? part.text : part.type === 'refusal' ? part.refusal : part.type === 'audio' ? part.audio.transcript! : '';
         const field = part.type === 'text' ? ['text'] : part.type === 'refusal' ? ['refusal'] : ['audio', 'transcript'];
@@ -87,25 +87,24 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
           if (native.type === 'thinking') yield delta({ type: 'signature_delta', signature: item.encrypted_content });
         }
       } else if (item.type === 'function_call') {
-        if (typeof item.arguments === 'string' || unit.closed) {
-          const args = typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {});
+        if (typeof item.arguments === 'string' && options.parseToolArguments === undefined || unit.closed) {
+          const parsedArguments = unit.closed ? typeof item.arguments === 'string' ? parseIRJSONObject(item.arguments, options.parseToolArguments) : item.arguments ?? {} : undefined;
+          const args = typeof item.arguments === 'string' && options.parseToolArguments === undefined ? item.arguments : JSON.stringify(parsedArguments);
           const value = projection.append([...source, 'arguments'], args, [...target, 'input'], true);
           if (value !== '') yield delta({ type: 'input_json_delta', partial_json: value });
           if (unit.closed) {
-            const parsed: unknown = JSON.parse(args);
-            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('Messages tool arguments must be a JSON object');
-            projection.assign([...source, 'arguments'], JSON.stringify(parsed), [...target, 'input'], true);
+            projection.assign([...source, 'arguments'], JSON.stringify(parsedArguments), [...target, 'input'], true);
           }
         }
       }
       if (!unit.closed) break;
-      yield emit({ type: 'content_block_stop', index: unit.index }); unit.ended = true; cursor++;
+      yield emit({ type: 'content_block_stop', index: unit.index }); cursor++;
     }
     if (record.type === 'finish') {
       const extension = state.extensions?.anthropicMessages;
       yield emit({ type: 'message_delta', delta: { stop_reason: finishReason, stop_sequence: extension?.stop_sequence ?? null, stop_details: extension?.stop_details ?? null, container: extension?.container ?? null }, usage: usageFromIR(state.usage ?? {}, 'anthropicMessages') });
+      await options.onProjection?.(projection.result());
       yield emit({ type: 'message_stop' });
-      options.onProjection?.(projection.result());
     }
   }
 };

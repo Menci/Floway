@@ -1,4 +1,5 @@
 import type { IR, IRJSONValue, IRJSONObject } from './ir.ts';
+import { cloneIRJSON, parseIRJSON } from './json.ts';
 import { parseSSEStream, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 
 export type IRPath = readonly (string | number)[];
@@ -32,7 +33,7 @@ export const applyIROperation = (state: IR, operation: IROperation): void => {
   if (typeof parent !== 'object' || parent === null) throw new TypeError('IR operation parent must be an object or array');
   if (Array.isArray(parent) && (typeof key !== 'number' || !Number.isInteger(key) || key < 0 || key > parent.length)) throw new TypeError('IR array operation requires a contiguous nonnegative index');
   const target = parent as Record<string | number, unknown>;
-  const value = structuredClone(operation.value);
+  const value = cloneIRJSON(operation.value);
   if (operation.operation === 'assign') {
     Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
   } else if (typeof target[key] === 'string' && typeof value === 'string') {
@@ -49,8 +50,8 @@ export const createIRBuilder = () => {
     applyIROperation(state, op);
     records.push(op);
   };
-  const assign = (path: IRPath, value: unknown): void => operation({ type: 'operation', operation: 'assign', path, value: structuredClone(value) as IRJSONValue });
-  const append = (path: IRPath, value: string | unknown[]): void => operation({ type: 'operation', operation: 'append', path, value: structuredClone(value) as string | IRJSONValue[] });
+  const assign = (path: IRPath, value: unknown): void => operation({ type: 'operation', operation: 'assign', path, value: cloneIRJSON(value) as IRJSONValue });
+  const append = (path: IRPath, value: string | unknown[]): void => operation({ type: 'operation', operation: 'append', path, value: cloneIRJSON(value) as string | IRJSONValue[] });
   const event = (value: IREvent): void => { records.push(value); };
   const drain = (): IRFrame => {
     const frame = { records };
@@ -91,7 +92,10 @@ export const collectIR = async (frames: AsyncIterable<IRFrame>): Promise<IR> => 
     if (finished) throw new TypeError('IR record arrived after finish');
     if (record.type === 'operation') applyIROperation(state, record);
     else if (record.type === 'error') throw new Error('IR stream failed', { cause: record.error });
-    else if (record.type === 'finish') finished = true;
+    else if (record.type === 'finish') {
+      if (record.status === 'failed') throw new Error('IR generation failed', { cause: record.error });
+      finished = true;
+    }
   }
   if (!finished) throw new Error('IR stream ended without finish');
   return state;
@@ -131,7 +135,7 @@ const validateIRRecord = (value: unknown): void => {
 
 export const parseIRStream = async function* (body: ReadableStream<Uint8Array>, options: { signal?: AbortSignal } = {}): AsyncGenerator<IRFrame> {
   for await (const frame of parseSSEStream(body, options)) {
-    const value: unknown = JSON.parse(frame.data);
+    const value: unknown = parseIRJSON(frame.data);
     if (typeof value !== 'object' || value === null || !('records' in value) || !Array.isArray(value.records)) throw new TypeError('Invalid IR SSE frame');
     value.records.forEach(validateIRRecord);
     yield value as IRFrame;
