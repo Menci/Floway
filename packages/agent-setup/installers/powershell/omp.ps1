@@ -51,12 +51,13 @@ function Get-SetupOmpNativePaths {
   $probePath = Join-Path $tempDir 'paths.mjs'
   # Plugins can live outside the agent directory under profiles or XDG.
   # https://github.com/can1357/oh-my-pi/blob/cde91bb38674d365e8c3916d05d2292273bb8554/packages/utils/src/dirs.ts#L660-L688
+  # Model listing loads explicit extensions without requiring a configured session model.
+  # https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/coding-agent/src/commands/models.ts#L35-L43
   $probe = @'
 import { getAgentDir, getPluginsDir } from '@oh-my-pi/pi-utils';
 import { writeFileSync } from 'node:fs';
-export default pi => {
+export default () => {
   writeFileSync(process.env.FLOWAY_SETUP_PATHS_FILE, JSON.stringify({ agentDir: getAgentDir(), pluginsDir: getPluginsDir() }));
-  pi.on('session_start', (_event, ctx) => ctx.shutdown());
 };
 '@
   $previousPathsFile = [Environment]::GetEnvironmentVariable('FLOWAY_SETUP_PATHS_FILE')
@@ -67,7 +68,7 @@ export default pi => {
     }
     [System.IO.File]::WriteAllText($probePath, $probe, (New-Object System.Text.UTF8Encoding($false)))
     $env:FLOWAY_SETUP_PATHS_FILE = $pathsFile
-    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('--mode', 'rpc', '--no-ui', '--no-session', '--no-tools', '--no-lsp', '--no-skills', '--no-rules', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
+    $probeResult = Invoke-SetupProcess -Exe $Exe -Arguments @('models', '--no-extensions', '-e', $probePath) -TimeoutSeconds (Get-SetupTimeoutSeconds 30)
     if ($probeResult.ExitCode -ne 0) { Stop-Setup ('`omp` path probe failed. ' + $probeResult.Output) }
     if (-not (Test-Path -LiteralPath $pathsFile -PathType Leaf)) { Stop-Setup ('`omp` path probe did not write its result. ' + $probeResult.Output) }
     $paths = [System.IO.File]::ReadAllText($pathsFile) | ConvertFrom-Json -ErrorAction Stop
