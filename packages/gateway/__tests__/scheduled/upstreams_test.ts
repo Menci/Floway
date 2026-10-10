@@ -51,20 +51,21 @@ test('Floway dispatches every provider and persists read-only subscription probe
       return Response.json({ plan_type: 'plus', rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18_000, reset_at: NOW / 1000 + 60 } }, additional_rate_limits: [{ metered_feature: 'images', rate_limit: { secondary_window: { used_percent: 50, limit_window_seconds: 604_800, reset_at: NOW / 1000 + 600 } } }] });
     }
     if (path === '/api/oauth/usage') return Response.json({ five_hour: { utilization: 10, resets_at: new Date(NOW + 60_000).toISOString() } });
+    if (path === '/api/usage') return Response.json({ range: '7d', scope: 'self', totals: { usage_usd: 3.5 } });
     if (path === '/api/balance') return Response.json({ included: { session: { remaining_percent: 75, resets_at: new Date(NOW + 60_000).toISOString() } }, purchased: { balance_usd: 25 } });
     throw new Error(`Unexpected scheduled request ${url}`);
   });
   await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(4);
+  expect(mocks.fetch).toHaveBeenCalledTimes(5);
   expect((await repo.upstreams.getById('codex'))?.state).toMatchObject({ accounts: [{ quotaSnapshot: { codex: { data: { primary_used_percent: 25, primary_window_minutes: 300 } }, images: { data: { secondary_used_percent: 50, secondary_window_minutes: 10080 } } } }] });
   expect((await repo.upstreams.getById('copilot'))?.state).toMatchObject({ quotaSnapshot: { fetchedAt: NOW } });
   expect((await repo.upstreams.getById('claude'))?.state).toMatchObject({ accounts: [{ usageProbeSnapshot: { fetchedAt: NOW, data: { five_hour: { utilization: 10 } } } }] });
-  expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ balanceProbe: { observation: { data: { purchased: { balance_usd: 25 } } } } });
+  expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ usageProbe: { observation: { fetchedAt: NOW, data: { totals: { usage_usd: 3.5 } } } }, balanceProbe: { observation: { fetchedAt: NOW, data: { purchased: { balance_usd: 25 } } } } });
   await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(4);
+  expect(mocks.fetch).toHaveBeenCalledTimes(5);
   vi.setSystemTime(NOW + 300_000);
   await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(8);
+  expect(mocks.fetch).toHaveBeenCalledTimes(10);
 });
 
 test('opt-out, disabled upstreams, setup tokens, local Ollama and scoped-only egress issue no probes', async () => {
@@ -78,7 +79,7 @@ test('opt-out, disabled upstreams, setup tokens, local Ollama and scoped-only eg
 test('a failed refresh keeps the previous usage observation', async () => {
   await repo.upstreams.insertForModels(ollama());
   await repo.upstreams.saveState('ollama', () => ({ account: null, usageProbe: null, balanceProbe: { attemptedAt: NOW - 300_000, observation: { fetchedAt: NOW - 300_000, data: { included: { balance_usd: 42 } } }, error: null } }));
-  mocks.fetch.mockResolvedValue(new Response('slow down', { status: 429, headers: { 'retry-after': '3600' } }));
+  mocks.fetch.mockImplementation(async () => new Response('slow down', { status: 429, headers: { 'retry-after': '3600' } }));
   await expect(runUpstreamScheduledTasks('TEST')).rejects.toThrow('Upstream scheduled tasks failed');
   const stored = await repo.upstreams.getById('ollama');
   expect(stored?.state).toMatchObject({ balanceProbe: { observation: { data: { included: { balance_usd: 42 } } }, error: expect.stringContaining('429') } });
@@ -113,17 +114,23 @@ test('a fresh passive observation avoids resolving egress', async () => {
   expect(fetcher).not.toHaveBeenCalled();
 });
 
-test('Ollama activity probes preserve separately observed balance', async () => {
+test('Ollama scheduled and request-time refreshes update the same usage and balance pair', async () => {
   const record = ollama();
   await repo.upstreams.insertForModels(record);
-  mocks.fetch.mockResolvedValueOnce(Response.json({ included: { balance_usd: 42 }, purchased: { balance_usd: 25 } }));
+  let amount = 3.5;
+  mocks.fetch.mockImplementation(async url => Response.json(new URL(url).pathname === '/api/usage'
+    ? { range: '7d', totals: { usage_usd: amount } }
+    : { included: { balance_usd: 60 - amount }, purchased: { balance_usd: 25 } }));
   await runUpstreamScheduledTasks('TEST');
-  mocks.fetch.mockResolvedValueOnce(Response.json({ activity: { cost: '3.50', period: { type: 'last_4_weeks' } } }));
+  amount = 5;
+  vi.setSystemTime(NOW + 60_000);
   await refreshOllamaUsageProbe(record.id, { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, mocks.fetch);
   expect((await repo.upstreams.getById(record.id))?.state).toMatchObject({
-    balanceProbe: { observation: { data: { included: { balance_usd: 42 }, purchased: { balance_usd: 25 } } } },
-    usageProbe: { observation: { data: { activity: { cost: '3.50' } } } },
+    balanceProbe: { observation: { fetchedAt: NOW + 60_000, data: { included: { balance_usd: 55 }, purchased: { balance_usd: 25 } } } },
+    usageProbe: { observation: { fetchedAt: NOW + 60_000, data: { totals: { usage_usd: 5 } } } },
   });
+  await runUpstreamScheduledTasks('TEST');
+  expect(mocks.fetch).toHaveBeenCalledTimes(4);
 });
 
 test('a fresh Codex bucket does not suppress a stale sibling bucket', async () => {

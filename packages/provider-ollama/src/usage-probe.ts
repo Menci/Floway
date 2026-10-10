@@ -5,22 +5,22 @@
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
-import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
+import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
-// Reading the windows takes two things the operator states: that this upstream
+// Reading account usage takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
 // ollama.com, and a base URL cannot settle it, since the cloud may be reached
 // through the operator's own domain), and a key to authenticate with.
 export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
   config.cloudUsage && config.apiKey !== undefined;
 
-// Ollama recommends polling activity at most once per minute; this also bounds
-// the post-inference probes.
+// Ollama recommends one-minute polling; request-triggered refreshes share
+// that cadence.
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 export const OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS = 60_000;
 
-const readOllamaObservation = async (response: Response, path: string): Promise<OllamaUsageObservation> => {
+const readOllamaObservation = async (response: Response, path: string): Promise<Record<string, unknown>> => {
   const rawText = await response.text();
   if (!response.ok) throw new Error(`Ollama ${path} returned ${response.status}: ${rawText.trim().slice(0, 256)}`);
   let parsed: unknown;
@@ -30,83 +30,63 @@ const readOllamaObservation = async (response: Response, path: string): Promise<
     throw new Error(`Ollama ${path} returned a non-JSON body (${response.status})`, { cause });
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error(`Ollama ${path} returned a non-object body (${response.status})`);
-  return { fetchedAt: Date.now(), data: parsed };
+  return parsed as Record<string, unknown>;
 };
 
-export const fetchOllamaUsageProbe = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
-  await readOllamaObservation(await ollamaFetchUsage(config, { method: 'GET', headers: new Headers({ accept: 'application/json' }) },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }), '/api/usage');
+interface OllamaUsageReading {
+  observation: OllamaUsageObservation;
+  balanceObservation: OllamaUsageObservation;
+}
 
-export const fetchOllamaBalanceProbe = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
-  await readOllamaObservation(await ollamaFetchBalance(config, { method: 'GET', headers: new Headers({ accept: 'application/json' }) },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }), '/api/balance');
-
-// The entry is written under saveState's read-modify-CAS, and the mutator is
-// re-run against whoever won a concurrent write. Two probes racing therefore
-// resolve by attempt time rather than by write order, so the loser of the race
-// cannot roll the slot back to its older reading. Equal stamps are not a
-// rollback — the clock is coarser than the two attempts, and the later arrival
-// is no staler — so only a strictly newer stored attempt wins.
-const persistProbeEntry = async (upstreamId: string, slot: 'usageProbe' | 'balanceProbe', entry: OllamaUsageProbeEntry): Promise<void> => {
+// Commit the pair under one CAS. A failed read preserves both prior readings,
+// and a slower attempt cannot replace a newer pair.
+const persistUsageReading = async (upstreamId: string, attemptedAt: number, reading: OllamaUsageReading | null, error: string | null): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
-    const previous = state[slot];
-    if (previous && previous.attemptedAt > entry.attemptedAt) return current;
+    if ((state.usageProbe && state.usageProbe.attemptedAt > attemptedAt)
+      || (state.balanceProbe && state.balanceProbe.attemptedAt > attemptedAt)) return current;
     return {
       ...state,
-      [slot]: {
-        attemptedAt: entry.attemptedAt,
-        // A failed probe keeps the last good reading rather than blanking the
-        // card; only a success replaces it.
-        observation: entry.observation ?? previous?.observation ?? null,
-        error: entry.error,
-      },
+      usageProbe: { attemptedAt, observation: reading?.observation ?? state.usageProbe?.observation ?? null, error },
+      balanceProbe: { attemptedAt, observation: reading?.balanceObservation ?? state.balanceProbe?.observation ?? null, error },
     } satisfies OllamaUpstreamState;
   });
 };
 
-const refreshOllamaObservation = async (
-  upstreamId: string,
-  slot: 'usageProbe' | 'balanceProbe',
-  fetchObservation: () => Promise<OllamaUsageObservation>,
-): Promise<OllamaUsageObservation> => {
+export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageReading> => {
   const attemptedAt = Date.now();
-  let observation: OllamaUsageObservation;
+  let reading: OllamaUsageReading;
   try {
-    observation = await fetchObservation();
+    const init = { method: 'GET', headers: new Headers({ accept: 'application/json' }) };
+    const options = { fetcher, wrapUpstreamCall: identityWrapUpstreamCall };
+    const [usage, balance] = await Promise.all([
+      ollamaFetchUsage(config, init, options).then(response => readOllamaObservation(response, '/api/usage')),
+      ollamaFetchBalance(config, init, options).then(response => readOllamaObservation(response, '/api/balance')),
+    ]);
+    const fetchedAt = Date.now();
+    reading = { observation: { fetchedAt, data: usage }, balanceObservation: { fetchedAt, data: balance } };
   } catch (error) {
-    try {
-      await persistProbeEntry(upstreamId, slot, { attemptedAt, observation: null, error: error instanceof Error ? error.message : String(error) });
-    } catch (persistenceError) {
-      throw new AggregateError([error, persistenceError], 'Ollama usage refresh and outcome persistence failed');
+    if (upstreamId !== '') {
+      try {
+        await persistUsageReading(upstreamId, attemptedAt, null, error instanceof Error ? error.message : String(error));
+      } catch (persistenceError) {
+        throw new AggregateError([error, persistenceError], 'Ollama usage refresh and outcome persistence failed');
+      }
     }
     throw error;
   }
-  await persistProbeEntry(upstreamId, slot, { attemptedAt, observation, error: null });
-  return observation;
+  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, reading, null);
+  return reading;
 };
-
-export const refreshOllamaUsageProbe = (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
-  refreshOllamaObservation(upstreamId, 'usageProbe', () => fetchOllamaUsageProbe(config, fetcher));
-
-export const refreshOllamaBalanceProbe = (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
-  refreshOllamaObservation(upstreamId, 'balanceProbe', () => fetchOllamaBalanceProbe(config, fetcher));
 
 const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
   return probe === null || now - probe.attemptedAt >= OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS;
 };
 
-// Fire-and-forget refresh behind the debounce, scheduled by the data plane
-// once an upstream call that consumes the account's windows has been made.
-// Every read the debounce needs is already in hand: `state` is the record this
-// request was routed with, which the repo reads per request, so a probe that is
-// not due costs nothing at all.
-//
-// Best-effort by construction: the response is already the caller's, and a
-// usage card is strictly better-than-nothing information. A failure is
-// recorded on the upstream — where the operator sees it — and never reaches
-// the request.
+// A dashboard refresh must not replace the model response with its failure.
+// Record the error on the paired reading and extend the runtime with waitUntil
+// so persistence can finish after the response is relayed.
 export const scheduleOllamaUsageProbe = (
   upstreamId: string,
   config: OllamaUpstreamConfig,
@@ -124,8 +104,11 @@ export const scheduleOllamaUsageProbe = (
 export const runOllamaScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
   const { config } = assertOllamaUpstreamRecord(record);
   if (!isOllamaUsageEnabled(config)) return;
-  const observedAt = readOllamaUpstreamState(record.state).balanceProbe?.observation?.fetchedAt ?? null;
+  const state = readOllamaUpstreamState(record.state);
+  const usage = state.usageProbe?.observation;
+  const balance = state.balanceProbe?.observation;
+  const observedAt = usage && balance ? Math.min(usage.fetchedAt, balance.fetchedAt) : null;
   await runScheduledUsageRefresh(record, options, observedAt, async (fresh, fetcher) => {
-    await refreshOllamaBalanceProbe(fresh.id, config, fetcher);
+    await refreshOllamaUsageProbe(fresh.id, config, fetcher);
   });
 };

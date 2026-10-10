@@ -3202,7 +3202,7 @@ test('usage refresh rejects negative, fractional and boolean intervals', async (
   }
 });
 
-test('manual Ollama usage refresh reads and persists activity and current balance separately', async () => {
+test('manual Ollama usage refresh commits activity and current balance together', async () => {
   const { repo, adminSession } = await setupAppTest();
   const record = buildCustomUpstreamRecord({
     id: 'up_ollama_manual', kind: 'ollama',
@@ -3226,6 +3226,8 @@ test('manual Ollama usage refresh reads and persists activity and current balanc
     const state = (await repo.upstreams.getById(record.id))!.state as JsonObject;
     assertEquals(state.usageProbe.observation.data.activity.cost, '3.50');
     assertEquals(state.balanceProbe.observation.data.included.balance_usd, 42);
+    assertEquals(state.usageProbe.observation.fetchedAt, state.balanceProbe.observation.fetchedAt);
+    assertEquals(state.usageProbe.attemptedAt, state.balanceProbe.attemptedAt);
   });
   assertEquals(paths.toSorted(), ['/api/balance', '/api/me', '/api/usage']);
 });

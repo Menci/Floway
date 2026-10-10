@@ -1,5 +1,5 @@
 // Ollama Cloud usage action under the record-body contract. The data plane
-// refreshes the same snapshot on its own behind a one-minute debounce; this is
+// refreshes the same usage/balance pair behind a one-minute debounce; this is
 // the operator's unconditional read, so it probes on every press.
 //
 // The config travels in the request body rather than being read back from the
@@ -15,13 +15,10 @@ import type { ollamaUsageBody } from '../schemas.ts';
 import type { Fetcher } from '@floway-dev/provider';
 import {
   fetchOllamaAccount,
-  fetchOllamaUsageProbe,
-  fetchOllamaBalanceProbe,
   isOllamaUsageEnabled,
   parseOllamaUpstreamConfig,
   refreshOllamaAccount,
   refreshOllamaUsageProbe,
-  refreshOllamaBalanceProbe,
   type OllamaUpstreamConfig,
 } from '@floway-dev/provider-ollama';
 
@@ -45,7 +42,7 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
     return c.json({ error: 'This upstream does not have Ollama Cloud usage enabled with an API key' }, 400);
   }
 
-  // The windows are what the operator pressed for, so their failure is the
+  // Usage and balance are what the operator pressed for, so their failure is the
   // request's. The account is read alongside them — its own background cadence
   // is a day, which is too long to wait for after fixing a key — and a failure
   // there costs the card a name rather than the reading.
@@ -55,10 +52,7 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   ).catch((): null => null);
 
   try {
-    const [observation, balanceObservation] = await Promise.all([
-      record.id === '' ? fetchOllamaUsageProbe(config, fetcher) : refreshOllamaUsageProbe(record.id, config, fetcher),
-      record.id === '' ? fetchOllamaBalanceProbe(config, fetcher) : refreshOllamaBalanceProbe(record.id, config, fetcher),
-    ]);
+    const { observation, balanceObservation } = await refreshOllamaUsageProbe(record.id, config, fetcher);
     return c.json({ observation, balanceObservation, account: await account });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 502);

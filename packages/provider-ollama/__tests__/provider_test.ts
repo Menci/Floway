@@ -240,6 +240,7 @@ test('Anthropic Messages methods serialize typed anthropic-beta metadata only on
       // A cloud call arms the background usage probe. It is not a wire call
       // of the protocol under test, so it stays out of the beta record.
       if (path === '/api/usage') return jsonResponse({ limits: {} });
+      if (path === '/api/balance') return jsonResponse({ purchased: { balance_usd: 0 } });
       if (path === '/api/me') return jsonResponse({ Plan: 'free' });
       betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/messages') {

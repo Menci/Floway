@@ -1,6 +1,5 @@
-// Activity, balance and account observations own separate state slots. Each
-// writer merges its slot under saveState's CAS so concurrent probes preserve
-// one another's observations.
+// Activity and balance are refreshed and committed together. Account identity
+// has its own cadence; both writers merge under saveState's CAS.
 
 // The probe's outcome, kept as three fields rather than one nullable snapshot
 // because the data-plane trigger needs all three:
