@@ -98,7 +98,7 @@ for (const category of ['bio', 'cyber']) {
   test.each([null, '', ' \t\n', 'Upstream explanation.', '  Original spacing.  '])(`Responses via Messages preserves nonblank ${category} explanations and supplies a native error message when absent: %j`, async explanation => {
     const frames = fixtureFrames('anthropic-messages', { stop: 'content_filter' });
     for (const frame of frames) if (frame.type === 'event' && frame.event.type === 'message_delta') frame.event.delta.stop_details = { type: 'refusal', category, explanation };
-    const output = await collect(responsesViaMessages(iterate(frames)));
+    const output = await collect(responsesViaMessages(iterate(frames), 'resp_policy'));
     expect(output.at(-1)).toMatchObject({
       event: {
         type: 'response.failed',
