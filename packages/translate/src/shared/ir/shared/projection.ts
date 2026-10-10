@@ -1,6 +1,6 @@
-import type { IRJSONObject } from './ir.ts';
+import type { IRJSONObject } from '../ir.ts';
 import { cloneIRJSON, parseIRJSON } from './json.ts';
-import type { IRPath } from './stream.ts';
+import type { IRPath } from '../stream.ts';
 
 export interface IRStringProjection {
   source_path: IRPath;

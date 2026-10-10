@@ -1,4 +1,4 @@
-import type { IRJSONObject } from './ir.ts';
+import type { IRJSONObject } from '../ir.ts';
 
 // Raw JSON primitives preserve numeric tokens outside the finite or safe-integer range.
 // https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson

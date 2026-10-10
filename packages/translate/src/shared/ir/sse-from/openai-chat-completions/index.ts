@@ -1,8 +1,8 @@
-import { codePointRangeToIR } from '../../coordinates.ts';
-import { unwrapCustomToolInput } from '../../custom-tools.ts';
+import { unwrapCustomToolInput } from '../../../openai-responses-via/custom-tool-wrap.ts';
 import type { IRMessageItem, IRReasoningItem } from '../../ir.ts';
+import { codePointRangeToIR } from '../../shared/coordinates.ts';
+import { usageToIR, type IRWire } from '../../shared/usage.ts';
 import { createIRBuilder, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
-import { usageToIR, type IRWire } from '../../usage.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
 

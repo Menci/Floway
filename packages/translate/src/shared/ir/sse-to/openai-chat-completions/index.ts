@@ -1,11 +1,19 @@
-import { irRangeToCodePoints } from '../../coordinates.ts';
-import { irChatError } from '../../errors.ts';
-import { irOutputMetadata, irServingModel } from '../../metadata.ts';
-import { createIRProjection, type IROutputOptions } from '../../projection.ts';
+import type { IRJSONObject } from '../../ir.ts';
+import { irRangeToCodePoints } from '../../shared/coordinates.ts';
+import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
+import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
+import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
-import { usageFromIR, irServiceTier, type IRWire } from '../../usage.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+
+const irChatError = (error: IRJSONObject): IRJSONObject => ({
+  message: error.message,
+  type: typeof error.type === 'string' && error.type !== 'error' ? error.type : error.code ?? 'server_error',
+  ...(error.code === undefined ? {} : { code: error.code }),
+  ...(error.param === undefined ? {} : { param: error.param }),
+  ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
+});
 
 export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IROutputOptions = {}): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   let metadata = { id: '', model: '', created: 0 };
