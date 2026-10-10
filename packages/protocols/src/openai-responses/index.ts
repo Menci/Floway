@@ -1190,6 +1190,23 @@ type OpenAIResponsesStreamEventVariant =
     summary_index: number;
     text: string;
   }
+  // Open Responses spells incremental reasoning differently from OpenAI.
+  // https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L271-L315
+  | {
+    type: 'response.reasoning.delta';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+    obfuscation?: string;
+  }
+  | {
+    type: 'response.reasoning.done';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    text: string;
+  }
   // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_delta_event.py#L9-L31
   // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_done_event.py#L9-L34
   | {
