@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
+import { streamSSE, type SSEStreamingApi } from 'hono/streaming';
 import { test } from 'vitest';
 
 import { writeSSEFrames } from '../../../src/data-plane/shared/sse.ts';
 import { FakeTime } from '../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import { sseCommentFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import { sseCommentFrame, type SseFrame, type SseWritableFrame, sseFrame, sseTrailerFrame } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
@@ -76,7 +76,7 @@ const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEven
   throw new Error('SSE iterator was not stopped');
 };
 
-const requestSSE = async (events: AsyncIterable<SseFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
+const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
   const app = new Hono();
   app.get('/', c =>
     streamSSE(c, async stream => {
@@ -242,4 +242,47 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
     await pendingRead.catch(() => {});
     await cancelResponse?.catch(() => {});
   }
+});
+
+test('writeSSEFrames writes a trailer verbatim and ends before any following frame', async () => {
+  const data = JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'failure' } });
+  let closed = false;
+  let readAfterTrailer = false;
+  const frames = async function* () {
+    try {
+      yield sseFrame('{"candidates":[]}');
+      yield sseTrailerFrame(data);
+      readAfterTrailer = true;
+      yield sseFrame('POISON');
+    } finally { closed = true; }
+  };
+  const response = await requestSSE(frames(), { keepAlive: { intervalMs: 1, frame: sseCommentFrame('keepalive') } });
+  assertEquals(await response.text(), `data: {"candidates":[]}\n\n${data}`);
+  assertEquals(readAfterTrailer, false);
+  assertEquals(closed, true);
+});
+
+test.each(['sse', 'sse-trailer'] as const)('writeSSEFrames reports cancellation when a ready %s frame cannot be written', async type => {
+  let onAbort!: () => void;
+  const writes: unknown[] = [];
+  const state = { aborted: false, closed: false };
+  const stream = Object.assign(state, { onAbort: (callback: () => void) => { onAbort = callback; }, write: async (data: unknown) => { writes.push(data); }, writeSSE: async (data: unknown) => { writes.push(data); } }) as unknown as SSEStreamingApi;
+  let nextCalls = 0;
+  let returnCalls = 0;
+  const frames: AsyncIterable<SseWritableFrame> = {
+    [Symbol.asyncIterator]: () => ({
+      next: async () => {
+        nextCalls++;
+        queueMicrotask(() => { state.aborted = true; onAbort(); });
+        return { value: { type, data: '{"error":{"code":500}}' }, done: false };
+      },
+      return: async () => { returnCalls++; return { done: true, value: undefined }; },
+    }),
+  };
+  const downstreamAbortController = new AbortController();
+  assertEquals(await writeSSEFrames(stream, frames, { downstreamAbortController }), 'cancel');
+  assertEquals(writes, []);
+  assertEquals(nextCalls, 1);
+  assertEquals(returnCalls, 1);
+  assertEquals(downstreamAbortController.signal.aborted, true);
 });

@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/openai-responses-via-anthropic-messages/events.ts';
+import { fixtureFrames } from '../shared/ir/translation-cases.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -19,7 +20,7 @@ const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
 
 test('translateToSourceEvents stops after Anthropic Messages message_stop', async () => {
   async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
-    yield eventFrame({ type: 'message_stop' });
+    yield* fixtureFrames('anthropic-messages', {});
     yield eventFrame({
       type: 'error',
       error: {
@@ -29,11 +30,11 @@ test('translateToSourceEvents stops after Anthropic Messages message_stop', asyn
     });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', 'gpt-test'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
 
   assertEquals(
     frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
-    ['response.completed'],
+    ['response.created', 'response.in_progress', 'response.completed'],
   );
 });
 
@@ -49,7 +50,7 @@ test('translateToSourceEvents translates Anthropic Messages error terminal and s
     yield eventFrame({ type: 'message_stop' });
   }
 
-  const frames = await collect(translateToSourceEvents(stream(), 'resp_123', 'gpt-test'));
+  const frames = await collect(translateToSourceEvents(stream(), 'resp_123'));
 
   assertEquals(frames.length, 1);
   assertEquals(
@@ -81,5 +82,5 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123', 'gpt-test')), Error, 'Upstream Anthropic Messages stream ended without a message_stop event.');
+  await assertRejects(async () => await drain(translateToSourceEvents(stream(), 'resp_123')), Error, 'Messages stream ended without message_stop');
 });

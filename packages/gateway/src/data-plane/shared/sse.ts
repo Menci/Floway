@@ -1,12 +1,12 @@
 import type { SSEStreamingApi } from 'hono/streaming';
 
-import type { SseFrame, SseWritableFrame } from '@floway-dev/protocols/common';
+import type { SseWritableFrame } from '@floway-dev/protocols/common';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
 
 interface SseKeepAliveOptions {
   intervalMs?: number;
-  frame: SseWritableFrame;
+  frame: Exclude<SseWritableFrame, { type: 'sse-trailer' }>;
 }
 
 interface SseStreamOptions {
@@ -16,7 +16,7 @@ interface SseStreamOptions {
 
 type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
 
-type NextFrameResult = { type: 'frame'; result: IteratorResult<SseFrame> } | { type: 'next-error'; error: unknown } | { type: 'keep-alive' } | { type: 'abort' };
+type NextFrameResult = { type: 'frame'; result: IteratorResult<SseWritableFrame> } | { type: 'next-error'; error: unknown } | { type: 'keep-alive' } | { type: 'abort' };
 
 export type StreamCompletion = 'eof' | 'error' | 'cancel';
 
@@ -40,6 +40,11 @@ const serializeSSECommentFrame = (comment: string): string =>
 const writeSSEFrame = async (stream: SSEStreamingApi, frame: SseWritableFrame): Promise<void> => {
   if (stream.aborted || stream.closed) return;
 
+  if (frame.type === 'sse-trailer') {
+    await stream.write(frame.data);
+    return;
+  }
+
   if (frame.type === 'sse-comment') {
     await stream.write(serializeSSECommentFrame(frame.comment));
     return;
@@ -59,7 +64,7 @@ const streamAbortPromise = (stream: SSEStreamingApi): Promise<void> => {
   });
 };
 
-const pendingFrameResult = (pendingNext: Promise<IteratorResult<SseFrame>>): Promise<NextFrameResult> =>
+const pendingFrameResult = (pendingNext: Promise<IteratorResult<SseWritableFrame>>): Promise<NextFrameResult> =>
   pendingNext.then(
     (result): NextFrameResult => ({ type: 'frame', result }),
     (error): NextFrameResult => ({ type: 'next-error', error }),
@@ -89,7 +94,7 @@ const nextFrameOrKeepAlive = async (
 
 const drainSSEFrames = async (
   stream: SSEStreamingApi,
-  events: AsyncIterable<SseFrame>,
+  events: AsyncIterable<SseWritableFrame>,
   keepAlive: ResolvedSseKeepAliveOptions | undefined,
   downstreamAbortController: AbortController | undefined,
 ): Promise<StreamCompletion> => {
@@ -144,6 +149,11 @@ const drainSSEFrames = async (
       }
 
       await writeSSEFrame(stream, next.result.value);
+      if (stream.aborted || stream.closed) {
+        stopForDownstream();
+        return 'cancel';
+      }
+      if (next.result.value.type === 'sse-trailer') return 'eof';
       pendingNext = pendingFrameResult(iterator.next());
     }
   } finally {
@@ -158,7 +168,7 @@ const drainSSEFrames = async (
   }
 };
 
-export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
+export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseWritableFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
   const keepAlive = resolveKeepAliveOptions(options.keepAlive);
   return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController);
 };

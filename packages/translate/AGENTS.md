@@ -21,8 +21,14 @@ files at the top level of either `shared/` tree.
    `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
    OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
 
+6. **Output IR, `ir/`** — shared by every translation pair. Its native readers and
+   writers own output streaming; the representation stays internal to translate.
+   Native IR readers/writers may consume the protocol helpers above within
+   the protocols of their input or output boundary.
+
 ## Current Production Subdirectories
 
+- `ir/` — output SSE representation and native protocol readers/writers.
 - `openai-chat-completions-and-openai-responses/` — available only to
   `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
 - `openai-chat-completions-and-anthropic-messages/` — available only to
@@ -33,16 +39,13 @@ files at the top level of either `shared/` tree.
 - `openai-responses-via/` — available only to `openai-responses-via-*` pairs.
 - `gemini-generate-content-via/` — available only to `gemini-generate-content-via-*` pairs.
 - `via-anthropic-messages/` — available only to `*-via-anthropic-messages` pairs.
-- `via-openai-responses/` — available only to `*-via-openai-responses` pairs.
 
 ## Rules
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
   site, not extracted. Delete the wrapper rather than retaining a shim. A
   one-liner that *defines* a format two or more pairs must agree on is not such
-  a wrapper: `via-openai-responses/openai-responses-stream.ts` owns the composite stream-part
-  key both OpenAI-Responses-target pairs build and compare, and inlining it would let
-  the copies drift apart.
+  a wrapper.
 - Flat `.ts` files at the top level of either `src/shared/` or
   `__tests__/shared/` are forbidden. Every shared helper and test suite lives
   in one of the categories above.

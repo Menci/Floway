@@ -11,6 +11,8 @@ import {
   translateOpenAIResponsesViaAnthropicMessages,
   translateOpenAIResponsesViaOpenAIChatCompletions,
 } from '../src/index.ts';
+import { collect, iterate } from './shared/ir/helpers.ts';
+import { fixtureFrames, nativeResult } from './shared/ir/translation-cases.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
@@ -96,4 +98,24 @@ test.each(translations)('$name owns its target payload without retaining source 
     assertEquals(sourceObjects.has(object), false);
     assertEquals(firstObjects.has(object), false);
   }
+});
+
+const returnedTrips = [
+  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm' }) },
+  { a: 'openai-responses', b: 'anthropic-messages', trip: () => translateOpenAIResponsesViaAnthropicMessages(responses, { model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm' }) },
+  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'anthropic-messages', b: 'openai-responses', trip: () => translateAnthropicMessagesViaOpenAIResponses(anthropic, { model: 'm' }) },
+  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => translateGeminiGenerateContentViaOpenAIResponses(gemini, { model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16 }) },
+] as const;
+
+test.each(returnedTrips)('$a via $b returns generated content through its public TranslateTrip', async ({ a, b, trip }) => {
+  const translation = await trip();
+  const frames = await collect<any>(translation.events(iterate(fixtureFrames(b, { text: ['return path'] }))));
+  const result = await nativeResult(a, frames);
+  const text = a === 'openai-responses' ? result.output[0].content[0].text : a === 'openai-chat-completions' ? result.choices[0].message.content : a === 'anthropic-messages' ? result.content[0].text : result.candidates[0].content.parts[0].text;
+  assertEquals(text, 'return path');
 });

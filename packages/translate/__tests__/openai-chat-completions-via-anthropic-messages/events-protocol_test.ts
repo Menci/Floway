@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from '../../src/openai-chat-completions-via-anthropic-messages/events.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { assertRejects } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -11,7 +11,7 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   }
 };
 
-test('translateToSourceEvents rejects Anthropic Messages error events', async () => {
+test('translateToSourceEvents emits native ChatCompletions errors for Messages failures', async () => {
   async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({
       type: 'error',
@@ -22,7 +22,9 @@ test('translateToSourceEvents rejects Anthropic Messages error events', async ()
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Anthropic Messages stream error: overloaded_error: upstream overloaded');
+  const frames = [];
+  for await (const frame of translateToSourceEvents(stream())) frames.push(frame);
+  assertEquals(frames, [eventFrame({ error: { type: 'overloaded_error', message: 'upstream overloaded' } })]);
 });
 
 test('translateToSourceEvents rejects truncated Anthropic Messages streams without message_stop', async () => {
@@ -43,5 +45,5 @@ test('translateToSourceEvents rejects truncated Anthropic Messages streams witho
     });
   }
 
-  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Anthropic Messages stream ended without a message_stop event.');
+  await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Messages stream ended without message_stop');
 });

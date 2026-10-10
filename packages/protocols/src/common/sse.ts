@@ -4,6 +4,11 @@ export interface SseFrame {
   data: string;
 }
 
+export interface SseTrailerFrame {
+  type: 'sse-trailer';
+  data: string;
+}
+
 export interface SseCommentFrame {
   type: 'sse-comment';
   comment: string;
@@ -18,7 +23,7 @@ export interface DoneFrame {
   type: 'done';
 }
 
-export type SseWritableFrame = SseFrame | SseCommentFrame;
+export type SseWritableFrame = SseFrame | SseCommentFrame | SseTrailerFrame;
 
 export type ProtocolFrame<TEvent> = EventFrame<TEvent> | DoneFrame;
 
@@ -39,3 +44,5 @@ export const eventFrame = <TEvent>(event: TEvent): EventFrame<TEvent> => ({
 });
 
 export const doneFrame = (): DoneFrame => ({ type: 'done' });
+
+export const sseTrailerFrame = (data: string): SseTrailerFrame => ({ type: 'sse-trailer', data });
