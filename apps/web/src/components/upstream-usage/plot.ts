@@ -1,5 +1,5 @@
-import type { ResolvedUsageMetricDisplay } from './display-name';
 import type { UpstreamUsageMetadata } from './data';
+import type { ResolvedUsageMetricDisplay } from './display-name';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { SeriesLegendEntry } from '../charts/series-legends';
 import type { UpstreamUsageMetricRecord } from '@floway-dev/gateway/browser';

@@ -1,5 +1,5 @@
-import type { TranslationKey, useTranslation } from '../../i18n/translation';
 import type { UpstreamUsageMetadata } from './data';
+import type { TranslationKey, useTranslation } from '../../i18n/translation';
 import type { UsageMetricDisplay } from '@floway-dev/provider/browser';
 import { resolveUsageMetricDisplayName as claudeCodeDisplay } from '@floway-dev/provider-claude-code/browser';
 import { resolveUsageMetricDisplayName as codexDisplay } from '@floway-dev/provider-codex/browser';
