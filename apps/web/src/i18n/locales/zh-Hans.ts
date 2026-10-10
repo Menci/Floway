@@ -5,6 +5,10 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      calendar: {
+        previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
+        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseDecade: '{0}，选择十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
+      },
       bodyViewer: {
         options: '正文选项',
         find: '搜索正文',
@@ -387,12 +391,14 @@ const zhHansCN = {
           usingKey: '此处使用 <strong>{{name}}</strong> API 密钥。',
           claudeCode: 'Claude Code',
           codex: 'Codex',
+          pi: 'Pi',
+          omp: 'OMP',
           claudeHint: '将 env 块合并到 <path>~/.claude/settings.json</path> 或 <path>.claude/settings.json</path>。',
           codexConfigHint: '合并到 <path>~/.codex/config.toml</path>。',
           codexConfigHintWindows: '合并到 <path>%USERPROFILE%\\.codex\\config.toml</path>。',
           codexAuthHint: '将 Floway provider token 保存在该配置旁，不影响官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', providerName: 'Provider ID', defaultThinkingLevel: '默认思考强度', defaultThinkingHint: '作用于 Pi 的所有 provider。选择默认模型后，可选强度会按模型支持范围筛选。', unsupportedThinking: '此模型的思考选项数量超出 Pi 的支持范围。', keepExisting: '保留已有设置', maxRetries: '最大重试次数', piMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 Pi 的所有 provider，默认重试 3 次。', ompMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 OMP 的所有 provider，默认重试 10 次。', providerHint: '留空时使用 floway。每个 Floway 连接使用不同 ID，例如 floway-home 或 floway-work。可使用小写字母、数字、点、连字符和下划线。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。', piModelHint: '设置 Pi 的启动模型，作用于所有 provider。Floway 扩展会在启动和打开模型选择器时刷新模型，安装脚本会按需安装或更新 Pi。', ompModelHint: '设置 OMP 的启动模型，作用于所有 provider。OMP 启动时会加载 Floway 的当前模型列表，可使用 /floway-refresh 刷新。安装脚本会按需安装或更新 OMP。' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -1065,7 +1071,12 @@ const zhHansCN = {
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
       },
-      telemetry: { currentUserOnly: '仅自己' },
+      telemetry: {
+        currentUserOnly: '仅自己',
+        range: {
+          oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
+        },
+      },
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
@@ -1082,12 +1093,7 @@ const zhHansCN = {
           unknownUser: '未知用户',
           selected_other: '已选择 {{count, number}} 项',
         },
-        range: {
-          label: '使用量范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '使用量范围' },
         actions: { refresh: '刷新使用量' },
         charts: {
           search: '搜索使用量',
@@ -1124,12 +1130,7 @@ const zhHansCN = {
           userId: '用户',
           keyId: 'API 密钥',
         },
-        range: {
-          label: '性能数据范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '性能数据范围' },
         percentile: { label: '百分位' },
         summary: {
           requests: '请求数',

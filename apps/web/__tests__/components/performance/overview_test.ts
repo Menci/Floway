@@ -113,7 +113,7 @@ describe('performance chart series', () => {
     tpotUsP95: 20_000,
     tpotUsP99: 30_000,
   });
-  const buckets = [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }];
+  const buckets = [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0), start: 0, end: 3_600_000 }];
 
   it('uses stable group ids when two API keys have the same name', () => {
     const overview = emptyOverview();

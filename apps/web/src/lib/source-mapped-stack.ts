@@ -20,7 +20,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { isJsonMediaType } from '@floway-dev/protocols/common';
+import { isJsonMediaType } from '@floway-dev/protocols/browser';
 
 // The line is 1-based in every engine's stack and in `originalPositionFor`, so
 // it passes through. The column is 1-based in the stack and 0-based in a source

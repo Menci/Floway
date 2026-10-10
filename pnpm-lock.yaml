@@ -8,6 +8,8 @@ overrides:
   '@react-router/dev>@react-router/serve': '-'
   dompurify: 3.4.12
 
+packageExtensionsChecksum: sha256-K318nM0B4naWyNLL2ZNXIM7I4OMeqo1mBXfmcmT2COg=
+
 patchedDependencies:
   '@discoveryjs/json-ext@1.1.0':
     hash: 481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd
@@ -145,6 +147,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@floway-dev/agent-setup':
+        specifier: workspace:*
+        version: link:../../packages/agent-setup
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -302,12 +307,18 @@ importers:
 
   packages/agent-setup:
     dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)
       hono:
         specifier: ^4
         version: 4.12.22
+      jsesc:
+        specifier: ^3.1.0
+        version: 3.1.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -321,9 +332,6 @@ importers:
       '@types/node':
         specifier: ^22
         version: 22.19.19
-      jsesc:
-        specifier: ^3.1.0
-        version: 3.1.0
 
   packages/gateway:
     dependencies:
@@ -5951,6 +5959,7 @@ snapshots:
       '@fluentui/chart-utilities': 1.1.39
       '@fluentui/react-button': 9.10.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-menu': 9.25.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-overflow': 9.9.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-popover': 9.14.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
@@ -5958,6 +5967,7 @@ snapshots:
       '@fluentui/react-theme': 9.2.1
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-utilities': 9.26.5(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/tokens': 1.0.0-alpha.23
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/d3-array': 3.2.2

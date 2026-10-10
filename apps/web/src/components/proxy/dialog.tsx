@@ -22,7 +22,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
+import type { ProxyConfig } from '@floway-dev/proxy/browser';
 
 const { Button, DialogActions, DialogTitle } = fluentComponents;
 
