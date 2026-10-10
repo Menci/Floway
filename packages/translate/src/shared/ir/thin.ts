@@ -3,9 +3,9 @@ import { Decoder, Encoder, Tag } from 'cbor-x';
 import { hashIRContent, irHashKey, irUTF16Bytes, resolveIRIAT, type IRContentHasher, type IRIAT } from './iat.ts';
 import type { IRProtocol } from './ir.ts';
 import { cloneIRJSON, irJSON, parseIRJSONObject } from './shared/json.ts';
+import type { IRWire } from './shared/usage.ts';
 import type { IRPath } from './stream.ts';
 import type { IRReferencePayload, IRReferenceTags, IRReplayItems, IRThinItems } from './thin-types.ts';
-import type { IRWire } from './shared/usage.ts';
 
 export class IRPendingReference {
   constructor(readonly entries: number[], readonly original: unknown, readonly json: boolean) {}
