@@ -228,3 +228,14 @@ test('a shorter interval cannot bypass a successful response polling hint', asyn
   await runUpstreamScheduledTasks('TEST');
   expect(mocks.fetch).toHaveBeenCalledTimes(2);
 });
+
+test('a queued task defers to the next tick when its configured interval changes after claiming', async () => {
+  const record = copilot();
+  await repo.upstreams.insertForModels(record);
+  const refresh = vi.fn();
+  vi.spyOn(repo.upstreams, 'getById').mockResolvedValueOnce({ ...record, configVersion: 1, usageRefreshIntervalMinutes: 15 });
+  await runScheduledUsageRefresh(record, { tasks: repo.upstreamScheduledTasks, fetcher: async () => mocks.fetch }, null, refresh);
+  expect(refresh).not.toHaveBeenCalled();
+  await runScheduledUsageRefresh(record, { tasks: repo.upstreamScheduledTasks, fetcher: async () => mocks.fetch }, null, refresh);
+  expect(refresh).toHaveBeenCalledTimes(1);
+});

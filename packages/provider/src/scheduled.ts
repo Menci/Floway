@@ -31,7 +31,7 @@ export const runScheduledUsageRefresh = async (
   refresh: (record: UpstreamRecord, fetcher: Fetcher) => Promise<unknown>,
 ): Promise<void> => {
   const now = Date.now();
-  let intervalMs = record.usageRefreshIntervalMinutes * 60_000;
+  const intervalMs = record.usageRefreshIntervalMinutes * 60_000;
   if (!record.enabled || !record.usageRefreshIntervalMinutes
     || (lastObservedAt !== null && now - lastObservedAt < intervalMs)) return;
   const claim: ScheduledTaskClaim = {
@@ -47,12 +47,8 @@ export const runScheduledUsageRefresh = async (
   let retryAt = now;
   try {
     const fresh = await getProviderRepo().upstreams.getById(record.id);
-    if (fresh === null || !fresh.enabled || !fresh.usageRefreshIntervalMinutes || fresh.kind !== record.kind) {
-      await options.tasks.finish(claim, { nextAttemptAt: now, completedAt: null, failureCount: 0, error: null });
-      return;
-    }
-    intervalMs = fresh.usageRefreshIntervalMinutes * 60_000;
-    if (lastObservedAt !== null && now - lastObservedAt < intervalMs) {
+    if (fresh === null || !fresh.enabled || !fresh.usageRefreshIntervalMinutes || fresh.kind !== record.kind
+      || fresh.usageRefreshIntervalMinutes !== record.usageRefreshIntervalMinutes) {
       await options.tasks.finish(claim, { nextAttemptAt: now, completedAt: null, failureCount: 0, error: null });
       return;
     }
