@@ -3,7 +3,7 @@ import { describe, it } from 'vitest';
 import { missingRequiredResourceKeys } from './test-required-resource-keys.ts';
 import { completeResponseResource, wrapResponseResourceCompletion } from '../../../../src/data-plane/chat/openai-responses/response-resource.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const request = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload => ({
@@ -20,7 +20,7 @@ const sources = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}) => ({
 
 // The shape a translated target hands to the client boundary: identity,
 // status, output and usage, and nothing else.
-const translatedResource = (): OpenAIResponsesResult => ({
+const translatedResource = (): OpenAIResponsesResultEx => ({
   id: 'resp_1',
   object: 'response',
   model: 'gpt-4.1',
@@ -38,7 +38,7 @@ describe('OpenAI Responses resource completion', () => {
   });
 
   it('prefers what the upstream reported over what the client asked for', () => {
-    const upstream: OpenAIResponsesResult = {
+    const upstream: OpenAIResponsesResultEx = {
       ...translatedResource(),
       temperature: 0.2,
       top_p: 0.5,
@@ -59,14 +59,14 @@ describe('OpenAI Responses resource completion', () => {
   });
 
   it('keeps an upstream null on a slot whose schema offers null', () => {
-    const upstream: OpenAIResponsesResult = { ...translatedResource(), max_output_tokens: null, instructions: null };
+    const upstream: OpenAIResponsesResultEx = { ...translatedResource(), max_output_tokens: null, instructions: null };
     const completed = completeResponseResource(upstream, sources({ max_output_tokens: 512, instructions: 'be terse' }), true);
     assertEquals(completed.max_output_tokens, null);
     assertEquals(completed.instructions, null);
   });
 
   it('resolves past an upstream null on a slot whose schema offers none', () => {
-    const upstream: OpenAIResponsesResult = {
+    const upstream: OpenAIResponsesResultEx = {
       ...translatedResource(),
       temperature: null,
       top_p: null,
@@ -172,7 +172,7 @@ describe('OpenAI Responses resource completion', () => {
   });
 
   it('keeps a usage breakdown the upstream actually reported', () => {
-    const upstream: OpenAIResponsesResult = {
+    const upstream: OpenAIResponsesResultEx = {
       ...translatedResource(),
       usage: { input_tokens: 8, output_tokens: 10, total_tokens: 18, output_tokens_details: { reasoning_tokens: 7 } },
     };
@@ -202,7 +202,7 @@ describe('OpenAI Responses resource completion', () => {
   // echoed — or one the server-tool shim reconstructed — is completed like any
   // other. Resolving first and normalizing after is what closes that path.
   it('completes a minimal function tool the upstream echoed back', () => {
-    const upstream: OpenAIResponsesResult = {
+    const upstream: OpenAIResponsesResultEx = {
       ...translatedResource(),
       tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }],
     };
@@ -230,14 +230,14 @@ describe('OpenAI Responses resource completion', () => {
   });
 
   it('completes every resource-bearing frame of a stream and reports completed_at only on the terminal one', async () => {
-    const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...translatedResource(), status: 'in_progress' } } as OpenAIResponsesStreamEvent);
-      yield eventFrame({ type: 'response.output_text.delta', sequence_number: 1, item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'hi' } as OpenAIResponsesStreamEvent);
-      yield eventFrame({ type: 'response.completed', sequence_number: 2, response: translatedResource() } as OpenAIResponsesStreamEvent);
+    const source = async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+      yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...translatedResource(), status: 'in_progress' } } as OpenAIResponsesStreamEventEx);
+      yield eventFrame({ type: 'response.output_text.delta', sequence_number: 1, item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'hi' } as OpenAIResponsesStreamEventEx);
+      yield eventFrame({ type: 'response.completed', sequence_number: 2, response: translatedResource() } as OpenAIResponsesStreamEventEx);
       yield doneFrame();
     };
 
-    const seen: OpenAIResponsesStreamEvent[] = [];
+    const seen: OpenAIResponsesStreamEventEx[] = [];
     for await (const frame of wrapResponseResourceCompletion(source(), sources())) {
       if (frame.type === 'event') seen.push(frame.event);
     }

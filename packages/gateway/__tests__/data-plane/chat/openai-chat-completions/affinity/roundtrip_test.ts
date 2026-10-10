@@ -5,7 +5,7 @@ import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-pl
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsAssistantDeltaEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -26,7 +26,7 @@ const targetFor = (value: ModelCandidate): AffinityIdentity => ({
   opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
 });
 
-const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({
+const chunk = (choices: Array<Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx }>): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_1',
   object: 'chat.completion.chunk',
   created: 1,
@@ -52,6 +52,7 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
   const candidateB = candidate('upstream-b');
   const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
     eventFrame(chunk([{
+
       index: 0,
       delta: { content: 'answer', reasoning_opaque: 'upstream-opaque' },
       finish_reason: 'stop',
@@ -76,7 +77,7 @@ test('a synthetic carrier issued for a choice without reasoning decodes on the n
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
-    eventFrame(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
+    eventFrame(chunk([{  index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
     doneFrame(),
   ]), { codec, affinity: targetFor(candidateA) }));
 

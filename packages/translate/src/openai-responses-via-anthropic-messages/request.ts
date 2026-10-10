@@ -11,6 +11,7 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../shared/via-anthro
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../shared/via-anthropic-messages/remote-images.ts';
 import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anthropic-messages/service-tier.ts';
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
+import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import {
@@ -20,7 +21,7 @@ import {
   type AnthropicMessagesAssistantMessage,
   type AnthropicMessagesMessage,
   type AnthropicMessagesPayload,
-  type AnthropicMessagesTextBlock,
+  type AnthropicMessagesTextBlockParam,
   type AnthropicMessagesTool,
   type AnthropicMessagesToolResultBlock,
   type AnthropicMessagesToolResultContentBlock,
@@ -30,10 +31,10 @@ import {
 import type {
   OpenAIResponsesInputContent,
   OpenAIResponsesInputImage,
-  OpenAIResponsesInputItem,
-  OpenAIResponsesInputMessage,
-  OpenAIResponsesInputText,
-  OpenAIResponsesRequestPayload,
+  CanonicalOpenAIResponsesInputItem,
+  OpenAIResponsesInputMessageEx,
+  CanonicalOpenAIResponsesText,
+  OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
   OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
@@ -61,7 +62,7 @@ export interface TargetRequestResult {
   namespaceToolNames: NamespaceToolNames;
 }
 
-const translateUserMessage = async (message: OpenAIResponsesInputMessage, loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesUserMessage> => {
+const translateUserMessage = async (message: OpenAIResponsesInputMessageEx, loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesUserMessage> => {
   if (typeof message.content === 'string') {
     return { role: 'user', content: message.content };
   }
@@ -70,7 +71,7 @@ const translateUserMessage = async (message: OpenAIResponsesInputMessage, loadRe
 
   for (const block of message.content) {
     if (block.type === 'input_text') {
-      content.push({ type: 'text', text: (block as OpenAIResponsesInputText).text });
+      content.push({ type: 'text', text: (block as CanonicalOpenAIResponsesText).text });
       continue;
     }
 
@@ -127,7 +128,7 @@ const translateToolOutput = async (output: string | OpenAIResponsesInputContent[
   return blocks.length > 0 ? blocks : '';
 };
 
-const translateAssistantMessage = (message: OpenAIResponsesInputMessage): AnthropicMessagesAssistantMessage => {
+const translateAssistantMessage = (message: OpenAIResponsesInputMessageEx): AnthropicMessagesAssistantMessage => {
   if (typeof message.content === 'string') {
     return { role: 'assistant', content: message.content };
   }
@@ -146,7 +147,7 @@ const translateAssistantMessage = (message: OpenAIResponsesInputMessage): Anthro
       continue;
     }
     if (block.type === 'input_text' || block.type === 'output_text') {
-      content.push({ type: 'text', text: (block as OpenAIResponsesInputText).text });
+      content.push({ type: 'text', text: (block as CanonicalOpenAIResponsesText).text });
     }
   }
 
@@ -158,12 +159,12 @@ const translateAssistantMessage = (message: OpenAIResponsesInputMessage): Anthro
 // system / developer OpenAI Responses input messages are rejected here at the
 // translator boundary so the caller hits an explicit failure instead of
 // having the image silently dropped on the wire.
-const openaiResponsesSystemBlocks = (message: OpenAIResponsesInputMessage): AnthropicMessagesTextBlock[] => {
+const openaiResponsesSystemBlocks = (message: OpenAIResponsesInputMessageEx): AnthropicMessagesTextBlockParam[] => {
   if (typeof message.content === 'string') {
     return message.content ? [{ type: 'text', text: message.content }] : [];
   }
 
-  const blocks: AnthropicMessagesTextBlock[] = [];
+  const blocks: AnthropicMessagesTextBlockParam[] = [];
   for (const block of message.content) {
     if (block.type === 'input_image') {
       throw new TranslatorInputError(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
@@ -201,14 +202,14 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
 };
 
 const translateOpenAIResponsesInput = async (
-  input: OpenAIResponsesInputItem[],
+  input: CanonicalOpenAIResponsesInputItem[],
   loadRemoteImage: RemoteImageLoader,
-): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlock[] }> => {
+): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlockParam[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
-  // part as its own AnthropicMessagesTextBlock so part boundaries survive the hoist.
+  // part as its own AnthropicMessagesTextBlockParam so part boundaries survive the hoist.
   // Non-leading system/developer messages stay inline as AnthropicMessagesSystemMessage.
-  const systemBlocks: AnthropicMessagesTextBlock[] = [];
+  const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
   let prefixEnd = 0;
   for (const item of input) {
     if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
@@ -313,7 +314,7 @@ const translateTools = (
         // spelling for a tool that takes no arguments.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
-        input_schema: klona(tool.parameters) ?? { type: 'object', properties: {} },
+        input_schema: anthropicMessagesToolInputSchema(klona(tool.parameters) ?? { type: 'object', properties: {} }),
         ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
@@ -357,7 +358,7 @@ const translateToolChoice = (
   return undefined;
 };
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
+export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
   const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
@@ -370,10 +371,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
   // after it. Each source — the instructions field and each leading input
-  // message — is preserved as its own AnthropicMessagesTextBlock so the boundary
+  // message — is preserved as its own AnthropicMessagesTextBlockParam so the boundary
   // between "canonical instructions" and "leading input system" survives
   // and the downstream prompt cache sees stable per-source segments.
-  const systemBlocks: AnthropicMessagesTextBlock[] = [
+  const systemBlocks: AnthropicMessagesTextBlockParam[] = [
     ...(payload.instructions ? [{ type: 'text' as const, text: payload.instructions }] : []),
     ...hoistedSystemBlocks,
   ];

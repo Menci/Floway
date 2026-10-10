@@ -1,0 +1,77 @@
+// Managed by Floway Agent Setup.
+import { envApiKeyAuth } from '@earendil-works/pi-ai';
+import { getApiProvider } from '@earendil-works/pi-ai/compat';
+import { ModelRuntime, VERSION } from '@earendil-works/pi-coding-agent';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import * as zlib from 'node:zlib';
+
+// Work around Undici advertising Zstd on runtimes without its decoder.
+// https://github.com/nodejs/undici/pull/4968
+const acceptEncoding = typeof zlib.createZstdDecompress === 'function' ? 'gzip, deflate, br, zstd' : 'gzip, deflate, br';
+const withEncoding = options => {
+  const headers = new Headers(options?.headers);
+  headers.set('Accept-Encoding', acceptEncoding);
+  return { ...options, headers: Object.fromEntries(headers) };
+};
+
+// Use Pi's native discovery User-Agent so Floway selects the Pi catalog.
+// https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/utils/pi-user-agent.ts#L1-L4
+const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${process.version}`;
+const userAgent = `pi/${VERSION} (${process.platform}; ${runtime}; ${process.arch})`;
+
+export default async pi => {
+  const { connections } = JSON.parse(await readFile(new URL('../floway.json', import.meta.url), 'utf8'));
+  // Startup discovery needs stored credentials before Pi registers extension providers.
+  // The public ModelRuntime resolves command/environment keys without models.json.
+  // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/coding-agent/src/core/model-runtime.ts
+  const credentials = await ModelRuntime.create({ authPath: fileURLToPath(new URL('../auth.json', import.meta.url)), modelsPath: null, refreshOnCreate: false });
+  for (const connection of connections) {
+    const fetchModels = async (apiKey, signal = AbortSignal.timeout(15000)) => {
+      const response = await fetch(`${connection.endpoint}/v1/models?endpoint=${encodeURIComponent(connection.endpoint)}&provider=${encodeURIComponent(connection.provider)}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, 'User-Agent': userAgent, 'Accept-Encoding': acceptEncoding },
+        signal,
+      });
+      if (!response.ok) throw new Error(`Floway model discovery failed: HTTP ${response.status}: ${await response.text()}`);
+      const { models } = await response.json();
+      if (!Array.isArray(models)) throw new Error('Floway returned an invalid model catalog');
+      return models;
+    };
+    let models = [];
+    const provider = {
+      id: connection.provider,
+      name: connection.provider,
+      auth: { apiKey: envApiKeyAuth('Floway API key', []) },
+      getModels: () => models,
+      refreshModels: async context => {
+        if (!context.allowNetwork) return;
+        if (context.credential?.type !== 'api_key') throw new Error(`No Pi API key stored for ${connection.provider}`);
+        const refreshed = await fetchModels(context.credential.key, context.signal);
+        await context.publish({
+          persist: { models: refreshed, checkedAt: Date.now() },
+          update: () => { models = refreshed; },
+        });
+      },
+      // Resolve the API directly to avoid built-in provider fallback.
+      // https://github.com/earendil-works/pi/blob/1cedd32724abfcb0915f76cc61b6827e2c16dbad/packages/ai/src/compat.ts#L238-L292
+      stream: (model, context, options) => getApiProvider(model.api).stream(model, context, withEncoding(options)),
+      streamSimple: (model, context, options) => getApiProvider(model.api).streamSimple(model, context, {
+        ...withEncoding(options),
+        thinkingBudgets: options.thinkingBudgets ?? model.thinkingBudgets,
+        onPayload: async payload => {
+          const effort = model.effortOverrides?.[options.reasoning];
+          if (effort !== undefined) payload.output_config = { ...payload.output_config, effort };
+          for (const path of model.payloadRemovals ?? []) {
+            const parent = path.slice(0, -1).reduce((value, key) => value[key], payload);
+            if (parent) delete parent[path.at(-1)];
+          }
+          return options.onPayload?.(payload, model);
+        },
+      }),
+    };
+    credentials.registerNativeProvider(provider);
+    const auth = await credentials.getAuth(connection.provider);
+    if (auth !== undefined) models = await fetchModels(auth.auth.apiKey);
+    pi.registerProvider(provider);
+  }
+};

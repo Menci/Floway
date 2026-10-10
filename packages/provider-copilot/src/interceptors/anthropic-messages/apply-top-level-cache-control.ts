@@ -1,7 +1,7 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
-  AnthropicMessagesTextBlock,
+  AnthropicMessagesTextBlockParam,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 
@@ -46,7 +46,7 @@ export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryIn
     const message = payload.messages[m];
 
     if (typeof message.content === 'string') {
-      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: topLevel };
+      const block: AnthropicMessagesTextBlockParam = { type: 'text', text: message.content, cache_control: topLevel };
       message.content = [block] as AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantInputContentBlock[];
       return await run();
     }

@@ -18,10 +18,10 @@ import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
@@ -112,7 +112,7 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
 
-const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
+const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort ?? undefined;
 
 const openaiResponsesReasoningEffort = (body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
@@ -407,7 +407,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
               { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
-            const generated = (await response.json()) as OpenAIResponsesResult;
+            const generated = (await response.json()) as OpenAIResponsesResultEx;
             return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
           }
           default:
@@ -460,7 +460,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         reasoningEffort: anthropicMessagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
-      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
+      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           return await liftStream(callStreaming(copilotFetchAnthropicMessages, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), parseAnthropicMessagesStream, opts));

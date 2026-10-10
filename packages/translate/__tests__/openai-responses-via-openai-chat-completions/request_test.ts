@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-responses-via-openai-chat-completions/request.ts';
-import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest accepts an implicit message discriminator', () => {
@@ -122,7 +123,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
           },
         },
       ],
-    },
+    } as OpenAIChatCompletionsAssistantMessageEx,
     {
       role: 'tool',
       tool_call_id: 'call_1',
@@ -175,7 +176,7 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
           summary: [{ type: 'summary_text', text: 'second' }],
         },
       ],
-    },
+    } as OpenAIChatCompletionsAssistantMessageEx,
   ]);
 });
 
@@ -203,14 +204,14 @@ test('buildTargetRequest omits response_format when OpenAI Responses text.format
   assertEquals('response_format' in result.target, false);
 });
 
-test('buildTargetRequest preserves explicit null text format', () => {
+test('buildTargetRequest omits a null text format from the Chat response-format field', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: null,
   });
 
-  assertEquals(result.target.response_format, null);
+  assertEquals(result.target.response_format, undefined);
 });
 
 test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat Completions shape', () => {
@@ -260,7 +261,7 @@ test('buildTargetRequest does not double-wrap an already-wrapped json_schema', (
       format: {
         type: 'json_schema',
         json_schema: { name: 'already', strict: false, schema: {} },
-      },
+      } as unknown as NonNullable<NonNullable<OpenAIResponsesRequestPayloadEx['text']>['format']>,
     },
   });
 
@@ -316,12 +317,12 @@ test('buildTargetRequest filters out builtin tools that have no OpenAI Chat Comp
 
   // Only the two function tools should survive.
   assertEquals(result.target.tools?.length, 2);
-  assertEquals(result.target.tools![0].function.name, 'get_weather');
-  assertEquals(result.target.tools![0].function.strict, false);
-  assertEquals(result.target.tools![0].function.description, 'Get weather for a city');
-  assertEquals(result.target.tools![1].function.name, 'lookup');
-  assertEquals(result.target.tools![1].function.strict, true);
-  assertEquals(result.target.tools![1].function.description, undefined);
+  assertEquals((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function.name, 'get_weather');
+  assertEquals((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function.strict, false);
+  assertEquals((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function.description, 'Get weather for a city');
+  assertEquals((result.target.tools![1] as OpenAIChatCompletionsFunctionTool).function.name, 'lookup');
+  assertEquals((result.target.tools![1] as OpenAIChatCompletionsFunctionTool).function.strict, true);
+  assertEquals((result.target.tools![1] as OpenAIChatCompletionsFunctionTool).function.description, undefined);
 });
 
 test('buildTargetRequest omits parameters and strict for a schema-less function tool', () => {
@@ -333,7 +334,7 @@ test('buildTargetRequest omits parameters and strict for a schema-less function 
 
   // `toEqual` treats an undefined-valued key as absent, so the keys are
   // compared directly: emitting `parameters: undefined` is the regression.
-  assertEquals(Object.keys(result.target.tools![0].function), ['name']);
+  assertEquals(Object.keys((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function), ['name']);
 });
 
 test('buildTargetRequest returns undefined tools when only builtin tools are present', () => {
@@ -838,7 +839,7 @@ test('buildTargetRequest keeps grouped tool results contiguous before lifted ima
   });
 
   assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'tool', 'tool', 'user']);
-  assertEquals(result.target.messages.slice(1, 4).map(message => message.tool_call_id), ['call_a', 'call_b', 'call_c']);
+  assertEquals(result.target.messages.slice(1, 4).map(message => (message as OpenAIChatCompletionsToolMessage).tool_call_id), ['call_a', 'call_b', 'call_c']);
   assertEquals(result.target.messages[1].content, 'Image output is attached in the following user message.');
   assertEquals(result.target.messages[2].content, 'second capture');
   assertEquals(result.target.messages[3].content, 'inspection complete');
@@ -909,4 +910,9 @@ test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no
 
   assertEquals(result.target.reasoning_effort, 'medium');
   assertEquals('reasoning_summary' in result.target, false);
+});
+
+test.each(['system', 'developer'] as const)('preserves %s text part boundaries', role => {
+  const result = buildTargetRequest({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
+  assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
 });

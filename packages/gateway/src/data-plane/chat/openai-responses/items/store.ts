@@ -3,7 +3,7 @@ import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredOpenAIResponsesItem, cloneStoredOpenAIResponsesItem, cloneStoredOpenAIResponsesSnapshot, compareOpenAIResponsesItemsByFreshness, scopedOpenAIResponsesKey } from '../../../../repo/openai-responses-clone.ts';
 import { quantizeOpenAIResponsesRefreshedAt, openaiResponsesStateCutoff } from '../../../../repo/openai-responses-retention.ts';
 import type { ApiKey, Repo, StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../repo/types.ts';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 interface OpenAIResponsesStatefulItemLookup {
   readonly apiKeyId: string;
@@ -31,9 +31,9 @@ export interface OpenAIResponsesStatefulStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredOpenAIResponsesSnapshot | null>;
-  loadInputItems(sourceItems: readonly OpenAIResponsesInputItem[], inputItemsToStage: readonly OpenAIResponsesInputItem[]): Promise<void>;
+  loadInputItems(sourceItems: readonly CanonicalOpenAIResponsesInputItem[], inputItemsToStage: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredOpenAIResponsesItem | undefined;
-  stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void>;
+  stageInputItems(items: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void>;
   persistOutputItem(row: StoredOpenAIResponsesItem): Promise<void>;
   commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
@@ -51,7 +51,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
-  private readonly inputItemHashes = new WeakMap<OpenAIResponsesInputItem, string>();
+  private readonly inputItemHashes = new WeakMap<CanonicalOpenAIResponsesInputItem, string>();
 
   constructor(private readonly options: LayeredOpenAIResponsesStatefulStoreOptions) {}
 
@@ -90,8 +90,8 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
   }
 
   async loadInputItems(
-    sourceItems: readonly OpenAIResponsesInputItem[],
-    inputItemsToStage: readonly OpenAIResponsesInputItem[],
+    sourceItems: readonly CanonicalOpenAIResponsesInputItem[],
+    inputItemsToStage: readonly CanonicalOpenAIResponsesInputItem[],
   ): Promise<void> {
     const ids = new Set<string>();
     for (const item of sourceItems) {
@@ -112,7 +112,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     return row === undefined ? undefined : cloneStoredOpenAIResponsesItem(row);
   }
 
-  async stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void> {
+  async stageInputItems(items: readonly CanonicalOpenAIResponsesInputItem[]): Promise<void> {
     if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
@@ -180,7 +180,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     }
   }
 
-  private async stageInputItem(item: OpenAIResponsesInputItem): Promise<void> {
+  private async stageInputItem(item: CanonicalOpenAIResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.loadedItems.get(item.id);
@@ -227,7 +227,7 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
     this.rememberItem(row);
   }
 
-  private async hashInputItem(item: OpenAIResponsesInputItem): Promise<string> {
+  private async hashInputItem(item: CanonicalOpenAIResponsesInputItem): Promise<string> {
     const cached = this.inputItemHashes.get(item);
     if (cached !== undefined) return cached;
     const hash = await hashOpenAIResponsesItem(item);

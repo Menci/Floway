@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest';
 
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../../../src/shared/openai-responses-via/programmatic-tooling.ts';
-import type { OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const programCallerItems = [
   { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
   { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
   { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
   { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-] as const satisfies readonly OpenAIResponsesInputItem[];
+] as const satisfies readonly CanonicalOpenAIResponsesInputItem[];
 
 test.each(programCallerItems)('rejectProgramCaller rejects $type program caller metadata', item => {
   expect(() => rejectProgramCaller(item)).toThrow('program caller');
@@ -16,7 +16,7 @@ test.each(programCallerItems)('rejectProgramCaller rejects $type program caller 
 
 const payloadCases: Array<{
   name: string;
-  payload: Partial<OpenAIResponsesPayload>;
+  payload: Partial<OpenAIResponsesPayloadEx>;
   message: string;
 }> = [
   {

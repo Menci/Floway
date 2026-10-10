@@ -4,7 +4,7 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { withVendorKimiOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-kimi-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -24,7 +24,7 @@ const collectFrames = async (result: ExecuteResult<ProtocolFrame<OpenAIChatCompl
   return out;
 };
 
-const usageRecord = (usage: NonNullable<OpenAIChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: OpenAIChatCompletionsUsageEx): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 const baseRequest = (): OpenAIChatCompletionsPayload => ({ model: 'kimi-k2', messages: [{ role: 'user', content: 'hi' }] });
 

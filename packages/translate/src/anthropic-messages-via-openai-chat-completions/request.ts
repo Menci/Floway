@@ -14,27 +14,27 @@ import type {
   AnthropicMessagesClientTool,
   AnthropicMessagesMessage,
   AnthropicMessagesPayload,
-  AnthropicMessagesServerToolUseBlock,
+  AnthropicMessagesServerToolUseBlockParam,
   AnthropicMessagesSystemMessage,
-  AnthropicMessagesTextBlock,
+  AnthropicMessagesTextBlockParam,
   AnthropicMessagesToolResultBlock,
-  AnthropicMessagesToolUseBlock,
+  AnthropicMessagesToolUseBlockParam,
   AnthropicMessagesUserContentBlock,
   AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
-const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsContentPart[] | null => {
+const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsUserContentPart[] => {
   if (typeof content === 'string') return content;
 
   if (!content.some(block => block.type === 'image')) {
     return content
-      .filter((block): block is AnthropicMessagesTextBlock => block.type === 'text')
+      .filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text')
       .map(block => block.text)
       .join('\n\n');
   }
 
-  const parts: OpenAIChatCompletionsContentPart[] = [];
+  const parts: OpenAIChatCompletionsUserContentPart[] = [];
 
   for (const block of content) {
     if (block.type === 'text') {
@@ -43,19 +43,15 @@ const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserC
     }
 
     if (block.type === 'image') {
-      parts.push({
-        type: 'image_url',
-        image_url: {
-          url: `data:${block.source.media_type};base64,${block.source.data}`,
-        },
-      });
+      if (block.source.type === 'file') throw new TranslatorInputError('Cannot translate file_id-only Anthropic image input to Chat Completions.');
+      parts.push({ type: 'image_url', image_url: { url: block.source.type === 'url' ? block.source.url : `data:${block.source.media_type};base64,${block.source.data}` } });
     }
   }
 
   return parts;
 };
 
-const toOpenAIChatCompletionsFunctionCall = (block: AnthropicMessagesToolUseBlock | AnthropicMessagesServerToolUseBlock): OpenAIChatCompletionsToolCall => ({
+const toOpenAIChatCompletionsFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): OpenAIChatCompletionsToolCall => ({
   id: block.id,
   type: 'function',
   function: {
@@ -106,7 +102,7 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
     return [
       {
         role: 'user',
-        content: toOpenAIChatCompletionsContent(message.content),
+        content: message.content,
       },
     ];
   }
@@ -154,7 +150,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
     return [
       {
         role: 'assistant',
-        content: toOpenAIChatCompletionsContent(message.content),
+        content: message.content,
       },
     ];
   }
@@ -200,7 +196,7 @@ const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistant
 // as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
 // does not silently merge them. Falls back to the simple string form when
 // the source is already a single-string field.
-const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlock[]): string | OpenAIChatCompletionsContentPart[] =>
+const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockParam[]): string | OpenAIChatCompletionsTextPart[] =>
   typeof system === 'string'
     ? system
     : system.map(block => ({ type: 'text', text: block.text }));
@@ -208,11 +204,14 @@ const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlock[]):
 const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIChatCompletionsMessage[] => [
   {
     role: 'system',
-    content: systemContentFromBlocks(message.content),
+    content: typeof message.content === 'string' ? message.content : message.content.map(block => {
+      if (block.type !== 'text') throw new TranslatorInputError('Only text is supported in Chat system messages.');
+      return { type: 'text', text: block.text };
+    }),
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlock[] | undefined): OpenAIChatCompletionsMessage[] => {
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined): OpenAIChatCompletionsMessage[] => {
   const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
   const systemMessages: OpenAIChatCompletionsMessage[] = isEmptySystem
     ? []
@@ -290,7 +289,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
     // do not implement the extension ignore it, and the translator falls back
     // to the final usage-only chunk. Ref:
     // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
-    stream_options: { include_usage: true, continuous_usage_stats: true },
+    stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
     temperature: payload.temperature,
     top_p: payload.top_p,
     tools: translateAnthropicMessagesTools(clientTools),

@@ -269,6 +269,7 @@ export function sseAnthropicMessagesResponse(response: Record<string, unknown>):
       data: {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: response.id,
           type: response.type ?? 'message',
           role: response.role ?? 'assistant',
@@ -297,8 +298,8 @@ export function sseAnthropicMessagesResponse(response: Record<string, unknown>):
     event: 'message_delta',
     data: {
       type: 'message_delta',
-      delta: { stop_reason: response.stop_reason ?? 'end_turn', stop_sequence: response.stop_sequence ?? null },
-      usage: { output_tokens: (response.usage as Record<string, unknown>).output_tokens as number },
+      delta: { container: null, stop_details: null, stop_reason: response.stop_reason ?? 'end_turn', stop_sequence: response.stop_sequence ?? null },
+      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: (response.usage as Record<string, unknown>).output_tokens as number },
     },
   });
   chunks.push({ event: 'message_stop', data: { type: 'message_stop' } });
@@ -319,7 +320,7 @@ export function sseOpenAIChatCompletionsResponse(response: Record<string, unknow
     object: 'chat.completion.chunk',
     created,
     model,
-    choices: [{ index: 0, delta, finish_reason: withFinishReason ? finishReason : null }],
+    choices: [{  index: 0, delta, finish_reason: withFinishReason ? finishReason : null }],
   });
 
   const chunks: SSEChunk[] = [{ data: baseChunk({ role: message.role ?? 'assistant' }) }];

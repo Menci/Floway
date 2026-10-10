@@ -21,12 +21,10 @@
 // - https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
 
 import type {
-  AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesCacheControl,
   AnthropicMessagesMessage,
-  AnthropicMessagesTextBlock,
+  AnthropicMessagesTextBlockParam,
   AnthropicMessagesTool,
-  AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 
 const ephemeralCacheControl = (): AnthropicMessagesCacheControl => ({ type: 'ephemeral' });
@@ -45,7 +43,7 @@ export const applyLastToolCacheBreakpoint = (tools: AnthropicMessagesTool[] | un
   }
 };
 
-export const applyLastSystemCacheBreakpoint = (system: AnthropicMessagesTextBlock[] | undefined): void => {
+export const applyLastSystemCacheBreakpoint = (system: AnthropicMessagesTextBlockParam[] | undefined): void => {
   if (!system || system.length === 0) return;
   system[system.length - 1].cache_control = ephemeralCacheControl();
 };
@@ -55,10 +53,8 @@ export const applyLastMessageCacheBreakpoint = (messages: AnthropicMessagesMessa
     const message = messages[m];
 
     if (typeof message.content === 'string') {
-      // AnthropicMessagesTextBlock is valid in the user, assistant, and system content
-      // unions, so the union cast lets one literal serve any of the three roles.
-      const block: AnthropicMessagesTextBlock = { type: 'text', text: message.content, cache_control: ephemeralCacheControl() };
-      message.content = [block] as AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[] | AnthropicMessagesTextBlock[];
+      const block: AnthropicMessagesTextBlockParam = { type: 'text', text: message.content, cache_control: ephemeralCacheControl() };
+      message.content = [block];
       return;
     }
 

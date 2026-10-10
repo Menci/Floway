@@ -1,4 +1,4 @@
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResult, openaiResponsesResultToEvents, type OpenAIResponsesStreamEvent } from './index.ts';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -16,13 +16,13 @@ const isStructuredOpenAIResponsesEvent = (event: { type: string }): boolean =>
   event.type !== 'response.queued'
   && event.type !== 'response.created'
   && event.type !== 'response.in_progress'
-  && !isOpenAIResponsesTerminalEvent(event as OpenAIResponsesStreamEvent);
+  && !isOpenAIResponsesTerminalEvent(event as OpenAIResponsesStreamEventEx);
 
 // Some OpenAI Responses upstreams emit the event type only via the SSE `event:`
 // header and leave it off the JSON body; re-attach it so downstream sees a
 // consistent shape.
-const projectSseJsonEvent = (event: OpenAIResponsesStreamEvent, eventName: string | undefined): OpenAIResponsesStreamEvent =>
-  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as OpenAIResponsesStreamEvent) : event;
+const projectSseJsonEvent = (event: OpenAIResponsesStreamEventEx, eventName: string | undefined): OpenAIResponsesStreamEventEx =>
+  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as OpenAIResponsesStreamEventEx) : event;
 
 // Per OpenAI Responses spec every stream event carries a monotonic
 // `sequence_number`, but probes / fast-path completions on Copilot omit it
@@ -33,12 +33,12 @@ const projectSseJsonEvent = (event: OpenAIResponsesStreamEvent, eventName: strin
 // without colliding.
 const sequencer = () => {
   let next = 0;
-  return (event: OpenAIResponsesStreamEvent): OpenAIResponsesStreamEvent => {
+  return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     if (event.sequence_number !== undefined) {
       if (event.sequence_number >= next) next = event.sequence_number + 1;
       return event;
     }
-    const stamped: OpenAIResponsesStreamEvent = { ...event, sequence_number: next };
+    const stamped: OpenAIResponsesStreamEventEx = { ...event, sequence_number: next };
     next++;
     return stamped;
   };
@@ -55,12 +55,12 @@ const sequencer = () => {
 export const parseOpenAIResponsesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseOpenAIResponsesStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> => (async function* () {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   let sawStructured = false;
-  const sentWrapperTypes = new Set<OpenAIResponsesStreamEvent['type']>();
+  const sentWrapperTypes = new Set<OpenAIResponsesStreamEventEx['type']>();
   const stamp = sequencer();
 
-  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEvent>(parseSSEStream(body, options), {
+  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEventEx>(parseSSEStream(body, options), {
     protocol: 'OpenAI Responses',
     malformedJsonEventName: 'response',
   })) {
@@ -87,9 +87,9 @@ export const parseOpenAIResponsesStream = (
       // synthesize only the missing item/content events plus terminal.
       // `openaiResponsesResultToEvents` numbers from 0; re-stamp each frame
       // through the per-stream sequencer so they continue the same sequence.
-      for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResult }).response)) {
+      for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEvent;
+        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEventEx;
         yield eventFrame(stamp(restamped));
       }
       sawStructured = true;

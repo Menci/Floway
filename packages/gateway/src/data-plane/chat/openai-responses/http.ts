@@ -11,7 +11,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
@@ -68,7 +68,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 };
 
 const parsePayload = (requestBody: RequestBody): CanonicalOpenAIResponsesPayload =>
-  canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIResponsesRequestPayload);
+  canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIResponsesRequestPayloadEx);
 
 export const openaiResponsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

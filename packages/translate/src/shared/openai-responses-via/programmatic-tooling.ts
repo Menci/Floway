@@ -1,7 +1,7 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
-import type { OpenAIResponsesInputItem, OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
-export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayload, target: string): void => {
+export const rejectProgrammaticOpenAIResponsesPayload = (payload: OpenAIResponsesPayloadEx, target: string): void => {
   const toolChoice = payload.tool_choice;
   if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
     throw new TranslatorInputError(`Programmatic OpenAI Responses tooling cannot be translated to ${target}.`);
@@ -26,13 +26,13 @@ const hasDeferredTool = (tool: unknown): boolean => {
   return Array.isArray(record.tools) && record.tools.some(hasDeferredTool);
 };
 
-const isProgramCaller = (item: OpenAIResponsesInputItem): item is OpenAIResponsesInputItem & { call_id: string; caller: { type: 'program'; caller_id: string } } => {
+const isProgramCaller = (item: CanonicalOpenAIResponsesInputItem): item is CanonicalOpenAIResponsesInputItem & { call_id: string; caller: { type: 'program'; caller_id: string } } => {
   if (!('caller' in item)) return false;
   const caller = item.caller;
   return typeof caller === 'object' && caller !== null && 'type' in caller && caller.type === 'program';
 };
 
-export const rejectProgramCaller = (item: OpenAIResponsesInputItem): void => {
+export const rejectProgramCaller = (item: CanonicalOpenAIResponsesInputItem): void => {
   if (isProgramCaller(item)) {
     throw new TranslatorInputError(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
   }

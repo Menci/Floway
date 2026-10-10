@@ -22,6 +22,13 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  pi: {
+    model: 'custom-pi',
+    provider: 'floway',
+    thinkingLevel: null,
+    retry: { enabled: null, maxRetries: null },
+  },
+  omp: { model: 'custom-omp-model', provider: 'floway', retry: { enabled: null, maxRetries: null } },
 };
 
 describe('agent setup request bodies', () => {
@@ -31,6 +38,16 @@ describe('agent setup request bodies', () => {
       configuration: fullConfiguration,
       expectedRevision: 3,
     }).success).toBe(true);
+  });
+
+  test('agentSetupUpdateBody rejects missing Pi preferences', () => {
+    const { pi: _, ...withoutPi } = fullConfiguration;
+    const parsed = agentSetupUpdateBody.safeParse({
+      token: 'token-a',
+      configuration: withoutPi,
+      expectedRevision: 3,
+    });
+    expect(parsed.success).toBe(false);
   });
 
   test('agentSetupUpdateBody rejects an invalid inner configuration', () => {
@@ -44,4 +61,9 @@ describe('agent setup request bodies', () => {
   test('agentSetupHeartbeatBody accepts a bare token', () => {
     expect(agentSetupHeartbeatBody.safeParse({ token: 'token-a' }).success).toBe(true);
   });
+});
+
+test('agentSetupUpdateBody requires OMP preferences', () => {
+  const { omp: _, ...withoutOmp } = fullConfiguration;
+  expect(agentSetupUpdateBody.safeParse({ token: 'token-a', configuration: withoutOmp, expectedRevision: 3 }).success).toBe(false);
 });

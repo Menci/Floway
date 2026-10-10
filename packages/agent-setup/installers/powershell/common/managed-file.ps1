@@ -60,3 +60,22 @@ function Remove-SetupOlderBackups {
     Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
     Remove-Item -Force -ErrorAction Stop
 }
+
+function Stage-SetupProviderConnections {
+  param([string]$ExistingPath, [string]$StagePath, [string]$Provider)
+  $connection = [PSCustomObject]@{ provider = $Provider; endpoint = $SetupEndpoint.TrimEnd('/') }
+  try {
+    $configuration = if (Test-Path -LiteralPath $ExistingPath) {
+      [System.IO.File]::ReadAllText($ExistingPath) | ConvertFrom-Json -ErrorAction Stop
+    } else {
+      [PSCustomObject]@{ connections = @() }
+    }
+    [System.Collections.IList]$connections = $configuration.connections
+    $configuration.connections = @($connections.GetEnumerator() | Where-Object { $_.provider -cne $Provider }) + $connection
+  } catch {
+    throw [System.Exception]::new('could not read the Floway connection configuration', $_.Exception)
+  }
+  [System.IO.File]::Create($StagePath).Dispose()
+  Protect-SetupFile $StagePath
+  [System.IO.File]::WriteAllText($StagePath, (ConvertTo-Json -InputObject $configuration -Depth 100) + "`n", (New-Object Text.UTF8Encoding($false)))
+}

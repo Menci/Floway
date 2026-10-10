@@ -14,7 +14,7 @@ import {
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 // ── Helpers ──
@@ -230,7 +230,7 @@ test('image content part in leading system message throws', async () => {
                 { type: 'text', text: 'You are helpful.' },
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
               ],
-            },
+            } as unknown as OpenAIChatCompletionsMessage,
             { role: 'user', content: 'Hi' },
           ],
         }),
@@ -252,7 +252,7 @@ test('image content part in non-leading system message throws', async () => {
               content: [
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
               ],
-            },
+            } as unknown as OpenAIChatCompletionsMessage,
             { role: 'user', content: 'Bye' },
           ],
         }),
@@ -310,7 +310,7 @@ test('assistant with null content → empty text block', async () => {
 test('user with null content → empty text block', async () => {
   const result = await buildTargetRequest(
     mkPayload({
-      messages: [{ role: 'user', content: null }],
+      messages: [{ role: 'user', content: null } as unknown as OpenAIChatCompletionsMessage],
     }),
   );
   const blocks = userBlocks(result, 0);
@@ -464,7 +464,7 @@ test('tool message without tool_call_id is rejected', async () => {
                 },
               ],
             },
-            { role: 'tool', content: 'result' },
+            { role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage,
           ],
         }),
       ),
@@ -492,7 +492,7 @@ test('assistant blocks ordered: thinking → text → tool_use', async () => {
               function: { name: 'search', arguments: '{"q":"x"}' },
             },
           ],
-        },
+        } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -598,7 +598,7 @@ test('reasoning_text + reasoning_opaque → thinking block with signature', asyn
           content: 'resp',
           reasoning_text: 'My thoughts',
           reasoning_opaque: 'sig',
-        },
+        } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -609,12 +609,12 @@ test('reasoning_text + reasoning_opaque → thinking block with signature', asyn
   assertEquals(thinking.signature, 'sig');
 });
 
-test('reasoning_text only → thinking block without signature', async () => {
+test('reasoning_text only → thinking block with the required empty signature field', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [
         { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_text: 'My thoughts' },
+        { role: 'assistant', content: 'resp', reasoning_text: 'My thoughts' } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -622,7 +622,7 @@ test('reasoning_text only → thinking block without signature', async () => {
   const thinking = blocks[0] as AnthropicMessagesThinkingBlock;
   assertEquals(thinking.type, 'thinking');
   assertEquals(thinking.thinking, 'My thoughts');
-  assertEquals(thinking.signature, undefined);
+  assertEquals(thinking.signature, '');
 });
 
 test('reasoning_opaque only → redacted_thinking block', async () => {
@@ -630,7 +630,7 @@ test('reasoning_opaque only → redacted_thinking block', async () => {
     mkPayload({
       messages: [
         { role: 'user', content: 'Hi' },
-        { role: 'assistant', content: 'resp', reasoning_opaque: 'opaque_data' },
+        { role: 'assistant', content: 'resp', reasoning_opaque: 'opaque_data' } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -664,7 +664,7 @@ test('null reasoning fields → no thinking block', async () => {
           content: 'resp',
           reasoning_text: null,
           reasoning_opaque: null,
-        },
+        } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -937,7 +937,7 @@ test('tool_choice auto → { type: auto }', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
       tool_choice: 'auto',
     }),
   );
@@ -958,7 +958,7 @@ test('tool_choice required → { type: any }', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
       tool_choice: 'required',
     }),
   );
@@ -972,7 +972,7 @@ test('tool_choice specific function → { type: tool, name }', async () => {
       tools: [
         {
           type: 'function',
-          function: { name: 'get_weather', parameters: {} },
+          function: { name: 'get_weather', parameters: { type: 'object' } },
         },
       ],
       tool_choice: { type: 'function', function: { name: 'get_weather' } },
@@ -985,7 +985,7 @@ test('null tool_choice → not set', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tool_choice: null,
+      tool_choice: null as unknown as OpenAIChatCompletionsPayload['tool_choice'],
     }),
   );
   assertEquals(result.tool_choice, undefined);
@@ -1203,14 +1203,14 @@ test('interleaved thinking round-trip', async () => {
               function: { name: 'calc', arguments: '{"x":1}' },
             },
           ],
-        },
+        } as OpenAIChatCompletionsAssistantMessageEx,
         { role: 'tool', content: '42', tool_call_id: 'tc1' },
         {
           role: 'assistant',
           content: 'The answer is 42.',
           reasoning_text: 'thinking2',
           reasoning_opaque: 'sig2',
-        },
+        } as OpenAIChatCompletionsAssistantMessageEx,
       ],
     }),
   );
@@ -1243,7 +1243,7 @@ test('buildTargetRequest merges reasoning_effort with structured-output format o
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'high',
-      response_format: { type: 'json_schema', json_schema: { schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
     }),
   );
 
@@ -1328,7 +1328,7 @@ test('buildTargetRequest keeps a structured-output format alongside thinking.dis
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
       reasoning_effort: 'none',
-      response_format: { type: 'json_schema', json_schema: { schema } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shape', schema } },
     }),
   );
 
@@ -1346,4 +1346,14 @@ test('buildTargetRequest leaves thinking absent when reasoning_effort is not non
 
   assertFalse('thinking' in result);
   assertEquals(result.output_config, { effort: 'high' });
+});
+
+test.each(['auto', 'required'] as const)('allowed_tools %s restricts native Messages declarations', async mode => {
+  const result = await buildTargetRequest({
+    model: 'claude-test', messages: [{ role: 'user', content: 'hello' }], tools: [
+      { type: 'function', function: { name: 'allowed' } }, { type: 'function', function: { name: 'excluded' } },
+    ], tool_choice: { type: 'allowed_tools', allowed_tools: { mode, tools: [{ type: 'function', function: { name: 'allowed' } }] } },
+  });
+  assertEquals(result.tools?.map(tool => 'name' in tool ? tool.name : undefined), ['allowed']);
+  assertEquals(result.tool_choice, { type: mode === 'required' ? 'any' : 'auto' });
 });

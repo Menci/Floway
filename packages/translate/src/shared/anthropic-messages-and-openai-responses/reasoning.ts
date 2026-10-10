@@ -71,7 +71,7 @@ const unpackReasoningSignature = (signature: string): { id: string | null; encry
  */
 export const anthropicMessagesReasoningBlockToOpenAIResponsesReasoning = (block: AnthropicMessagesReasoningBlock): OpenAIResponsesInputReasoning => {
   const carrier = block.type === 'thinking' ? block.signature : block.data;
-  const { id, encryptedContent } = carrier !== undefined ? unpackReasoningSignature(carrier) : { id: null, encryptedContent: undefined };
+  const { id, encryptedContent } = carrier ? unpackReasoningSignature(carrier) : { id: null, encryptedContent: undefined };
   const summary = block.type === 'thinking' && block.thinking ? [{ type: 'summary_text' as const, text: block.thinking }] : [];
 
   return {
@@ -109,5 +109,5 @@ export const openaiResponsesReasoningToAnthropicMessagesUpstreamBlock = (item: O
     return item.encrypted_content ? { type: 'redacted_thinking', data: item.encrypted_content } : null;
   }
 
-  return { type: 'thinking', thinking, ...(item.encrypted_content ? { signature: item.encrypted_content } : {}) };
+  return { type: 'thinking', thinking, signature: item.encrypted_content ?? '' };
 };

@@ -6,21 +6,12 @@ function Install-SetupHomebrewCask {
   Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds $timeoutSeconds
 }
 
-# npm on Windows is commonly a .cmd launcher, which ProcessStartInfo cannot
-# execute directly with UseShellExecute disabled. A fresh copy of the current
-# PowerShell host resolves that launcher while preserving inherited terminal
-# output and the same process-tree timeout.
 function Install-SetupNpmPackage {
   param([string]$Package)
   $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $npm) { Stop-Setup 'npm was selected for installation but is no longer available.' }
-  $hostCommand = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  $hostExe = if ($hostCommand) { $hostCommand.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
-  $npmLiteral = "'" + $npm.Source.Replace("'", "''") + "'"
-  $packageLiteral = "'" + $Package.Replace("'", "''") + "'"
-  $command = "& $npmLiteral install --global $packageLiteral; exit `$LASTEXITCODE"
   $timeoutSeconds = Get-SetupTimeoutSeconds 600
-  Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds $timeoutSeconds
+  Invoke-SetupLiveProcess -Exe $npm.Source -Arguments @('install', '--global', $Package) -TimeoutSeconds $timeoutSeconds
 }
 
 # Execute a downloaded installer in a fresh interpreter. The script travels

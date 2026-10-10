@@ -9,7 +9,7 @@ type OpenAIChatCompletionsImagePart = Extract<OpenAIChatCompletionsContentPart, 
 const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Promise<void> => {
   const targets: OpenAIChatCompletionsImagePart[] = [];
   for (const message of ctx.payload.messages) {
-    if (!Array.isArray(message.content)) continue;
+    if (message.role !== 'user' || !Array.isArray(message.content)) continue;
     for (const part of message.content) {
       if (part.type === 'image_url' && isBase64ImageDataUrl(part.image_url.url)) targets.push(part);
     }
@@ -34,7 +34,7 @@ const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Prom
   ctx.payload = {
     ...ctx.payload,
     messages: ctx.payload.messages.map((message): OpenAIChatCompletionsMessage => {
-      if (!Array.isArray(message.content) || !message.content.some(hasCompressedImage)) return message;
+      if (message.role !== 'user' || !Array.isArray(message.content) || !message.content.some(hasCompressedImage)) return message;
       return {
         ...message,
         content: message.content.map(part => hasCompressedImage(part) ? rewriteImage(part) : part),

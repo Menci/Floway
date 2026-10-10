@@ -4,7 +4,7 @@ import { withOpenAIResponsesAgentMessageShim } from '../../../../../src/data-pla
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -15,7 +15,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () { yield d
 const FLAG = new Set<FlagId>(['openai-responses-agent-message-shim']);
 
 const lower = async (
-  input: OpenAIResponsesInputItem[],
+  input: CanonicalOpenAIResponsesInputItem[],
   { enabledFlags = new Set<FlagId>(), targetApi = 'openaiResponses' }: {
     enabledFlags?: ReadonlySet<FlagId>;
     targetApi?: OpenAIResponsesInvocation['targetApi'];
@@ -47,7 +47,7 @@ const newTask: OpenAIResponsesInputAgentMessageItem = {
   }],
 };
 
-const framedNewTask: OpenAIResponsesInputItem = {
+const framedNewTask: CanonicalOpenAIResponsesInputItem = {
   type: 'message',
   role: 'user',
   content: [{
@@ -63,7 +63,7 @@ const framedNewTask: OpenAIResponsesInputItem = {
 };
 
 test('lowers agent_message items in place to framed user messages when the flag is on', async () => {
-  const context: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: '# AGENTS.md instructions' };
+  const context: CanonicalOpenAIResponsesInputItem = { type: 'message', role: 'user', content: '# AGENTS.md instructions' };
   const reply: OpenAIResponsesInputAgentMessageItem = {
     type: 'agent_message',
     author: '/root/route_audit',
@@ -116,7 +116,7 @@ test.each(['anthropicMessages', 'openaiChatCompletions'] as const)(
 );
 
 test('leaves a payload without agent_message as the same object', async () => {
-  const input: OpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'hi' }];
+  const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'hi' }];
   for (const options of [{ enabledFlags: FLAG }, {}, { targetApi: 'anthropicMessages' as const }]) {
     const { before, seen } = await lower(input, options);
     assert(seen === before);

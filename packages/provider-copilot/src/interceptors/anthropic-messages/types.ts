@@ -1,5 +1,5 @@
 import type { Interceptor } from '@floway-dev/interceptor';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 
@@ -26,7 +26,7 @@ export interface AnthropicMessagesBoundaryCtx {
 export type CopilotAnthropicMessagesBoundaryInterceptor = Interceptor<
   AnthropicMessagesBoundaryCtx,
   object,
-  ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>
+  ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>
 >;
 
 // count_tokens is a one-shot, non-streaming HTTP exchange: the terminal

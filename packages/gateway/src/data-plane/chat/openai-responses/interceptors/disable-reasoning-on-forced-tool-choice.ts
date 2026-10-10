@@ -1,6 +1,6 @@
 
 import type { OpenAIResponsesInterceptor } from './types.ts';
-import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
@@ -10,7 +10,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // translates that into the vendor's wire form. Sibling fields on the
 // `reasoning` object (e.g. `summary`) are dropped — they have no meaning
 // when reasoning is disabled.
-const hasForcedToolChoice = (payload: OpenAIResponsesPayload): boolean => {
+const hasForcedToolChoice = (payload: OpenAIResponsesPayloadEx): boolean => {
   const toolChoice = payload.tool_choice;
   if (toolChoice === undefined || toolChoice === null) return false;
   if (typeof toolChoice === 'string') return toolChoice === 'required';

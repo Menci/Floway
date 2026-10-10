@@ -1,9 +1,9 @@
 import { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
-import type { OpenAIResponsesOutputCustomToolCall, OpenAIResponsesOutputFunctionCall, OpenAIResponsesOutputImageGenerationCall, OpenAIResponsesOutputItem, OpenAIResponsesOutputMessage, OpenAIResponsesOutputReasoning, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from './index.ts';
+import type { OpenAIResponsesOutputCustomToolCall, OpenAIResponsesOutputFunctionCallEx, OpenAIResponsesOutputImageGenerationCallEx, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputMessageEx, OpenAIResponsesOutputReasoning, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
 
-const getTerminalEventName = (response: OpenAIResponsesResult): 'response.failed' | 'response.incomplete' | 'response.completed' => {
+const getTerminalEventName = (response: OpenAIResponsesResultEx): 'response.failed' | 'response.incomplete' | 'response.completed' => {
   switch (response.status) {
   case 'completed': return 'response.completed';
   case 'failed': return 'response.failed';
@@ -19,15 +19,13 @@ const getTerminalEventName = (response: OpenAIResponsesResult): 'response.failed
   throw new TypeError(`OpenAI Responses result states no terminal status (got ${JSON.stringify(response.status)})`);
 };
 
-const openaiResponsesStartSnapshot = (response: OpenAIResponsesResult): OpenAIResponsesResult => {
-  const { error: _error, incomplete_details: _incompleteDetails, output: _output, output_text: _outputText, ...snapshot } = response;
+const openaiResponsesStartSnapshot = (response: OpenAIResponsesResultEx): OpenAIResponsesResultEx => {
+  const { error: _error, incomplete_details: _incompleteDetails, output: _output, ...snapshot } = response;
 
   // JSON fallback has no upstream incremental frames, so synthesize the same
   // empty in-progress envelope that a real stream would start with. Emitting
   // terminal output or errors here would duplicate later item/terminal events.
-  // `output_text` is not synthesized — it's an SDK-only convenience alias
-  // and absent from real upstream wire frames. `error` and
-  // `incomplete_details` are required-nullable per the OpenAI Responses spec; on
+  // `error` and `incomplete_details` are required-nullable per the Responses spec; on
   // a success-path in-progress envelope they MUST be present as null.
   return {
     ...snapshot,
@@ -51,9 +49,9 @@ const requireItemId = (item: { type: string; id?: string }): string => {
   return item.id;
 };
 
-const openaiResponsesMessageEvents = (item: OpenAIResponsesOutputMessage, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesMessageEvents = (item: OpenAIResponsesOutputMessageEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const itemId = requireItemId(item);
-  const events: OpenAIResponsesStreamEvent[] = [
+  const events: OpenAIResponsesStreamEventEx[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -148,8 +146,8 @@ const openaiResponsesMessageEvents = (item: OpenAIResponsesOutputMessage, output
   return events;
 };
 
-const openaiResponsesReasoningEvents = (item: OpenAIResponsesOutputReasoning, outputIndex: number): OpenAIResponsesStreamEvent[] => {
-  const events: OpenAIResponsesStreamEvent[] = [
+const openaiResponsesReasoningEvents = (item: OpenAIResponsesOutputReasoning, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
+  const events: OpenAIResponsesStreamEventEx[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -205,9 +203,9 @@ const openaiResponsesReasoningEvents = (item: OpenAIResponsesOutputReasoning, ou
   return events;
 };
 
-const openaiResponsesFunctionCallEvents = (item: OpenAIResponsesOutputFunctionCall, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesFunctionCallEvents = (item: OpenAIResponsesOutputFunctionCallEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const itemId = requireItemId(item);
-  const events: OpenAIResponsesStreamEvent[] = [
+  const events: OpenAIResponsesStreamEventEx[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -244,9 +242,9 @@ const openaiResponsesFunctionCallEvents = (item: OpenAIResponsesOutputFunctionCa
   return events;
 };
 
-const openaiResponsesCustomToolCallEvents = (item: OpenAIResponsesOutputCustomToolCall, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesCustomToolCallEvents = (item: OpenAIResponsesOutputCustomToolCall, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const itemId = requireItemId(item);
-  const events: OpenAIResponsesStreamEvent[] = [
+  const events: OpenAIResponsesStreamEventEx[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -278,17 +276,17 @@ const openaiResponsesCustomToolCallEvents = (item: OpenAIResponsesOutputCustomTo
   return events;
 };
 
-const openaiResponsesWebSearchCallEvents = (item: OpenAIResponsesOutputWebSearchCall, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesWebSearchCallEvents = (item: OpenAIResponsesOutputWebSearchCall, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const { startFrames, endFrames } = webSearchCallLifecycleEvents(item, outputIndex);
   return [...startFrames, ...endFrames];
 };
 
-const openaiResponsesImageGenerationCallEvents = (item: OpenAIResponsesOutputImageGenerationCall, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesImageGenerationCallEvents = (item: OpenAIResponsesOutputImageGenerationCallEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const { startFrames, endFrames } = imageGenerationCallLifecycleEvents(item, outputIndex);
   return [...startFrames, ...endFrames];
 };
 
-const openaiResponsesGenericOutputItemEvents = (item: OpenAIResponsesOutputItem, outputIndex: number): OpenAIResponsesStreamEvent[] => [
+const openaiResponsesGenericOutputItemEvents = (item: OpenAIResponsesOutputItemEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => [
   {
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -301,7 +299,7 @@ const openaiResponsesGenericOutputItemEvents = (item: OpenAIResponsesOutputItem,
   },
 ];
 
-const openaiResponsesOutputItemEvents = (item: OpenAIResponsesOutputItem, outputIndex: number): OpenAIResponsesStreamEvent[] => {
+const openaiResponsesOutputItemEvents = (item: OpenAIResponsesOutputItemEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   switch (item.type) {
   case 'message': return openaiResponsesMessageEvents(item, outputIndex);
   case 'reasoning': return openaiResponsesReasoningEvents(item, outputIndex);
@@ -324,14 +322,14 @@ const openaiResponsesOutputItemEvents = (item: OpenAIResponsesOutputItem, output
 // `terminal` lets a caller state the terminal event instead of having it read
 // off `status`.
 export const openaiResponsesResultToEvents = (
-  response: OpenAIResponsesResult,
+  response: OpenAIResponsesResultEx,
   options?: { genericOutputItems?: boolean; terminal?: 'response.completed' | 'response.incomplete' | 'response.failed' },
-): EventFrame<OpenAIResponsesStreamEvent>[] => {
+): EventFrame<OpenAIResponsesStreamEventEx>[] => {
   const started = openaiResponsesStartSnapshot(response);
   const outputEvents = options?.genericOutputItems
     ? response.output.flatMap(openaiResponsesGenericOutputItemEvents)
     : response.output.flatMap(openaiResponsesOutputItemEvents);
-  const events: OpenAIResponsesStreamEvent[] = [
+  const events: OpenAIResponsesStreamEventEx[] = [
     { type: 'response.created', response: started },
     { type: 'response.in_progress', response: started },
     ...outputEvents,

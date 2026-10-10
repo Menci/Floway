@@ -4,7 +4,7 @@
 // as a Lark-grammar hint in the `input` parameter's description so downstream
 // models still see what shape the freeform value should follow. Models that
 // don't recognize the grammar silently ignore it.
-export const buildCustomToolInputSchema = (format?: Record<string, unknown>): Record<string, unknown> => {
+export const buildCustomToolInputSchema = (format?: Record<string, unknown>): Record<string, unknown> & { type: 'object' } => {
   const definition = typeof format?.definition === 'string' ? format.definition : undefined;
   return {
     type: 'object',

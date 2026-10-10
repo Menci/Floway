@@ -1,5 +1,5 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 export const withRoleCompatibilityApplied: OpenAIResponsesInterceptor = (ctx, _gatewayCtx, run) => {
@@ -15,7 +15,7 @@ export const withRoleCompatibilityApplied: OpenAIResponsesInterceptor = (ctx, _g
   ctx.payload = {
     ...ctx.payload,
     input: ctx.payload.input.map(item => {
-      let mapped: OpenAIResponsesInputItem = item;
+      let mapped: CanonicalOpenAIResponsesInputItem = item;
       if (mapped.type === 'message' && rewriteSystemToDeveloper && mapped.role === 'system') {
         mapped = { ...mapped, role: 'developer' };
       }

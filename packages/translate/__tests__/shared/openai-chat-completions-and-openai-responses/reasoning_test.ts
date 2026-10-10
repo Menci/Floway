@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { scalarToOpenAIResponsesReasoningItem, toOpenAIResponsesReasoningItem } from '../../../src/shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { toOpenAIChatCompletionsReasoningItem, scalarToOpenAIResponsesReasoningItem, toOpenAIResponsesReasoningItem } from '../../../src/shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 
 test('reasoning fallback IDs are generated only when an item needs one', () => {
@@ -19,4 +19,8 @@ test('reasoning fallback IDs are generated only when an item needs one', () => {
     summary: [{ type: 'summary_text', text: 'trace' }],
   }).id).toMatch(/^rs_[0-9a-f]{32}$/);
   expect(random).toHaveBeenCalledOnce();
+});
+
+test.each([undefined, null, 'rs_existing'])('projects the standard nullable input reasoning ID: %s', id => {
+  expect(toOpenAIChatCompletionsReasoningItem({ type: 'reasoning', id, summary: [] })).toEqual({ type: 'reasoning', ...(id == null ? {} : { id }), summary: [] });
 });

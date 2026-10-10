@@ -13,7 +13,7 @@ export const anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReason
     return {
       type: 'thinking',
       thinking: reasoningText,
-      ...(reasoningOpaque !== undefined && reasoningOpaque !== null ? { signature: reasoningOpaque } : {}),
+      signature: reasoningOpaque ?? '',
     };
   }
 
@@ -24,7 +24,7 @@ export const openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock = (b
   if (block.type === 'thinking') {
     return {
       reasoningText: block.thinking || null,
-      reasoningOpaque: block.signature ?? null,
+      reasoningOpaque: block.signature || null,
     };
   }
 

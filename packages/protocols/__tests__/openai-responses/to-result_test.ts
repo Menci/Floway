@@ -1,17 +1,16 @@
 import { test } from 'vitest';
 
 import { eventFrame } from '../../src/common/index.ts';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '../../src/openai-responses/index.ts';
+import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '../../src/openai-responses/index.ts';
 import { collectOpenAIResponsesProtocolEventsToResult } from '../../src/openai-responses/to-result.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectOpenAIResponsesProtocolEventsToResult reassembles synthetic OpenAI Responses events', async () => {
-  const expected: OpenAIResponsesResult = {
+  const expected: OpenAIResponsesResultEx = {
     id: 'resp_1',
     object: 'response',
     model: 'gpt-test',
     status: 'completed',
-    output_text: 'Hello',
     output: [
       {
         type: 'message',
@@ -47,7 +46,7 @@ test('collectOpenAIResponsesProtocolEventsToResult rejects streams without termi
         error: null,
         incomplete_details: null,
       },
-    } satisfies OpenAIResponsesStreamEvent);
+    } satisfies OpenAIResponsesStreamEventEx);
   }
 
   await assertRejects(async () => await collectOpenAIResponsesProtocolEventsToResult(events()), Error, 'OpenAI Responses stream ended without a terminal event.');

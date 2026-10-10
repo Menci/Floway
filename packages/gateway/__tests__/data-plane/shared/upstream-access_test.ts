@@ -67,7 +67,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       id: 'chatcmpl-upstream-access',
       model,
       created: 0,
-      choices: [{ message: { role: 'assistant', content: 'Available' }, finish_reason: 'stop' }],
+      choices: [{ message: { refusal: null, role: 'assistant', content: 'Available' }, finish_reason: 'stop' }],
     });
   }, async () => {
     const listingStatus = models.length > 0 ? 200 : 502;
