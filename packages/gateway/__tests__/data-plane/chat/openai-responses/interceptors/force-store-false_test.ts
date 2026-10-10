@@ -32,30 +32,7 @@ const invocation = (
   action: 'generate',
 });
 
-test('forces store:false over a caller-requested store:true when the flag is on', async () => {
-  const ctx = invocation({
-    model: 'gpt-5.2',
-    store: true,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-  });
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, false);
-});
-
-test('sets store:false when the caller omitted store', async () => {
-  const ctx = invocation({
-    model: 'gpt-5.2',
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-  });
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, false);
-});
-
-test('leaves an explicit store:false as false', async () => {
+test('when openai-responses-store-false is on, keep "store":false to false', async () => {
   const ctx = invocation({
     model: 'gpt-5.2',
     store: false,
@@ -67,7 +44,30 @@ test('leaves an explicit store:false as false', async () => {
   assertEquals(ctx.payload.store, false);
 });
 
-test('leaves the payload untouched when the flag is off', async () => {
+test('when openai-responses-store-false is on, change "store":true to false', async () => {
+  const ctx = invocation({
+    model: 'gpt-5.2',
+    store: true,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
+  });
+
+  await withStoreForcedFalse(ctx, stubCtx, okEvents);
+
+  assertEquals(ctx.payload.store, false);
+});
+
+test('when openai-responses-store-false is on, change an unset "store" to false', async () => {
+  const ctx = invocation({
+    model: 'gpt-5.2',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
+  });
+
+  await withStoreForcedFalse(ctx, stubCtx, okEvents);
+
+  assertEquals(ctx.payload.store, false);
+});
+
+test('when openai-responses-store-false is off, leave "store":true as is', async () => {
   const ctx = invocation(
     {
       model: 'gpt-5.2',
@@ -82,18 +82,31 @@ test('leaves the payload untouched when the flag is off', async () => {
   assertEquals(ctx.payload.store, true);
 });
 
-test('leaves the payload untouched when the final target is not OpenAI Responses', async () => {
+test('when openai-responses-store-false is off, leave "store":false as is', async () => {
   const ctx = invocation(
     {
       model: 'gpt-5.2',
-      store: true,
+      store: false,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
     },
-    new Set(['openai-responses-store-false']),
-    'anthropicMessages',
+    new Set<FlagId>(),
   );
 
   await withStoreForcedFalse(ctx, stubCtx, okEvents);
 
-  assertEquals(ctx.payload.store, true);
+  assertEquals(ctx.payload.store, false);
+});
+
+test('when openai-responses-store-false is off, leave an unset "store" as is', async () => {
+  const ctx = invocation(
+    {
+      model: 'gpt-5.2',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
+    },
+    new Set<FlagId>(),
+  );
+
+  await withStoreForcedFalse(ctx, stubCtx, okEvents);
+
+  assertEquals(ctx.payload.store, undefined);
 });
