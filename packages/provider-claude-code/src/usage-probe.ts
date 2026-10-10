@@ -73,13 +73,17 @@ export const fetchClaudeCodeUsageProbe = async (
   return { fetched_at: new Date().toISOString(), body: parsed };
 };
 
-export const mergeClaudeCodeUsageProbe = (state: ClaudeCodeUpstreamState, probe: ClaudeCodeUsageProbeResult): ClaudeCodeUpstreamState => ({
-  ...state,
-  accounts: state.accounts.map((account, index) => index === 0
-    && (account.usageProbeSnapshot === null || account.usageProbeSnapshot.fetchedAt <= Date.parse(probe.fetched_at))
-    ? { ...account, usageProbeSnapshot: { fetchedAt: Date.parse(probe.fetched_at), data: probe.body } }
-    : account),
-});
+export const mergeClaudeCodeUsageProbe = (state: ClaudeCodeUpstreamState, probe: ClaudeCodeUsageProbeResult): ClaudeCodeUpstreamState => {
+  const fetchedAt = Date.parse(probe.fetched_at);
+  const previous = state.accounts[0].usageProbeSnapshot;
+  if (previous !== null && previous.fetchedAt > fetchedAt) return state;
+  return {
+    ...state,
+    accounts: state.accounts.map((account, index) => index === 0
+      ? { ...account, usageProbeSnapshot: { fetchedAt, data: probe.body } }
+      : account),
+  };
+};
 
 export const persistClaudeCodeUsageProbe = async (upstreamId: string, probe: ClaudeCodeUsageProbeResult): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current =>

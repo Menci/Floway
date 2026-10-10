@@ -16,10 +16,12 @@ import type { Fetcher } from '@floway-dev/provider';
 import {
   fetchOllamaAccount,
   fetchOllamaUsageProbe,
+  fetchOllamaBalanceProbe,
   isOllamaUsageEnabled,
   parseOllamaUpstreamConfig,
   refreshOllamaAccount,
   refreshOllamaUsageProbe,
+  refreshOllamaBalanceProbe,
   type OllamaUpstreamConfig,
 } from '@floway-dev/provider-ollama';
 
@@ -53,10 +55,11 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   ).catch((): null => null);
 
   try {
-    const observation = record.id === ''
-      ? await fetchOllamaUsageProbe(config, fetcher)
-      : await refreshOllamaUsageProbe(record.id, config, fetcher);
-    return c.json({ observation, account: await account });
+    const [observation, balanceObservation] = await Promise.all([
+      record.id === '' ? fetchOllamaUsageProbe(config, fetcher) : refreshOllamaUsageProbe(record.id, config, fetcher),
+      record.id === '' ? fetchOllamaBalanceProbe(config, fetcher) : refreshOllamaBalanceProbe(record.id, config, fetcher),
+    ]);
+    return c.json({ observation, balanceObservation, account: await account });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 502);
   }

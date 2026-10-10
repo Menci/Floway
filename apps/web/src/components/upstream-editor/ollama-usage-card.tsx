@@ -31,14 +31,14 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
   const observation = refreshed?.observation ?? stored?.observation ?? null;
   const account = refreshed?.account ?? record.state?.account ?? null;
   const balanceProbe = record.state?.balanceProbe;
-  const balanceObservation = balanceProbe?.observation;
+  const balanceObservation = refreshed?.balanceObservation ?? balanceProbe?.observation;
   const windows = readWindows(balanceObservation?.data ?? observation?.data);
   const balances = readBalances(balanceObservation?.data);
   const activityCost = readActivityCost(observation?.data);
   // A background probe records its failure on the upstream rather than
   // interrupting the request that armed it, so this is where it surfaces. A
   // manual refresh that succeeded has already answered the question.
-  const backgroundError = balanceProbe?.error ?? (refreshed === null ? stored?.error ?? null : null);
+  const backgroundError = refreshed === null ? balanceProbe?.error ?? stored?.error ?? null : null;
   const accountName = account?.name ?? account?.email ?? null;
 
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
@@ -69,7 +69,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
-        refreshLabel={t(`dashboard.upstreamEditor.ollama.usage.${observation ? 'refresh' : 'load'}`)}
+        refreshLabel={t(`dashboard.upstreamEditor.ollama.usage.${(balanceObservation ?? observation) ? 'refresh' : 'load'}`)}
         refreshing={loading}
       />
     } />
@@ -89,7 +89,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       <Text>{activityCostText(balance.amount)}</Text>
     </div>)}
 
-    {(balanceObservation || observation) && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+    {(balanceObservation ?? observation) && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
       {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost.amount)}</Text>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime((balanceObservation ?? observation)!.fetchedAt, locale) })}

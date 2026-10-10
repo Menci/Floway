@@ -15,37 +15,31 @@ import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, runScheduledUs
 export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
   config.cloudUsage && config.apiKey !== undefined;
 
-// Both windows are hours-to-days wide and the payload is a fixed cost per
-// probe, so this is the resolution worth paying for: a busy upstream refreshes
-// once a minute, an idle one not at all.
+// Ollama recommends polling activity at most once per minute; this also bounds
+// the post-inference probes.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 export const OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS = 60_000;
 
-export const fetchOllamaUsageProbe = async (
-  config: OllamaUpstreamConfig,
-  fetcher: Fetcher,
-): Promise<OllamaUsageObservation> => {
-  const response = await ollamaFetchUsage(
-    config,
-    { method: 'GET', headers: new Headers({ accept: 'application/json' }) },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-  );
+const readOllamaObservation = async (response: Response, path: string): Promise<OllamaUsageObservation> => {
   const rawText = await response.text();
-  if (!response.ok) {
-    // The body is the operator-facing half of this message, so it is trimmed:
-    // ollama.com terminates its error JSON with a newline.
-    throw new Error(`Ollama /api/usage returned ${response.status}: ${rawText.trim().slice(0, 256)}`);
-  }
+  if (!response.ok) throw new Error(`Ollama ${path} returned ${response.status}: ${rawText.trim().slice(0, 256)}`);
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawText);
   } catch (cause) {
-    throw new Error(`Ollama /api/usage returned a non-JSON body (${response.status})`, { cause: cause as Error });
+    throw new Error(`Ollama ${path} returned a non-JSON body (${response.status})`, { cause });
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`Ollama /api/usage returned a non-object body (${response.status})`);
-  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error(`Ollama ${path} returned a non-object body (${response.status})`);
   return { fetchedAt: Date.now(), data: parsed };
 };
+
+export const fetchOllamaUsageProbe = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
+  await readOllamaObservation(await ollamaFetchUsage(config, { method: 'GET', headers: new Headers({ accept: 'application/json' }) },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }), '/api/usage');
+
+export const fetchOllamaBalanceProbe = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
+  await readOllamaObservation(await ollamaFetchBalance(config, { method: 'GET', headers: new Headers({ accept: 'application/json' }) },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }), '/api/balance');
 
 // The entry is written under saveState's read-modify-CAS, and the mutator is
 // re-run against whoever won a concurrent write. Two probes racing therefore
@@ -71,29 +65,32 @@ const persistProbeEntry = async (upstreamId: string, slot: 'usageProbe' | 'balan
   });
 };
 
-// Runs the probe and records its outcome. Used directly by the operator's
-// refresh action, which wants the failure to travel back to the dashboard, and
-// through `scheduleOllamaUsageProbe` by the data plane, which does not.
-export const refreshOllamaUsageProbe = async (
+const refreshOllamaObservation = async (
   upstreamId: string,
-  config: OllamaUpstreamConfig,
-  fetcher: Fetcher,
+  slot: 'usageProbe' | 'balanceProbe',
+  fetchObservation: () => Promise<OllamaUsageObservation>,
 ): Promise<OllamaUsageObservation> => {
   const attemptedAt = Date.now();
   let observation: OllamaUsageObservation;
   try {
-    observation = await fetchOllamaUsageProbe(config, fetcher);
+    observation = await fetchObservation();
   } catch (error) {
-    await persistProbeEntry(upstreamId, 'usageProbe', {
-      attemptedAt,
-      observation: null,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    try {
+      await persistProbeEntry(upstreamId, slot, { attemptedAt, observation: null, error: error instanceof Error ? error.message : String(error) });
+    } catch (persistenceError) {
+      throw new AggregateError([error, persistenceError], 'Ollama usage refresh and outcome persistence failed');
+    }
     throw error;
   }
-  await persistProbeEntry(upstreamId, 'usageProbe', { attemptedAt, observation, error: null });
+  await persistProbeEntry(upstreamId, slot, { attemptedAt, observation, error: null });
   return observation;
 };
+
+export const refreshOllamaUsageProbe = (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
+  refreshOllamaObservation(upstreamId, 'usageProbe', () => fetchOllamaUsageProbe(config, fetcher));
+
+export const refreshOllamaBalanceProbe = (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> =>
+  refreshOllamaObservation(upstreamId, 'balanceProbe', () => fetchOllamaBalanceProbe(config, fetcher));
 
 const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
@@ -131,18 +128,6 @@ export const runOllamaScheduledTask = async (record: UpstreamRecord, options: Pr
   await runScheduledUsageRefresh(record, options, observedAt, async (fresh, fetcher) => {
     const currentConfig = assertOllamaUpstreamRecord(fresh).config;
     if (!isOllamaUsageEnabled(currentConfig)) return;
-    const attemptedAt = Date.now();
-    let observation: OllamaUsageObservation;
-    try {
-      const response = await ollamaFetchBalance(currentConfig, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      if (!response.ok) throw new Error(`Ollama /api/balance returned ${response.status}: ${(await response.text()).trim().slice(0, 256)}`);
-      const body: unknown = await response.json();
-      if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new TypeError('Ollama balance must be an object');
-      observation = { fetchedAt: Date.now(), data: body };
-    } catch (error) {
-      await persistProbeEntry(fresh.id, 'balanceProbe', { attemptedAt, observation: null, error: error instanceof Error ? error.message : String(error) });
-      throw error;
-    }
-    await persistProbeEntry(fresh.id, 'balanceProbe', { attemptedAt, observation, error: null });
+    await refreshOllamaBalanceProbe(fresh.id, currentConfig, fetcher);
   });
 };

@@ -1,4 +1,5 @@
-// History uses fractional utilization; balance reports remaining percentages.
+// Activity-window observations use fractional utilization; balance reports remaining percentages.
+// https://github.com/ollama/ollama/issues/12532#issuecomment-5117969589
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 export const ollamaUsageMetrics = (body: unknown): Map<string, number> => {

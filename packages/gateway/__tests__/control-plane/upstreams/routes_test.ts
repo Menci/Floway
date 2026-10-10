@@ -3190,3 +3190,32 @@ test('usage refresh defaults off and can be opted in and out without changing mo
     assertEquals(saved.configVersion, version);
   }
 });
+
+
+test('manual Ollama usage refresh reads and persists activity and current balance separately', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  const record = buildCustomUpstreamRecord({
+    id: 'up_ollama_manual', kind: 'ollama',
+    config: { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, state: null,
+  });
+  await saveUpstreamForTest(repo.upstreams, record);
+  const paths: string[] = [];
+  await withMockedFetch(request => {
+    const path = new URL(request.url).pathname;
+    paths.push(path);
+    if (path === '/api/usage') return jsonResponse({ activity: { cost: '3.50', period: { type: 'last_4_weeks' } } });
+    if (path === '/api/balance') return jsonResponse({ included: { balance_usd: 42 }, purchased: { balance_usd: 25 } });
+    if (path === '/api/me') return jsonResponse({ name: 'Tester', email: 'test@example.com', plan: 'pro' });
+    throw new Error(`Unexpected Ollama request ${path}`);
+  }, async () => {
+    const response = await requestApp('/api/upstreams/ollama/usage', authed(adminSession, { record: envelopeFromRecord(record) }));
+    assertEquals(response.status, 200);
+    const body = await response.json() as JsonObject;
+    assertEquals(body.observation.data.activity.cost, '3.50');
+    assertEquals(body.balanceObservation.data.purchased.balance_usd, 25);
+    const state = (await repo.upstreams.getById(record.id))!.state as JsonObject;
+    assertEquals(state.usageProbe.observation.data.activity.cost, '3.50');
+    assertEquals(state.balanceProbe.observation.data.included.balance_usd, 42);
+  });
+  assertEquals(paths.toSorted(), ['/api/balance', '/api/me', '/api/usage']);
+});

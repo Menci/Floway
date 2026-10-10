@@ -1,7 +1,6 @@
-// Gateway-managed Ollama upstream state, persisted in upstreams.state_json.
-// One slot: the most recent Ollama Cloud usage probe. Writes go through
-// UpstreamRepo.saveState as a mutator that spreads the state it is handed and
-// replaces its own slot, so a concurrent write on another slot survives.
+// Activity, balance and account observations own separate state slots. Each
+// writer merges its slot under saveState's CAS so concurrent probes preserve
+// one another's observations.
 
 // The probe's outcome, kept as three fields rather than one nullable snapshot
 // because the data-plane trigger needs all three:
