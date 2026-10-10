@@ -38,6 +38,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
   store.beginAttempt(new Map());
 
+  const program = { type: 'program' as const, id: 'prog_upstream', call_id: 'call_1', code: 'return 1', fingerprint: 'opaque-program' };
   const programOutput = {
     type: 'program_output' as const,
     id: 'prog_out_upstream',
@@ -50,13 +51,15 @@ test('affinity selects the route while item storage preserves the exact emitted 
     object: 'response',
     model: 'model-a',
     status: 'completed',
-    output: [programOutput],
+    output: [program, programOutput],
     error: null,
     incomplete_details: null,
   };
   const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: programOutput });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: programOutput });
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: program });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: program });
+    yield eventFrame({ type: 'response.output_item.added', output_index: 1, item: programOutput });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: programOutput });
     yield eventFrame({ type: 'response.completed', response: upstreamResponse });
   };
   const withAffinity = wrapOpenAIResponsesAffinityEgress(source(), {
@@ -95,10 +98,10 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const selection = selectAffinityCandidates([candidateB, candidateA], affinity);
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
   expect(selection.candidates).toEqual([candidateA]);
-  expect(selection.payloadFor(candidateA).input).toEqual([programOutput]);
+  expect(selection.payloadFor(candidateA).input).toEqual([program, programOutput]);
 });
 
-test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
+test('agent messages with and without encrypted content round-trip without changing ids', async () => {
   const candidate = modelCandidate('upstream-a');
   const codec = new AffinityCodec('22'.repeat(32));
   const empty = { type: 'agent_message' as const, id: 'amsg_empty', author: 'a', recipient: 'b', content: [] };
@@ -241,21 +244,19 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
     },
   })) if (frame.type === 'event') events.push(frame.event);
 
-  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3]);
   const compactionEvents = events.filter(event =>
     (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
     && event.item.type === 'compaction');
   expect(compactionEvents).toHaveLength(2);
   for (const event of compactionEvents) {
     if (event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done') continue;
-    expect(event.output_index).toBe(1);
+    expect(event.output_index).toBe(0);
     expect(event.item).toMatchObject({ encrypted_content: encryptedContent });
   }
   const terminal = events.at(-1);
   if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
-  expect(terminal.response.output).toHaveLength(2);
-  expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning' });
-  expect(terminal.response.output[1]).toEqual(compaction);
+  expect(terminal.response.output).toEqual([compaction]);
 
   const prepared = await analyzeOpenAIResponsesAffinity({
     model: 'model-a',

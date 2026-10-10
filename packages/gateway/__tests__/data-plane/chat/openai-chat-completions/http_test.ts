@@ -224,7 +224,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
   assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
 });
 
-test('synthetic affinity keeps first-available candidate order when no reasoning blob would be lost', async () => {
+test('does not add an affinity carrier when the upstream returns no opaque state', async () => {
   installRepo();
   const observedB: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
   const result = (): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
@@ -247,9 +247,9 @@ test('synthetic affinity keeps first-available candidate order when no reasoning
     headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
   });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque?: string } }> };
   const assistant = firstBody.choices[0].message;
-  assert(typeof assistant.reasoning_opaque === 'string');
+  assertEquals(assistant.reasoning_opaque, undefined);
 
   queueCandidates([candidateB, candidateA]);
   const second = await makeApp().request('/v1/chat/completions', {
