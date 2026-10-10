@@ -156,3 +156,34 @@ test.each([false, true])('GenerateContent keeps parallel text arrival order with
   expect(parts.map((part: any) => part.text ?? '').join('')).toBe('abc');
   if (buffered) expect(parts[0].functionCall).toMatchObject({ id: 'call', args: { x: 1 } });
 });
+
+test('ChatCompletions emits each Responses reasoning carrier before the next upstream pull and the finish reason', async () => {
+  const first = { type: 'reasoning', id: 'rs_first', summary: [{ type: 'summary_text', text: 'visible' }] };
+  const empty = { type: 'reasoning', id: 'rs_empty', summary: [] };
+  const source = [responseStart, add(0, first), eventFrame({ type: 'response.output_item.done', output_index: 0, item: first } as any), add(1, empty), eventFrame({ type: 'response.output_item.done', output_index: 1, item: empty } as any)];
+  const carriers = (frames: any[]) => frames.flatMap(frame => frame.event?.choices?.[0]?.delta.reasoning_items ?? []);
+  const output = await gated(source, [eventFrame({ type: 'response.completed', response: response([first, empty]) } as any)], frames => openaiChatCompletionsFromIR(irFromOpenAIResponses(frames)), prefix => {
+    expect(carriers(prefix)).toEqual([first, empty]);
+    expect(prefix.some(frame => frame.event?.choices?.[0]?.finish_reason != null)).toBe(false);
+  });
+  expect(carriers(output)).toEqual([first, empty]);
+  const finish = output.findIndex(frame => frame.event?.choices?.[0]?.finish_reason != null);
+  const lastCarrier = output.findLastIndex(frame => frame.event?.choices?.[0]?.delta.reasoning_items !== undefined);
+  expect(lastCarrier).toBeLessThan(finish);
+});
+
+test('Messages publishes cumulative usage progress before pulling the rest of the generation', async () => {
+  const initial = chat({ role: 'assistant' });
+  initial.event.usage = { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 };
+  const first = chat({ content: 'A' });
+  first.event.usage = { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 };
+  const last = chat({ content: 'B' }, 'stop');
+  last.event.usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
+  const output = await gated([initial, first], [last, doneFrame()], frames => anthropicMessagesFromIR(irFromOpenAIChatCompletions(frames)), prefix => {
+    expect(prefix).toContainEqual(expect.objectContaining({ event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'A' } } }));
+    expect(prefix.some(frame => frame.event?.type === 'message_delta' && frame.event.delta.stop_reason === null && frame.event.usage.output_tokens === 1)).toBe(true);
+    expect(prefix.some(frame => frame.event?.delta?.stop_reason === 'end_turn')).toBe(false);
+  });
+  const final = output.findLast(frame => frame.event?.type === 'message_delta');
+  expect(final).toMatchObject({ event: { delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 10, output_tokens: 2 } } });
+});

@@ -48,6 +48,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     return undefined;
   };
   for await (const { state, record } of consumeIRRecords(frames)) {
+    if (record.type === 'operation' && record.operation === 'assign') projection.validateText(state, record.path);
     textStream.update(state);
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); started = true; }
     if (!started && record.type !== 'error') continue;
@@ -175,6 +176,8 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     if (record.type === 'choice_end' && record.finish_reason !== 'length') for (const item of state.choices[0]?.items ?? []) {
       if (item.type === 'function_call' && typeof item.arguments === 'string') parseIRJSONObject(item.arguments, options.parseToolArguments);
     }
+    // Messages allows multiple cumulative usage deltas; consumers must assign these counters.
+    // https://platform.claude.com/docs/en/build-with-claude/streaming#event-types
     if (messageStarted && record.type === 'operation' && record.path[0] === 'usage') yield emit({ type: 'message_delta', delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null }, usage });
     if (record.type === 'finish') {
       if (options.roundTrip !== undefined) {
