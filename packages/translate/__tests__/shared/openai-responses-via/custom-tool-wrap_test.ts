@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../../src/shared/openai-responses-via/custom-tool-wrap.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -71,7 +71,13 @@ test('unwrapCustomToolInput falls back to the raw blob when JSON parse fails', (
 });
 
 test('unwrapCustomToolInput falls back to the raw blob when input field is missing', () => {
-  assertEquals(unwrapCustomToolInput('{"other":"value"}'), '{"other":"value"}');
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    assertEquals(unwrapCustomToolInput('{"other":"value"}'), '{"other":"value"}');
+    assertEquals(warning.mock.calls, [['Custom tool wrapper has no string input; returning the entire JSON value as freeform input.']]);
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 test('unwrapCustomToolInput falls back to the raw blob when input field is not a string', () => {
