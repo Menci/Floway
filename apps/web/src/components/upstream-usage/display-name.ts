@@ -7,6 +7,7 @@ import { resolveUsageMetricDisplayName as copilotDisplay } from '@floway-dev/pro
 import { resolveUsageMetricDisplayName as ollamaDisplay } from '@floway-dev/provider-ollama/browser';
 
 type Translate = ReturnType<typeof useTranslation>['t'];
+export interface ResolvedUsageMetricDisplay extends UsageMetricDisplay { metricId: string }
 const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstreamUsage.metrics.${string}`>, 'dashboard.upstreamUsage.metrics.window'>>([
   ['five_hour', 'dashboard.upstreamUsage.metrics.fiveHour'],
   ['seven_day', 'dashboard.upstreamUsage.metrics.sevenDay'],
@@ -23,12 +24,18 @@ const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstrea
   ['credits_balance', 'dashboard.upstreamUsage.metrics.credits'],
 ]);
 
+// Fixed window labels and duration-encoded unnamed windows share a comparison identity.
+const fixedWindows = new Map<TranslationKey, number>([
+  ['dashboard.upstreamUsage.metrics.fiveHour', 5 * 60],
+  ['dashboard.upstreamUsage.metrics.sevenDay', 7 * 24 * 60],
+]);
+
 export const resolveUsageMetricDisplayName = (
   upstreamId: string,
   key: string,
   observations: ReadonlyMap<string, UpstreamUsageMetricRecord>,
   t: Translate,
-): UsageMetricDisplay => {
+): ResolvedUsageMetricDisplay => {
   const observation = observations.get(JSON.stringify([upstreamId, key]))!;
   let display: UsageMetricDisplay;
   switch (observation.provider) {
@@ -40,13 +47,16 @@ export const resolveUsageMetricDisplayName = (
   }
   const translation = names.get(display.name);
   const name = translation === undefined ? display.name : t(translation);
-  if (display.windowMinutes === null) return { ...display, name };
+  const fixedWindow = display.windowMinutes === null && translation !== undefined ? fixedWindows.get(translation) : undefined;
+  const metricId = JSON.stringify([fixedWindow !== undefined ? ['name', ''] : translation === undefined ? ['name', display.name] : ['translation', translation], fixedWindow ?? display.windowMinutes, display.unit]);
+  if (display.windowMinutes === null) return { ...display, name, metricId };
   const minutes = display.windowMinutes;
   const window = minutes % 1440 === 0 ? t('dashboard.upstreamUsage.windows.days', { count: minutes / 1440 })
     : minutes % 60 === 0 ? t('dashboard.upstreamUsage.windows.hours', { count: minutes / 60 })
       : t('dashboard.upstreamUsage.windows.minutes', { count: minutes });
   return {
     ...display,
+    metricId,
     name: name === '' ? window : t('dashboard.upstreamUsage.metrics.window', { name, window }),
   };
 };

@@ -1116,7 +1116,9 @@ const zhHansCN = {
       upstreamUsage: {
         refresh: '刷新上游用量',
         empty: '此时间范围内没有上游用量观察记录',
-        chartTitle: '{{name}} {{unit}}',
+        metricOption: '{{name}} {{unit}}',
+        value: '数值',
+        selection: { upstream: '上游', metric: '维度' },
         groupBy: { upstream: '上游', metric: '维度名字' },
         units: { percent: '用量 (%)', usd: '金额 (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}} 分钟窗口', hours: '{{count, number}} 小时窗口', days: '{{count, number}} 天窗口' },

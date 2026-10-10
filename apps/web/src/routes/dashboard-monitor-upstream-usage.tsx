@@ -10,6 +10,7 @@ import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
+import { Dropdown } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
@@ -18,16 +19,19 @@ import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UpstreamUsageChartSection } from '../components/upstream-usage/chart';
 import { loadUpstreamUsage } from '../components/upstream-usage/data';
 import { resolveUsageMetricDisplayName } from '../components/upstream-usage/display-name';
-import { buildUpstreamUsageCharts, type UpstreamUsageGroupBy } from '../components/upstream-usage/plot';
+import { buildUpstreamUsageCharts, type UpstreamUsageChart, type UpstreamUsageGroupBy } from '../components/upstream-usage/plot';
+import { fluentComponents } from '../fluent';
 import { useTranslation } from '../i18n/translation';
 import { useEntryRewrite } from '../lib/page-navigation';
+
+const { Field, Option } = fluentComponents;
 
 export const clientLoader = async ({ request }: Route.ClientLoaderArgs) => {
   await requireDashboardAdmin();
   const search = new URL(request.url).searchParams;
   const range = parseDashboardRange(search);
   const loadedAt = Date.now();
-  return { range, groupBy: search.get('g') === 'metric' ? 'metric' as const : 'upstream' as const, result: await loadUpstreamUsage(range, loadedAt), loadedAt };
+  return { range, groupBy: search.get('g') === 'metric' ? 'metric' as const : 'upstream' as const, selectedUpstream: search.get('upstream'), selectedMetric: search.get('metric'), result: await loadUpstreamUsage(range, loadedAt), loadedAt };
 };
 export const shouldRevalidate = revalidateOnPathnameChange;
 
@@ -38,6 +42,7 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
   const [query, setQuery] = useState({ range: loaderData.range });
   const range = query.range;
   const [groupBy, setGroupBy] = useState<UpstreamUsageGroupBy>(loaderData.groupBy);
+  const [selected, setSelected] = useState({ upstream: loaderData.selectedUpstream, metric: loaderData.selectedMetric });
   const [data, setData] = useState(loaderData.result.data ?? null);
   const [error, setError] = useState(loaderData.result.error ?? null);
   const [editingRange, setEditingRange] = useState(false);
@@ -52,23 +57,28 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
   const { loadedAt, loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, loaderData.loadedAt, reload, setQuery);
   const loadedRange = loadedQuery.range;
   useTelemetryPolling(poll, loadedRange, !editingRange && !refreshing);
+  const charts = useMemo(() => {
+    if (data === null || data.start >= loadedAt) return [];
+    const observations = new Map(data.records.map(record => [JSON.stringify([record.upstreamId, record.key]), record]));
+    return buildUpstreamUsageCharts(data.records, groupBy, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, observations, t));
+  }, [data, groupBy, loadedAt, t]);
+  const chart = charts.find(item => item.id === selected[groupBy]) ?? charts[0];
+  const selectedId = chart?.id;
+  const choiceLabel = (item: UpstreamUsageChart) => groupBy === 'upstream' ? item.title : t('dashboard.upstreamUsage.metricOption', { name: item.title, unit: t(`dashboard.upstreamUsage.units.${item.entries[0]!.unit}`) });
   const addressOf = (next: DashboardRange) => {
     const search = new URLSearchParams();
     serializeDashboardRange(search, next);
     if (groupBy === 'metric') search.set('g', groupBy);
+    if (selectedId !== undefined) search.set(groupBy, selectedId);
     return `?${search}`;
   };
   useEffect(() => {
     const search = new URLSearchParams();
     serializeDashboardRange(search, loadedRange);
     if (groupBy === 'metric') search.set('g', groupBy);
+    if (selectedId !== undefined) search.set(groupBy, selectedId);
     setSearchParams(search, rewrite);
-  }, [groupBy, loadedRange, rewrite, setSearchParams]);
-  const charts = useMemo(() => {
-    if (data === null || data.start >= loadedAt) return [];
-    const observations = new Map(data.records.map(record => [JSON.stringify([record.upstreamId, record.key]), record]));
-    return buildUpstreamUsageCharts(data.records, groupBy, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, observations, t));
-  }, [data, groupBy, loadedAt, t]);
+  }, [groupBy, loadedRange, rewrite, selectedId, setSearchParams]);
   const changeRange = (next: DashboardRange) => {
     if (sameDashboardRange(next, range)) void refresh();
     else setQuery({ range: next });
@@ -88,9 +98,22 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
           groupByLabel={t('dashboard.usage.groupBy.label')}
           onGroupByChange={setGroupBy}
         />
+        <Field className="min-w-[160px] flex-[1_1_160px] max-w-[360px]" label={t(`dashboard.upstreamUsage.selection.${groupBy}`)}>
+          <Dropdown
+            aria-label={t(`dashboard.upstreamUsage.selection.${groupBy}`)}
+            className="w-full"
+            disabled={refreshing || charts.length === 0}
+            listWidth="content"
+            selectedOptions={selectedId === undefined ? [] : [selectedId]}
+            value={chart === undefined ? '' : choiceLabel(chart)}
+            onOptionSelect={(_, selection) => setSelected(current => ({ ...current, [groupBy]: selection.optionValue! }))}
+          >
+            {charts.map(item => <Option key={item.id} value={item.id}>{choiceLabel(item)}</Option>)}
+          </Dropdown>
+        </Field>
         <div className="ml-auto flex-none"><TelemetryTimeRange addressOf={addressOf} ariaLabel={t('dashboard.usage.range.label')} loadedAt={loadedAt} onChange={changeRange} onEditingChange={setEditingRange} range={loadedRange} /></div>
       </div>
-      {data === null ? <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine> : charts.length === 0 ? <EmptyStateLine>{t('dashboard.upstreamUsage.empty')}</EmptyStateLine> : charts.map(chart => <UpstreamUsageChartSection chart={chart} end={Math.min(data.end, loadedAt)} key={JSON.stringify([groupBy, chart.id])} start={data.start} />)}
+      {data === null ? <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine> : chart === undefined ? <EmptyStateLine>{t('dashboard.upstreamUsage.empty')}</EmptyStateLine> : <UpstreamUsageChartSection chart={chart} end={Math.min(data.end, loadedAt)} key={JSON.stringify([groupBy, chart.id])} start={data.start} />}
     </Panel>
   </section>;
 }

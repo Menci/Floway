@@ -1166,7 +1166,9 @@ const en = {
       upstreamUsage: {
         refresh: 'Refresh upstream usage',
         empty: 'No upstream usage observations in this range',
-        chartTitle: '{{name}} {{unit}}',
+        metricOption: '{{name}} {{unit}}',
+        value: 'Value',
+        selection: { upstream: 'Upstream', metric: 'Metric' },
         groupBy: { upstream: 'Upstream', metric: 'Metric name' },
         units: { percent: 'Usage (%)', usd: 'Cost (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },

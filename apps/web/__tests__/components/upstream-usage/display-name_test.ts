@@ -13,7 +13,7 @@ it('renders arbitrary metric names independently of JavaScript object prototypes
   for (const key of ['constructor', '__proto__', 'toString', 'future_metric']) {
     for (const [metricKey, provider] of [[key, 'copilot'], [JSON.stringify(['window', key]), 'ollama']] as const) {
       const metadata = new Map([[JSON.stringify(['up-1', metricKey]), record(metricKey, provider)]]);
-      expect(resolveUsageMetricDisplayName('up-1', metricKey, metadata, t)).toEqual({ name: key, unit: 'percent', windowMinutes: null });
+      expect(resolveUsageMetricDisplayName('up-1', metricKey, metadata, t)).toMatchObject({ name: key, unit: 'percent', windowMinutes: null });
     }
   }
 });
@@ -40,6 +40,38 @@ it('renders whole-day and whole-hour windows while retaining exact minute durati
         const metadata = new Map([[JSON.stringify(['up-1', key]), record(key, 'codex')]]);
         expect(resolveUsageMetricDisplayName('up-1', key, metadata, translate).name).toBe(name === '' ? labels[index] : `codex ${labels[index]}`);
       }
+    }
+  }
+});
+
+it('keeps metric choices stable across locale changes and separates distinct measurement units', async () => {
+  const percentKey = JSON.stringify(['window', 'last_4_weeks']);
+  const usdKey = JSON.stringify(['activity_cost', 'last_4_weeks']);
+  const metadata = new Map([
+    [JSON.stringify(['up-1', percentKey]), record(percentKey, 'ollama')],
+    [JSON.stringify(['up-1', usdKey]), record(usdKey, 'ollama')],
+  ]);
+  const english = resolveUsageMetricDisplayName('up-1', percentKey, metadata, t);
+  await setLanguage('zh-Hans');
+  const chinese = resolveUsageMetricDisplayName('up-1', percentKey, metadata, t);
+  expect(chinese.name).not.toBe(english.name);
+  expect(chinese.metricId).toBe(english.metricId);
+  expect(resolveUsageMetricDisplayName('up-1', usdKey, metadata, t).metricId).not.toBe(english.metricId);
+});
+
+it('compares equal fixed and encoded windows across providers under one metric choice', async () => {
+  for (const language of ['en', 'zh-Hans'] as const) {
+    await setLanguage(language);
+    for (const [fixedKey, minutes] of [['five_hour', 300], ['seven_day', 10080]] as const) {
+      const encodedKey = JSON.stringify(['window', '', minutes]);
+      const metadata = new Map([
+        [JSON.stringify(['up-1', fixedKey]), record(fixedKey, 'claude-code')],
+        [JSON.stringify(['up-1', encodedKey]), record(encodedKey, 'codex')],
+      ]);
+      const fixed = resolveUsageMetricDisplayName('up-1', fixedKey, metadata, t);
+      const encoded = resolveUsageMetricDisplayName('up-1', encodedKey, metadata, t);
+      expect(fixed.name).toBe(encoded.name);
+      expect(fixed.metricId).toBe(encoded.metricId);
     }
   }
 });
