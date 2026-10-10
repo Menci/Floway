@@ -179,7 +179,7 @@ export const formatAxisDate = numericDateTime;
 export const formatBucketInterval = (frame: DashboardBucketFrame): string => {
   const start = new Date(frame.start);
   const end = new Date(frame.end);
-  return `${numericDateTime(start)}–${calendarDate(start) === calendarDate(end) ? numericTime(end) : numericDateTime(end)}`;
+  return `${numericDateTime(start)} - ${calendarDate(start) === calendarDate(end) ? numericTime(end) : numericDateTime(end)}`;
 };
 
 export const formatCalloutTitle = (

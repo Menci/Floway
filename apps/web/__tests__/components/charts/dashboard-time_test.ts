@@ -91,7 +91,7 @@ test('telemetry axes and tooltips share local numeric dates and 24-hour times', 
   const end = new Date(2026, 8, 1, 8);
   const frame = { date: start, key: '', start: start.getTime(), end: end.getTime() };
   expect(formatAxisDate(start)).toBe('09/01 00:00');
-  expect(formatBucketInterval(frame)).toBe('09/01 00:00–08:00');
+  expect(formatBucketInterval(frame)).toBe('09/01 00:00 - 08:00');
   const nextDay = new Date(2026, 8, 2, 0);
-  expect(formatBucketInterval({ ...frame, end: nextDay.getTime() })).toBe('09/01 00:00–09/02 00:00');
+  expect(formatBucketInterval({ ...frame, end: nextDay.getTime() })).toBe('09/01 00:00 - 09/02 00:00');
 });
