@@ -29,9 +29,9 @@ const stubCtx = (attempt: GatewayCtx['attempt']): GatewayCtx => mockGatewayCtx({
 
 describe('iterateCandidates', () => {
   it('clears the timing slots and stamps telemetry from the current candidate on entry', async () => {
-    const attempt = { timing: { upstreamCallStartedAt: 999, firstOutputTokenAt: 999 }, telemetry: mockPerfTelemetryContext({ upstream: 'carryover' }) as PerformanceTelemetryContext | undefined };
+    const attempt = { timing: { upstreamCallStartedAt: 999, firstOutputTokenAt: 999 }, outputObservationUnavailable: true, telemetry: mockPerfTelemetryContext({ upstream: 'carryover' }) as PerformanceTelemetryContext | undefined };
     const ctx = stubCtx(attempt);
-    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; upstream: string | undefined }> = [];
+    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; upstream: string | undefined; outputObservationUnavailable: boolean }> = [];
 
     await iterateCandidates(
       [stubCandidate('a', 'up_a'), stubCandidate('b', 'up_b'), stubCandidate('c', 'up_c')],
@@ -43,11 +43,13 @@ describe('iterateCandidates', () => {
           upstreamCallStartedAt: attempt.timing.upstreamCallStartedAt,
           firstOutputTokenAt: attempt.timing.firstOutputTokenAt,
           upstream: attempt.telemetry?.upstream,
+          outputObservationUnavailable: attempt.outputObservationUnavailable,
         });
         // Simulate an attempt that stamps timing then fails, so the loop
         // advances to the next candidate.
         attempt.timing.upstreamCallStartedAt = 100;
         attempt.timing.firstOutputTokenAt = 200;
+        attempt.outputObservationUnavailable = true;
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
           : { type: 'api-error' as const };
@@ -60,14 +62,14 @@ describe('iterateCandidates', () => {
     // candidate: regressing this reintroduces the mid-attempt-throw
     // misattribution the stamp was hoisted to prevent.
     expect(observed).toEqual([
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_a' },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_b' },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_c' },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_a', outputObservationUnavailable: false },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_b', outputObservationUnavailable: false },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_c', outputObservationUnavailable: false },
     ]);
   });
 
   it('returns the first success and stops iterating', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
+    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, outputObservationUnavailable: false, telemetry: undefined });
     let calls = 0;
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
@@ -85,7 +87,7 @@ describe('iterateCandidates', () => {
   });
 
   it('returns the last failure once every candidate errors', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
+    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, outputObservationUnavailable: false, telemetry: undefined });
     let index = 0;
     const failures = [
       { type: 'api-error' as const, marker: 'first' },
@@ -103,7 +105,7 @@ describe('iterateCandidates', () => {
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
+    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, outputObservationUnavailable: false, telemetry: undefined });
     const attempts: number[] = [];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],

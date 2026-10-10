@@ -709,14 +709,10 @@ const performStreamingOpenAIResponsesCall = async (
 
   const result = await streamingProviderCall(
     upstreamFetch,
-    (stream, parserOpts) => {
-      const frames = parseOpenAIResponsesStream(stream, parserOpts);
-      return restoreCodexResponsesOutput(Object.keys(prepared.movedFields).length === 0
-        ? frames
-        : projectMovedCodexResponsesFields(frames, prepared.movedFields));
-    },
+    parseOpenAIResponsesStream,
     opts.model.id,
     opts.signal,
+    opts.call.observeStreamFrame,
   );
 
   const attempt = await retryCodexAccess401(
@@ -730,8 +726,13 @@ const performStreamingOpenAIResponsesCall = async (
     },
   );
   if (attempt.retried) return attempt.value;
-
-  return result;
+  if (!result.ok) return result;
+  return {
+    ...result,
+    events: restoreCodexResponsesOutput(Object.keys(prepared.movedFields).length === 0
+      ? result.events
+      : projectMovedCodexResponsesFields(result.events, prepared.movedFields)),
+  };
 };
 
 const performUnaryCompactCall = async (

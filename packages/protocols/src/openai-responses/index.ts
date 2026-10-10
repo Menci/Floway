@@ -1137,15 +1137,17 @@ type OpenAIResponsesStreamEventVariant =
   | { type: 'response.queued'; response: OpenAIResponsesResultEx }
   | { type: 'response.created'; response: OpenAIResponsesResultEx }
   | { type: 'response.in_progress'; response: OpenAIResponsesResultEx }
+  // OpenResponses permits lifecycle frames without an item payload.
+  // https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L39-L80
   | {
     type: 'response.output_item.added';
     output_index: number;
-    item: OpenAIResponsesOutputItemEx;
+    item: OpenAIResponsesOutputItemEx | null;
   }
   | {
     type: 'response.output_item.done';
     output_index: number;
-    item: OpenAIResponsesOutputItemEx;
+    item: OpenAIResponsesOutputItemEx | null;
   }
   | {
     type: 'response.content_part.added';

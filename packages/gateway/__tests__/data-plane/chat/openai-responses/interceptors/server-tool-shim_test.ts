@@ -725,15 +725,17 @@ test('synthesized web_search_call ids retain request-private replay state', asyn
   const { frames } = await runShimAndDrain(shim, inv, ctx, script.run);
 
   const doneEvents = outputItemDoneEvents(frames);
-  const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
+  const wsCallDoneIds = doneEvents.flatMap(e => e.item?.type === 'web_search_call' ? [e.item.id] : []);
   const store = ctx.store;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(/^ws_[0-9a-f]{32}$/.test(id));
     assert(store.getPrivatePayload(id) !== undefined, `expected ${id} to retain private replay state`);
   }
-  for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(store.getPrivatePayload(e.item.id!) !== undefined);
+  for (const e of doneEvents.filter(e => e.item?.type === 'message')) {
+    assert(e.item?.type === 'message');
+    assert(typeof e.item.id === 'string');
+    assertFalse(store.getPrivatePayload(e.item.id) !== undefined);
   }
 });
 
@@ -2983,7 +2985,7 @@ test('synthesized web_search_call (search action) carries both `query` (singular
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
@@ -3133,7 +3135,7 @@ test('include: ["web_search_call.action.sources"] populates action.sources with 
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   const action = item.action as { type: 'search'; sources?: { type: 'url'; url: string }[] };
@@ -3155,7 +3157,7 @@ test('without include: ["web_search_call.action.sources"], action.sources is abs
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   const action = item.action as { type: 'search'; sources?: unknown };
@@ -3174,7 +3176,7 @@ test('web_search_call results field is populated on the wire when the client opt
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   assert(Array.isArray(item.results));
@@ -3197,7 +3199,7 @@ test('web_search_call results field is omitted from the wire when the client did
   const result = await shim(inv, makeGatewayCtx(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.results, undefined);
@@ -3645,7 +3647,7 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
   assertEquals(script.callCount(), 2);
   const done = outputItemDoneEvents(frames)
     .map(e => e.item)
-    .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
+    .filter((i): i is OpenAIResponsesOutputWebSearchCall => i?.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results![0].snippet;
   assert(snippet.includes('not configured'));
@@ -3665,7 +3667,7 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
   assertEquals(script.callCount(), 2);
   const done = outputItemDoneEvents(frames)
     .map(e => e.item)
-    .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
+    .filter((i): i is OpenAIResponsesOutputWebSearchCall => i?.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results![0].snippet;
   assert(snippet.includes('tavily'));
@@ -4788,7 +4790,7 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   assert(result.type === 'events');
   const frames = await collectFrames(result.events);
   const doneEvents = outputItemDoneEvents(frames);
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
+  const wsCallDone = doneEvents.find(e => e.item?.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
   // Schema-error IR rides action.type:'search' as the neutral carrier
@@ -5363,7 +5365,7 @@ test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCa
   assert(added?.type === 'event');
   const addedEv = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(addedEv.output_index, 0);
-  assertEquals(addedEv.item.type, 'function_call');
+  assertEquals(addedEv.item?.type, 'function_call');
   const argsDone = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.function_call_arguments.done');
   assert(argsDone?.type === 'event');
@@ -5414,7 +5416,7 @@ test('consumeTurn forwards reasoning items with rewritten output_index', async (
   assert(added?.type === 'event');
   const ev = added.event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
   assertEquals(ev.output_index, 0);
-  assertEquals(ev.item.type, 'reasoning');
+  assertEquals(ev.item?.type, 'reasoning');
   assertEquals(state.accumulatedOutput.size, 1);
   assertEquals(state.accumulatedOutput.get(0)?.type, 'reasoning');
 });
@@ -5548,7 +5550,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
   const addedFrame = result.downstreamFrames.find(frame =>
     frame.type === 'event' && frame.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
-  const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
+  const messageId = (addedFrame.event as { item: { id?: string } }).item?.id;
   assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
 
   for (const f of result.downstreamFrames) {
@@ -5586,7 +5588,7 @@ test('consumeTurn rewrites any structurally indexed child event without an event
   const addedFrame = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
-  const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
+  const messageId = (addedFrame.event as { item: { id?: string } }).item?.id;
   assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
   assertEquals((futureFrame.event as { item_id: string }).item_id, messageId);
 });
@@ -5620,7 +5622,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
   // lines 65-223). When upstream provides item.id, child events
   // (`output_text.delta`, `content_part.added`, …) carry the SAME id
   // upstream emits. Fabricating `msg_<downstreamIndex>` here would
-  // make child events mismatch the item's `output_item.added.item.id`.
+  // make child events mismatch the item's `output_item.added.item?.id`.
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -6032,7 +6034,7 @@ test('dispatcher start frames yield IN-LINE at function_call.done (shim call slo
   const messageAddedIdx = result.downstreamFrames.findIndex(f =>
     f.type === 'event'
     && f.event.type === 'response.output_item.added'
-    && f.event.item.type === 'message');
+    && f.event.item?.type === 'message');
   assert(syntheticIdx >= 0);
   assert(messageAddedIdx >= 0);
   assert(syntheticIdx < messageAddedIdx, `expected dispatcher start frame BEFORE later live items (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
@@ -6940,4 +6942,97 @@ test('consumeTurn retains namespaced diagnostics before a response shell is anno
   assert(result.summary.terminalStatus.kind === 'bare-error-pre-shell');
   assertEquals(result.summary.terminalStatus.error.code, 'connection_error');
   assert(result.summary.terminalStatus.error.provider_specific_fields === diagnostics);
+});
+
+test('consumeTurn preserves unidentified nullable lifecycle frames at remapped indices', async () => {
+  const state = createMergeState();
+  state.outputIndex = 4;
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }),
+    mkResponseCompleted(),
+  ), state, true);
+  assertEquals(result.records, []);
+  assertEquals(result.downstreamFrames.filter(frame => frame.type === 'event' && (frame.event.type === 'response.output_item.added' || frame.event.type === 'response.output_item.done')).map(frame => frame.type === 'event' ? { type: frame.event.type, ...('output_index' in frame.event ? { index: frame.event.output_index } : {}), ...('item' in frame.event ? { item: frame.event.item } : {}) } : undefined), [
+    { type: 'response.output_item.added', index: 4, item: null },
+    { type: 'response.output_item.done', index: 4, item: null },
+  ]);
+  assertEquals(materializeAccumulatedOutput(state), []);
+});
+
+test('consumeTurn dispatches hosted calls whose nullable opener materializes at done', async () => {
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    mkFunctionCallArgsDone(0, '{"query":"deferred"}'),
+    mkFunctionCallDone(0, 'deferred-call', SHIM_TOOL_NAME, '{"query":"deferred"}'),
+    mkResponseCompleted(),
+  ), createMergeState(), true);
+  assertEquals(result.records.map(record => record.intercepted), [{ callId: 'deferred-call', name: SHIM_TOOL_NAME, arguments: { query: 'deferred' } }]);
+  assertEquals(result.summary.terminalStatus.kind, 'completed');
+});
+
+test('consumeTurn resolves nullable lifecycle ownership from terminal output', async () => {
+  const item = { type: 'function_call' as const, name: SHIM_TOOL_NAME, call_id: 'terminal-call', arguments: '{"query":"terminal"}', status: 'completed' as const };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }),
+    eventFrame({ type: 'response.completed', response: { ...emptyResult('terminal', 'completed'), output: [item] } }),
+  ), createMergeState(), true);
+  assertEquals(result.records.map(record => record.intercepted), [{ callId: 'terminal-call', name: SHIM_TOOL_NAME, arguments: { query: 'terminal' } }]);
+});
+
+test('consumeTurn preserves a nullable opener when the completed item is a client call', async () => {
+  const state = createMergeState();
+  const item = { type: 'function_call' as const, id: 'fc_client', name: SHIM_TOOL_NAME, namespace: 'client', call_id: 'client-call', arguments: '{}', status: 'completed' as const };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    mkFunctionCallArgsDone(0, '{}', item.id),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item }),
+    mkResponseCompleted(),
+  ), state, true);
+  assertEquals(result.records, []);
+  assertEquals(result.summary.sawClientToolCall, true);
+  const added = result.downstreamFrames.find(frame => frame.type === 'event' && frame.event.type === 'response.output_item.added');
+  assert(added?.type === 'event' && added.event.type === 'response.output_item.added');
+  assertEquals(added.event.item, null);
+  assertEquals(materializeAccumulatedOutput(state), [item]);
+});
+
+test('consumeTurn preserves a nullable close and accumulates its terminal message snapshot', async () => {
+  const state = createMergeState();
+  const item: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_terminal', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello', annotations: [] }] };
+  const result = await consumeTurn(framesOf(
+    mkResponseCreated(),
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }),
+    eventFrame({ type: 'response.completed', response: { ...emptyResult('terminal', 'completed'), output: [item] } }),
+  ), state, true);
+  assertEquals(result.records, []);
+  const done = result.downstreamFrames.find(frame => frame.type === 'event' && frame.event.type === 'response.output_item.done');
+  assert(done?.type === 'event' && done.event.type === 'response.output_item.done');
+  assertEquals(done.event.item, null);
+  assertEquals(materializeAccumulatedOutput(state), [item]);
+});
+
+test('consumeTurn emits retained nullable lifecycle frames before propagating upstream failure', async () => {
+  const failure = new Error('upstream disconnected');
+  const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+    yield mkResponseCreated();
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: null });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: null });
+    throw failure;
+  })();
+  const iterator = consumeTurnStreaming(frames, createMergeState(), true, new Map(), loopState(), []);
+  await iterator.next();
+  const added = await iterator.next();
+  const done = await iterator.next();
+  assert(!added.done && added.value.type === 'event' && added.value.event.type === 'response.output_item.added');
+  assertEquals(added.value.event.item, null);
+  assert(!done.done && done.value.type === 'event' && done.value.event.type === 'response.output_item.done');
+  assertEquals(done.value.event.item, null);
+  await assertRejects(() => iterator.next(), Error, failure.message);
 });

@@ -520,7 +520,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   //
   // The wire shape we model here:
   //   - row.id = the public item id echoed as `wsc.id`.
-  //   - payload.item.id = that same public id.
+  //   - payload.item?.id = that same public id.
   //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
   //
   // This regression caught a prior ordering bug where hydration + beginAttempt
@@ -713,7 +713,7 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
     assert(first.type === 'events');
     const events = await collectEvents(first.events);
     const done = events.find(event => event.type === 'response.output_item.done');
-    assert(done?.type === 'response.output_item.done' && done.item.type === 'function_call');
+    assert(done?.type === 'response.output_item.done' && done.item?.type === 'function_call');
     assertEquals([done.item.name, done.item.namespace], ['read', 'files']);
     observed++;
     return await run();

@@ -36,6 +36,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       parser,
       upstreamModelId,
       signal,
+      opts.observeStreamFrame,
     );
   };
 

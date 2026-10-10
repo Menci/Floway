@@ -566,6 +566,50 @@ const transformServerToolItems = (
   return next;
 };
 
+// Nullable lifecycle frames leave tool ownership undecided. Hold their stream
+// segment until a materialized close or terminal output identifies the item.
+// https://www.openresponses.org/reference#responseoutputitemaddedevent
+const observeNullableLifecycle = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+): AsyncGenerator<{ frame: ProtocolFrame<OpenAIResponsesStreamEventEx>; itemEvidence?: OpenAIResponsesOutputItemEx }> {
+  const items = new Map<number, OpenAIResponsesOutputItemEx>();
+  const pending = new Set<number>();
+  const buffered: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  const observation = (frame: ProtocolFrame<OpenAIResponsesStreamEventEx>) => {
+    const event = frame.type === 'event' ? frame.event : undefined;
+    const index = event !== undefined && (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
+      ? event.output_index : undefined;
+    const itemEvidence = index === undefined ? undefined : items.get(index);
+    return { frame, ...(itemEvidence === undefined ? {} : { itemEvidence }) };
+  };
+  try {
+    for await (const frame of frames) {
+      if (frame.type === 'event') {
+        const event = frame.event;
+        if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+          if (event.item === null) pending.add(event.output_index);
+          else if (event.type === 'response.output_item.done') {
+            items.set(event.output_index, event.item);
+            pending.delete(event.output_index);
+          }
+        } else if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+          event.response.output.forEach((item, index) => items.set(index, item));
+          pending.clear();
+        }
+      }
+      buffered.push(frame);
+      if (pending.size === 0) {
+        for (const bufferedFrame of buffered) yield observation(bufferedFrame);
+        buffered.length = 0;
+      }
+    }
+  } catch (error) {
+    for (const frame of buffered) yield observation(frame);
+    throw error;
+  }
+  for (const frame of buffered) yield observation(frame);
+};
+
 export const consumeTurnStreaming = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   merge: MergeState,
@@ -588,6 +632,7 @@ export const consumeTurnStreaming = async function* (
   const interceptedByUpstreamIndex = new Map<number, {
     intercepted: InterceptedFunctionCall;
     addedItem: OpenAIResponsesOutputFunctionCallEx;
+    addedItemWasNull: boolean;
     reservedOutputIndex: number;
     argumentsJson: string;
     bufferedEvents: OpenAIResponsesStreamEventEx[];
@@ -606,7 +651,7 @@ export const consumeTurnStreaming = async function* (
       sequence_number: merge.sequenceNumber++,
     } as OpenAIResponsesStreamEventEx);
 
-  for await (const frame of frames) {
+  for await (const { frame, itemEvidence } of observeNullableLifecycle(frames)) {
     if (frame.type !== 'event') {
       yield frame;
       continue;
@@ -671,7 +716,13 @@ export const consumeTurnStreaming = async function* (
 
     if (event.type === 'response.output_item.added') {
       const upstreamIndex = event.output_index;
-      const item = event.item;
+      const item = event.item ?? itemEvidence;
+      if (item === undefined) {
+        const downstreamIndex = merge.outputIndex++;
+        openItems.set(upstreamIndex, downstreamIndex);
+        yield stamp({ ...event, output_index: downstreamIndex });
+        continue;
+      }
       if (item.type === 'function_call') {
         if (dispatchers.has(item.name)) {
           // Reserve the downstream index the shim call occupies now, at
@@ -685,6 +736,7 @@ export const consumeTurnStreaming = async function* (
           // the completed item owns the final dispatch identity.
           interceptedByUpstreamIndex.set(upstreamIndex, {
             addedItem: item,
+            addedItemWasNull: event.item === null,
             reservedOutputIndex: merge.outputIndex++,
             argumentsJson: '',
             bufferedEvents: [],
@@ -712,42 +764,48 @@ export const consumeTurnStreaming = async function* (
       yield stamp({
         type: 'response.output_item.added',
         output_index: downstreamIndex,
-        item: itemId !== undefined && wireItemId !== itemId ? { ...item, id: itemId } as OpenAIResponsesOutputItemEx : item,
+        item: event.item === null ? null : itemId !== undefined && wireItemId !== itemId ? { ...item, id: itemId } as OpenAIResponsesOutputItemEx : item,
       });
       continue;
     }
 
     if (event.type === 'response.output_item.done') {
       const upstreamIndex = event.output_index;
+      const item = event.item ?? itemEvidence;
+      if (item === undefined) {
+        const downstreamIndex = openItems.get(upstreamIndex);
+        if (downstreamIndex !== undefined) yield stamp({ ...event, output_index: downstreamIndex });
+        continue;
+      }
       const intercepted = interceptedByUpstreamIndex.get(upstreamIndex);
       if (intercepted !== undefined) {
-        if (event.item.type !== 'function_call' || event.item.name !== intercepted.intercepted.name
-          || event.item.call_id !== intercepted.intercepted.callId || event.item.id !== intercepted.addedItem.id) {
+        if (item.type !== 'function_call' || item.name !== intercepted.intercepted.name
+          || item.call_id !== intercepted.intercepted.callId || item.id !== intercepted.addedItem.id) {
           throw new Error('Upstream changed a server-tool function identity before closing its call.');
         }
-        const finalDispatcher = event.item.namespace === undefined ? dispatchers.get(event.item.name) : undefined;
+        const finalDispatcher = item.namespace === undefined ? dispatchers.get(item.name) : undefined;
         if (finalDispatcher === undefined) {
           const downstreamIndex = intercepted.reservedOutputIndex;
-          const itemId = intercepted.addedItem.id ?? event.item.id;
-          const doneItem = itemId === undefined ? event.item : { ...event.item, id: itemId };
+          const itemId = intercepted.addedItem.id ?? item.id;
+          const doneItem = itemId === undefined ? item : { ...item, id: itemId };
           openItems.set(upstreamIndex, downstreamIndex);
           if (itemId !== undefined) openItemIds.set(upstreamIndex, itemId);
           sawClientToolCall = true;
           yield stamp({
             type: 'response.output_item.added', output_index: downstreamIndex,
-            item: { ...doneItem, arguments: '', status: 'in_progress' },
+            item: intercepted.addedItemWasNull ? null : { ...doneItem, arguments: '', status: 'in_progress' },
           });
           for (const buffered of intercepted.bufferedEvents) {
             const rewritten = rewriteOutputIndex(buffered, openItems, openItemIds, merge);
             if (rewritten !== null) yield stamp(rewritten);
           }
-          yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
+          yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: event.item === null ? null : doneItem });
           merge.accumulatedOutput.set(downstreamIndex, doneItem);
           interceptedByUpstreamIndex.delete(upstreamIndex);
           continue;
         }
-        intercepted.intercepted.name = event.item.name;
-        intercepted.argumentsJson = event.item.arguments;
+        intercepted.intercepted.name = item.name;
+        intercepted.argumentsJson = item.arguments;
         intercepted.intercepted.arguments = parseServerToolArguments(intercepted.argumentsJson);
         const slots = finalDispatcher({ intercepted: intercepted.intercepted, loopState });
         if (loopState.remainingToolCalls !== undefined) loopState.remainingToolCalls -= 1;
@@ -764,11 +822,11 @@ export const consumeTurnStreaming = async function* (
       const downstreamIndex = openItems.get(upstreamIndex);
       if (downstreamIndex === undefined) continue;
       const itemId = openItemIds.get(upstreamIndex);
-      const upstreamDoneItemId = (event.item as { id?: unknown }).id;
+      const upstreamDoneItemId = (item as { id?: unknown }).id;
       const doneItem: OpenAIResponsesOutputItemEx = itemId !== undefined && upstreamDoneItemId !== itemId
-        ? { ...event.item, id: itemId } as OpenAIResponsesOutputItemEx
-        : event.item;
-      yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
+        ? { ...item, id: itemId } as OpenAIResponsesOutputItemEx
+        : item;
+      yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: event.item === null ? null : doneItem });
       merge.accumulatedOutput.set(downstreamIndex, doneItem);
       continue;
     }

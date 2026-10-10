@@ -1250,7 +1250,7 @@ const streamImageGeneration = (
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
-  const attempt: AttemptState = { timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined };
+  const attempt: AttemptState = { timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined, outputObservationUnavailable: false };
   const perfContext: PerformanceTelemetryContext = {
     keyId: state.apiKeyId,
     model: model.id,

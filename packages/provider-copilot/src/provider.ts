@@ -249,6 +249,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       parser,
       rawModel.id,
       signal,
+      opts.observeStreamFrame,
     );
 
   // The boundary chain expects ExecuteResult shape so post-`run()` inspectors

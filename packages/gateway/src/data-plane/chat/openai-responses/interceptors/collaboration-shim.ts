@@ -284,6 +284,7 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
   };
   return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+      if (event.item === null) return event;
       const item = event.item.type === 'function_call'
         ? bind(event.item as unknown as Record<string, unknown>, event.output_index) as unknown as OpenAIResponsesOutputItemEx
         : event.item;

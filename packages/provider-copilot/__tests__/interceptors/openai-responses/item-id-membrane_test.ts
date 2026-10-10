@@ -72,13 +72,21 @@ const outputItemEvent = (
   item,
 });
 
+const materializedItem = (item: OpenAIResponsesOutputItemEx | null): OpenAIResponsesOutputItemEx => {
+  if (item === null) throw new Error('expected materialized output item');
+  return item;
+};
+
+type MaterializedEvent<T> = T extends { item: OpenAIResponsesOutputItemEx | null } ? Omit<T, 'item'> & { item: OpenAIResponsesOutputItemEx } : T;
+
 const eventAt = <TType extends OpenAIResponsesStreamEventEx['type']>(
   frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
   type: TType,
-): Extract<OpenAIResponsesStreamEventEx, { type: TType }> => {
+): MaterializedEvent<Extract<OpenAIResponsesStreamEventEx, { type: TType }>> => {
   const frame = frames.find(candidate => candidate.type === 'event' && candidate.event.type === type);
   if (frame?.type !== 'event') throw new Error(`expected ${type}`);
-  return frame.event as Extract<OpenAIResponsesStreamEventEx, { type: TType }>;
+  if ('item' in frame.event) materializedItem(frame.event.item);
+  return frame.event as MaterializedEvent<Extract<OpenAIResponsesStreamEventEx, { type: TType }>>;
 };
 
 test('normalizes queued output and reuses its public id when the item is added', async () => {
@@ -369,7 +377,7 @@ test('carries program and nested agent-message ids in every available blob', asy
   ]));
   const frames = await collect(result);
   const doneItems = frames.flatMap(frame =>
-    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
+    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [materializedItem(frame.event.item)] : []);
 
   const [program, agent] = doneItems;
   expect(program.id).toMatch(/^cm_[0-9a-f]{32}$/);
@@ -583,7 +591,7 @@ test('forwards repeated done frames with stable public identity and each frame o
   ]);
   const frames = await collect(result);
   const doneItems = frames.flatMap(frame =>
-    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
+    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [materializedItem(frame.event.item)] : []);
 
   expect(doneItems).toHaveLength(2);
   expect(doneItems[1].id).toBe(doneItems[0].id);
@@ -618,4 +626,78 @@ test('rejects an id-bearing child event before its output item opens', async () 
   ]);
 
   await expect(collect(result)).rejects.toThrow(/before output_item.added/);
+});
+
+test.each(['response.output_item.added', 'response.output_item.done'] as const)('preserves nullable lifecycle payload for %s', async type => {
+  const frame = eventFrame<OpenAIResponsesStreamEventEx>({ type, output_index: 0, item: null });
+  const { result } = await runStream([frame]);
+  expect(await collect(result)).toEqual([frame]);
+});
+
+test('waits for materialized identity before rewriting children after a nullable opener', async () => {
+  const item: OpenAIResponsesOutputItemEx = { type: 'message', id: 'upstream', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello', annotations: [] }] };
+  const { result } = await runStream([
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    eventFrame({ type: 'response.output_text.delta', output_index: 0, item_id: 'upstream', content_index: 0, delta: 'hello' }),
+    eventFrame(outputItemEvent('done', 0, item)),
+    eventFrame({ type: 'response.completed', response: response([item]) }),
+  ]);
+  const frames = await collect(result);
+  expect(frames[0]).toEqual(eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }));
+  const publicId = eventAt(frames, 'response.output_item.done').item.id;
+  expect(publicId).toMatch(/^msg_[0-9a-f]{32}$/);
+  expect(eventAt(frames, 'response.output_text.delta').item_id).toBe(publicId);
+  expect(eventAt(frames, 'response.completed').response.output[0]?.id).toBe(publicId);
+});
+
+test('preserves nullable added and done without allocating an identity', async () => {
+  const frames = [eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', output_index: 3, item: null }), eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', output_index: 3, item: null })];
+  const { result } = await runStream(frames);
+  expect(await collect(result)).toEqual(frames);
+});
+
+test('uses terminal output to identify children between nullable lifecycle frames', async () => {
+  const item: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'upstream', summary: [{ type: 'summary_text', text: 'trace' }], encrypted_content: 'private' };
+  const { result } = await runStream([
+    eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }),
+    eventFrame({ type: 'response.reasoning_summary_text.delta', output_index: 0, item_id: 'upstream', summary_index: 0, delta: 'trace' }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }),
+    eventFrame({ type: 'response.completed', response: response([item]) }),
+  ]);
+  const frames = await collect(result);
+  expect(frames[0]).toEqual(eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }));
+  expect(frames[2]).toEqual(eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }));
+  const publicId = eventAt(frames, 'response.completed').response.output[0]?.id;
+  expect(publicId).toMatch(/^rs_[0-9a-f]{32}$/);
+  expect(eventAt(frames, 'response.reasoning_summary_text.delta').item_id).toBe(publicId);
+});
+
+test('preserves upstream protocol errors after an undecidable nullable item segment', async () => {
+  const added = eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', output_index: 0, item: null });
+  const upstreamError = eventFrame<OpenAIResponsesStreamEventEx>({ type: 'error', error: { message: 'upstream aborted', code: 'server_error', provider_specific_fields: { stack: 'original stack' } } });
+  const { result } = await runStream([
+    added,
+    eventFrame({ type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: 'raw-upstream', delta: 'partial' }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }),
+    upstreamError,
+    doneFrame(),
+  ]);
+  const frames = await collect(result);
+  expect(frames).toEqual([added, upstreamError, doneFrame()]);
+  expect(frames[1]).toBe(upstreamError);
+});
+
+test('preserves thrown source errors without fabricating an identity for buffered children', async () => {
+  const failure = new Error('upstream source disconnected');
+  const added = eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', output_index: 0, item: null });
+  const source = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+    yield added;
+    yield eventFrame({ type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: 'raw-upstream', delta: 'partial' });
+    throw failure;
+  })();
+  const { result } = await runStream(source);
+  if (!result.ok || result.action !== 'generate') throw new Error('expected generate/ok result');
+  const iterator = result.events[Symbol.asyncIterator]();
+  expect((await iterator.next()).value).toEqual(added);
+  await expect(iterator.next()).rejects.toBe(failure);
 });

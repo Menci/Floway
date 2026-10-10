@@ -140,7 +140,7 @@ describe('first output across supported stream payloads', () => {
       { type: 'multi_agent_call_output', output: [{ type: 'output_text', text: 'tool output' }] },
       { type: 'shell_call_output', output: [{ stdout: 'tool output' }] },
     ])('identifies runtime results that require a warning if they start timing: %j', item => {
-      expect(firstOutputTokenSignal(eventFrame({ type, item }), 'openaiResponses')).toEqual({ type: 'runtime-result', itemType: item.type });
+      expect(firstOutputTokenSignal(eventFrame({ type, item }), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: item.type });
     });
 
     it.each([
@@ -215,9 +215,8 @@ describe('first output across supported stream payloads', () => {
     expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toBeNull();
   });
 
-  it('excludes execution output, progress, and empty content snapshots', () => {
+  it('excludes progress and empty content snapshots', () => {
     for (const event of [
-      { type: 'response.shell_call_output_content.delta', delta: { stdout: 'tool output', stderr: '' } },
       { type: 'response.mcp_list_tools.completed', tools: [{ name: 'search' }] },
       { type: 'response.code_interpreter_call.in_progress' },
       { type: 'response.reasoning.done', text: '' },
@@ -274,6 +273,9 @@ describe('first output across supported stream payloads', () => {
     { type: 'server_tool_use', name: 'web_search' },
     { type: 'text', text: 'hello' },
     { type: 'thinking', thinking: 'thinking' },
+    { type: 'thinking', thinking: '', signature: '' },
+    { type: 'redacted_thinking', data: 'opaque' },
+    { type: 'mcp_tool_use', name: 'echo', server_name: 'server', input: {} },
   ])('recognizes content already present on an Anthropic block start: %j', content_block => {
     expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toEqual({ type: 'decode' });
   });
@@ -293,12 +295,68 @@ describe('first output across supported stream payloads', () => {
   it.each([
     { type: 'tool_use', id: 'call_1', name: '', input: {} },
     { type: 'text', text: '' },
-    { type: 'thinking', thinking: '', signature: 'signature' },
     { type: 'compaction', content: 'summary' },
     { type: 'compaction', content: '' },
-    { type: 'redacted_thinking', data: 'opaque' },
-    { type: 'web_search_tool_result', content: [{ title: 'tool output' }] },
-  ])('rejects Anthropic empty starts and tool results: %j', content_block => {
+  ])('rejects Anthropic empty text/tool starts and compaction: %j', content_block => {
     expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBeNull();
+  });
+});
+
+describe('audited timing signal representations', () => {
+  it.each(['response.output_item.added', 'response.output_item.done'])('ignores valid nullable item lifecycle: %s', type => {
+    expect(firstOutputTokenSignal(eventFrame({ type, item: null, output_index: 0 }), 'openaiResponses')).toBeNull();
+  });
+
+  it.each([
+    { type: 'response.shell_call_output_content.delta', delta: { stdout: 'result', stderr: '' } },
+    { type: 'response.shell_call_output_content.delta', delta: { stdout: '', stderr: 'error' } },
+    { type: 'response.shell_call_output_content.done', output: [{ stdout: '', stderr: '', outcome: { type: 'exit', exit_code: 0 } }] },
+  ])('recognizes shell runtime output outside item lifecycle: %j', event => {
+    expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: 'shell_call_output' });
+  });
+
+  it('ignores empty shell execution deltas', () => {
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.shell_call_output_content.delta', delta: { stdout: '', stderr: '' } }), 'openaiResponses')).toBeNull();
+  });
+
+  it.each(['function_call', 'custom_tool_call', 'shell_call', 'apply_patch_call'])('distinguishes program-authored %s from model-authored calls', type => {
+    const item = { type, caller: { type: 'program', caller_id: 'pg_1' } };
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_item.added', item }), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: type });
+    expect(firstOutputTokenSignal(eventFrame({ type: 'response.output_item.added', item: { ...item, caller: { type: 'direct' } } }), 'openaiResponses')).toEqual({ type: 'decode' });
+  });
+
+  it.each(['response.completed', 'response.incomplete', 'response.failed'])('reads first model evidence from a terminal snapshot: %s', type => {
+    expect(firstOutputTokenSignal(eventFrame({
+      type, response: {
+        output: [
+          { type: 'mcp_list_tools', tools: [] },
+          { type: 'shell_call_output', output: [] },
+          { type: 'reasoning', summary: [] },
+        ],
+      },
+    }), 'openaiResponses')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({ type, response: { output: [{ type: 'shell_call_output', output: [] }] } }), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: 'shell_call_output' });
+    expect(firstOutputTokenSignal(eventFrame({ type, response: { output: [{ type: 'mcp_list_tools', tools: [] }, { type: 'future_model_output' }] } }), 'openaiResponses')).toBeNull();
+  });
+
+  it.each([
+    'web_search_tool_result', 'web_fetch_tool_result', 'advisor_tool_result', 'code_execution_tool_result',
+    'bash_code_execution_tool_result', 'text_editor_code_execution_tool_result', 'tool_search_tool_result', 'mcp_tool_result',
+  ])('identifies Anthropic %s as runtime output', type => {
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block: { type, content: [] } }), 'anthropicMessages')).toEqual({ type: 'runtime-output', outputType: type });
+  });
+
+  it.each(['container_upload', 'mcp_tool_listing', 'fallback', 'compaction'])('ignores Anthropic preparation/context block %s', type => {
+    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block: { type } }), 'anthropicMessages')).toBeNull();
+  });
+
+  describe.each(['tool_use', 'server_tool_use'])('Anthropic program-authored %s', type => {
+    it.each(['code_execution_20250825', 'code_execution_20260120'])('recognizes the %s runtime caller', callerType => {
+      expect(firstOutputTokenSignal(eventFrame({
+        type: 'content_block_start', content_block: {
+          type, name: 'lookup', input: {}, caller: { type: callerType, tool_id: 'program' },
+        },
+      }), 'anthropicMessages')).toEqual({ type: 'runtime-output', outputType: type });
+    });
   });
 });

@@ -122,16 +122,17 @@ const normalizeObservedItem = (item: OpenAIResponsesOutputItemEx, publicId: stri
 interface TrackedItem {
   readonly type: CopilotOutputItemType;
   readonly publicId: string;
-  added: boolean;
 }
 
 interface StreamItemState {
   readonly items: Map<number, TrackedItem>;
+  readonly announced: Set<number>;
 }
 
 const trackedAt = (state: StreamItemState, outputIndex: number): TrackedItem => {
   const tracked = state.items.get(outputIndex);
-  if (tracked === undefined) throw new TypeError(`Copilot OpenAI Responses event references output_index ${outputIndex} before output_item.added`);
+  if (!state.announced.has(outputIndex)) throw new TypeError(`Copilot OpenAI Responses event references output_index ${outputIndex} before output_item.added`);
+  if (tracked === undefined) throw new TypeError(`Copilot OpenAI Responses cannot assign an item identity at output_index ${outputIndex} without a materialized output item`);
   return tracked;
 };
 
@@ -143,7 +144,7 @@ const trackObservedItem = (
   const type = copilotOutputItemType(item);
   const existing = state.items.get(outputIndex);
   if (existing === undefined) {
-    const tracked: TrackedItem = { type, publicId: createPublicItemId(type), added: false };
+    const tracked: TrackedItem = { type, publicId: createPublicItemId(type) };
     state.items.set(outputIndex, tracked);
     return tracked;
   }
@@ -202,15 +203,17 @@ const NO_ITEM_ID_EVENT_TYPES = new Set<OpenAIResponsesStreamEventEx['type']>([
 
 const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: StreamItemState): OpenAIResponsesStreamEventEx => {
   if (event.type === 'response.output_item.added') {
-    const tracked = trackObservedItem(state, event.output_index, event.item);
-    if (tracked.added) {
+    if (state.announced.has(event.output_index)) {
       throw new TypeError(`Copilot OpenAI Responses emitted output_item.added twice for output_index ${event.output_index}`);
     }
-    tracked.added = true;
+    state.announced.add(event.output_index);
+    if (event.item === null) return event;
+    const tracked = trackObservedItem(state, event.output_index, event.item);
     return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 
   if (event.type === 'response.output_item.done') {
+    if (event.item === null) return event;
     const tracked = trackObservedItem(state, event.output_index, event.item);
     return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
@@ -254,11 +257,39 @@ const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: Stream
 const normalizeFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  const state: StreamItemState = { items: new Map() };
+  const state: StreamItemState = { items: new Map(), announced: new Set() };
+  const buffered: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of frames) {
-    yield frame.type === 'event'
-      ? { ...frame, event: normalizeStreamEvent(frame.event, state) }
-      : frame;
+    if (frame.type === 'event') {
+      const event = frame.event;
+      if (event.type === 'error') {
+        // An upstream failure can end a segment before its item type arrives.
+        // Those undecidable frames have no valid public identity; discard them
+        // so the original protocol error survives without leaking raw item IDs.
+        buffered.length = 0;
+        yield frame;
+        continue;
+      }
+      if ((event.type === 'response.output_item.added' || event.type === 'response.output_item.done') && event.item !== null) {
+        trackObservedItem(state, event.output_index, event.item);
+      } else if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+        event.response.output.forEach((item, index) => trackObservedItem(state, index, item));
+      }
+    }
+    buffered.push(frame);
+    while (buffered.length > 0) {
+      const next = buffered[0]!;
+      if (next.type === 'event') {
+        const carrier = next.event as OpenAIResponsesStreamEventEx & { item_id?: unknown; output_index?: unknown };
+        if (typeof carrier.item_id === 'string' && typeof carrier.output_index === 'number'
+          && state.announced.has(carrier.output_index) && !state.items.has(carrier.output_index)) break;
+      }
+      buffered.shift();
+      yield next.type === 'event' ? { ...next, event: normalizeStreamEvent(next.event, state) } : next;
+    }
+  }
+  for (const frame of buffered) {
+    yield frame.type === 'event' ? { ...frame, event: normalizeStreamEvent(frame.event, state) } : frame;
   }
 };
 

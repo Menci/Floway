@@ -1,4 +1,5 @@
 import { hasReadableSummary, toOpenAIChatCompletionsReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
+import { materializeNullableResponsesLifecycle } from '../shared/via-openai-responses/nullable-lifecycle.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -90,7 +91,7 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
 
 const isReasoningOutputDone = (event: OpenAIResponsesStreamEventEx): boolean => {
   if (event.type !== 'response.output_item.done') return false;
-  return (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>).item.type === 'reasoning';
+  return event.item !== null && event.item.type === 'reasoning';
 };
 
 const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEventEx | undefined => {
@@ -176,6 +177,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   case 'response.output_item.added': {
     const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
+    if (item === null) return [];
     if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return [];
 
     state.toolCallIndex++;
@@ -199,6 +201,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   case 'response.output_item.done': {
     const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
+    if (item === null) return flushReadyDeferredChatChunks(state);
     if (item.type === 'custom_tool_call') return completeCustomInput(output_index, item.input, state);
     if (item.type !== 'reasoning') return [];
 
@@ -455,7 +458,7 @@ const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStrea
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
-  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {
+  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(materializeNullableResponsesLifecycle(frames))) {
     const fatalFrame = chatErrorFrameFromOpenAIResponsesFatalEvent(event);
     if (fatalFrame) {
       yield fatalFrame;

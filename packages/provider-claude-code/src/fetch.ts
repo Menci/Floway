@@ -484,6 +484,7 @@ const performUpstreamCall = async (
     (body, parserOptions) => parseAnthropicMessagesStream(body, { ...parserOptions, onSseFrame: observeRawSseFrame }),
     upstreamModelId,
     opts.signal,
+    opts.call.observeStreamFrame,
   );
 
   if (!result.ok && result.response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {

@@ -1,4 +1,4 @@
-import type { AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
@@ -6,7 +6,7 @@ import type { ChatTargetApi } from '@floway-dev/provider';
 
 type FirstOutputTokenSignal =
   | { type: 'decode' }
-  | { type: 'runtime-result'; itemType: string };
+  | { type: 'runtime-output'; outputType: string };
 
 const decodeSignal = (hasOutput: boolean): FirstOutputTokenSignal | null => hasOutput ? { type: 'decode' } : null;
 
@@ -14,47 +14,84 @@ export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: Ch
   if (frame.type === 'done') return null;
 
   const event = frame.event as Record<string, unknown>;
-  if (targetApi === 'anthropicMessages') return decodeSignal(isAnthropicMessagesOutputEvent(event));
-  if (targetApi === 'openaiResponses') {
-    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-      return responsesItemTimingSignal(event.item as OpenAIResponsesOutputItemEx, event.type === 'response.output_item.added');
-    }
-    return decodeSignal(hasOpenAIResponsesOutputData(event));
-  }
+  if (targetApi === 'anthropicMessages') return anthropicMessagesTimingSignal(event);
+  if (targetApi === 'openaiResponses') return responsesTimingSignal(event);
   return decodeSignal(isOpenAIChatCompletionsOutputEvent(event));
 };
 
 const nonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
-const isAnthropicMessagesOutputEvent = (event: Record<string, unknown>): boolean => {
-  // A tool name can arrive before its streamed JSON input; it is already model output.
-  // https://platform.claude.com/docs/en/build-with-claude/streaming#input-json-delta
+// Empty text blocks can be announced before upstream generation is invoked.
+// Thinking blocks observed in model-backed producers instead follow generated
+// reasoning, including hidden thinking that never exposes readable text.
+// https://github.com/xwteam/gemini2api/blob/6b60269a93f075b7cd71d3e0b3161956f10aadef/app/routers/claude.py#L218-L246
+// https://github.com/vllm-project/vllm/blob/3709632ff2944a5f2ecdacc84ede5cd134b7ae08/vllm/entrypoints/anthropic/serving.py#L1065-L1093
+// https://platform.claude.com/docs/en/build-with-claude/streaming#thinking-delta
+const ANTHROPIC_BLOCK_TIMING_SIGNALS = {
+  text: null,
+  thinking: 'decode',
+  redacted_thinking: 'decode',
+  tool_use: 'decode',
+  server_tool_use: 'decode',
+  mcp_tool_use: 'decode',
+  // Results normally follow model-selected calls, but a resumed server-tool
+  // execution can also begin a response without a new model sampling step.
+  // https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools#the-server_tool_use-block
+  web_search_tool_result: 'runtime-output',
+  web_fetch_tool_result: 'runtime-output',
+  advisor_tool_result: 'runtime-output',
+  code_execution_tool_result: 'runtime-output',
+  bash_code_execution_tool_result: 'runtime-output',
+  text_editor_code_execution_tool_result: 'runtime-output',
+  tool_search_tool_result: 'runtime-output',
+  mcp_tool_result: 'runtime-output',
+  // Uploaded files, tool discovery, model transitions and context maintenance
+  // are preparation/control state, not ordinary model-output boundaries.
+  // https://github.com/anthropics/anthropic-sdk-typescript/blob/2979ed5cef4b2f059b95af23e08728c01e588f86/src/resources/beta/messages/messages.ts#L4869-L4887
+  container_upload: null,
+  mcp_tool_listing: null,
+  fallback: null,
+  compaction: null,
+} satisfies Record<AnthropicMessagesAssistantContentBlock['type'], FirstOutputTokenSignal['type'] | null>;
+
+const anthropicMessagesTimingSignal = (event: Record<string, unknown>): FirstOutputTokenSignal | null => {
   if (event.type === 'content_block_start') {
-    const block = event.content_block as AnthropicMessagesContentBlockStartEvent['content_block'] | undefined;
-    if (!block) return false;
-    switch (block.type) {
-    case 'tool_use':
-    case 'server_tool_use': return nonEmptyString(block.name);
-    case 'text': return nonEmptyString(block.text);
-    case 'thinking': return nonEmptyString(block.thinking);
-    default: return false;
+    const block = event.content_block as AnthropicMessagesContentBlockStartEvent['content_block'];
+    if (block.type === 'text') return decodeSignal(nonEmptyString(block.text));
+    if (block.type === 'tool_use' || block.type === 'server_tool_use' || block.type === 'mcp_tool_use') {
+      if (!nonEmptyString(block.name)) return null;
+      // A program can invoke tools without sampling the model again. Its
+      // original code-execution call normally already established timing.
+      // https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling#the-caller-field-in-responses
+      if ((block.type === 'tool_use' || block.type === 'server_tool_use') && block.caller !== undefined && block.caller.type !== 'direct') {
+        return { type: 'runtime-output', outputType: block.type };
+      }
     }
+    if (!Object.hasOwn(ANTHROPIC_BLOCK_TIMING_SIGNALS, block.type)) return null;
+    const disposition = ANTHROPIC_BLOCK_TIMING_SIGNALS[block.type];
+    return disposition === 'runtime-output' ? { type: disposition, outputType: block.type } : decodeSignal(disposition === 'decode');
   }
-  if (event.type !== 'content_block_delta') return false;
-  const delta = event.delta as AnthropicMessagesContentBlockDeltaEvent['delta'] | undefined;
-  if (!delta) return false;
-  switch (delta.type) {
-  case 'text_delta': return nonEmptyString(delta.text);
-  case 'thinking_delta': return nonEmptyString(delta.thinking);
-  case 'input_json_delta': return nonEmptyString(delta.partial_json);
-  case 'citations_delta': return delta.citation !== undefined;
-  // Compaction is a separate inference iteration, excluded from the top-level
-  // output token count used by performance telemetry.
-  // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/beta/beta_usage.py#L50-L56
-  case 'compaction_delta': return false;
-  default: return false;
-  }
+  if (event.type !== 'content_block_delta') return null;
+  const delta = event.delta as AnthropicMessagesContentBlockDeltaEvent['delta'];
+  if (!Object.hasOwn(ANTHROPIC_DELTA_OUTPUT_FIELDS, delta.type)) return null;
+  const field = ANTHROPIC_DELTA_OUTPUT_FIELDS[delta.type];
+  if (field === undefined || field === null) return null;
+  const value = (delta as unknown as Record<string, unknown>)[field];
+  return decodeSignal(field === 'citation' ? value !== undefined : nonEmptyString(value));
 };
+
+// Signatures normally follow the thinking block that started timing. Compaction
+// is a separate inference iteration excluded from ordinary output token usage.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/2979ed5cef4b2f059b95af23e08728c01e588f86/src/resources/beta/messages/messages.ts#L6139-L6145
+// https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/beta/beta_usage.py#L38-L72
+const ANTHROPIC_DELTA_OUTPUT_FIELDS = {
+  text_delta: 'text',
+  thinking_delta: 'thinking',
+  input_json_delta: 'partial_json',
+  citations_delta: 'citation',
+  signature_delta: null,
+  compaction_delta: null,
+} satisfies Record<AnthropicMessagesContentBlockDeltaEvent['delta']['type'], string | null>;
 
 const hasResponsesText = (part: unknown): boolean => {
   const content = part as { text?: unknown; refusal?: unknown };
@@ -105,15 +142,15 @@ const RESPONSES_ITEM_TIMING_SIGNALS = {
 
   // Hosted runtime results normally follow a call/program item that has already
   // started timing. If the earlier signal is missing, start timing at the result
-  // and warn about the unexpected ordering. Client-executed tool search and
-  // shell results follow the input pattern above.
+  // and warn that no earlier decode signal was observed in this response.
+  // Client-executed tool search and shell results follow the input pattern above.
   // https://developers.openai.com/api/docs/guides/tools-tool-search#hosted-tool-search
   // https://developers.openai.com/api/docs/guides/tools-shell#shell-output-in-responses
   // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling#understand-program-response-items
-  tool_search_output: 'runtime-result',
-  program_output: 'runtime-result',
-  multi_agent_call_output: 'runtime-result',
-  shell_call_output: 'runtime-result',
+  tool_search_output: 'runtime-output',
+  program_output: 'runtime-output',
+  multi_agent_call_output: 'runtime-output',
+  shell_call_output: 'runtime-output',
 
   // MCP discovery can emit a populated tool list before inference is invoked;
   // it establishes available tools, not a model-selected call.
@@ -129,14 +166,53 @@ const RESPONSES_ITEM_TIMING_SIGNALS = {
   compaction: null,
   compaction_summary: null,
   context_compaction: null,
-} satisfies Record<OpenAIResponsesOutputItemEx['type'], 'decode' | 'runtime-result' | null>;
+} satisfies Record<OpenAIResponsesOutputItemEx['type'], 'decode' | 'runtime-output' | null>;
 
-const responsesItemTimingSignal = (item: OpenAIResponsesOutputItemEx, added: boolean): FirstOutputTokenSignal | null => {
+const responsesItemTimingSignal = (item: OpenAIResponsesOutputItemEx | null, added: boolean): FirstOutputTokenSignal | null => {
+  if (item === null) return null;
   const disposition = Object.hasOwn(RESPONSES_ITEM_TIMING_SIGNALS, item.type)
     ? RESPONSES_ITEM_TIMING_SIGNALS[item.type]
     : added ? 'decode' : null;
   if (disposition === null) return null;
-  return disposition === 'runtime-result' ? { type: disposition, itemType: item.type } : { type: disposition };
+  // Program-authored calls follow the earlier model-generated program rather
+  // than demonstrating a fresh model decode step.
+  // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling#understand-program-response-items
+  if (disposition === 'decode' && 'caller' in item && item.caller?.type === 'program') {
+    return { type: 'runtime-output', outputType: item.type };
+  }
+  return disposition === 'runtime-output' ? { type: disposition, outputType: item.type } : { type: disposition };
+};
+
+const responsesTimingSignal = (event: Record<string, unknown>): FirstOutputTokenSignal | null => {
+  switch (event.type) {
+  case 'response.output_item.added':
+  case 'response.output_item.done':
+    return responsesItemTimingSignal(event.item as OpenAIResponsesOutputItemEx | null, event.type === 'response.output_item.added');
+  // Shell output deltas carry stdout/stderr objects, not model-generated strings.
+  // https://github.com/openai/openai-node/blob/1bbc425c836eca65222e7a3a2e79e53a6881ce9c/src/resources/responses/responses.ts#L7769-L7886
+  case 'response.shell_call_output_content.delta': {
+    const delta = event.delta as { stdout?: string; stderr?: string };
+    return nonEmptyString(delta.stdout) || nonEmptyString(delta.stderr) ? { type: 'runtime-output', outputType: 'shell_call_output' } : null;
+  }
+  case 'response.shell_call_output_content.done': return { type: 'runtime-output', outputType: 'shell_call_output' };
+  case 'response.completed':
+  case 'response.incomplete':
+  case 'response.failed': {
+    // Abbreviated streams can expose their first model evidence only in the
+    // terminal snapshot. This observes arrival, not an earlier sampling time.
+    // https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L5-L37
+    const response = event.response as { output?: OpenAIResponsesOutputItemEx[] } | undefined;
+    if (response?.output === undefined) return null;
+    let runtimeSignal: FirstOutputTokenSignal | null = null;
+    for (const item of response.output) {
+      const signal = responsesItemTimingSignal(item, false);
+      if (signal?.type === 'decode') return signal;
+      if (runtimeSignal === null && signal !== null) runtimeSignal = signal;
+    }
+    return runtimeSignal;
+  }
+  default: return decodeSignal(hasOpenAIResponsesOutputData(event));
+  }
 };
 
 // Content snapshots can expose first decode evidence atomically; they

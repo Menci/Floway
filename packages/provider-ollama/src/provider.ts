@@ -162,6 +162,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       parser,
       rawModelId,
       signal,
+      opts.observeStreamFrame,
     );
   };
 

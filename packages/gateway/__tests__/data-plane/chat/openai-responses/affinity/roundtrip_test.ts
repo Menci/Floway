@@ -244,7 +244,7 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
   expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
   const compactionEvents = events.filter(event =>
     (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
-    && event.item.type === 'compaction');
+    && event.item?.type === 'compaction');
   expect(compactionEvents).toHaveLength(2);
   for (const event of compactionEvents) {
     if (event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done') continue;

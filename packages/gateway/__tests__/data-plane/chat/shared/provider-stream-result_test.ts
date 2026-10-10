@@ -1,17 +1,109 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { createAnthropicMessagesBillableUsageReader } from '../../../../src/data-plane/chat/anthropic-messages/usage.ts';
 import { billableUsageFromOpenAIResponsesEvent } from '../../../../src/data-plane/chat/openai-responses/usage.ts';
 import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { recordPerformance } from '../../../../src/data-plane/shared/telemetry/performance.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
+import { parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { mockPerfTelemetryContext, stubModelCandidate } from '@floway-dev/test-utils';
 
 afterEach(() => { vi.restoreAllMocks(); });
+
+test.each([true, false])('timestamps parsed upstream output while downstream is stalled (same byte chunk: %s)', async sameChunk => {
+  let now = 110;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  let upstream!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(controller) { upstream = controller; } });
+  const encode = (delta: object) => `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`;
+  const role = encode({ role: 'assistant' });
+  const text = encode({ content: 'hello' });
+  const ctx = mockGatewayCtx();
+  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIChatCompletionsStream(body)), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
+  if (result.type !== 'events') throw new Error('Expected events');
+  const iterator = result.events[Symbol.asyncIterator]();
+  if (!sameChunk) {
+    upstream.enqueue(new TextEncoder().encode(role));
+    await iterator.next();
+    expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
+  }
+  now = 500;
+  upstream.enqueue(new TextEncoder().encode(sameChunk ? role + text : text));
+  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500); });
+  now = 5000;
+  upstream.close();
+  const collected = [];
+  for await (const frame of { [Symbol.asyncIterator]: () => iterator }) collected.push(frame);
+  expect(collected).toHaveLength(sameChunk ? 2 : 1);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
+  await result.finalMetadata;
+});
+
+test('return before consumption cancels a pending parser read and settles metadata', async () => {
+  const cancel = vi.fn();
+  const body = new ReadableStream<Uint8Array>({ cancel });
+  const controller = new AbortController();
+  const ctx = mockGatewayCtx({ abortSignal: controller.signal, downstreamAbortController: controller });
+  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIChatCompletionsStream(body, { signal: controller.signal })), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
+  if (result.type !== 'events') throw new Error('Expected events');
+  await result.events[Symbol.asyncIterator]().return?.();
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(controller.signal.aborted).toBe(true);
+  expect((await result.finalMetadata)?.modelIdentity).toBeDefined();
+});
+
+test('observes a terminal-only message after parsed discovery lifecycle without inventing earlier timing', async () => {
+  let now = 120;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  let upstream!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(controller) { upstream = controller; } });
+  const ctx = mockGatewayCtx();
+  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIResponsesStream(body)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+  if (result.type !== 'events') throw new Error('Expected events');
+  const iterator = result.events[Symbol.asyncIterator]();
+  const encode = (events: object[]) => new TextEncoder().encode(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
+  const item = { type: 'mcp_list_tools', id: 'discovery', tools: [] };
+  upstream.enqueue(encode([
+    { type: 'response.output_item.added', sequence_number: 0, output_index: 0, item },
+    { type: 'response.output_item.done', sequence_number: 1, output_index: 0, item },
+  ]));
+  await iterator.next();
+  await iterator.next();
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
+  now = 500;
+  upstream.enqueue(encode([{
+    type: 'response.completed', sequence_number: 2, response: {
+      id: 'response', object: 'response', status: 'completed', model: 'model', error: null, incomplete_details: null,
+      output: [item, { type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello', annotations: [] }] }],
+    },
+  }]));
+  upstream.close();
+  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500); });
+  const last = await iterator.next();
+  expect(last.value?.type === 'event' && last.value.event.type).toBe('response.completed');
+  expect(await iterator.next()).toEqual({ done: true, value: undefined });
+  await result.finalMetadata;
+});
+
+test('a saturated prefix keeps the shared attempt timing unavailable across continuations', async () => {
+  const ctx = mockGatewayCtx();
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const frames: ProtocolFrame<unknown>[] = Array.from({ length: 256 }, () => ({ type: 'event', event: { type: 'response.created' } }));
+  frames.push({ type: 'event', event: { type: 'response.output_item.added', item: { type: 'message' } } });
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+  await vi.waitFor(() => { expect(ctx.attempt.outputObservationUnavailable).toBe(true); });
+  expect(await drainEvents(result)).toEqual(frames);
+  const continuation = await providerStreamResultToExecuteResult(okStreamResult(iter(frames.slice(-1))), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+  await drainEvents(continuation);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
+  expect(warn).toHaveBeenCalledOnce();
+});
 
 const iter = <T>(items: readonly T[]): AsyncIterable<T> => ({
   async *[Symbol.asyncIterator]() { for (const item of items) yield item; },
@@ -135,8 +227,8 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps[0]).toBe(null);
-  expect(stamps.slice(1)).toEqual(timeline.slice(1).map(() => 3596));
+  expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([3596]));
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(3596);
   const metadata = await result.finalMetadata!;
   expect(metadata.billableUsage?.output).toBe(202);
   recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 5408);
@@ -165,7 +257,8 @@ test('waits for generated tool content after Chat Completions identity frames', 
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps).toEqual([null, null, 300, 300]);
+  expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([300]));
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(300);
 });
 
 test.each([
@@ -190,7 +283,8 @@ test.each([
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps).toEqual([null, 200, 200]);
+  expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([200]));
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(200);
 });
 
 test('counts private reasoning as decode time while ignoring pre-inference tool discovery', async () => {
@@ -231,8 +325,8 @@ test('counts private reasoning as decode time while ignoring pre-inference tool 
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps.slice(0, 3)).toEqual([null, null, null]);
-  expect(stamps.slice(3)).toEqual(timeline.slice(3).map(() => 500));
+  expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([500]));
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
   const metadata = await result.finalMetadata!;
   expect(metadata.billableUsage?.output).toBe(202);
   recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 16000);
@@ -275,15 +369,72 @@ describe.each([
         forwarded.push(frame);
       }
       expect(forwarded).toEqual(timeline.map(({ event }) => ({ type: 'event', event })));
-      expect(stamps).toEqual(withPriorCall ? [null, null, 300, 300, 300, 300] : [null, null, 500, 500, 500]);
+      expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([withPriorCall ? 300 : 500]));
+      expect(ctx.attempt.timing.firstOutputTokenAt).toBe(withPriorCall ? 300 : 500);
       if (withPriorCall) {
         expect(warn).not.toHaveBeenCalled();
       } else {
         expect(warn).toHaveBeenCalledExactlyOnceWith(
-          'Floway: first output timing started from a runtime result without an earlier decode signal',
-          { itemType: item.type, upstream: 'test-upstream', model: 'test-model', modelKey: 'test-model-key' },
+          'Floway: first output timing started from runtime output without an earlier decode signal in this response',
+          { outputType: item.type, upstream: 'test-upstream', model: 'test-model', modelKey: 'test-model-key' },
         );
       }
     });
   });
+});
+
+test('counts omitted Anthropic thinking from its surviving block announcement', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const pending: Promise<unknown>[] = [];
+  const ctx = mockGatewayCtx({ backgroundScheduler: promise => { pending.push(promise); } });
+  ctx.attempt.timing.upstreamCallStartedAt = 100;
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const recordSample = vi.spyOn(repo.performance, 'recordSample');
+  const timeline = [
+    { ts: 110, event: { type: 'message_start', message: { usage: { input_tokens: 10, output_tokens: 1 } } } },
+    { ts: 500, event: { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } } },
+    { ts: 15000, event: { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'private reasoning' } } },
+    { ts: 15001, event: { type: 'content_block_stop', index: 0 } },
+    { ts: 15002, event: { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '', citations: null } } },
+    { ts: 15003, event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } } },
+    { ts: 16000, event: { type: 'message_delta', usage: { output_tokens: 202 } } },
+    { ts: 16000, event: { type: 'message_stop' } },
+  ];
+  const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
+    for (const { ts, event } of timeline) { now = ts; yield { type: 'event', event }; }
+  })();
+  const readUsage = createAnthropicMessagesBillableUsageReader();
+  const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'anthropicMessages', ctx,
+    event => readUsage(event as AnthropicMessagesStreamEventEx));
+  await drainEvents(result);
+  const metadata = result.type === 'events' ? await result.finalMetadata! : undefined;
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
+  expect(warn).not.toHaveBeenCalled();
+  expect(metadata?.billableUsage?.output).toBe(202);
+  recordPerformance(ctx, mockPerfTelemetryContext(), false, 202, 16000);
+  await Promise.all(pending);
+  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 400, tpotUs: 77114 }));
+});
+
+test.each([
+  { targetApi: 'openaiResponses' as const, event: { type: 'response.shell_call_output_content.delta', delta: { stdout: 'result' } }, outputType: 'shell_call_output' },
+  { targetApi: 'openaiResponses' as const, event: { type: 'response.output_item.added', item: { type: 'function_call', caller: { type: 'program', caller_id: 'pg_1' } } }, outputType: 'function_call' },
+  { targetApi: 'anthropicMessages' as const, event: { type: 'content_block_start', content_block: { type: 'web_search_tool_result', content: [] } }, outputType: 'web_search_tool_result' },
+  { targetApi: 'anthropicMessages' as const, event: { type: 'content_block_start', content_block: { type: 'tool_use', name: 'lookup', caller: { type: 'code_execution_20260120', tool_id: 'program' } } }, outputType: 'tool_use' },
+])('warns once for first runtime output in $targetApi: $outputType', async ({ targetApi, event, outputType }) => {
+  const ctx = mockGatewayCtx();
+  let now = 500;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => { now += 50; });
+  const frames = [{ type: 'event' as const, event }, { type: 'event' as const, event }];
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), targetApi, ctx, () => null);
+  expect(await drainEvents(result)).toEqual(frames);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
+  expect(warn).toHaveBeenCalledExactlyOnceWith(
+    'Floway: first output timing started from runtime output without an earlier decode signal in this response',
+    { outputType, upstream: 'test-upstream', model: 'test-model', modelKey: 'test-model-key' },
+  );
 });

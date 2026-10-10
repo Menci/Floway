@@ -1,7 +1,6 @@
 import { openaiChatCompletionsInterceptors } from './interceptors/index.ts';
 import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
-import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
@@ -10,6 +9,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
+import { buildChatUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -47,7 +47,7 @@ export const openaiChatCompletionsAttempt = {
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+          buildChatUpstreamCallOptions(candidate, ctx, invocation.headers, targetApi),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
       }

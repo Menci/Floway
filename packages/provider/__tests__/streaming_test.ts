@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { streamingProviderCall } from '../src/streaming.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -122,4 +122,93 @@ test('streamingProviderCall returns ok:true with parsed frames on 2xx SSE', asyn
   const frames: ProtocolFrame<StubEvent>[] = [];
   for await (const frame of result.events) frames.push(frame);
   assertEquals(frames, [eventFrame({ type: 'alpha' }), eventFrame({ type: 'beta' }), doneFrame()]);
+});
+
+test('observes parsed frames before a downstream interceptor releases its buffered stream', async () => {
+  const first = eventFrame<StubEvent>({ type: 'first' });
+  const second = eventFrame<StubEvent>({ type: 'second' });
+  let firstObserved!: () => void;
+  const observedFirst = new Promise<void>(resolve => { firstObserved = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const parser = () => (async function* () {
+    yield first;
+    await gate;
+    yield second;
+    yield doneFrame();
+  })();
+  const observed: Array<{ frame: ProtocolFrame<unknown>; modelKey: string }> = [];
+  const result = await streamingProviderCall(
+    Promise.resolve(new Response('', { headers: { 'content-type': 'text/event-stream' } })),
+    parser, 'served-model', undefined,
+    (frame, modelKey) => {
+      observed.push({ frame, modelKey });
+      firstObserved();
+    },
+  );
+  if (!result.ok) throw new Error('expected ok:true');
+  let released = false;
+  const buffered = (async function* () {
+    const frames = [];
+    for await (const frame of result.events) frames.push(frame);
+    released = true;
+    yield* frames;
+  })();
+  const pending = buffered.next();
+  await observedFirst;
+  expect(released).toBe(false);
+  expect(observed).toEqual([{ frame: first, modelKey: 'served-model' }]);
+  expect(observed[0]?.frame).toBe(first);
+  release();
+  expect((await pending).value).toBe(first);
+  expect((await buffered.next()).value).toBe(second);
+  expect((await buffered.next()).value).toEqual(doneFrame());
+  expect(observed).toEqual([
+    { frame: first, modelKey: 'served-model' },
+    { frame: second, modelKey: 'served-model' },
+    { frame: doneFrame(), modelKey: 'served-model' },
+  ]);
+});
+
+test('propagates the original observation failure and closes the parsed source', async () => {
+  const failure = new Error('observation failed');
+  let closed = false;
+  const parser = () => (async function* () {
+    try {
+      yield eventFrame<StubEvent>({ type: 'first' });
+      throw new Error('source advanced after observer failure');
+    } finally {
+      closed = true;
+    }
+  })();
+  const result = await streamingProviderCall(
+    Promise.resolve(new Response('', { headers: { 'content-type': 'text/event-stream' } })),
+    parser, 'served-model', undefined, () => { throw failure; },
+  );
+  if (!result.ok) throw new Error('expected ok:true');
+  await expect(result.events[Symbol.asyncIterator]().next()).rejects.toBe(failure);
+  expect(closed).toBe(true);
+});
+
+test('closing the observed stream closes its parsed source', async () => {
+  let closed = false;
+  const parser = () => (async function* () {
+    try {
+      yield eventFrame<StubEvent>({ type: 'first' });
+      yield eventFrame<StubEvent>({ type: 'second' });
+    } finally {
+      closed = true;
+    }
+  })();
+  const observed: ProtocolFrame<unknown>[] = [];
+  const result = await streamingProviderCall(
+    Promise.resolve(new Response('', { headers: { 'content-type': 'text/event-stream' } })),
+    parser, 'served-model', undefined, frame => { observed.push(frame); },
+  );
+  if (!result.ok) throw new Error('expected ok:true');
+  const iterator = result.events[Symbol.asyncIterator]();
+  await iterator.next();
+  await iterator.return?.();
+  expect(closed).toBe(true);
+  expect(observed).toEqual([eventFrame({ type: 'first' })]);
 });

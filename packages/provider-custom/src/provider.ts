@@ -210,6 +210,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       parser,
       rawModelId,
       signal,
+      opts.observeStreamFrame,
     );
   };
 

@@ -340,7 +340,7 @@ test('projects deferred tool-search inventories without a top-level tool list', 
   if (result.type !== 'events') throw new Error('Expected events');
   const items: OpenAIResponsesOutputItemEx[] = [];
   for await (const frame of result.events) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') items.push(frame.event.item);
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done' && frame.event.item !== null) items.push(frame.event.item);
   }
   expect(items[0]).toMatchObject({ tools: [{ name: 'collaboration' }] });
 });
