@@ -116,15 +116,16 @@ omp_resolve_native_paths() {
   local probe="$SETUP_TMPDIR/omp-paths.js" paths="$SETUP_TMPDIR/omp-paths.json"
   # Plugins can live outside the agent directory under profiles or XDG.
   # https://github.com/can1357/oh-my-pi/blob/cde91bb38674d365e8c3916d05d2292273bb8554/packages/utils/src/dirs.ts#L660-L688
+  # Model listing loads explicit extensions without requiring a configured session model.
+  # https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/coding-agent/src/commands/models.ts#L35-L43
   cat > "$probe" <<'JS'
 import { getAgentDir, getPluginsDir } from '@oh-my-pi/pi-utils';
 import { writeFileSync } from 'node:fs';
-export default pi => {
+export default () => {
   writeFileSync(process.env.FLOWAY_SETUP_PATHS_FILE, JSON.stringify({ agentDir: getAgentDir(), pluginsDir: getPluginsDir() }));
-  pi.on('session_start', (_event, context) => context.shutdown());
 };
 JS
-  if ! _run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" env -u SETUP_API_KEY FLOWAY_SETUP_PATHS_FILE="$paths" "$OMP_BIN" --mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e "$probe" </dev/null > "$SETUP_TMPDIR/omp-paths.out" 2>&1; then
+  if ! _run_with_timeout "${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}" env -u SETUP_API_KEY FLOWAY_SETUP_PATHS_FILE="$paths" "$OMP_BIN" models --no-extensions -e "$probe" </dev/null > "$SETUP_TMPDIR/omp-paths.out" 2>&1; then
     cat "$SETUP_TMPDIR/omp-paths.out" >&2
     return 1
   fi

@@ -340,21 +340,24 @@ case "$1" in
     esac
     : > "$FAKE_OMP_UPDATE_MARKER"
     ;;
-  --mode)
+  --mode | models)
     if [ "\${FAKE_OMP_PROBE_FAILURE:-0}" = "1" ]; then
       printf 'test native path probe failure\\n' >&2
       exit 73
     fi
-    [ "$2" = "rpc" ] && [ "$3" = "--no-ui" ] && [ "$4" = "--no-session" ] \
-      && [ "$5" = "--no-tools" ] && [ "$6" = "--no-lsp" ] && [ "$7" = "--no-skills" ] \
-      && [ "$8" = "--no-rules" ] && [ "$9" = "--no-extensions" ] && [ "\${10}" = "-e" ] \
-      || { printf 'fake omp: malformed path probe args: %s\\n' "$*" >&2; exit 64; }
-    [ -s "\${11}" ] || { printf 'fake omp: missing path probe file: %s\\n' "\${11}" >&2; exit 66; }
+    if [ "$1" = "--mode" ]; then
+      probe="\${11}"
+    else
+      [ "$#" -eq 4 ] && [ "$2" = "--no-extensions" ] && [ "$3" = "-e" ] \
+        || { printf 'fake omp: malformed path probe args: %s\\n' "$*" >&2; exit 64; }
+      probe=$4
+    fi
+    [ -s "$probe" ] || { printf 'fake omp: missing path probe file: %s\\n' "$probe" >&2; exit 66; }
     [ -n "\${FLOWAY_SETUP_PATHS_FILE:-}" ] || { printf 'fake omp: missing FLOWAY_SETUP_PATHS_FILE\\n' >&2; exit 65; }
     printf '%s\\n' "$*" >> "$FAKE_OMP_PROBE_RECORD"
     agent_dir="\${FAKE_OMP_AGENT_DIR:-$HOME/.omp/agent}"
     plugins_dir="\${FAKE_OMP_PLUGINS_PATH:-$HOME/.omp/plugins}"
-    "$FAKE_OMP_PATHS_SCRIPT" "$agent_dir" "$plugins_dir" "$FLOWAY_SETUP_PATHS_FILE" "\${11}"
+    "$FAKE_OMP_PATHS_SCRIPT" "$agent_dir" "$plugins_dir" "$FLOWAY_SETUP_PATHS_FILE" "$probe" "$1"
     ;;
   plugin)
     [ "$2" = "link" ] && [ -n "$3" ] || { printf 'fake omp: malformed plugin args: %s\\n' "$*" >&2; exit 64; }
@@ -378,15 +381,23 @@ esac
 const FAKE_OMP_PATHS_SCRIPT = `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
-const [agentDir, pluginsDir, outputPath, probePath] = process.argv.slice(2);
+const [agentDir, pluginsDir, , probePath, command] = process.argv.slice(2);
 const probeSource = fs.readFileSync(probePath, 'utf8');
-if (!/\\bgetAgentDir\\s*\\(/.test(probeSource) || !/\\bgetPluginsDir\\s*\\(/.test(probeSource)) {
-  throw new Error('fake omp path probe does not call both public path APIs');
-}
-fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+const source = probeSource.replace(/^import .*;$/gm, '').replace('export default', 'return');
 const paths = { agentDir, pluginsDir };
-fs.writeFileSync(outputPath, JSON.stringify(paths) + '\\n');
-if (process.env.FAKE_OMP_PATHS_RECORD) fs.appendFileSync(process.env.FAKE_OMP_PATHS_RECORD, JSON.stringify(paths) + '\\n');
+const writePaths = (file, contents) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, contents);
+  if (process.env.FAKE_OMP_PATHS_RECORD) fs.appendFileSync(process.env.FAKE_OMP_PATHS_RECORD, JSON.stringify(paths) + '\\n');
+};
+const factory = new Function('getAgentDir', 'getPluginsDir', 'writeFileSync', source)(() => agentDir, () => pluginsDir, writePaths);
+const exit = process.exit;
+process.exit = () => { throw new Error('extension factories cannot exit the host'); };
+try { factory({ on() {} }); } finally { process.exit = exit; }
+if (command === '--mode') {
+  console.error('No default model selected.');
+  process.exit(1);
+}
 `;
 
 const FAKE_OMP_PLUGIN_LINK_SCRIPT = `#!${process.execPath}
@@ -966,6 +977,8 @@ const piEnv = (options: RunOptions): Record<string, string> => {
 const ompEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
     FAKE_OMP_SRC,
+    OLLAMA_BASE_URL: 'http://127.0.0.1:1',
+    LLAMA_CPP_BASE_URL: 'http://127.0.0.1:1',
     FAKE_OMP_PATHS_SCRIPT: FAKE_OMP_PATHS_SCRIPT_FILE,
     FAKE_OMP_PLUGIN_LINK_SCRIPT: FAKE_OMP_PLUGIN_LINK_SCRIPT_FILE,
     FAKE_OMP_PLUGIN_RECORD: join(options.workspace.root, 'omp-plugin-commands.txt'),
@@ -3791,7 +3804,7 @@ test('omp', 'fresh install downloads a protected JS extension without model or r
   t.equal(paths.agentDir, join(ws.home, '.omp/agent'), 'default agent directory is discovered');
   t.equal(paths.pluginsDir, join(ws.home, '.omp/plugins'), 'default plugin directory is discovered independently');
   const probeCommand = readFileSync(join(ws.root, 'omp-probe-commands.txt'), 'utf8').trim();
-  t.includes(probeCommand, '--mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e ', 'probe uses the isolated RPC mode and an explicit script file');
+  t.includes(probeCommand, 'models --no-extensions -e ', 'probe loads only the explicit extension without starting a model session');
   const pluginLink = ompPluginLinkPath(ws);
   t.ok(lstatSync(pluginLink).isSymbolicLink(), 'native plugin link was registered');
   t.equal(realpathSync(pluginLink), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native plugin link targets the installed package');
@@ -4269,7 +4282,7 @@ test('omp', 'PowerShell: fresh install downloads a protected JS extension withou
   const paths = JSON.parse(readFileSync(join(ws.root, 'omp-setup-paths-record.jsonl'), 'utf8')) as { agentDir: string; pluginsDir: string };
   t.equal(paths.agentDir, join(ws.home, '.omp/agent'), 'default agent directory is discovered');
   t.equal(paths.pluginsDir, join(ws.home, '.omp/plugins'), 'default plugin directory is discovered independently');
-  t.includes(readFileSync(join(ws.root, 'omp-probe-commands.txt'), 'utf8'), '--mode rpc --no-ui --no-session --no-tools --no-lsp --no-skills --no-rules --no-extensions -e ', 'probe uses the isolated RPC mode and an explicit script file');
+  t.includes(readFileSync(join(ws.root, 'omp-probe-commands.txt'), 'utf8'), 'models --no-extensions -e ', 'probe loads only the explicit extension without starting a model session');
   const pluginLink = ompPluginLinkPath(ws);
   t.ok(lstatSync(pluginLink).isSymbolicLink(), 'native plugin link was registered');
   t.equal(realpathSync(pluginLink), realpathSync(join(ompPluginsDirFor(ws), 'floway')), 'native plugin link targets the installed package');
@@ -4752,6 +4765,9 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   const ws = makeWorkspace();
   const ompHome = ws.home;
   const cmd = hostOmpBin;
+  const version = spawnSync(cmd, ['--version'], { encoding: 'utf8' });
+  t.equal(version.status, 0, 'native CLI reports its version');
+  const userAgent = version.stdout.trim();
   writeFileSync(join(ws.binDir, 'omp'), `#!/bin/sh\nexec ${shellLiteral(cmd)} "$@"\n`, { mode: 0o755 });
   const run = await runShellInstaller({
     workspace: ws,
@@ -4775,7 +4791,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
   const req = modelServer.requests.find(r => r.path === '/v1/models' || r.path === '/models');
   t.ok(req !== undefined, 'modelServer received discovery request');
   t.equal(req?.headers['authorization'], `Bearer ${SENTINEL_KEY}`, 'discovery sent Authorization header with setup API key');
-  t.equal(req?.headers['user-agent'], 'omp/18.8.4', 'discovery sent User-Agent: omp/18.8.4');
+  t.equal(req?.headers['user-agent'], userAgent, 'discovery sends the installed CLI User-Agent');
 
   const inference = await new Promise<RunResult>(resolve => {
     const child = spawn(cmd, ['--model', 'floway/floway-model-1', '--thinking', 'high', '--no-tools', '--no-lsp', '--no-session', '-p', 'hello'], { env: { ...process.env, HOME: ompHome } });
@@ -4837,7 +4853,7 @@ test('omp', 'real omp smoke: discovery succeeds and server receives headers', as
     const psReq = modelServer.requests.find(r => r.path === '/v1/models' || r.path === '/models');
     t.ok(psReq !== undefined, 'modelServer received discovery request from PowerShell setup');
     t.equal(psReq?.headers['authorization'], `Bearer ${SENTINEL_KEY}`, 'discovery sent Authorization header with setup API key');
-    t.equal(psReq?.headers['user-agent'], 'omp/18.8.4', 'discovery sent User-Agent: omp/18.8.4');
+    t.equal(psReq?.headers['user-agent'], userAgent, 'discovery sends the installed CLI User-Agent');
   }
 });
 
