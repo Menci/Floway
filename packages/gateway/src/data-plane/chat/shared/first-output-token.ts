@@ -76,28 +76,34 @@ const RESPONSES_ITEM_DECODE_SIGNALS = {
   apply_patch_call: true,
   image_generation_call: true,
 
-  // Tool/agent runtimes supply execution results; their arrival does not mark
-  // this response's model starting to decode. Execution may be client- or
-  // server-side, as tool_search_output explicitly supports both.
-  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7156-L7190
+  // Client-tool results, supplied tool definitions, and approval decisions
+  // normally enter request input, rather than response output. The output
+  // schema also admits them, so exclude them if returned:
+  // they carry external results/control state, not the start of model decode.
+  // https://developers.openai.com/api/docs/guides/function-calling#how-it-works
+  // https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input
+  // https://developers.openai.com/api/docs/guides/tools-connectors-mcp#approvals
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5726-L5754
   function_call_output: false,
   custom_tool_call_output: false,
   computer_call_output: false,
+  local_shell_call_output: false,
+  apply_patch_call_output: false,
+  additional_tools: false,
+  mcp_approval_response: false,
+
+  // Hosted runtime results can appear in a response, but normally follow a
+  // call/program item that already establishes decode onset, rather than open
+  // an assistant turn. Waiting for a result would count earlier model generation
+  // and tool execution as prefill. Client-executed tool search and shell results
+  // follow the input pattern above.
+  // https://developers.openai.com/api/docs/guides/tools-tool-search#hosted-tool-search
+  // https://developers.openai.com/api/docs/guides/tools-shell#shell-output-in-responses
+  // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling#understand-program-response-items
   tool_search_output: false,
   program_output: false,
   multi_agent_call_output: false,
-  local_shell_call_output: false,
   shell_call_output: false,
-  apply_patch_call_output: false,
-
-  // Tool definitions and approval decisions are configuration/control state,
-  // even when returned as output items; their direction alone is not the reason
-  // for exclusion. An approval response records the caller's decision, whereas
-  // an approval request above exposes the model-selected invocation.
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5116-L5136
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5399-L5425
-  additional_tools: false,
-  mcp_approval_response: false,
 
   // MCP discovery can emit a populated tool list before inference is invoked;
   // it establishes available tools, not a model-selected call.
