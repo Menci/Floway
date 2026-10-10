@@ -15,12 +15,12 @@ export const calendarRangeCss = `
   background-color: var(--winui-acrylic-in-app-fill-default);
   overflow: hidden;
 }
-.floway-range-calendar { width: calc(7 * var(--floway-range-cell-size) + 2 * 2px); font: 14px var(--fontFamilyBase); color: var(--winui-text-fill-primary); }
+.floway-range-calendar { --floway-range-header-corner-radius: 3px; --floway-range-header-focus-outset: 3px; --floway-range-cell-focus-outset: 2px; width: calc(7 * var(--floway-range-cell-size) + 2 * 2px); font: 14px var(--fontFamilyBase); color: var(--winui-text-fill-primary); }
 .floway-range-header { display: grid; grid-template-columns: auto 1fr auto; height: calc(var(--floway-range-cell-size) + 1px); box-sizing: border-box; border-bottom: 1px solid var(--winui-card-stroke-default); }
 /* Inherited ButtonPadding seats header ink half a pixel above its center.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
-.floway-range-header button { position: relative; display: grid; place-items: center; box-sizing: border-box; padding: 0; border: 0; margin: 0; height: var(--floway-range-cell-size); padding-block: 5px 6px; border-radius: 3px; background: transparent; color: var(--winui-control-strong-fill-default); font: inherit; cursor: pointer; isolation: isolate; }
-.floway-range-header button::before { content: ''; position: absolute; z-index: -1; inset: 2px 5px; border: 1px solid transparent; border-radius: 3px; }
+.floway-range-header button { position: relative; display: grid; place-items: center; box-sizing: border-box; padding: 0; border: 0; margin: 0; height: var(--floway-range-cell-size); padding-block: 5px 6px; border-radius: var(--floway-range-header-corner-radius); background: transparent; color: var(--winui-control-strong-fill-default); font: inherit; cursor: pointer; isolation: isolate; }
+.floway-range-header button::before { content: ''; position: absolute; z-index: -1; inset: 2px 5px; border: 1px solid transparent; border-radius: var(--floway-range-header-corner-radius); }
 .floway-range-header button:hover:enabled::before { background: var(--winui-subtle-fill-secondary); }
 .floway-range-header button:active:enabled::before { background: var(--winui-subtle-fill-tertiary); }
 .floway-range-header button:disabled { color: var(--winui-text-fill-disabled); cursor: default; }
@@ -67,8 +67,10 @@ export const calendarRangeCss = `
    their slots.
    https://www.nuget.org/packages/Syncfusion.Calendar.WinUI/35.1.39
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L167 */
-.floway-range-cell:focus-visible { box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner); outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer); outline-offset: 0; z-index: 2; }
-.floway-range-header button:focus-visible { box-shadow: 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner); outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer); outline-offset: var(--winui-focus-visual-secondary-thickness); z-index: 2; }
+.floway-range-cell:focus-visible, .floway-range-header button:focus-visible { outline: none; z-index: 2; }
+.floway-range-cell:focus-visible::after, .floway-range-header button:focus-visible::after { content: ''; position: absolute; pointer-events: none; z-index: 2; box-sizing: border-box; border: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer); box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner); }
+.floway-range-cell:focus-visible::after { inset: calc(-1 * var(--floway-range-cell-focus-outset)); }
+.floway-range-header button:focus-visible::after { inset: calc(-1 * var(--floway-range-header-focus-outset)); border-radius: calc(var(--floway-range-header-corner-radius) + var(--floway-range-header-focus-outset)); }
 .floway-range-snapshots { position: absolute; inset: 0; pointer-events: none; }
 .floway-range-snapshot { position: absolute; left: 0; transform-origin: center; pointer-events: none; }
 @media (forced-colors: active) {

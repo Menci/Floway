@@ -147,8 +147,10 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
     setView({ mode, date: next, focused: key });
   };
   const keyDown = (event: KeyboardEvent<HTMLButtonElement>, current: Date) => {
-    if (event.ctrlKey && event.key === 'ArrowUp' && mode !== 'century') {
-      event.preventDefault(); transitionTo(modes[modes.indexOf(mode) + 1], current, calendarDate(current), true); return;
+    if (event.ctrlKey && event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (mode !== 'century') transitionTo(modes[modes.indexOf(mode) + 1], current, calendarDate(current), true);
+      return;
     }
     if (event.ctrlKey && event.key === 'ArrowDown') { event.preventDefault(); select(current); return; }
     if (event.altKey || event.ctrlKey || event.metaKey) return;

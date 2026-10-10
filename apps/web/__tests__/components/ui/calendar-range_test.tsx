@@ -69,6 +69,7 @@ test('keyboard navigation clamps to the minimum date instead of displaying an em
 test('End in the partial final century focuses its last enabled decade', () => {
   renderCalendar('2120-12-31');
   focusKey('ArrowUp', true); focusKey('ArrowUp', true); focusKey('ArrowUp', true);
+  expect(fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', ctrlKey: true })).toBe(false);
   focusKey('Home');
   expect(focusedDate()).toBe('2100-01-01');
   focusKey('End');
@@ -96,4 +97,26 @@ test('a pending start on today retains the native single-selection paint state',
   const today = screen.getByRole('gridcell', { name: 'October 10, 2026' });
   expect(today.hasAttribute('data-today')).toBe(true);
   expect(today.hasAttribute('data-single')).toBe(true);
+});
+
+test('arrow navigation keeps the header opaque and leaves an active drill running', () => {
+  vi.mocked(window.matchMedia).mockImplementation(query => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
+  const animate = vi.fn(() => ({ cancel: vi.fn(), addEventListener: vi.fn() }) as unknown as Animation);
+  Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate });
+  try {
+    renderCalendar('2026-10-16');
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }));
+    expect(animate.mock.contexts.some(target => (target as HTMLElement).classList.contains('floway-range-heading'))).toBe(false);
+    animate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'November 2026, choose a month' }));
+    const drill = animate.mock.results.filter((_, index) => (animate.mock.contexts[index] as HTMLElement).classList.contains('floway-range-view')).map(result => result.value as Animation);
+    expect(drill).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Next year' }));
+    for (const animation of drill) expect(animation.cancel).not.toHaveBeenCalled();
+    expect(animate.mock.contexts.filter(target => (target as HTMLElement).classList.contains('floway-range-heading'))).toHaveLength(1);
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, 'animate', original);
+    else Reflect.deleteProperty(Element.prototype, 'animate');
+  }
 });
