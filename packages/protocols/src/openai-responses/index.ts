@@ -1,4 +1,5 @@
 import type * as Official from './sdk.ts';
+import type { WEB_SEARCH_HOSTED_TYPE_NAMES } from './tools.ts';
 
 // OpenAI Responses API type definitions
 // Used for translating Anthropic Messages ↔ OpenAI Responses APIs
@@ -505,9 +506,6 @@ export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompacti
   metadata?: Record<string, unknown>;
 }
 
-export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
-  item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction';
-
 // Payload-free trailing input item for a RemoteCompactionV2 round trip.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902
 export interface OpenAIResponsesCompactionTriggerItem {
@@ -697,17 +695,6 @@ export interface OpenAIResponsesFunctionTool {
 // array is still a heterogeneous union and translators must narrow on
 // `type === "function"` (or `"custom"`) before reading `name` / `parameters`.
 //
-// `web_search` ships under four equivalent type values (current + dated
-// + preview + dated-preview). All four name the same hosted tool. The
-// canonical list lives here so the runtime Set and this TS union can't
-// drift.
-export const WEB_SEARCH_HOSTED_TYPE_NAMES = [
-  'web_search',
-  'web_search_2025_08_26',
-  'web_search_preview',
-  'web_search_preview_2025_03_11',
-] as const;
-
 export type OpenAIResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
@@ -844,40 +831,6 @@ export type OpenAIResponsesTool =
   | OpenAIResponsesLocalShellTool
   | OpenAIResponsesShellTool
   | OpenAIResponsesApplyPatchTool;
-
-export const collectOpenAIResponsesToolEntries = (
-  payload: CanonicalOpenAIResponsesPayload,
-): Array<{ tool: OpenAIResponsesTool; path: string }> => [
-  ...(payload.tools ?? []).map((tool, index) => ({ tool, path: `tools[${index}]` })),
-  ...payload.input.flatMap((item, inputIndex) =>
-    item.type === 'additional_tools' || item.type === 'tool_search_output'
-      ? item.tools.map((tool, toolIndex) => ({ tool, path: `input[${inputIndex}].tools[${toolIndex}]` }))
-      : []),
-];
-
-export const collectOpenAIResponsesTools = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
-  collectOpenAIResponsesToolEntries(payload).map(entry => entry.tool);
-
-export const mapOpenAIResponsesTools = (
-  payload: CanonicalOpenAIResponsesPayload,
-  transform: (tool: OpenAIResponsesTool) => OpenAIResponsesTool,
-): CanonicalOpenAIResponsesPayload => {
-  const mapTools = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => tools.map(transform);
-  const input = payload.input.map(item => {
-    switch (item.type) {
-    case 'additional_tools':
-    case 'tool_search_output':
-      return { ...item, tools: mapTools(item.tools) };
-    default:
-      return item;
-    }
-  });
-  return {
-    ...payload,
-    input,
-    ...(Array.isArray(payload.tools) ? { tools: mapTools(payload.tools) } : {}),
-  };
-};
 
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8250-L8400
 export type OpenAIResponsesToolChoice =
@@ -1416,17 +1369,10 @@ type OpenAIResponsesStreamEventVariant =
 // is identical aside from the type tag's role.
 export type OpenAIResponsesReasoningItem = OpenAIResponsesInputReasoning | OpenAIResponsesOutputReasoning;
 
-export const isOpenAIResponsesTerminalEvent = (event: Pick<OpenAIResponsesStreamEventEx, 'type'>): boolean =>
-  event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
+export { isOpenAIResponsesTerminalEvent, openaiResponsesResultFromStreamEvent } from './terminal-event.ts';
+export { WEB_SEARCH_HOSTED_TYPE_NAMES, collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools } from './tools.ts';
 
-// Typed accessor for the `response` payload carried on lifecycle envelopes
-// (`response.queued`, `response.created`, `response.in_progress`, `response.completed`,
-// `response.incomplete`, `response.failed`). Returns null on every other
-// event type so callers don't have to reproduce the variant check.
-export const openaiResponsesResultFromStreamEvent = (event: OpenAIResponsesStreamEventEx): OpenAIResponsesResultEx | null =>
-  'response' in event ? event.response : null;
-
-export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape } from './compact.ts';
+export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape, isOpenAIResponsesCompactionItem } from './compact.ts';
 export { openaiResponsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';

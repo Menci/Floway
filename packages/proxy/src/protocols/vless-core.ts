@@ -2,8 +2,9 @@
 // reply prefix off the readable, and return the post-framing duplex stream.
 // Callers must pass a transport whose framing/TLS is already established.
 
-import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
-import { ProxyDialError } from '../errors.ts';
+import { concat, copy, encodeAtypAddress } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
+import { hexDecode } from '../encoding.ts';
 import type { DialResult, DialTarget } from '../types.ts';
 
 export const vlessFrameOverStream = async (

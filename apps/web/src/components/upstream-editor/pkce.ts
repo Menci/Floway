@@ -1,5 +1,5 @@
 import { encodeBase64url } from '../../lib/base-encoding';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const encoder = new TextEncoder();
 

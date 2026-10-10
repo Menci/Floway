@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MetadataEditor } from '../../../src/components/model-alias/metadata-editor';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
-import type { AnnouncedMetadata } from '@floway-dev/protocols/common';
+import type { AnnouncedMetadata } from '@floway-dev/protocols/browser';
 
 const imageDetailOriginalLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
 

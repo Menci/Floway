@@ -13,7 +13,7 @@ import {
   type PricingCoordinateValue,
   type PricingSelector,
   type PricingThresholdOperator,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 export interface PricingField {
   readonly metric: BillingMetric;

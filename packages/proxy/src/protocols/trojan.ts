@@ -16,9 +16,10 @@
 
 import { sha224 } from '@noble/hashes/sha2.js';
 
-import { encodeAtypAddress, utf8Bytes } from '../bytes.ts';
+import { encodeAtypAddress } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { utf8Bytes } from '../encoding.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { userspaceTls, type TlsStream } from '@floway-dev/http';

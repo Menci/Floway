@@ -35,6 +35,19 @@ describe('Agent Setup model ranking', () => {
       'other',
     ]);
   });
+
+  it('retains the chat catalog for omp in catalog order and leaves ids opaque', () => {
+    expect(rankAgentSetupModels([
+      catalogModel('gpt-4o', { contextWindow: 200_000 }),
+      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
+      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
+    ], { family: 'omp' }).map(entry => entry.id)).toEqual([
+      'gpt-4o',
+      'claude-sonnet-4-5',
+    ]);
+    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'omp' })[0]?.value)
+      .toBe('claude-sonnet-4-5');
+  });
 });
 
 describe('Agent Setup persisted model values', () => {
@@ -52,6 +65,19 @@ describe('Agent Setup persisted model values', () => {
       .toBe('claude-haiku-4-5[1m]');
     expect(buildAgentModelOptions([catalogModel('gpt-5.6', { contextWindow: 1_000_000 })], { family: 'codex' })[0]?.value)
       .toBe('gpt-5.6');
+  });
+
+  it('retains the chat catalog for Pi in catalog order and leaves ids opaque', () => {
+    expect(rankAgentSetupModels([
+      catalogModel('gpt-4o', { contextWindow: 200_000 }),
+      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
+      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
+    ], { family: 'pi' }).map(entry => entry.id)).toEqual([
+      'gpt-4o',
+      'claude-sonnet-4-5',
+    ]);
+    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'pi' })[0]?.value)
+      .toBe('claude-sonnet-4-5');
   });
 
   it('leaves a Claude model that cannot reach the window unsuffixed', () => {

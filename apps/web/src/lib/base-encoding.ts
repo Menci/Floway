@@ -3,7 +3,7 @@ import {
   encodeBase64 as encodeProtocolBase64,
   encodeBase64url,
   normalizeForgivingBase64,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 export const decodeWebBase64 = (value: string): Uint8Array => {
   const normalized = normalizeForgivingBase64(value);

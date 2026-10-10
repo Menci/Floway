@@ -158,3 +158,43 @@ test('/api/token-usage/overview delegates every dashboard axis to one overview r
     filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
   });
 });
+
+test('/api/token-usage/overview clips custom calendar buckets without changing totals', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  for (const [hour, requests] of [
+    ['2026-04-30T09', 20],
+    ['2026-04-30T10', 3],
+    ['2026-05-01T02', 5],
+    ['2026-05-03T16', 30],
+  ] as const) {
+    await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: 'up-a', hour, requests });
+  }
+  for (const [bucket, expected] of [
+    ['week', [['2026-04-27', 8]]],
+    ['month', [['2026-04', 3], ['2026-05', 5]]],
+    ['2d', [['2026-04-30', 8]]],
+    ['2h', [['2026-04-30T18', 3], ['2026-05-01T10', 5]]],
+    ['6h', [['2026-04-30T18', 3], ['2026-05-01T06', 5]]],
+    ['12h', [['2026-04-30T12', 3], ['2026-05-01T00', 5]]],
+  ] as const) {
+    const response = await requestApp(`/api/token-usage/overview?start=2026-04-30T10&end=2026-05-03T16&bucket=${bucket}&timezone=Asia%2FSingapore`, { headers: { 'x-floway-session': adminSession } });
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.series.map((row: { bucket: string; requests: number }) => [row.bucket, row.requests]), expected);
+    assertEquals(body.axes.none[0].requests, 8);
+    assertEquals(body.axes.none[0].cost, '16');
+  }
+});
+
+test('/api/token-usage/overview splits anchored multi-day buckets at local midnight', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  for (const [hour, requests] of [['2026-05-01T10', 3], ['2026-05-02T15', 5], ['2026-05-02T16', 7]] as const) {
+    await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: 'up-a', hour, requests });
+  }
+  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T16&end=2026-05-05T16&bucket=2d&timezone=Asia%2FSingapore', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.series.map((row: { bucket: string; requests: number; cost: string }) => [row.bucket, row.requests, row.cost]), [['2026-05-01', 8, '16'], ['2026-05-03', 7, '14']]);
+  assertEquals(body.axes.none[0].requests, 15);
+  assertEquals(body.axes.none[0].cost, '30');
+});

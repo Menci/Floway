@@ -3,7 +3,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
-import { hexDecode } from '../../src/bytes.ts';
+import { hexDecode } from '../../src/encoding.ts';
 import {
   buildRealityAad,
   buildRealitySessionId,

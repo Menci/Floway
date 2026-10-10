@@ -27,7 +27,7 @@ import { useReorderList } from '../ui/reorder-list';
 import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
-import { MODEL_KINDS, type ModelAlias, type ModelKind } from '@floway-dev/protocols/common';
+import { MODEL_KINDS, type ModelAlias, type ModelKind } from '@floway-dev/protocols/browser';
 
 const { Button, DialogActions, DialogTitle, Field, Option, Text } = fluentComponents;
 

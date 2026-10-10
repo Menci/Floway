@@ -56,6 +56,9 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Install latest Codex for installer compatibility
+        if: matrix.check.name == 'installers'
+        run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
       # `apps/web/.react-router/types` is generated and gitignored, yet it sits
       # in the web tsconfig's `include`, and the workspace lint config is
       # type-aware. Locally the types exist as a side effect of `dev` or
@@ -64,4 +67,6 @@ jobs:
       - name: Generate route types
         run: pnpm run typegen
       - name: ${{ matrix.check.name }}
+        env:
+          CODEX_TEST_BIN: ${{ github.workspace }}/data/codex-ci/node_modules/.bin/codex
         run: ${{ matrix.check.run }}
