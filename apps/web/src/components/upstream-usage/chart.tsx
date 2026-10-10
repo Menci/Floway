@@ -16,9 +16,9 @@ import { withUniqueSeriesLegends } from '../charts/series-legends';
 import type { UsageMetricUnit } from '@floway-dev/provider/browser';
 
 const unitAxes: Record<UsageMetricUnit, { priority: number; width: number }> = {
-  percent: { priority: 3, width: 72 },
-  usd: { priority: 2, width: 100 },
-  credits: { priority: 1, width: 76 },
+  percent: { priority: 3, width: chartMargins.left },
+  usd: { priority: 2, width: 80 },
+  credits: { priority: 1, width: chartMargins.left },
 };
 const calloutStyle = {
   ...chartCalloutStyle,
@@ -86,7 +86,6 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
             includeHidden
             hide={index >= 2}
             key={unit}
-            label={{ value: t(`dashboard.upstreamUsage.units.${unit}`), angle: index === 0 ? -90 : 90, position: index === 0 ? 'insideLeft' : 'insideRight', ...chartTickStyle }}
             orientation={index === 0 ? 'left' : 'right'}
             tick={chartTickStyle}
             tickFormatter={formatters[unit]}
