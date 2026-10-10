@@ -59,7 +59,7 @@ test.each([
   ['America/New_York', '2026-03-07', '2026-03-09'],
   ['America/New_York', '2026-10-31', '2026-11-02'],
   ['Australia/Lord_Howe', '2026-10-03', '2026-10-05'],
-  ['America/Santiago', '2026-09-05', '2026-10-24'],
+  ['America/Santiago', '2026-09-04', '2026-10-23'],
   ['Pacific/Apia', '2011-12-02', '2012-01-20'],
   ['Asia/Kathmandu', '2026-01-01', '2026-03-01'],
 ])('every source hour stays in its frontend bucket across %s calendar transitions', (zone, start, end) => {
