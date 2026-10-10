@@ -655,15 +655,9 @@ export interface OpenAIResponsesMcpApprovalResponseItem {
   reason?: string | null;
 }
 
-export interface OpenAIResponsesInputImageGenerationCall {
-  type: 'image_generation_call';
-  id?: string;
-  status?: 'completed' | 'in_progress' | 'generating' | 'failed';
-  result?: string;
-  revised_prompt?: string;
-  output_format?: 'png' | 'jpeg';
+export type OpenAIResponsesInputImageGenerationCall = Official.ResponseInputItem.ImageGenerationCall & {
   error?: { message: string; code: string; type?: string };
-}
+};
 
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
 export type OpenAIResponsesToolAllowedCaller = 'direct' | 'programmatic';
