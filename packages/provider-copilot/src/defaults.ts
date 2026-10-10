@@ -28,6 +28,12 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // Default on: Copilot's `/responses` rejects `store: true` outright with
+  // a 400, and the gateway's `openai-responses-store-false` interceptor is
+  // the single forcing — the provider boundary no longer forces it
+  // separately. Turning it off for a Copilot upstream makes stateful
+  // requests fail upstream. Every other provider defaults it off.
+  'openai-responses-store-false': true,
 };
 
 // True when the model id names a Claude release Copilot can serve an inline

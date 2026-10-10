@@ -23,4 +23,7 @@ export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // Default off: stateless upstream mode is opt-in. Copilot's provider is
+  // the exception — see provider-copilot's defaults.
+  'openai-responses-store-false': false,
 };

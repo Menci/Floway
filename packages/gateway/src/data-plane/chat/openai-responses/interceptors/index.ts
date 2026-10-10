@@ -4,6 +4,7 @@ import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withOpenAIResponsesCollaborationShim } from './collaboration-shim.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withStoreForcedFalse } from './force-store-false.ts';
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
@@ -52,6 +53,14 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
+//   - withStoreForcedFalse: gated by `openai-responses-store-false` (off by
+//     default; on for Copilot upstreams, whose `/responses` endpoint rejects
+//     `store: true` outright). Pins `store: false` on the outbound wire body
+//     so a stateful upstream handles every request statelessly; the
+//     gateway's own item store keys off the caller's original `store` value
+//     captured at the entry boundary and is unaffected. This entry is the
+//     single `store: false` forcing — Codex additionally pins `store: false`
+//     in its own body builder regardless of the flag.
 //   - withExclusiveCachedTokensNormalized: unconditional on an OpenAI Responses
 //     target. Folds the cache buckets back into `input_tokens` whenever
 //     `total_tokens` witnesses that the upstream reports them alongside it,
@@ -74,6 +83,7 @@ export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] 
   withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
+  withStoreForcedFalse,
   withExclusiveCachedTokensNormalized,
   withVendorDeepSeekOpenAIResponsesNormalize,
   withVendorQwenOpenAIResponsesNormalize,
