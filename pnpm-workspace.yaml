@@ -42,7 +42,11 @@ onlyBuiltDependencies:
 # https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/charts/react-charts/library/src/utilities/utilities.ts#L2232-L2265
 # https://github.com/d3/d3/blob/ca958d45217b4c15332d971b935451a6d4c978f4/docs/d3-scale/time.md#L111-L124
 # https://www.w3.org/TR/SVG2/shapes.html#RectElement
+# Raw JSON integer tokens must survive cloning and streaming serialization.
+# https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
 patchedDependencies:
+  '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
+  'klona@2.0.6': patches/klona@2.0.6.patch
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch

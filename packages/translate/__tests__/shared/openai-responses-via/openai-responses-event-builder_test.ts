@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { terminal } from '../../../src/shared/openai-responses-via/openai-responses-event-builder.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
-const response = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const response = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_test',
   object: 'response',
   model: 'test-model',

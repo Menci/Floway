@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexOpenAIImagesGenerations, callCodexOpenAI
 import * as responsesLite from '../src/responses-lite.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -262,11 +262,11 @@ describe('callCodexOpenAIResponses — token freshness', () => {
 
 describe('Codex terminal output recovery', () => {
   test.each([false, true])('restores native compaction before stream and result consumption with Responses Lite=%s', async useResponsesLite => {
-    const item: OpenAIResponsesOutputItem = {
+    const item: OpenAIResponsesCompactionItemEx = {
       type: 'compaction', id: 'cmp_native', encrypted_content: 'OPAQUE_NATIVE_BLOB',
       metadata: { turn_id: 'turn_native' }, internal_chat_message_metadata_passthrough: { turn_id: 'turn_native' },
     };
-    const terminal: OpenAIResponsesResult = {
+    const terminal: OpenAIResponsesResultEx = {
       id: 'resp_native', object: 'response', model: model.id, status: 'completed', output: [],
       error: null, incomplete_details: null, usage: { input_tokens: 15, output_tokens: 25, total_tokens: 40 },
     };
@@ -283,12 +283,12 @@ describe('Codex terminal output recovery', () => {
       const effects = makeEffects();
       const result = await callCodexOpenAIResponses({
         upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
-        body: { input: [{ type: 'compaction_trigger' } as unknown as OpenAIResponsesInputItem], stream },
+        body: { input: [{ type: 'compaction_trigger' } as unknown as CanonicalOpenAIResponsesInputItem], stream },
         headers: new Headers(), effects, call: noopUpstreamCallOptions(),
       });
       if (!result.ok) throw new Error('expected a successful native compaction stream');
       if (stream) {
-        const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+        const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
         for await (const frame of result.events) frames.push(frame);
         expect(frames[0]).toMatchObject({ event: { response: { output: [], status: 'in_progress' } } });
         expect(frames[3]).toMatchObject({ event: { type: 'response.compaction.compacting', item_id: item.id } });
@@ -310,7 +310,7 @@ describe('Codex terminal output recovery', () => {
       type: 'function_call', id: 'fc_0', call_id: 'call_0', name: 'lookup', arguments: '{}', status: 'completed',
       ...(useResponsesLite ? { namespace: 'functions' } : {}),
     };
-    const message: OpenAIResponsesOutputItem = {
+    const message: OpenAIResponsesOutputItemEx = {
       type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'summary answer', annotations: [] }],
     };
@@ -349,7 +349,7 @@ describe('Codex private Responses wire selection', () => {
             { type: 'message' as const, role: 'user' as const, content: 'hello' },
             // The CLI emits this only with its opt-in reasoning_effort_override feature.
             // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/session/reasoning_effort.rs#L16-L85
-            { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as OpenAIResponsesInputItem,
+            { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as CanonicalOpenAIResponsesInputItem,
           ],
           instructions: 'Base', tools: [tool], parallel_tool_calls: true,
           reasoning: { effort: 'future_effort', context: 'current_turn' },
@@ -449,7 +449,7 @@ describe('Codex private Responses wire selection', () => {
     expect(result.headers?.has(CODEX_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
     if (stream) {
-      const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+      const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
       for await (const frame of result.events) frames.push(frame);
       expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
       expect(frames[1]).toEqual({ type: 'event', event: future });
@@ -466,11 +466,11 @@ describe('Codex private Responses wire selection', () => {
     seedFreshAccessToken();
     const tool = { type: 'namespace' as const, name: 'functions', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: { type: 'object' } }] };
     const item = { type: 'function_call' as const, id: 'fc_lite', call_id: 'call_lite', name: 'lookup', arguments: '{}', status: 'completed' as const };
-    const resource: OpenAIResponsesResult = {
+    const resource: OpenAIResponsesResultEx = {
       id: 'resp_lite', object: 'response', model: liteModel.id, status: 'completed', output: [item],
       tools: [tool], instructions: null, error: null, incomplete_details: null,
     };
-    const events: OpenAIResponsesStreamEvent[] = [
+    const events: OpenAIResponsesStreamEventEx[] = [
       { type: 'response.output_item.added', output_index: 0, item },
       { type: 'response.function_call_arguments.done', item_id: item.id, output_index: 0, arguments: '{}' },
       { type: 'response.output_item.done', output_index: 0, item },
@@ -490,7 +490,7 @@ describe('Codex private Responses wire selection', () => {
       headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     if (!result.ok) throw new Error('expected successful Lite response');
-    const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+    const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
     for await (const frame of result.events) frames.push(frame);
     expect(frames).toEqual([...events.map((event, sequence_number) => ({ type: 'event', event: { ...event, sequence_number } })), { type: 'done' }]);
   });
@@ -499,7 +499,7 @@ describe('Codex private Responses wire selection', () => {
     for (const useResponsesLite of [true, false]) {
       seedFreshAccessToken();
       const reasoning = { effort: 'medium', summary: 'detailed', context: 'all_turns', mode: 'future_mode' };
-      const resource: OpenAIResponsesResult = {
+      const resource: OpenAIResponsesResultEx = {
         id: 'resp_effective', object: 'response', model: model.id, status: 'completed', output: [], error: null, incomplete_details: null,
         parallel_tool_calls: false, reasoning,
       };
@@ -1492,7 +1492,7 @@ describe('callCodexOpenAIImagesGenerations', () => {
 // body shape (no `stream`, no `store`), unary JSON decoding — plus the 401
 // retry on the unary endpoint to confirm the retry decision is taken from
 // the bare response status (no SSE wrap in the path).
-const compactJsonResponse = (overrides?: Partial<OpenAIResponsesResult>): Response =>
+const compactJsonResponse = (overrides?: Partial<OpenAIResponsesResultEx>): Response =>
   new Response(JSON.stringify({
     id: 'resp_x',
     object: 'response.compaction',

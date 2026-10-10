@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { answerClaudeCodeProbe } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/answer-claude-code-probe.ts';
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -23,8 +23,8 @@ const PROBE_USER_AGENT = 'claude-cli/2.1.226 (external, cli)';
 const probePayload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
   model: 'test-model',
   max_tokens: 1,
-  system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-  messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+  system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+  messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
   metadata: { user_id: 'user_0_account__session_0' },
   ...overrides,
 });
@@ -36,8 +36,8 @@ const invocation = (payload: AnthropicMessagesPayload, userAgent: string | null 
   headers: new Headers(userAgent === null ? {} : { 'user-agent': userAgent }),
 });
 
-const passthrough = async (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity);
+const passthrough = async (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity);
 
 const runProbe = async (input: AnthropicMessagesInvocation) => {
   const run = vi.fn(passthrough);
@@ -82,7 +82,7 @@ test('reports no performance context so the turn contributes no latency sample',
 test('answers every fixed probe prompt, in block and bare-string form', async () => {
   for (const prompt of ['Hi', 'test']) {
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
-    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
+    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
   }
 });
 
@@ -132,7 +132,7 @@ test('forwards a multi-turn conversation that happens to end on a probe prompt',
 
 test('forwards a sole turn that carries more than one block', async () => {
   await assertForwarded(invocation(probePayload({
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }, { type: 'text', text: 'and explain this file' }] }],
+    messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi' }, { citations: null, type: 'text', text: 'and explain this file' }] }],
   })), 'two text blocks');
 });
 

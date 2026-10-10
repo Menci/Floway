@@ -1,14 +1,14 @@
 import { openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 interface HydratedItem {
-  readonly item: OpenAIResponsesInputItem;
+  readonly item: CanonicalOpenAIResponsesInputItem;
   readonly privatePayload?: { readonly id: string; readonly value: unknown };
 }
 
-const hydrateItem = (item: OpenAIResponsesInputItem, store: OpenAIResponsesStatefulStore): HydratedItem => {
+const hydrateItem = (item: CanonicalOpenAIResponsesInputItem, store: OpenAIResponsesStatefulStore): HydratedItem => {
   const id = openaiResponsesItemId(item);
   if (id === null) return { item };
   const stored = store.getItemById(id);
@@ -17,7 +17,7 @@ const hydrateItem = (item: OpenAIResponsesInputItem, store: OpenAIResponsesState
     return { item };
   }
   return {
-    item: stored.payload.item as OpenAIResponsesInputItem,
+    item: stored.payload.item as CanonicalOpenAIResponsesInputItem,
     ...(stored.payload.private !== undefined
       ? { privatePayload: { id: stored.id, value: stored.payload.private } }
       : {}),

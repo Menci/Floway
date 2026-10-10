@@ -10,7 +10,7 @@ const events: DumpStreamEvent[] = Array.from({ length: 120 }, (_, i) => ({
   frame: {
     type: 'event', event: {
       id: 'demo', object: 'chat.completion.chunk', created: 1, model: 'm',
-      choices: [{ index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
+      choices: [{  index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
     },
   },
 }));

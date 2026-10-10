@@ -30,6 +30,7 @@ export const OPTIONAL_FLAG_IDS = [
   'openai-responses-compact-decrypt',
   'openai-responses-collaboration-shim',
   'openai-responses-agent-message-shim',
+  'serialize-stream-items',
   'disable-reasoning-on-forced-tool-choice',
   'empty-tools-tool-choice-none',
   'rewrite-mid-conv-system-to-user',

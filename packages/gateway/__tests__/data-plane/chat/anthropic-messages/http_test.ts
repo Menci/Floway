@@ -6,7 +6,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
@@ -75,10 +75,11 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
   return app;
 };
 
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] => [
+const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_http',
       type: 'message',
       role: 'assistant',
@@ -86,13 +87,13 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] 
       model: 'test-model',
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 4, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
@@ -104,7 +105,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -124,7 +125,7 @@ const makeCandidate = (overrides: {
 
 test('POST /v1/messages streams a successful SSE body', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -145,7 +146,7 @@ test('POST /v1/messages streams a successful SSE body', async () => {
 
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -164,7 +165,7 @@ test('POST /v1/messages returns a single JSON body when stream is omitted', asyn
 
 test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
   const repo = installRepo();
-  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     throw new Error('the probe reached the upstream');
   });
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -175,8 +176,8 @@ test('POST /v1/messages answers the Claude Code model-validation probe without c
     body: JSON.stringify({
       model: 'test-model',
       max_tokens: 1,
-      system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-      messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+      system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+      messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
       metadata: { user_id: 'user_0_account__session_0' },
     }),
   });
@@ -249,7 +250,7 @@ test('POST /v1/messages forwards upstream response headers end-to-end (streaming
     'connection': 'close',
     'set-cookie': 'session=secret',
   });
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -280,7 +281,7 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
     'anthropic-ratelimit-unified-status': 'allowed',
     'cf-ray': 'cf_ray_e2e',
   });
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);

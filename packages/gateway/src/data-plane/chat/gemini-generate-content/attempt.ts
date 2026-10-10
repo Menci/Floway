@@ -1,4 +1,4 @@
-import { geminiGenerateContentStatusForHttpStatus } from './errors.ts';
+import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentStatusForHttpStatus } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
@@ -11,7 +11,7 @@ import { captureFromDump, traverseTranslation } from '../shared/translate-traver
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
+import { type ModelCandidate, plainResult, toInternalDebugError, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
 // Gemini generateContent has no native upstream target in the provider API; prefer OpenAI Chat Completions
@@ -160,14 +160,5 @@ const geminiGenerateContentErrorPlainResult = (status: number, message: string, 
 const geminiGenerateContentInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({
-    error: {
-      code: status,
-      message: error.message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
-      type: 'internal_error',
-      name: error.name,
-      stack: error.stack,
-    },
-  })),
+  new TextEncoder().encode(JSON.stringify(geminiGenerateContentInternalErrorPayload(status, toInternalDebugError(error)))),
 );

@@ -286,7 +286,6 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
-        upstreamDisabled: '上游已停用',
         emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
       },
       apiKeys: {
@@ -642,6 +641,10 @@ const zhHansCN = {
               label: 'OpenAI Responses 上下文压缩解密',
               description:
                   '当原生上下文压缩返回不透明的 compaction item 时，Floway 会将该 item 与逐字复述指令一并发回同一模型，再用恢复出的明文替换为网关可读取的 compaction item。\n每个 compaction item 会额外产生一次计费生成请求，且仅在上下文压缩兼容层关闭时生效。',
+            },
+            'serialize-stream-items': {
+              label: '串行化流内容块生命周期',
+              description: '将 Responses / Messages 流中的 item / block 生命周期缓冲为严格串行化，例如当产生 Open₀ → Open₁ → Delta₁ → Delta₀ → Close₀ 时，会调整为 Open₀ → Delta₀ → Close₀ → Open₁ → Delta₁。在 flag 关闭时，对被识别为已知需要该项兼容性的客户端仍会自动生效。',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',

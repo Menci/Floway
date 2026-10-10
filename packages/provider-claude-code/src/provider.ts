@@ -7,7 +7,7 @@ import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY, type AnthropicMessagesBoundary
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import {
   getProviderRepo,
   headersForAnthropicMessagesCall,
@@ -79,7 +79,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
         body: ctx.payload,
       });
 
-      const terminal = async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+      const terminal = async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
         // Drop `model` from the payload: callClaudeCodeAnthropicMessages re-attaches the
         // dated upstream id (from `opts.model.providerData.upstreamModelId`) on
         // the wire so Anthropic sees a stable per-revision id rather than the
@@ -97,7 +97,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
       if (looksShaped) return await terminal();
 
-      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>(
+      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEventEx>>(
         ctx,
         {},
         CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY,

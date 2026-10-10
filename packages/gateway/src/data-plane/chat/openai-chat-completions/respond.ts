@@ -13,7 +13,7 @@ import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '.
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
 export const respondOpenAIChatCompletions = async (
@@ -87,11 +87,8 @@ export const respondOpenAIChatCompletions = async (
 const internalOpenAIChatCompletionsErrorPayload = (error: InternalDebugError) => ({
   error: {
     type: error.type,
-    name: error.name,
     message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    target_api: error.target_api,
+    provider_specific_fields: internalDebugErrorFields(error),
   },
 });
 

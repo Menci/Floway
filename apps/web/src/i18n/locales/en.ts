@@ -300,7 +300,6 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        upstreamDisabled: 'Upstream disabled',
         emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
       },
       apiKeys: {
@@ -673,6 +672,10 @@ const en = {
               label: 'OpenAI Responses Context Compaction Decryption',
               description:
                   'When native context compaction returns an opaque compaction item, Floway sends that item back to the same model with an exact-repeat instruction, then replaces it with a gateway-readable compaction item containing the recovered plaintext.\nThis adds one billed generation request per compaction item and applies only when the context compaction shim is disabled.',
+            },
+            'serialize-stream-items': {
+              label: 'Serialize Streamed Content Block Lifecycles',
+              description: 'Buffer item / block lifecycles in Responses / Messages streams into a strictly serial order. For example, Open₀ → Open₁ → Delta₁ → Delta₀ → Close₀ becomes Open₀ → Delta₀ → Close₀ → Open₁ → Delta₁. This handling still applies automatically to clients identified as requiring it when the flag is off.',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',

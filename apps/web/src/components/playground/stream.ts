@@ -1,10 +1,10 @@
 import type { PlaygroundApi, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
 import {
-  type AnthropicMessagesStreamEvent,
+  type AnthropicMessagesStreamEventEx,
   parseSSEStream,
   type OpenAIChatCompletionsStreamEvent,
-  type OpenAIResponsesStreamEvent,
+  type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/browser';
 
 export interface PlaygroundRequest {
@@ -66,18 +66,18 @@ const textDelta = (api: PlaygroundApi, event: unknown): string => {
     return chunk.choices?.[0]?.delta?.content ?? '';
   }
   if (api === 'anthropicMessages') {
-    const anthropicMessagesEvent = event as AnthropicMessagesStreamEvent;
+    const anthropicMessagesEvent = event as AnthropicMessagesStreamEventEx;
     if (anthropicMessagesEvent.type !== 'content_block_delta') return '';
     return anthropicMessagesEvent.delta.type === 'text_delta' ? anthropicMessagesEvent.delta.text : '';
   }
-  const openaiResponsesEvent = event as OpenAIResponsesStreamEvent;
+  const openaiResponsesEvent = event as OpenAIResponsesStreamEventEx;
   return openaiResponsesEvent.type === 'response.output_text.delta' ? openaiResponsesEvent.delta : '';
 };
 
 const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | null => {
   const direct = errorMessageFromPayload(payload);
   if (direct !== null || api !== 'openaiResponses' || !payload || typeof payload !== 'object') return direct;
-  const event = payload as OpenAIResponsesStreamEvent;
+  const event = payload as OpenAIResponsesStreamEventEx;
   if (event.type !== 'response.failed') return null;
   return event.response.error?.message ?? 'Response failed';
 };

@@ -9,7 +9,7 @@ export type {
 export { providerModelOf } from './invocation.ts';
 
 export type { InternalDebugError } from './error.ts';
-export { toInternalDebugError } from './error.ts';
+export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
   ApiErrorResult,

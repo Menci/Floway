@@ -1,5 +1,5 @@
 import type { AnthropicMessagesRefusalStopDetails } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 const CODEX_BIO_POLICY_PREFIX = 'This content was flagged for possible biological risk.';
 
@@ -14,7 +14,7 @@ export const anthropicMessagesRefusalExplanation = (details: AnthropicMessagesRe
 
 export const anthropicMessagesRefusalOpenAIResponsesError = (
   details: AnthropicMessagesRefusalStopDetails | null | undefined,
-): NonNullable<OpenAIResponsesResult['error']> => {
+): NonNullable<OpenAIResponsesResultEx['error']> => {
   const explanation = anthropicMessagesRefusalExplanation(details);
 
   // `bio_policy` and `invalid_prompt` are public OpenAI Responses failure codes;

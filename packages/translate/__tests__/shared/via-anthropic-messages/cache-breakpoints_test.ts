@@ -1,15 +1,15 @@
 import { test } from 'vitest';
 
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../../src/shared/via-anthropic-messages/cache-breakpoints.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlock, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlockParam, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const cacheControlOf = (value: unknown): unknown => (value as { cache_control?: unknown }).cache_control;
 
 test('applyLastToolCacheBreakpoint marks the last custom tool, skipping native web search', () => {
   const tools: AnthropicMessagesTool[] = [
-    { type: 'custom', name: 'a', input_schema: {} },
-    { type: 'custom', name: 'b', input_schema: {} },
+    { type: 'custom', name: 'a', input_schema: { type: 'object' } },
+    { type: 'custom', name: 'b', input_schema: { type: 'object' } },
     { type: 'web_search_20250305', name: 'web_search' },
   ];
   applyLastToolCacheBreakpoint(tools);
@@ -51,7 +51,7 @@ test('applyLastMessageCacheBreakpoint marks a trailing assistant tool_use block'
 test('applyLastMessageCacheBreakpoint falls back to an earlier message when the last has no cacheable block', () => {
   const messages: AnthropicMessagesMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'q' }] },
-    { role: 'assistant', content: [{ type: 'thinking', thinking: 'reasoning…' }] },
+    { role: 'assistant', content: [{ signature: '', type: 'thinking', thinking: 'reasoning…' }] },
   ];
   applyLastMessageCacheBreakpoint(messages);
   const userContent = messages[0].content;
@@ -63,13 +63,13 @@ test('applyLastMessageCacheBreakpoint falls back to an earlier message when the 
 
 test('applyLastSystemCacheBreakpoint is a no-op on undefined or empty input', () => {
   applyLastSystemCacheBreakpoint(undefined);
-  const empty: AnthropicMessagesTextBlock[] = [];
+  const empty: AnthropicMessagesTextBlockParam[] = [];
   applyLastSystemCacheBreakpoint(empty);
   assertEquals(empty, []);
 });
 
 test('applyLastSystemCacheBreakpoint marks only the last block when multiple are present', () => {
-  const system: AnthropicMessagesTextBlock[] = [
+  const system: AnthropicMessagesTextBlockParam[] = [
     { type: 'text', text: 'instructions' },
     { type: 'text', text: 'leading note' },
     { type: 'text', text: 'final block' },

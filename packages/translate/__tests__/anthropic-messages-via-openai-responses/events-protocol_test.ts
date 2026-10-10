@@ -1,17 +1,16 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/anthropic-messages-via-openai-responses/events.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_123',
   object: 'response',
   model: 'gpt-test',
   status,
-  output_text: 'hello',
   output: [
     {
       type: 'message',
@@ -30,7 +29,7 @@ const makeResponse = (status: OpenAIResponsesResult['status']): OpenAIResponsesR
   },
 });
 
-const toProtocolFrame = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
+const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: 0 });
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -100,7 +99,6 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
       object: 'response',
       model: 'gpt-test',
       status: 'completed',
-      output_text: '',
       output: [
         {
           type: 'message',
@@ -120,7 +118,7 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
     });
   }
 
-  let refusalDelta: Extract<AnthropicMessagesStreamEvent, { type: 'message_delta' }> | undefined;
+  let refusalDelta: Extract<AnthropicMessagesStreamEventEx, { type: 'message_delta' }> | undefined;
 
   for await (const frame of translateToSourceEvents(stream())) {
     if (frame.type !== 'event') continue;
@@ -128,6 +126,7 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
   }
 
   assertEquals(refusalDelta?.delta, {
+    container: null,
     stop_reason: 'refusal',
     stop_details: { type: 'refusal', category: null, explanation: 'No.' },
     stop_sequence: null,
@@ -140,7 +139,6 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
       type: 'response.failed',
       response: {
         ...makeResponse('failed'),
-        output_text: '',
         output: [],
         error: {
           type: 'server_error',
@@ -168,7 +166,7 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
         type: 'api_error',
         message: 'upstream failed',
       },
-    } satisfies AnthropicMessagesStreamEvent),
+    } satisfies AnthropicMessagesStreamEventEx),
   ]);
 });
 
@@ -198,7 +196,7 @@ test('translateToSourceEvents translates OpenAI Responses error terminal to Anth
         type: 'api_error',
         message: 'upstream overloaded',
       },
-    } satisfies AnthropicMessagesStreamEvent),
+    } satisfies AnthropicMessagesStreamEventEx),
   ]);
 });
 

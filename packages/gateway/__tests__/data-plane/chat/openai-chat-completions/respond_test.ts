@@ -6,7 +6,7 @@ import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { eventResult } from '@floway-dev/provider';
+import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const recordingDump = () => {
@@ -23,7 +23,7 @@ const recordingDump = () => {
 
 const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
   id: 'x', object: 'chat.completion.chunk', created: 0, model: 'm',
-  choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+  choices: [{  index: 0, delta: { content: text }, finish_reason: null }],
 });
 
 const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): Promise<string> => {
@@ -71,4 +71,41 @@ test('natural EOF forwards useful content without a missing-DONE error', async (
   expect(body).toContain('usable');
   expect(body).not.toContain('event: error');
   expect(frames).toHaveLength(1);
+});
+
+test.each([false, true])('openai-chat-completions internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
+  const cause = new TypeError('nested');
+  cause.stack = 'TypeError: nested\n  at nested';
+  const failure = new Error('broken', { cause });
+  failure.stack = 'Error: broken\n  at render';
+  const diagnostic = { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested', stack: cause.stack }, target_api: 'anthropicMessages' };
+  const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, stream
+    ? eventResult((async function* () { throw failure; })(), testTelemetryModelIdentity)
+    : internalErrorResult(503, toInternalDebugError(failure, 'anthropicMessages')), stream, true, mockChatGatewayCtx()));
+  const response = await app.request('/');
+  assertEquals(response.status, stream ? 200 : 503);
+  const text = await response.text();
+  const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
+  assertEquals(body, { error: { type: 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
+  if (stream) assertEquals(text.includes('event: error'), true);
+});
+
+test('openai-chat-completions absent optional diagnostics stay absent and upstream errors preserve their payload', async () => {
+  const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, true, mockChatGatewayCtx()));
+  assertEquals(await (await app.request('/')).json(), { error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
+  const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
+  const native = new Hono().get('/', c => respondOpenAIChatCompletions(c, { type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, false, true, mockChatGatewayCtx()));
+  const response = await native.request('/');
+  assertEquals(response.status, 429);
+  assertEquals(response.headers.get('x-native'), 'trace');
+  assertEquals(await response.text(), raw);
+});
+
+test('openai-chat-completions collecting a broken stream retains the nested error cause in an HTTP 502', async () => {
+  const cause = new TypeError('nested'); cause.stack = 'TypeError: nested';
+  const failure = new Error('broken', { cause }); failure.stack = 'Error: broken';
+  const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, eventResult((async function* () { throw failure; })(), testTelemetryModelIdentity), false, true, mockChatGatewayCtx()));
+  const response = await app.request('/');
+  assertEquals(response.status, 502);
+  assertEquals(await response.json(), { error: { type: 'internal_error', message: 'broken', provider_specific_fields: { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested', stack: cause.stack } } } });
 });

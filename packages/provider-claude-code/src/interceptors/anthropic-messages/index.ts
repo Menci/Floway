@@ -40,12 +40,12 @@ import { injectIdentityBlock } from './inject-identity-block.ts';
 import { synthesizeMetadataUserId } from './synthesize-metadata-user-id.ts';
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 
 export type { AnthropicMessagesBoundaryCtx } from './types.ts';
 
-export const CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY: readonly Interceptor<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>[] = [
+export const CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY: readonly Interceptor<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEventEx>>[] = [
   backfillRequiredFields,
   synthesizeMetadataUserId,
   hoistUserSystemToMessages,

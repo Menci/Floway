@@ -1,0 +1,32 @@
+diff --git a/cjs/stringify-chunked.cjs b/cjs/stringify-chunked.cjs
+index 2280b5401c31ebe2883044f4b89cd8ed54b97576..6b7a4681c871d168d88610acbc1b0b84c3ee96b8 100644
+--- a/cjs/stringify-chunked.cjs
++++ b/cjs/stringify-chunked.cjs
+@@ -113,7 +113,10 @@ function* stringifyChunked(value, ...args) {
+     function printEntry(key, value) {
+         value = utils.replaceValue(stateValue, key, value, replacer);
+ 
+-        if (value === null || typeof value !== 'object') {
++        if (typeof JSON.isRawJSON === 'function' && JSON.isRawJSON(value)) {
++            printEntryPrelude(key);
++            buffer += value.rawJSON;
++        } else if (value === null || typeof value !== 'object') {
+             // primitive
+             if (state !== printObject || value !== undefined) {
+                 printEntryPrelude(key);
+diff --git a/src/stringify-chunked.js b/src/stringify-chunked.js
+index 65ad8f7aa73bff9cbe36a42b8e845c238559bf0c..14d5ec931ce2ab5a3ff841c6de66e535096766fc 100644
+--- a/src/stringify-chunked.js
++++ b/src/stringify-chunked.js
+@@ -111,7 +111,10 @@ export function* stringifyChunked(value, ...args) {
+     function printEntry(key, value) {
+         value = replaceValue(stateValue, key, value, replacer);
+ 
+-        if (value === null || typeof value !== 'object') {
++        if (typeof JSON.isRawJSON === 'function' && JSON.isRawJSON(value)) {
++            printEntryPrelude(key);
++            buffer += value.rawJSON;
++        } else if (value === null || typeof value !== 'object') {
+             // primitive
+             if (state !== printObject || value !== undefined) {
+                 printEntryPrelude(key);

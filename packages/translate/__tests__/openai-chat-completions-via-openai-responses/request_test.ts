@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-openai-responses/request.ts';
-import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import { TranslatorInputError } from '../../src/translator-input-error.ts';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
@@ -29,7 +30,7 @@ test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => 
         content: 'answer',
         reasoning_text: 'trace',
         reasoning_opaque: 'enc',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -47,7 +48,7 @@ test('buildTargetRequest preserves text-only scalar reasoning', () => {
         role: 'assistant',
         content: 'answer',
         reasoning_text: 'visible trace',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -79,7 +80,7 @@ test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
             summary: [],
           },
         ],
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -98,18 +99,43 @@ test('buildTargetRequest rejects tool messages without tool_call_id', () => {
     () =>
       buildTargetRequest({
         model: 'gpt-test',
-        messages: [{ role: 'tool', content: 'result' }],
+        messages: [{ role: 'tool', content: 'result' } as unknown as OpenAIChatCompletionsMessage],
       }),
     Error,
     'tool_call_id',
   );
 });
 
+test('buildTargetRequest maps native custom tool declarations and choices', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    messages: [{ role: 'user', content: 'hello' }],
+    tools: [{ type: 'custom', custom: { name: 'apply_patch', format: { type: 'text' } } }],
+    tool_choice: { type: 'custom', custom: { name: 'apply_patch' } },
+  });
+  assertEquals(result.tools, [{ type: 'custom', name: 'apply_patch', format: { type: 'text' } }]);
+  assertEquals(result.tool_choice, { type: 'custom', name: 'apply_patch' });
+});
+
+test('buildTargetRequest maps custom tool history and its output', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    messages: [
+      { role: 'assistant', tool_calls: [{ id: 'call_patch', type: 'custom', custom: { name: 'apply_patch', input: 'patch text' } }] },
+      { role: 'tool', tool_call_id: 'call_patch', content: 'applied' },
+    ],
+  });
+  assertEquals(result.input, [
+    { type: 'custom_tool_call', call_id: 'call_patch', name: 'apply_patch', input: 'patch text', status: 'completed' },
+    { type: 'custom_tool_call_output', call_id: 'call_patch', output: 'applied' },
+  ]);
+});
+
 test('buildTargetRequest preserves translated OpenAI request fields', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
-    response_format: { type: 'json_schema', json_schema: { name: 'shape' } },
+    response_format: { type: 'json_schema', json_schema: { name: 'shape', schema: {} } },
     metadata: { trace_id: 'abc' },
     store: true,
     parallel_tool_calls: false,
@@ -119,7 +145,7 @@ test('buildTargetRequest preserves translated OpenAI request fields', () => {
   });
 
   assertEquals(result.text, {
-    format: { type: 'json_schema', json_schema: { name: 'shape' } },
+    format: { type: 'json_schema', name: 'shape', schema: {} },
   });
   assertEquals(result.metadata, { trace_id: 'abc' });
   assertEquals(result.store, true);
@@ -167,7 +193,7 @@ test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries 
       model: 'gpt-test',
       messages: [{ role: 'user', content: 'hello' }],
       tool_choice: 'required',
-      tools,
+      tools: tools as OpenAIChatCompletionsPayload['tools'],
     });
 
     assertFalse('tool_choice' in result);
@@ -277,12 +303,36 @@ test('buildTargetRequest forwards reasoning_effort and service_tier onto the nat
   assertEquals(result.service_tier, 'priority');
 });
 
-test("buildTargetRequest drops reasoning_effort='none' since OpenAI Responses has no equivalent", () => {
+test.each(['none', '', 'future_effort'])('buildTargetRequest forwards reasoning_effort=%j verbatim', reasoning_effort => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
-    reasoning_effort: 'none',
+    reasoning_effort,
   });
 
-  assertEquals(result.reasoning, undefined);
+  assertEquals(result.reasoning, { effort: reasoning_effort });
+});
+
+test.each([null, undefined])('buildTargetRequest omits unset reasoning_effort=%j', reasoning_effort => {
+  const result = buildTargetRequest({ model: 'gpt-test', messages: [{ role: 'user', content: 'hi' }], reasoning_effort });
+  assertEquals(Object.hasOwn(result, 'reasoning'), false);
+});
+
+test('rejects a json_schema request with no schema instead of removing constraints', () => {
+  assertThrows(() => buildTargetRequest({ model: 'gpt-test', messages: [], response_format: { type: 'json_schema', json_schema: { name: 'shape' } } }), TranslatorInputError, 'without a schema');
+});
+
+test('allowed_tools retains both native callable kinds', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test', messages: [], tools: [
+      { type: 'function', function: { name: 'lookup' } }, { type: 'custom', custom: { name: 'edit' } },
+    ], tool_choice: {
+      type: 'allowed_tools', allowed_tools: {
+        mode: 'required', tools: [
+          { type: 'function', function: { name: 'lookup' } }, { type: 'custom', custom: { name: 'edit' } },
+        ],
+      },
+    },
+  });
+  assertEquals(result.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }, { type: 'custom', name: 'edit' }] });
 });

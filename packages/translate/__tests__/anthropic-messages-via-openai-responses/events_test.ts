@@ -1,12 +1,12 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { createOpenAIResponsesToAnthropicMessagesStreamState, translateOpenAIResponsesStreamEventToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-responses/events.ts';
+import { createOpenAIResponsesToAnthropicMessagesStreamState, translateOpenAIResponsesStreamEventToAnthropicMessagesEvents, translateToSourceEvents } from '../../src/anthropic-messages-via-openai-responses/events.ts';
 import { packReasoningSignature } from '../../src/shared/anthropic-messages-and-openai-responses/reasoning.ts';
-import type { AnthropicMessagesMessageDeltaEvent } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { parseAnthropicMessagesStream, collectAnthropicMessagesProtocolEventsToResult, anthropicMessagesProtocolFrameToSSEFrame, type AnthropicMessagesMessageDeltaEvent, type AnthropicMessagesUsageDeltaEx } from '@floway-dev/protocols/anthropic-messages';
+import { parseOpenAIResponsesStream, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
-const failedResponse = (code: string, message: string): OpenAIResponsesResult => ({
+const failedResponse = (code: string, message: string): OpenAIResponsesResultEx => ({
   id: 'resp_failed',
   object: 'response',
   model: 'gpt-test',
@@ -30,11 +30,12 @@ test.each([
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: 'refusal',
         stop_details: { type: 'refusal', category, explanation: 'Policy refusal.' },
         stop_sequence: null,
       },
-      usage: { input_tokens: 0, output_tokens: 0 },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 0, output_tokens: 0 },
     },
     { type: 'message_stop' },
   ]);
@@ -75,11 +76,12 @@ test('OpenAI Responses refusal lifecycle becomes Anthropic Messages refusal meta
     {
       type: 'message_delta',
       delta: {
+        container: null,
         stop_reason: 'refusal',
         stop_details: { type: 'refusal', category: null, explanation: 'Cannot help.' },
         stop_sequence: null,
       },
-      usage: { input_tokens: 0, output_tokens: 0 },
+      usage: { cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, input_tokens: 0, output_tokens: 0 },
     },
     { type: 'message_stop' },
   ]);
@@ -142,7 +144,7 @@ test('text-only OpenAI Responses reasoning stream emits a recoverable signature 
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -189,7 +191,7 @@ test('OpenAI Responses reasoning stream keeps summary text from deltas when done
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -337,7 +339,7 @@ test('opaque-only OpenAI Responses reasoning stream releases later text when don
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -397,7 +399,7 @@ test('OpenAI Responses reasoning stream preserves source order when later reason
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -413,7 +415,7 @@ test('OpenAI Responses reasoning stream preserves source order when later reason
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'thinking', thinking: '' },
+      content_block: { signature: '', type: 'thinking', thinking: '' },
     },
     {
       type: 'content_block_delta',
@@ -510,7 +512,7 @@ test('OpenAI Responses stream keeps later text deferred until earlier tool block
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'text', text: '' },
+      content_block: { citations: null, type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
@@ -580,7 +582,7 @@ test('reasoning stream with whitespace-only summary emits a redacted_thinking ca
   ]);
 });
 
-const terminalUsage = (response: OpenAIResponsesResult): NonNullable<AnthropicMessagesMessageDeltaEvent['usage']> => {
+const terminalUsage = (response: OpenAIResponsesResultEx): NonNullable<AnthropicMessagesMessageDeltaEvent['usage']> => {
   const events = translateOpenAIResponsesStreamEventToAnthropicMessagesEvents(
     { type: 'response.completed', response },
     createOpenAIResponsesToAnthropicMessagesStreamState(),
@@ -590,13 +592,12 @@ const terminalUsage = (response: OpenAIResponsesResult): NonNullable<AnthropicMe
   return delta.usage;
 };
 
-test('terminal OpenAI Responses service_tier:fast maps to usage.speed:fast', () => {
+test('terminal OpenAI Responses delta carries fast mode metadata', () => {
   const usage = terminalUsage({
     id: 'resp_fast',
     object: 'response',
     model: 'gpt-test',
     output: [],
-    output_text: '',
     status: 'completed',
     error: null,
     incomplete_details: null,
@@ -604,17 +605,16 @@ test('terminal OpenAI Responses service_tier:fast maps to usage.speed:fast', () 
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(usage.speed, 'fast');
-  assertEquals(usage.service_tier, undefined);
+  assertEquals((usage as AnthropicMessagesUsageDeltaEx).speed, 'fast');
+  assertFalse('service_tier' in usage);
 });
 
-test('terminal OpenAI Responses usage preserves a non-fast service_tier', () => {
+test('terminal OpenAI Responses delta carries service tier metadata', () => {
   const usage = terminalUsage({
     id: 'resp_default',
     object: 'response',
     model: 'gpt-test',
     output: [],
-    output_text: '',
     status: 'completed',
     error: null,
     incomplete_details: null,
@@ -622,8 +622,8 @@ test('terminal OpenAI Responses usage preserves a non-fast service_tier', () => 
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(usage.speed, undefined);
-  assertEquals(usage.service_tier, 'default');
+  assertFalse('speed' in usage);
+  assertEquals((usage as AnthropicMessagesUsageDeltaEx).service_tier, 'default');
 });
 
 test('terminal OpenAI Responses usage omits speed when service_tier is absent', () => {
@@ -632,14 +632,13 @@ test('terminal OpenAI Responses usage omits speed when service_tier is absent', 
     object: 'response',
     model: 'gpt-test',
     output: [],
-    output_text: '',
     status: 'completed',
     error: null,
     incomplete_details: null,
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(usage.speed, undefined);
+  assertFalse('speed' in usage);
 });
 
 test('terminal OpenAI Responses usage maps cache-read and cache-write onto Anthropic Messages fields', () => {
@@ -648,7 +647,6 @@ test('terminal OpenAI Responses usage maps cache-read and cache-write onto Anthr
     object: 'response',
     model: 'gpt-test',
     output: [],
-    output_text: '',
     status: 'completed',
     error: null,
     incomplete_details: null,
@@ -667,7 +665,6 @@ test('terminal OpenAI Responses usage rejects cache splits that exceed input_tok
       object: 'response',
       model: 'gpt-test',
       output: [],
-      output_text: '',
       status: 'completed',
       error: null,
       incomplete_details: null,
@@ -688,7 +685,6 @@ test('response.created carries cache-read and cache-write onto the initial messa
         object: 'response',
         model: 'gpt-test',
         output: [],
-        output_text: '',
         status: 'in_progress',
         error: null,
         incomplete_details: null,
@@ -717,7 +713,6 @@ test('response.created rejects cache splits that exceed input_tokens', () => {
           object: 'response',
           model: 'gpt-test',
           output: [],
-          output_text: '',
           status: 'in_progress',
           error: null,
           incomplete_details: null,
@@ -738,7 +733,6 @@ const responseFailedEvent = (error: { code: string; message: string }): Paramete
     object: 'response',
     model: 'gpt-test',
     output: [],
-    output_text: '',
     status: 'failed',
     error,
     incomplete_details: null,
@@ -869,4 +863,22 @@ test('multiple OpenAI Responses refusal parts compose one Anthropic Messages exp
   assertEquals(delta?.delta.stop_details, {
     type: 'refusal', category: null, explanation: 'first second later',
   });
+});
+
+test('Responses late fixed usage reaches the Messages client through full usage delta', async () => {
+  const response = { id: 'resp_usage', model: 'gpt-test', object: 'response', output: [], error: null, incomplete_details: null };
+  const events = [
+    { type: 'response.created', response: { ...response, status: 'in_progress' } },
+    { type: 'response.completed', response: { ...response, status: 'completed', service_tier: 'priority', usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 } } },
+  ];
+  const sourceSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
+  let clientSSE = '';
+  for await (const frame of translateToSourceEvents(parseOpenAIResponsesStream(new Response(sourceSSE).body!))) {
+    const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
+    if (sse) clientSSE += `event: ${sse.event}\ndata: ${sse.data}\n\n`;
+  }
+  const result = await collectAnthropicMessagesProtocolEventsToResult(parseAnthropicMessagesStream(new Response(clientSSE).body!));
+  expect(result.usage.service_tier).toBe('priority');
+  expect(result.usage.input_tokens).toBe(3);
+  expect(result.usage.output_tokens).toBe(4);
 });

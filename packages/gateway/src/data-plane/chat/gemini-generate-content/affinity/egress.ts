@@ -1,7 +1,10 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
+
+interface GeminiGenerateContentCandidateWithParts extends WireCandidate { index: number; content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] } }
+interface GeminiGenerateContentResult extends Omit<WireResult, 'candidates'> { candidates?: Array<WireCandidate & { index: number }> }
 
 // Gemini generateContent pays one upstream event of TTFT/inter-event latency. Within one event
 // repeated snapshots collapse to one signature on the element's first
@@ -123,7 +126,20 @@ export const wrapGeminiGenerateContentAffinityEgress = async function* (
   }
 };
 
-const cloneGeminiGenerateContentEvent = (event: GeminiGenerateContentResult): GeminiGenerateContentResult => structuredClone(event);
+const cloneGeminiGenerateContentEvent = (event: WireResult): GeminiGenerateContentResult => {
+  const { candidates, ...rest } = event;
+  return {
+    ...rest,
+    ...(candidates === undefined ? {} : {
+      candidates: candidates.map(candidate => ({
+        ...candidate, index: candidate.index ?? 0,
+        ...(candidate.content === undefined ? {} : { content: { ...candidate.content, ...(candidate.content.parts === undefined ? {} : { parts: candidate.content.parts.map(part => ({ ...part })) }) } }),
+      })),
+    }),
+  };
+};
+
+const hasContentParts = (candidate: WireCandidate & { index: number }): candidate is GeminiGenerateContentCandidateWithParts => candidate.content?.parts !== undefined;
 
 const wrapGeminiGenerateContentEventAffinity = async (
   current: GeminiGenerateContentResult,
@@ -135,10 +151,11 @@ const wrapGeminiGenerateContentEventAffinity = async (
 ): Promise<GeminiGenerateContentResult> => {
   const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
   const nextHadCandidates = (next?.candidates?.length ?? 0) > 0;
-  const removedCandidates = new WeakSet<GeminiGenerateContentCandidate>();
+  const removedCandidates = new WeakSet<WireCandidate>();
 
   for (const candidate of current.candidates ?? []) {
-    const nextCandidate = next?.candidates?.find(nextCandidate => nextCandidate.index === candidate.index);
+    if (!hasContentParts(candidate)) continue;
+    const nextCandidate = next?.candidates?.find((nextCandidate): nextCandidate is GeminiGenerateContentCandidateWithParts => nextCandidate.index === candidate.index && hasContentParts(nextCandidate));
     normalizeElementSignatures(candidate);
     if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
     relocateSignatureOnlyForward(candidate, nextCandidate, removedCandidates);
@@ -210,7 +227,7 @@ const wrapGeminiGenerateContentEventAffinity = async (
   return current;
 };
 
-const normalizeElementSignatures = (candidate: GeminiGenerateContentCandidate): void => {
+const normalizeElementSignatures = (candidate: GeminiGenerateContentCandidateWithParts): void => {
   const parts = candidate.content.parts;
   const signatureParts = new Set(parts.filter(part => part.thoughtSignature !== undefined));
   for (const indexes of logicalElementGroups(parts)) normalizeElementSignature(parts, indexes);
@@ -230,9 +247,9 @@ const normalizeElementSignature = (parts: GeminiGenerateContentPart[], indexes: 
 };
 
 const relocateSignatureOnlyForward = (
-  current: GeminiGenerateContentCandidate,
-  next: GeminiGenerateContentCandidate | undefined,
-  removedCandidates: WeakSet<GeminiGenerateContentCandidate>,
+  current: GeminiGenerateContentCandidateWithParts,
+  next: GeminiGenerateContentCandidateWithParts | undefined,
+  removedCandidates: WeakSet<WireCandidate>,
 ): void => {
   if (
     next === undefined
@@ -250,9 +267,9 @@ const relocateSignatureOnlyForward = (
 };
 
 const relocateSignatureOnlyBackward = (
-  current: GeminiGenerateContentCandidate,
-  next: GeminiGenerateContentCandidate | undefined,
-  removedCandidates: WeakSet<GeminiGenerateContentCandidate>,
+  current: GeminiGenerateContentCandidateWithParts,
+  next: GeminiGenerateContentCandidateWithParts | undefined,
+  removedCandidates: WeakSet<WireCandidate>,
 ): void => {
   if (
     next === undefined
@@ -277,8 +294,8 @@ const relocateSignatureOnlyBackward = (
 };
 
 const relocateContinuationSignature = (
-  current: GeminiGenerateContentCandidate,
-  next: GeminiGenerateContentCandidate | undefined,
+  current: GeminiGenerateContentCandidateWithParts,
+  next: GeminiGenerateContentCandidateWithParts | undefined,
 ): void => {
   if (next === undefined || current.finishReason !== undefined) return;
   const targetIndex = firstContentIndexOfLastElement(current.content.parts);
@@ -296,9 +313,9 @@ const relocateContinuationSignature = (
 };
 
 const removeRelocatedSignatureParts = (
-  candidate: GeminiGenerateContentCandidate,
+  candidate: GeminiGenerateContentCandidateWithParts,
   relocated: ReadonlySet<GeminiGenerateContentPart>,
-  removedCandidates?: WeakSet<GeminiGenerateContentCandidate>,
+  removedCandidates?: WeakSet<WireCandidate>,
 ): void => {
   candidate.content.parts = candidate.content.parts.filter(part =>
     !relocated.has(part) || hasPartContent(part) || part.thoughtSignature !== undefined);
@@ -385,26 +402,26 @@ const clearEventMetadata = (event: GeminiGenerateContentResult): void => {
 };
 
 const mergeCandidateExtras = (
-  earlier: GeminiGenerateContentCandidate,
-  later: GeminiGenerateContentCandidate,
-  target: GeminiGenerateContentCandidate,
+  earlier: GeminiGenerateContentCandidateWithParts,
+  later: GeminiGenerateContentCandidateWithParts,
+  target: GeminiGenerateContentCandidateWithParts,
 ): void => {
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
   captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
   for (const key of Object.keys(target)) {
-    if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidate)) delete (target as unknown as Record<string, unknown>)[key];
+    if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidateWithParts)) delete (target as unknown as Record<string, unknown>)[key];
   }
   Object.assign(target, extras);
 };
 
-const transferCandidateMetadata = (current: GeminiGenerateContentCandidate, next: GeminiGenerateContentCandidate): void => {
+const transferCandidateMetadata = (current: GeminiGenerateContentCandidateWithParts, next: GeminiGenerateContentCandidateWithParts): void => {
   mergeCandidateExtras(current, next, current);
   if (next.content.role !== undefined) current.content.role = next.content.role;
   if (next.finishReason !== undefined) current.finishReason = next.finishReason;
 };
 
-const transferCandidateMetadataForward = (current: GeminiGenerateContentCandidate, next: GeminiGenerateContentCandidate): void => {
+const transferCandidateMetadataForward = (current: GeminiGenerateContentCandidateWithParts, next: GeminiGenerateContentCandidateWithParts): void => {
   mergeCandidateExtras(current, next, next);
   if (next.content.role === undefined && current.content.role !== undefined) next.content.role = current.content.role;
 };

@@ -2,19 +2,19 @@ import { hasReadableSummary, toOpenAIChatCompletionsReasoningItem } from '../sha
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsDelta } from '@floway-dev/protocols/openai-chat-completions';
-import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsAssistantDeltaEx } from '@floway-dev/protocols/openai-chat-completions';
+import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResult): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
+const mapOpenAIResponsesFinishReasonToOpenAIChatCompletionsFinishReason = (response: OpenAIResponsesResultEx): OpenAIChatCompletionsResult['choices'][0]['finish_reason'] =>
   response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'
     ? 'length'
-    : response.status === 'completed' && response.output.some(item => item.type === 'function_call')
+    : response.status === 'completed' && response.output.some(item => item.type === 'function_call' || item.type === 'custom_tool_call')
       ? 'tool_calls'
       : 'stop';
 
 const UPSTREAM_OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'Upstream OpenAI Responses stream ended without a terminal event.';
 
-const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<OpenAIResponsesStreamEvent> {
+const upstreamOpenAIResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<OpenAIResponsesStreamEventEx> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -32,7 +32,7 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   model: string;
   created: number;
   toolCallIndex: number;
-  functionCallIndices: Map<number, number>;
+  toolCallIndices: Map<number, number>;
   reasoningItems: OpenAIChatCompletionsReasoningItem[];
   firstScalarReasoningOutputIndex?: number;
   pendingReasoningSummaryTexts: Map<
@@ -46,6 +46,7 @@ interface OpenAIResponsesToOpenAIChatCompletionsStreamState {
   emittedReasoningSummaryKeys: Set<string>;
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
+  customInputs: Map<number, string>;
   outputOrder: OpenAIResponsesOutputOrderState;
   serviceTier?: OpenAIChatCompletionsStreamEvent['service_tier'];
   done: boolean;
@@ -56,17 +57,28 @@ export const createOpenAIResponsesToOpenAIChatCompletionsStreamState = (): OpenA
   model: '',
   created: Math.floor(Date.now() / 1000),
   toolCallIndex: -1,
-  functionCallIndices: new Map(),
+  toolCallIndices: new Map(),
   reasoningItems: [],
   pendingReasoningSummaryTexts: new Map(),
   emittedReasoningSummaryKeys: new Set(),
   emittedTextContentKeys: new Set(),
   emittedFunctionArgumentOutputIndexes: new Set(),
+  customInputs: new Map(),
   outputOrder: createOpenAIResponsesOutputOrderState(),
   done: false,
 });
 
-const trackReasoningOutputItem = (item: OpenAIResponsesOutputItem): boolean => item.type === 'reasoning';
+const trackReasoningOutputItem = (item: OpenAIResponsesOutputItemEx): boolean => item.type === 'reasoning';
+
+const completeCustomInput = (outputIndex: number, input: string, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+  const index = state.toolCallIndices.get(outputIndex);
+  const emitted = state.customInputs.get(outputIndex);
+  if (index === undefined || emitted === undefined) throw new Error('Custom tool input completed before its output item was added.');
+  if (!input.startsWith(emitted)) throw new Error('Completed custom tool input conflicts with text already emitted to Chat Completions.');
+  state.customInputs.set(outputIndex, input);
+  const suffix = input.slice(emitted.length);
+  return suffix === '' ? [] : [makeChunk(state, { tool_calls: [{ index, custom: { input: suffix } }] })];
+};
 
 const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
   if (state.reasoningItems.length === 0) return [];
@@ -76,12 +88,12 @@ const flushPendingReasoningChunks = (state: OpenAIResponsesToOpenAIChatCompletio
   return [makeChunk(state, { reasoning_items: reasoningItems })];
 };
 
-const isReasoningOutputDone = (event: OpenAIResponsesStreamEvent): boolean => {
+const isReasoningOutputDone = (event: OpenAIResponsesStreamEventEx): boolean => {
   if (event.type !== 'response.output_item.done') return false;
-  return (event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>).item.type === 'reasoning';
+  return (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>).item.type === 'reasoning';
 };
 
-const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEvent | undefined => {
+const takeNextReadyDeferredResponseEvent = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, onlyReasoningOutputDone: boolean): OpenAIResponsesStreamEventEx | undefined => {
   const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(
     event => !shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder) && (!onlyReasoningOutputDone || isReasoningOutputDone(event)),
   );
@@ -145,7 +157,7 @@ const flushReasoningSummaryDoneFallbacks = (state: OpenAIResponsesToOpenAIChatCo
   return pending.flatMap(item => emitReasoningSummaryText(item.outputIndex, item.summaryIndex, item.text, state, 'done-fallback'));
 };
 
-export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
+export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): OpenAIChatCompletionsStreamEvent[] => {
   if (state.done) return [];
   if (shouldDeferForEarlierOpenAIResponsesOutput(event, state.outputOrder)) {
     state.outputOrder.deferredEvents.push(event);
@@ -155,7 +167,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   switch (event.type) {
   case 'response.created': {
-    const { response } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.created' }>;
+    const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
     state.messageId = response.id;
     state.model = response.model;
     if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
@@ -163,11 +175,12 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_item.added': {
-    const { item, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.added' }>;
-    if (item.type !== 'function_call') return [];
+    const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
+    if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return [];
 
     state.toolCallIndex++;
-    state.functionCallIndices.set(output_index, state.toolCallIndex);
+    state.toolCallIndices.set(output_index, state.toolCallIndex);
+    if (item.type === 'custom_tool_call') state.customInputs.set(output_index, item.input);
 
     return [
       makeChunk(state, {
@@ -175,11 +188,9 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
           {
             index: state.toolCallIndex,
             id: item.call_id,
-            type: 'function',
-            function: {
-              name: item.name,
-              arguments: '',
-            },
+            ...(item.type === 'function_call'
+              ? { type: 'function' as const, function: { name: item.name, arguments: '' } }
+              : { type: 'custom' as const, custom: { name: item.name, input: item.input } }),
           },
         ],
       }),
@@ -187,7 +198,8 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_item.done': {
-    const { item, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_item.done' }>;
+    const { item, output_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
+    if (item.type === 'custom_tool_call') return completeCustomInput(output_index, item.input, state);
     if (item.type !== 'reasoning') return [];
 
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
@@ -203,18 +215,18 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.reasoning_summary_text.delta': {
-    const { delta, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>;
+    const { delta, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.delta' }>;
     return emitReasoningSummaryText(output_index, summary_index, delta, state, 'delta');
   }
 
   case 'response.reasoning_summary_text.done': {
-    const { text, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>;
+    const { text, output_index, summary_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.reasoning_summary_text.done' }>;
     queueReasoningSummaryDoneFallback(output_index, summary_index, text, state);
     return [];
   }
 
   case 'response.output_text.delta': {
-    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.delta' }>;
+    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.delta' }>;
     if (delta) {
       state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
     }
@@ -222,7 +234,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.output_text.done': {
-    const { text, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.done' }>;
+    const { text, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_text.done' }>;
     const key = openaiResponsesPartKey(output_index, content_index);
     if (!text || state.emittedTextContentKeys.has(key)) return [];
 
@@ -231,7 +243,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.refusal.delta': {
-    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.delta' }>;
+    const { delta, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.delta' }>;
     if (!delta) return [];
 
     state.emittedTextContentKeys.add(openaiResponsesPartKey(output_index, content_index));
@@ -239,7 +251,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.refusal.done': {
-    const { refusal, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.refusal.done' }>;
+    const { refusal, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.refusal.done' }>;
     const key = openaiResponsesPartKey(output_index, content_index);
     if (!refusal || state.emittedTextContentKeys.has(key)) return [];
 
@@ -248,7 +260,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 
   case 'response.content_part.done': {
-    const { part, output_index, content_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.content_part.done' }>;
+    const { part, output_index, content_index } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.content_part.done' }>;
     if (part.type !== 'refusal') return [];
 
     const key = openaiResponsesPartKey(output_index, content_index);
@@ -258,33 +270,44 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
     return [makeChunk(state, { refusal: part.refusal })];
   }
 
-  case 'response.function_call_arguments.delta': {
-    const { delta, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>;
+  case 'response.function_call_arguments.delta':
+  case 'response.custom_tool_call_input.delta': {
+    const { delta, output_index } = event;
     if (!delta) return [];
 
-    const toolCallIndex = state.functionCallIndices.get(output_index);
-    if (toolCallIndex === undefined) return [];
+    const toolCallIndex = state.toolCallIndices.get(output_index);
+    if (toolCallIndex === undefined) {
+      if (event.type === 'response.custom_tool_call_input.delta') throw new Error('Custom tool input delta arrived before its output item was added.');
+      return [];
+    }
 
-    state.emittedFunctionArgumentOutputIndexes.add(output_index);
+    if (event.type === 'response.custom_tool_call_input.delta') {
+      const emitted = state.customInputs.get(output_index);
+      if (emitted === undefined) throw new Error('Custom tool input delta arrived before its output item was added.');
+      state.customInputs.set(output_index, emitted + delta);
+    } else state.emittedFunctionArgumentOutputIndexes.add(output_index);
     return [
       makeChunk(state, {
         tool_calls: [
           {
             index: toolCallIndex,
-            function: { arguments: delta },
+            ...(event.type === 'response.function_call_arguments.delta' ? { function: { arguments: delta } } : { custom: { input: delta } }),
           },
         ],
       }),
     ];
   }
 
-  case 'response.function_call_arguments.done': {
-    const { arguments: args, output_index } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>;
+  case 'response.function_call_arguments.done':
+  case 'response.custom_tool_call_input.done': {
+    const { output_index } = event;
+    if (event.type === 'response.custom_tool_call_input.done') return completeCustomInput(output_index, event.input, state);
+    const args = event.arguments;
     if (!args || state.emittedFunctionArgumentOutputIndexes.has(output_index)) {
       return [];
     }
 
-    const toolCallIndex = state.functionCallIndices.get(output_index);
+    const toolCallIndex = state.toolCallIndices.get(output_index);
     if (toolCallIndex === undefined) return [];
 
     state.emittedFunctionArgumentOutputIndexes.add(output_index);
@@ -302,7 +325,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
 
   case 'response.completed':
   case 'response.incomplete': {
-    const { response } = event as Extract<OpenAIResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' }>;
+    const { response } = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' | 'response.incomplete' }>;
     const chunks: OpenAIChatCompletionsStreamEvent[] = [];
     if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
 
@@ -327,7 +350,7 @@ export const translateOpenAIResponsesEventToOpenAIChatCompletionsChunks = (event
   }
 };
 
-const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsDelta, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
+const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, delta: OpenAIChatCompletionsAssistantDeltaEx, finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -344,7 +367,7 @@ const makeChunk = (state: OpenAIResponsesToOpenAIChatCompletionsStreamState, del
 
 const makeUsageChunk = (
   state: OpenAIResponsesToOpenAIChatCompletionsStreamState,
-  usage: NonNullable<OpenAIResponsesResult['usage']>,
+  usage: NonNullable<OpenAIResponsesResultEx['usage']>,
 ): OpenAIChatCompletionsStreamEvent => {
   // Validated, not consumed: OpenAI Chat Completions names the same three input
   // buckets OpenAI Responses does, so the counts cross unchanged. The assertion is
@@ -384,65 +407,52 @@ interface OpenAIChatCompletionsErrorPayload {
     message: string;
     type: string;
     code?: string;
-    name?: string;
-    stack?: string;
-    cause?: unknown;
-    target_api?: string;
+    provider_specific_fields?: Record<string, unknown>;
   };
 }
 
 const stringField = (value: unknown, fallback: string): string => (typeof value === 'string' && value.length > 0 ? value : fallback);
 
-const debugFieldsFrom = (value: Record<string, unknown>) => ({
-  ...(typeof value.name === 'string' ? { name: value.name } : {}),
-  ...(typeof value.stack === 'string' ? { stack: value.stack } : {}),
-  ...(value.cause !== undefined ? { cause: value.cause } : {}),
-  ...(typeof value.target_api === 'string' ? { target_api: value.target_api } : {}),
-});
+const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): OpenAIChatCompletionsErrorPayload => {
+  const error = 'error' in event ? event.error : event;
+  return {
+    error: {
+      message: error.message,
+      type: 'error' in event ? event.error.type ?? error.code ?? 'api_error' : error.code ?? 'api_error',
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
+    },
+  };
+};
 
-const chatErrorPayloadFromOpenAIResponsesError = (event: Extract<OpenAIResponsesStreamEvent, { type: 'error' }>): OpenAIChatCompletionsErrorPayload => ({
-  error: {
-    message: event.message,
-    type: event.code ?? 'api_error',
-    ...(event.code ? { code: event.code } : {}),
-    ...(event.name ? { name: event.name } : {}),
-    ...(event.stack ? { stack: event.stack } : {}),
-    ...(event.cause !== undefined ? { cause: event.cause } : {}),
-    ...(event.target_api ? { target_api: event.target_api } : {}),
-  },
-});
-
-const isObjectLike = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
-const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>): OpenAIChatCompletionsErrorPayload => {
-  const response = event.response as OpenAIResponsesResult;
-  const error = isObjectLike(response.error) ? response.error : undefined;
+const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>): OpenAIChatCompletionsErrorPayload => {
+  const error = event.response.error;
 
   return {
     error: {
       message: stringField(error?.message, 'Response failed due to unknown error.'),
       type: stringField(error?.type, 'api_error'),
       ...(typeof error?.code === 'string' ? { code: error.code } : {}),
-      ...(error ? debugFieldsFrom(error) : {}),
+      ...(error?.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
     },
   };
 };
 
-const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
+const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
   if (event.type === 'error') {
     // OpenAI-compatible Chat Completions streams can carry top-level error payloads;
     // OpenAIChatCompletionsStreamEvent only models successful chunk payloads.
-    return eventFrame(chatErrorPayloadFromOpenAIResponsesError(event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>) as unknown as OpenAIChatCompletionsStreamEvent);
+    return eventFrame(chatErrorPayloadFromOpenAIResponsesError(event as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>) as unknown as OpenAIChatCompletionsStreamEvent);
   }
 
   if (event.type === 'response.failed') {
-    return eventFrame(chatErrorPayloadFromOpenAIResponsesFailure(event as Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }>) as unknown as OpenAIChatCompletionsStreamEvent);
+    return eventFrame(chatErrorPayloadFromOpenAIResponsesFailure(event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>) as unknown as OpenAIChatCompletionsStreamEvent);
   }
 
   return undefined;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   const state = createOpenAIResponsesToOpenAIChatCompletionsStreamState();
 
   for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {

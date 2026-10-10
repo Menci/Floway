@@ -371,7 +371,7 @@ test('buildTargetRequest omits the signature for a reasoning with no encrypted_c
     throw new Error('expected assistant message with content blocks');
   }
 
-  assertEquals(assistant.content[0], { type: 'thinking', thinking: 'trace' });
+  assertEquals(assistant.content[0], { signature: '', type: 'thinking', thinking: 'trace' });
 });
 
 test('buildTargetRequest omits generic metadata instead of coercing it to metadata.user_id', async () => {
@@ -940,7 +940,7 @@ test('buildTargetRequest merges reasoning.effort with structured-output format o
     store: false,
     parallel_tool_calls: true,
     reasoning: { effort: 'high', summary: 'detailed' },
-    text: { format: { type: 'json_schema', schema } },
+    text: { format: { type: 'json_schema', name: 'result', schema } },
   });
 
   assertEquals(result.target.output_config, { effort: 'high', format: { type: 'json_schema', schema } });

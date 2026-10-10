@@ -80,15 +80,15 @@ const makeApp = (middleware?: (c: Context) => void, apiKeyOverrides: Partial<Api
 const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
   },
   {
     id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
@@ -174,14 +174,14 @@ test('client-carried opaque state restores the exact preferred candidate on the 
           object: 'chat.completion.chunk',
           created: 0,
           model: 'test-model',
-          choices: [{ index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
+          choices: [{  index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
         },
         {
           id: `chatcmpl_affinity_${turn}`,
           object: 'chat.completion.chunk',
           created: 0,
           model: 'test-model',
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+          choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
         },
       ]),
       modelKey: 'a',
