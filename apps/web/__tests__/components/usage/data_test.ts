@@ -24,7 +24,7 @@ describe('buildUsageOverviewQuery', () => {
     }, Date.UTC(2026, 7, 5, 12));
 
     expect(query).toMatchObject({
-      bucket: 'hour',
+      bucket: '4h',
       group_by: 'userId',
       timezone: 'UTC',
       timezone_offset_minutes: '0',
