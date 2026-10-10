@@ -1,0 +1,655 @@
+diff --git a/decode.js b/decode.js
+index e165032d096486d1c761357bcf44aa4b286dd20a..09728bb61fdf09ae56863cc5afd2b322265f0efc 100644
+--- a/decode.js
++++ b/decode.js
+@@ -102,7 +102,7 @@ export class Decoder {
+ 		}
+ 		let res = {}
+ 		//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-		map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v)
++		map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v))
+ 		return res
+ 	}
+ 	
+@@ -322,13 +322,13 @@ export function read() {
+ 							if (currentDecoder.keyMap) {
+ 								while((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(currentDecoder.decodeKey(key))] = read()
++									setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read())
+ 								}
+ 							}
+ 							else {
+ 								while ((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(key)] = read()
++									setObjectProperty(object, safeKey(key), read())
+ 								}
+ 							}
+ 							return object
+@@ -400,8 +400,8 @@ export function read() {
+ 			if (token > (srcEnd - position) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 			if (currentDecoder.mapsAsObjects) {
+ 				let object = {}
+-				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read()
+-				else for (let i = 0; i < token; i++) object[safeKey(read())] = read()
++				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read())
++				else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read())
+ 				return object
+ 			} else {
+ 				if (restoreMapsAsObject) {
+@@ -431,11 +431,11 @@ export function read() {
+ 						let object = {}
+ 						if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 							let key = currentDecoder.decodeKey(structure[i - 2])
+-							object[safeKey(key)] = read()
++							setObjectProperty(object, safeKey(key), read())
+ 						}
+ 						else for (let i = 2; i < length; i++) {
+ 							let key = structure[i - 2]
+-							object[safeKey(key)] = read()
++							setObjectProperty(object, safeKey(key), read())
+ 						}
+ 						return object
+ 					}
+@@ -529,8 +529,8 @@ function createStructureReader(structure) {
+ 		if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 			let array = this.length == length ? this : this.slice(0, length)
+ 			compiledReader = currentDecoder.keyMap 
+-			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-			: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}')
++			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++			: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}')
+ 			if (this.compiledReader)
+ 				compiledReader.next = this.compiledReader // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 			compiledReader.propertyCount = length
+@@ -538,9 +538,9 @@ function createStructureReader(structure) {
+ 			return compiledReader(read)
+ 		}
+ 		let object = {}
+-		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read()
++		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read())
+ 		else for (let i = 0; i < length; i++) {
+-			object[safeKey(this[i])] = read();
++			setObjectProperty(object, safeKey(this[i]), read());
+ 		}
+ 		return object
+ 	}
+@@ -548,9 +548,24 @@ function createStructureReader(structure) {
+ 	return readObject
+ }
+ 
++function setObjectProperty(object, key, value) {
++	if (key === '__proto__') {
++		Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true})
++	} else {
++		object[key] = value
++	}
++}
++function assignObjectProperties(target, ...sources) {
++	for (const source of sources) {
++		if (source == null) continue
++		for (const key of Reflect.ownKeys(Object(source))) {
++			if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key])
++		}
++	}
++	return target
++}
+ function safeKey(key) {
+-	// protect against prototype pollution
+-	if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++	if (typeof key === 'string') return key
+ 	if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 	if (key == null) return key + '';
+ 	// protect against expensive (DoS) string conversions
+@@ -995,7 +1010,7 @@ currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
+ 	let object = {}
+ 	for (let i = 2; i < length; i++) {
+ 		let key = structure[i - 2]
+-		object[safeKey(key)] = data[i]
++		setObjectProperty(object, safeKey(key), data[i])
+ 	}
+ 	return object
+ }
+@@ -1098,7 +1113,7 @@ currentExtensions[28] = (read) => {
+ 			referenceMap.set(id, { target })
+ 			targetProperties = read()
+ 		}
+-		return Object.assign(target, targetProperties)
++		return assignObjectProperties(target, targetProperties)
+ 	}
+ 	refEntry.target = targetProperties // the placeholder wasn't used, replace with the deserialized one
+ 	return targetProperties // no cycle, can just use the returned read object
+@@ -1127,7 +1142,7 @@ function combine(a, b) {
+ 		return a + b
+ 	if (a instanceof Array)
+ 		return a.concat(b)
+-	return Object.assign({}, a, b)
++	return assignObjectProperties({}, a, b)
+ }
+ function getPackedValues() {
+ 	if (!packedValues) {
+diff --git a/dist/decode-no-eval.cjs b/dist/decode-no-eval.cjs
+index a3559829b352716acbf07e0e1961966081c38426..33bf976cd9408188866dfbb3b4ef30fcd0d52039 100644
+--- a/dist/decode-no-eval.cjs
++++ b/dist/decode-no-eval.cjs
+@@ -103,7 +103,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -323,13 +323,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -401,8 +401,8 @@
+ 				if (token > (srcEnd - position) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -432,11 +432,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -530,8 +530,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -539,9 +539,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -549,9 +549,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -920,7 +935,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -1023,7 +1038,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1052,7 +1067,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+diff --git a/dist/index-no-eval.cjs b/dist/index-no-eval.cjs
+index 4866836e63f0a459f3d2a25f8eadeb6e78a738ff..1ac8a0458c82f791e2ba4811f128c351bb722981 100644
+--- a/dist/index-no-eval.cjs
++++ b/dist/index-no-eval.cjs
+@@ -99,7 +99,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -314,13 +314,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -392,8 +392,8 @@
+ 				if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -423,11 +423,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -521,8 +521,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new BlockedFunction ('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new BlockedFunction ('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -530,9 +530,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -540,9 +540,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -876,7 +891,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -979,7 +994,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1008,7 +1023,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+diff --git a/dist/index.js b/dist/index.js
+index b4f561063aeabdde5f44d219b7f240eff835caaf..449c3493400ac7f7e845f72fb047d770a782055a 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -98,7 +98,7 @@
+ 			}
+ 			let res = {};
+ 			//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-			map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++			map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 			return res
+ 		}
+ 		
+@@ -313,13 +313,13 @@
+ 								if (currentDecoder.keyMap) {
+ 									while((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(currentDecoder.decodeKey(key))] = read();
++										setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 									}
+ 								}
+ 								else {
+ 									while ((key = read()) != STOP_CODE) {
+ 										if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-										object[safeKey(key)] = read();
++										setObjectProperty(object, safeKey(key), read());
+ 									}
+ 								}
+ 								return object
+@@ -391,8 +391,8 @@
+ 				if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 				if (currentDecoder.mapsAsObjects) {
+ 					let object = {};
+-					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-					else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++					if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++					else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 					return object
+ 				} else {
+ 					if (restoreMapsAsObject) {
+@@ -422,11 +422,11 @@
+ 							let object = {};
+ 							if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 								let key = currentDecoder.decodeKey(structure[i - 2]);
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							else for (let i = 2; i < length; i++) {
+ 								let key = structure[i - 2];
+-								object[safeKey(key)] = read();
++								setObjectProperty(object, safeKey(key), read());
+ 							}
+ 							return object
+ 						}
+@@ -520,8 +520,8 @@
+ 			if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 				let array = this.length == length ? this : this.slice(0, length);
+ 				compiledReader = currentDecoder.keyMap 
+-				? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-				: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++				? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++				: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 				if (this.compiledReader)
+ 					compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 				compiledReader.propertyCount = length;
+@@ -529,9 +529,9 @@
+ 				return compiledReader(read)
+ 			}
+ 			let object = {};
+-			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++			if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 			else for (let i = 0; i < length; i++) {
+-				object[safeKey(this[i])] = read();
++				setObjectProperty(object, safeKey(this[i]), read());
+ 			}
+ 			return object
+ 		}
+@@ -539,9 +539,24 @@
+ 		return readObject
+ 	}
+ 
++	function setObjectProperty(object, key, value) {
++		if (key === '__proto__') {
++			Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++		} else {
++			object[key] = value;
++		}
++	}
++	function assignObjectProperties(target, ...sources) {
++		for (const source of sources) {
++			if (source == null) continue
++			for (const key of Reflect.ownKeys(Object(source))) {
++				if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++			}
++		}
++		return target
++	}
+ 	function safeKey(key) {
+-		// protect against prototype pollution
+-		if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++		if (typeof key === 'string') return key
+ 		if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 		if (key == null) return key + '';
+ 		// protect against expensive (DoS) string conversions
+@@ -875,7 +890,7 @@
+ 		let object = {};
+ 		for (let i = 2; i < length; i++) {
+ 			let key = structure[i - 2];
+-			object[safeKey(key)] = data[i];
++			setObjectProperty(object, safeKey(key), data[i]);
+ 		}
+ 		return object
+ 	};
+@@ -978,7 +993,7 @@
+ 				referenceMap.set(id, { target });
+ 				targetProperties = read();
+ 			}
+-			return Object.assign(target, targetProperties)
++			return assignObjectProperties(target, targetProperties)
+ 		}
+ 		refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 		return targetProperties // no cycle, can just use the returned read object
+@@ -1007,7 +1022,7 @@
+ 			return a + b
+ 		if (a instanceof Array)
+ 			return a.concat(b)
+-		return Object.assign({}, a, b)
++		return assignObjectProperties({}, a, b)
+ 	}
+ 	function getPackedValues() {
+ 		if (!packedValues) {
+diff --git a/dist/node.cjs b/dist/node.cjs
+index 91d80ca3a96e56199dcca453606f9ebcabe20e9c..24a0e55d482d6d56736331dc6c6b7ae7148ae283 100644
+--- a/dist/node.cjs
++++ b/dist/node.cjs
+@@ -102,7 +101,7 @@ class Decoder {
+ 		}
+ 		let res = {};
+ 		//map.forEach((v,k) => res[Object.keys(this._keyMap)[Object.values(this._keyMap).indexOf(k)] || k] = v)
+-		map.forEach((v,k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] =  v);
++		map.forEach((v,k) => setObjectProperty(res, safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k), v));
+ 		return res
+ 	}
+ 	
+@@ -319,13 +318,13 @@ function read() {
+ 							if (currentDecoder.keyMap) {
+ 								while((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(currentDecoder.decodeKey(key))] = read();
++									setObjectProperty(object, safeKey(currentDecoder.decodeKey(key)), read());
+ 								}
+ 							}
+ 							else {
+ 								while ((key = read()) != STOP_CODE) {
+ 									if (i++ >= maxMapSize) throw new Error(`Property count exceeds ${maxMapSize}`)
+-									object[safeKey(key)] = read();
++									setObjectProperty(object, safeKey(key), read());
+ 								}
+ 							}
+ 							return object
+@@ -397,8 +396,8 @@ function read() {
+ 			if (token > (srcEnd - position$1) / 2) throw endOfCBORError() // each entry needs at least two bytes
+ 			if (currentDecoder.mapsAsObjects) {
+ 				let object = {};
+-				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) object[safeKey(currentDecoder.decodeKey(read()))] = read();
+-				else for (let i = 0; i < token; i++) object[safeKey(read())] = read();
++				if (currentDecoder.keyMap) for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(read())), read());
++				else for (let i = 0; i < token; i++) setObjectProperty(object, safeKey(read()), read());
+ 				return object
+ 			} else {
+ 				if (restoreMapsAsObject) {
+@@ -428,11 +427,11 @@ function read() {
+ 						let object = {};
+ 						if (currentDecoder.keyMap) for (let i = 2; i < length; i++) {
+ 							let key = currentDecoder.decodeKey(structure[i - 2]);
+-							object[safeKey(key)] = read();
++							setObjectProperty(object, safeKey(key), read());
+ 						}
+ 						else for (let i = 2; i < length; i++) {
+ 							let key = structure[i - 2];
+-							object[safeKey(key)] = read();
++							setObjectProperty(object, safeKey(key), read());
+ 						}
+ 						return object
+ 					}
+@@ -526,8 +525,8 @@ function createStructureReader(structure) {
+ 		if (this.slowReads++ >= inlineObjectReadThreshold) { // create a fast compiled reader
+ 			let array = this.length == length ? this : this.slice(0, length);
+ 			compiledReader = currentDecoder.keyMap 
+-			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
+-			: new Function('r', 'return {' + array.map(key => validName.test(key) ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
++			? new Function('r', 'return {' + array.map(k => currentDecoder.decodeKey(k)).map(k => validName.test(k) && k !== '__proto__' ? safeKey(k) + ':r()' : ('[' + JSON.stringify(k) + ']:r()')).join(',') + '}')
++			: new Function('r', 'return {' + array.map(key => validName.test(key) && key !== '__proto__' ? safeKey(key) + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '}');
+ 			if (this.compiledReader)
+ 				compiledReader.next = this.compiledReader; // if there is an existing one, we store multiple readers as a linked list because it is usually pretty rare to have multiple readers (of different length) for the same structure
+ 			compiledReader.propertyCount = length;
+@@ -535,9 +534,9 @@ function createStructureReader(structure) {
+ 			return compiledReader(read)
+ 		}
+ 		let object = {};
+-		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
++		if (currentDecoder.keyMap) for (let i = 0; i < length; i++) setObjectProperty(object, safeKey(currentDecoder.decodeKey(this[i])), read());
+ 		else for (let i = 0; i < length; i++) {
+-			object[safeKey(this[i])] = read();
++			setObjectProperty(object, safeKey(this[i]), read());
+ 		}
+ 		return object
+ 	}
+@@ -545,9 +544,24 @@ function createStructureReader(structure) {
+ 	return readObject
+ }
+ 
++function setObjectProperty(object, key, value) {
++	if (key === '__proto__') {
++		Object.defineProperty(object, key, {value, enumerable: true, writable: true, configurable: true});
++	} else {
++		object[key] = value;
++	}
++}
++function assignObjectProperties(target, ...sources) {
++	for (const source of sources) {
++		if (source == null) continue
++		for (const key of Reflect.ownKeys(Object(source))) {
++			if (Object.prototype.propertyIsEnumerable.call(source, key)) setObjectProperty(target, key, source[key]);
++		}
++	}
++	return target
++}
+ function safeKey(key) {
+-	// protect against prototype pollution
+-	if (typeof key === 'string') return key === '__proto__' ? '__proto_' : key
++	if (typeof key === 'string') return key
+ 	if (typeof key === 'number' || typeof key === 'boolean' || typeof key === 'bigint') return key.toString();
+ 	if (key == null) return key + '';
+ 	// protect against expensive (DoS) string conversions
+@@ -916,7 +930,7 @@ currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
+ 	let object = {};
+ 	for (let i = 2; i < length; i++) {
+ 		let key = structure[i - 2];
+-		object[safeKey(key)] = data[i];
++		setObjectProperty(object, safeKey(key), data[i]);
+ 	}
+ 	return object
+ };
+@@ -1019,7 +1033,7 @@ currentExtensions[28] = (read) => {
+ 			referenceMap.set(id, { target });
+ 			targetProperties = read();
+ 		}
+-		return Object.assign(target, targetProperties)
++		return assignObjectProperties(target, targetProperties)
+ 	}
+ 	refEntry.target = targetProperties; // the placeholder wasn't used, replace with the deserialized one
+ 	return targetProperties // no cycle, can just use the returned read object
+@@ -1048,7 +1062,7 @@ function combine(a, b) {
+ 		return a + b
+ 	if (a instanceof Array)
+ 		return a.concat(b)
+-	return Object.assign({}, a, b)
++	return assignObjectProperties({}, a, b)
+ }
+ function getPackedValues() {
+ 	if (!packedValues) {

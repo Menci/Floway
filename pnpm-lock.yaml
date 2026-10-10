@@ -20,9 +20,15 @@ patchedDependencies:
   '@reclaimprotocol/tls@0.1.2':
     hash: 14d55564bb8f6d1cadd22c1ebf4d5604df7dc5420d4510843debe80b7a9ddada
     path: patches/@reclaimprotocol__tls@0.1.2.patch
+  cbor-x@1.6.6:
+    hash: 10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de
+    path: patches/cbor-x@1.6.6.patch
   klona@2.0.6:
     hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
     path: patches/klona@2.0.6.patch
+  map-obj@6.0.0:
+    hash: 9f9880bc6bde5cf7c171b094fe86acabeb49d9e46bfbf465fa3823a928e23aee
+    path: patches/map-obj@6.0.0.patch
   overlayscrollbars@2.13.0:
     hash: 0989d8ab263bb64de03bfa5ce05a0492b7a0b2211ac83be29beaf137c31b2e22
     path: patches/overlayscrollbars@2.13.0.patch
@@ -380,6 +386,9 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)
+      cbor-x:
+        specifier: 1.6.6
+        version: 1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de)
       es-toolkit:
         specifier: ^1.49.0
         version: 1.49.0
@@ -392,6 +401,9 @@ importers:
       klona:
         specifier: 2.0.6
         version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
+      map-obj:
+        specifier: 6.0.0
+        version: 6.0.0(patch_hash=9f9880bc6bde5cf7c171b094fe86acabeb49d9e46bfbf465fa3823a928e23aee)
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -638,7 +650,7 @@ importers:
         version: link:../protocols
       cbor-x:
         specifier: ^1.6.6
-        version: 1.6.6
+        version: 1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de)
       klona:
         specifier: 2.0.6
         version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
@@ -4191,6 +4203,10 @@ packages:
 
   magic-string@1.1.0:
     resolution: {integrity: sha512-kS3VHe0nEPST2saQV4Rbkchcd3UBRkVTQHo1D3h/ZTwFDhai/mfKkmtPAtD129EOI7K3HlHIsFOt0WrI2/oU9g==}
+
+  map-obj@6.0.0:
+    resolution: {integrity: sha512-PwDvwt/tK70+luLw5k9ySLtzLAzwf7tZTY9GBj63Y010nHRPjwHcQTpTd5JwQqITC2ty7prtxBo71iwyYY0TAg==}
+    engines: {node: '>=20'}
 
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
@@ -8345,7 +8361,7 @@ snapshots:
       '@cbor-extract/cbor-extract-win32-x64': 2.2.2
     optional: true
 
-  cbor-x@1.6.6:
+  cbor-x@1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de):
     optionalDependencies:
       cbor-extract: 2.2.2
 
@@ -9437,6 +9453,8 @@ snapshots:
   magic-string@1.1.0:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  map-obj@6.0.0(patch_hash=9f9880bc6bde5cf7c171b094fe86acabeb49d9e46bfbf465fa3823a928e23aee): {}
 
   markdown-table@3.0.4: {}
 
