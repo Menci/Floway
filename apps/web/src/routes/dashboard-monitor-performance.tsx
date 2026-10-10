@@ -26,7 +26,7 @@ import {
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
-import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
@@ -309,24 +309,43 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-          <TelemetryDimensionControls
-            disabled={refreshing}
-            dimensions={availableDimensions}
-            filters={loadedQuery.filters}
-            groupBy={loadedQuery.groupBy}
-            groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-              <Button
-                appearance="subtle"
-                aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                className={CONTROL_ROW_CLASS}
-                icon={<InfoRegular />}
+          <div className="flex items-end gap-3 min-w-0 flex-wrap">
+            <TelemetryGroupByField
+              disabled={refreshing}
+              dimensions={availableDimensions}
+              groupBy={loadedQuery.groupBy}
+              groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+                <Button
+                  appearance="subtle"
+                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                  className={CONTROL_ROW_CLASS}
+                  icon={<InfoRegular />}
+                />
+              </Tooltip>}
+              groupByLabel={t('dashboard.performance.groupBy.label')}
+              onGroupByChange={changeGroupBy}
+            />
+            <div className="ml-auto flex-none">
+              <TelemetryTimeRange
+                addressOf={range => addressOf({ range })}
+                ariaLabel={t('dashboard.performance.range.label')}
+                loadedAt={loadedAt}
+                onChange={changeRange}
+                onEditingChange={setEditingRange}
+                range={loadedQuery.range}
               />
-            </Tooltip>}
-            groupByLabel={t('dashboard.performance.groupBy.label')}
-            onFilterChange={setFilter}
-            onGroupByChange={changeGroupBy}
-            selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
-          />
+            </div>
+          </div>
+          <div className="flex items-end gap-3 min-w-0 flex-wrap">
+            <TelemetryFilterFields
+              disabled={refreshing}
+              dimensions={availableDimensions}
+              filters={loadedQuery.filters}
+              groupBy={loadedQuery.groupBy}
+              onFilterChange={setFilter}
+              selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
+            />
+          </div>
           <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
             {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
               <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
@@ -338,15 +357,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
               { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
             ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-            <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-            <TelemetryTimeRange
-              addressOf={range => addressOf({ range })}
-              ariaLabel={t('dashboard.performance.range.label')}
-              loadedAt={loadedAt}
-              onChange={changeRange}
-              onEditingChange={setEditingRange}
-              range={loadedQuery.range}
-            />
+            <div className="ml-auto flex-none">
+              <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+            </div>
           </div>
         </Panel>
         <Panel className="min-w-0">
