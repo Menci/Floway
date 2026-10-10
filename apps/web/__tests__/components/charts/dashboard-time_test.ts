@@ -55,6 +55,13 @@ test('multi-day buckets start at the selected date and clip the last bucket', ()
   }
 });
 
+test('a skipped civil date can leave 49 selected dates within 48 daily buckets', () => {
+  vi.stubEnv('TZ', 'Pacific/Apia');
+  const range = { start: '2011-12-02', end: '2012-01-19' };
+  expect(dashboardGranularity(range, 0)).toBe('day');
+  expect(dashboardBucketFrames(range, 0)).toHaveLength(48);
+});
+
 test.each([
   ['America/New_York', '2026-03-07', '2026-03-09'],
   ['America/New_York', '2026-10-31', '2026-11-02'],

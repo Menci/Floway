@@ -30,7 +30,7 @@ const local4hStart = (date: Date) => {
 };
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const AUTO_BUCKET_TARGET = 48;
-const AUTO_HOURLY_GRANULARITIES = Object.keys(telemetryHourBucketSizes) as Array<keyof typeof telemetryHourBucketSizes>;
+const AUTO_GRANULARITIES: DashboardGranularity[] = [...Object.keys(telemetryHourBucketSizes) as Array<keyof typeof telemetryHourBucketSizes>, 'day'];
 
 export const validateDashboardInterval = (start: number, end: number): void => {
   telemetryHourKey(start);
@@ -129,12 +129,11 @@ const framesForInterval = (
 export const dashboardGranularity = (range: DashboardRange, nowMs: number): DashboardGranularity => {
   if (typeof range === 'string') return range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day';
   const interval = dashboardInterval(range, nowMs);
-  for (const granularity of AUTO_HOURLY_GRANULARITIES) {
+  for (const granularity of AUTO_GRANULARITIES) {
     if (framesForInterval(interval, granularity, AUTO_BUCKET_TARGET).length <= AUTO_BUCKET_TARGET) return granularity;
   }
   const days = telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1;
-  const span = Math.ceil(days / AUTO_BUCKET_TARGET);
-  return span === 1 ? 'day' : `${span}d`;
+  return `${Math.ceil(days / AUTO_BUCKET_TARGET)}d`;
 };
 
 export const dashboardBucketFrames = (range: DashboardRange, nowMs: number): DashboardBucketFrame[] =>
