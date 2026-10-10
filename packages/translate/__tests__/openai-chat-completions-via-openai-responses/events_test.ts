@@ -237,7 +237,7 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
   assertEquals(refusal.join(''), 'No.');
 });
 
-test('translateToSourceEvents preserves deferred reasoning and stream usage', async () => {
+test('translateToSourceEvents streams independent text before deferred reasoning and retains usage', async () => {
   async function* stream() {
     yield* [
       toProtocolFrame({
@@ -297,8 +297,8 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
     events.slice(0, -1).map(event => event.choices[0]?.delta),
     [
       { role: 'assistant', content: '' },
-      { reasoning_text: 'trace' },
       { content: 'answer' },
+      { reasoning_text: 'trace' },
       {},
       {
         reasoning_items: [

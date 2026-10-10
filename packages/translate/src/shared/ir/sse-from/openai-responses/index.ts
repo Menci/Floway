@@ -89,7 +89,7 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
           b.event({ type: 'part_end', choice: 0, item: node.index, part }); node.sentParts.add(part);
         }
       }
-      if (node.done && !node.ended) { b.event({ type: 'item_end', choice: 0, item: node.index }); node.ended = true; }
+      if (node.done && !node.ended) { b.event({ type: 'item_end', choice: 0, item: node.index, ...(node.item.status === 'incomplete' ? { status: 'incomplete' as const } : {}) }); node.ended = true; }
     }
   };
   for await (const frame of frames) {
@@ -141,7 +141,7 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
       const item = node.item;
       const partIndex = e.content_index ?? e.summary_index;
       if (e.type === 'response.content_part.added' || e.type === 'response.content_part.done') {
-        item.content[e.content_index] = cloneIRJSON(e.part);
+        (item.content ??= [])[e.content_index] = cloneIRJSON(e.part);
         if (e.type.endsWith('.done')) node.closedParts.add(e.content_index);
       } else if (e.type === 'response.reasoning_summary_part.added' || e.type === 'response.reasoning_summary_part.done') {
         item.summary[e.summary_index] = cloneIRJSON(e.part);

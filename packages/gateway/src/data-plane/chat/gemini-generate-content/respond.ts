@@ -11,7 +11,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame, sseCommentFrame } from '@floway-dev/protocols/common';
 import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
@@ -195,6 +195,6 @@ const geminiGenerateContentSseFrames = async function* (frames: AsyncIterable<Pr
     state.failed = true;
     const event = geminiGenerateContentStreamErrorEvent(error);
     ctx.dump?.frame(eventFrame(event));
-    yield sseFrame(JSON.stringify(event));
+    yield geminiGenerateContentProtocolFrameToSSEFrame(eventFrame(event))!;
   }
 };

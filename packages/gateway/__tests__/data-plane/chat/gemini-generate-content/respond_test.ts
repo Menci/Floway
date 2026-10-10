@@ -105,7 +105,8 @@ test.each([false, true])('Gemini internal collect and SSE errors retain structur
   }, stream, ctx()));
   const response = await app.request('/');
   const text = await response.text();
-  const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
+  const body = JSON.parse(text);
+  if (stream) assertEquals(text, JSON.stringify(body));
   assertEquals(response.status, stream ? 200 : 502);
   assertEquals(body.error, {
     code: stream ? 500 : 502, status: stream ? 'INTERNAL' : 'UNAVAILABLE', message: 'broken', details: [

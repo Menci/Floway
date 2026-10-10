@@ -1,6 +1,6 @@
 import { unwrapCustomToolInput } from '../../../openai-responses-via/custom-tool-wrap.ts';
 import type { IRItem, IRSourceCitation } from '../../ir.ts';
-import { cloneIRJSON, parseIRJSONObject } from '../../shared/json.ts';
+import { cloneIRJSON } from '../../shared/json.ts';
 import { usageToIR, type IRWire } from '../../shared/usage.ts';
 import { createIRBuilder, reconcileIRValue, type IRFrame } from '../../stream.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -44,7 +44,7 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
   let finished = false;
   const sync = (index: number, block: IRWire, closed = false): void => {
-    const item = block.type === 'tool_use' && options.customToolNames?.has(block.name) ? { type: 'custom_tool_call' as const, call_id: block.id, name: block.name, input: closed ? unwrapCustomToolInput(JSON.stringify(block.input)) : '' } : messagesBlockToIR(block);
+    const item = block.type === 'tool_use' && options.customToolNames?.has(block.name) ? { type: 'custom_tool_call' as const, call_id: block.id, name: block.name, input: closed ? unwrapCustomToolInput(block.inputJson ?? JSON.stringify(block.input)) : '' } : messagesBlockToIR(block);
     if (item === undefined) return;
     const mapped = indices.get(index);
     if (mapped === undefined) {
@@ -85,10 +85,6 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     case 'content_block_stop': {
       const block = blocks.get(e.index);
       if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
-      if (block.type === 'tool_use' && block.inputJson !== undefined) {
-        const parsed = parseIRJSONObject(block.inputJson);
-        block.input = parsed; delete block.inputJson;
-      } else if (block.type === 'tool_use') parseIRJSONObject(JSON.stringify(block.input));
       if (block.type === 'tool_use') sync(e.index, block, true);
       const index = indices.get(e.index);
       if (index !== undefined) {

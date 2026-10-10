@@ -1,7 +1,7 @@
 
 import type { IRItem } from '../../ir.ts';
 import { irRangeToCodePoints } from '../../shared/coordinates.ts';
-import { cloneIRJSON } from '../../shared/json.ts';
+import { cloneIRJSON, isCompleteIRJSONObject } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
 import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
@@ -16,16 +16,18 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
   const output: IRWire[] = [];
   const indices = new Map<string, number>();
   const ended = new Set<string>();
-  const partCounts = new Map<number, number>();
+  const closedParts = new Set<string>();
   let sequence = 0;
   let finishReason = 'stop';
   let extension: IRWire = {};
   let sourceIds: IRWire = {};
-  let chatReasoningIds: IRWire = {};
+  const completedItems = new Map<number, 'completed' | 'incomplete'>();
+  let choiceEnded = false;
   const emit = (event: IRWire): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: sequence++ } as OpenAIResponsesStreamEventEx);
   const response = (status: string, usage: unknown = null): IRWire => ({ ...extension, id: metadata.id, object: 'response', created_at: metadata.created, model: metadata.model, status, output: cloneIRJSON(output), usage, error: null, incomplete_details: status === 'incomplete' ? extension.incomplete_details ?? { reason: finishReason === 'content_filter' ? 'content_filter' : 'max_output_tokens' } : null });
+  let stateChatSource = false;
   const targetItem = (item: IRItem, sourceIndex: number, closed: boolean, partIndex?: number): IRWire | undefined => {
-    const id = (item.type === 'reasoning' ? chatReasoningIds[`0/${sourceIndex}`] : undefined) ?? sourceIds[sourceIndex] ?? createRandomOpenAIResponsesItemId(item.type === 'message' && partIndex !== undefined && item.content[partIndex].type === 'image' ? 'image_generation_call' : item.type);
+    const id = sourceIds[sourceIndex] ?? createRandomOpenAIResponsesItemId(item.type === 'message' && partIndex !== undefined && item.content[partIndex].type === 'image' ? 'image_generation_call' : item.type);
     if (partIndex !== undefined && item.type === 'message') {
       const part = item.content[partIndex];
       if (part.type === 'image') return { type: 'image_generation_call', id, status: 'in_progress', result: null };
@@ -38,18 +40,23 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
       if (closed) throw new TypeError('Completed tool calls require a name');
       return undefined;
     }
+    if ((item.type === 'function_call' || item.type === 'custom_tool_call') && stateChatSource && !item.call_id) {
+      if (closed) throw new TypeError('Completed tool calls require an id');
+      return undefined;
+    }
     if (item.type === 'function_call') return { type: 'function_call', id, call_id: item.call_id ?? id, name: item.name, arguments: '', status: 'in_progress' };
     return { type: 'custom_tool_call', id, call_id: item.call_id, name: item.name, input: '', status: 'in_progress' };
   };
   for await (const { state, record } of consumeIRRecords(frames)) {
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); if (!metadata.id.startsWith('resp_')) metadata.id = `resp_${crypto.randomUUID().replace(/-/g, '')}`; started = true; }
-    if (record.type === 'choice_end') finishReason = record.finish_reason;
+    if (record.type === 'choice_end') { finishReason = record.finish_reason; choiceEnded = true; }
+    if (record.type === 'item_end') completedItems.set(record.item, record.status ?? 'completed');
     if (!started && record.type !== 'error') continue;
     metadata.model = irServingModel(state, metadata.model);
     extension = { ...state.extensions?.openaiResponses };
     delete extension.item_ids;
     sourceIds = state.extensions?.openaiResponses?.item_ids as IRWire ?? {};
-    chatReasoningIds = (state.extensions?.openaiChatCompletions as IRWire | undefined)?.reasoning_item_ids ?? {};
+    stateChatSource = state.extensions?.openaiChatCompletions !== undefined;
     const tier = irServiceTier(state);
     if (tier !== undefined) extension.service_tier = tier;
     if (record.type === 'error') {
@@ -61,12 +68,12 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
       yield emit({ type: 'response.created', response: response('in_progress') });
       yield emit({ type: 'response.in_progress', response: response('in_progress') });
     }
-    if (record.type === 'operation' || record.type === 'item_end' || record.type === 'part_end' || record.type === 'finish') {
+    if (record.type === 'operation' || record.type === 'item_end' || record.type === 'part_end' || record.type === 'choice_end' || record.type === 'finish') {
+      let startsBlocked = false;
       for (let sourceIndex = 0; sourceIndex < (state.choices[0]?.items.length ?? 0); sourceIndex++) {
         const item = state.choices[0].items[sourceIndex];
         const source: IRPath = ['choices', 0, 'items', sourceIndex];
-        const closing = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
-        if (item.type === 'reasoning' && state.extensions?.openaiChatCompletions !== undefined && !closing && chatReasoningIds[`0/${sourceIndex}`] === undefined) break;
+        const closing = completedItems.has(sourceIndex) || record.type === 'finish';
         if (item.type === 'message') for (let p = 0; p < item.content.length; p++) {
           const part = item.content[p]; if (part.type !== 'audio') continue;
           for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {
@@ -87,8 +94,12 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
           const key = `${sourceIndex}/${messagePart ? `message/${group}` : partIndex ?? 'item'}`;
           let index = indices.get(key);
           if (index === undefined) {
+            if (startsBlocked) continue;
             const native = targetItem(item, sourceIndex, closing, partIndex);
-            if (native === undefined) continue;
+            if (native === undefined) {
+              if ((item.type === 'function_call' || item.type === 'custom_tool_call') && !closing) startsBlocked = true;
+              continue;
+            }
             index = output.length; indices.set(key, index); output.push(native);
             yield emit({ type: 'response.output_item.added', output_index: index, item: cloneIRJSON(native) });
           }
@@ -126,7 +137,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
               });
               const oldCount = native.content[p].annotations.length;
               native.content[p].annotations = annotations;
-              for (let a = oldCount; a < annotations.length; a++) yield emit({ type: 'response.output_text.annotation.added', item_id: native.id, output_index: index, content_index: p, annotation_index: a, annotation: annotations[a] });
+              for (let a = oldCount; !ended.has(key) && a < annotations.length; a++) yield emit({ type: 'response.output_text.annotation.added', item_id: native.id, output_index: index, content_index: p, annotation_index: a, annotation: annotations[a] });
               const group = state.choices[0].logprobs?.find(g => g.scope === 'text_part' && g.item_index === sourceIndex && g.content_index === original);
               if (group !== undefined) native.content[p].logprobs = cloneIRJSON(group.tokens);
             }
@@ -135,7 +146,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
               native[field] ??= [];
               if (native[field][p] === undefined) {
                 native[field][p] = { type: field === 'summary' ? 'summary_text' : 'reasoning_text', text: '' };
-                if (field === 'summary') yield emit({ type: 'response.reasoning_summary_part.added', item_id: native.id, output_index: index, summary_index: p, part: cloneIRJSON(native[field][p]) });
+                yield emit({ type: field === 'summary' ? 'response.reasoning_summary_part.added' : 'response.content_part.added', item_id: native.id, output_index: index, ...(field === 'summary' ? { summary_index: p } : { content_index: p }), part: cloneIRJSON(native[field][p]) });
               }
               const text = item[field]![p];
               const delta = projection.append([...source, field, p], text, [...target, field, p, 'text'], true);
@@ -149,8 +160,7 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
           } else if (item.type === 'function_call' || item.type === 'custom_tool_call') {
             const custom = item.type === 'custom_tool_call';
             const field = custom ? 'input' : 'arguments';
-            const closed = record.type === 'finish' || record.type === 'item_end' && record.item === sourceIndex;
-            const value = custom ? item.input : typeof item.arguments === 'object' ? closed ? JSON.stringify(item.arguments) : native[field] : item.arguments ?? '';
+            const value = custom ? item.input : typeof item.arguments === 'object' ? closing ? JSON.stringify(item.arguments) : native[field] : item.arguments ?? '';
             const delta = projection.append([...source, field], value, [...target, field], true);
             native[field] = value; native.name = item.name;
             if (item.call_id !== undefined) native.call_id = item.call_id;
@@ -158,25 +168,27 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
           }
           const closingPart = record.type === 'part_end' && record.item === sourceIndex && record.part === partIndex;
           if (native.type === 'message' && (closing || closingPart)) {
-            const old = partCounts.get(index) ?? 0;
-            const end = native.content.length;
-            for (let p = old; p < end; p++) {
+            const endingPart = item.type === 'message' && partIndex !== undefined ? partIndex - item.content.slice(0, partIndex).findLastIndex(p => p.type !== 'text' && p.type !== 'refusal') - 1 : undefined;
+            for (let p = 0; p < native.content.length; p++) {
+              const partKey = `${index}/${p}`;
+              if (closedParts.has(partKey) || !closing && p !== endingPart) continue;
               const part = native.content[p];
               yield emit({ type: part.type === 'refusal' ? 'response.refusal.done' : 'response.output_text.done', item_id: native.id, output_index: index, content_index: p, ...(part.type === 'refusal' ? { refusal: part.refusal } : { text: part.text, logprobs: part.logprobs ?? [] }) });
               yield emit({ type: 'response.content_part.done', item_id: native.id, output_index: index, content_index: p, part: cloneIRJSON(part) });
+              closedParts.add(partKey);
             }
-            partCounts.set(index, end);
           }
-          if (closing && !ended.has(key)) {
+          const pendingArguments = closing && !ended.has(key) && item.type === 'function_call' && typeof item.arguments === 'string' && !isCompleteIRJSONObject(item.arguments);
+          if (closing && !ended.has(key) && (!pendingArguments || choiceEnded || record.type === 'finish')) {
             if (item.type === 'reasoning') for (const field of ['summary', 'content'] as const) for (let p = 0; p < (native[field]?.length ?? 0); p++) {
               yield emit({ type: field === 'summary' ? 'response.reasoning_summary_text.done' : 'response.reasoning_text.done', item_id: native.id, output_index: index, ...(field === 'summary' ? { summary_index: p } : { content_index: p }), text: native[field][p].text });
-              if (field === 'summary') yield emit({ type: 'response.reasoning_summary_part.done', item_id: native.id, output_index: index, summary_index: p, part: cloneIRJSON(native[field][p]) });
+              yield emit({ type: field === 'summary' ? 'response.reasoning_summary_part.done' : 'response.content_part.done', item_id: native.id, output_index: index, ...(field === 'summary' ? { summary_index: p } : { content_index: p }), part: cloneIRJSON(native[field][p]) });
             }
             if (item.type === 'function_call' || item.type === 'custom_tool_call') {
               const custom = item.type === 'custom_tool_call'; const field = custom ? 'input' : 'arguments';
               yield emit({ type: custom ? 'response.custom_tool_call_input.done' : 'response.function_call_arguments.done', item_id: native.id, output_index: index, [field]: native[field], name: native.name });
             }
-            native.status = 'completed';
+            native.status = completedItems.get(sourceIndex) === 'incomplete' || pendingArguments && finishReason === 'length' ? 'incomplete' : 'completed';
             yield emit({ type: 'response.output_item.done', output_index: index, item: cloneIRJSON(native) }); ended.add(key);
           }
         }
