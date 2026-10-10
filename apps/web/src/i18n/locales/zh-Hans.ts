@@ -442,8 +442,6 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          cost: '使用模型消耗的额度。',
-          costLast4Weeks: '过去 4 周使用模型消耗的额度。',
           costRange: '{{from}} 至 {{until}}，使用模型消耗的额度。',
           costRangeSelf: '{{from}} 至 {{until}}，本账号使用模型消耗的额度（含套餐和购买额度）。',
         },
@@ -497,14 +495,6 @@ const zhHansCN = {
         },
       },
       upstreamEditor: {
-        usageRefresh: {
-          title: '后台刷新用量',
-          description: '填 0 或留空禁用后台刷新。不会额外产生模型用量。',
-          claudeCodeRequirement: '需要使用 OAuth 登录。',
-          ollamaRequirement: '需要开启「获取账号用量」功能。',
-          interval: '刷新间隔（分钟）',
-          invalid: '请输入大于或等于 0 的整数分钟数。',
-        },
         readyToSave: {
           title: '可以保存了',
           description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
@@ -956,10 +946,20 @@ const zhHansCN = {
             'uuid-mismatch': '所配置的账号不在状态中，请重新导入以恢复',
           },
         },
+        usageRefresh: {
+          title: '后台刷新用量',
+          description: '填 0 或留空禁用后台刷新。不会额外产生模型用量。',
+          claudeCodeRequirement: '需要使用 OAuth 登录。',
+          ollamaRequirement: '需要开启「获取账号用量」功能。',
+          interval: '刷新间隔（分钟）',
+          invalid: '请输入大于或等于 0 的整数分钟数。',
+        },
         ollama: {
           cloudUsage: '获取账号用量',
-          cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
+          cloudUsageHint: '在模型请求后更新账号余额和期间用量。需要配置 Ollama Cloud API Key。',
           usage: {
+            allowance: '本期订阅额度 {{amount}}',
+            resets: '{{time}} 重置',
             balance: { included: '订阅余额', purchased: '购买余额' },
             balanceHint: {
               included: '套餐剩余额度，每月重置；使用模型时优先扣减。',
@@ -975,7 +975,6 @@ const zhHansCN = {
             },
             observed: '观测于 {{time}}',
             empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
-            unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',
             backgroundFailed: '最近一次后台刷新失败：{{message}}',
           },
         },

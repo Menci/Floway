@@ -1,4 +1,4 @@
-import { isFirstOutputTokenFrame } from './first-output-token.ts';
+import { firstOutputTokenSignal } from './first-output-token.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -23,24 +23,40 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   const finalMetadata = new Promise<EventResultMetadata>(resolve => { resolveFinal = resolve; });
   // Only a report carrying real counts replaces the running figure, so a
   // trailing empty usage frame cannot wipe a good one. Held outside the
-  // generator so an abandoned stream can still settle with what it saw.
+  // stream iterator so an abandoned stream can still settle with what it saw.
   let billableUsage: BillableUsage | undefined;
-  const settleMetadata = (): void => resolveFinal({
-    modelIdentity: identity,
-    ...(context !== undefined ? { performance: context } : {}),
-    ...(billableUsage !== undefined ? { billableUsage } : {}),
-  });
+  const settleMetadata = (): void => {
+    ctx.abortSignal?.removeEventListener('abort', settleMetadata);
+    resolveFinal({
+      modelIdentity: identity,
+      ...(context !== undefined ? { performance: context } : {}),
+      ...(billableUsage !== undefined ? { billableUsage } : {}),
+    });
+  };
   // Every streaming response now resolves its cost here, and the respond
   // layer awaits it in a `finally`. A transport that walks away without
   // closing the generator would otherwise hang that await forever, so the
   // abort settles it too; whichever fires first wins, and the later call is a
   // no-op.
   ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
+  // Timing follows ordinary provider-stream consumption. Provider buffering
+  // and downstream backpressure can delay observation of the first signal.
   const stampedEvents = (async function* () {
     try {
       for await (const frame of providerResult.events) {
-        if (ctx.attempt.timing.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-          ctx.attempt.timing.firstOutputTokenAt = performance.now();
+        if (ctx.attempt.timing.firstOutputTokenAt === null) {
+          const signal = firstOutputTokenSignal(frame, targetApi);
+          if (signal !== null) {
+            ctx.attempt.timing.firstOutputTokenAt = performance.now();
+            if (signal.type === 'runtime-output') {
+              console.warn('Floway: first output timing started from runtime output without an earlier decode signal in this response', {
+                outputType: signal.outputType,
+                upstream: identity.upstream,
+                model: identity.model,
+                modelKey: identity.modelKey,
+              });
+            }
+          }
         }
         if (frame.type === 'event') {
           const reported = readBillableUsage(frame.event);

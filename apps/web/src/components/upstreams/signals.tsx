@@ -9,7 +9,7 @@ import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntr
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
-import { activityCostHint, activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
+import { activityCostHint, activityCostText, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
@@ -20,6 +20,7 @@ import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ProgressRing } from '../ui/progress-ring';
+import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
@@ -200,26 +201,27 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const probe = record.state?.usageProbe ?? null;
-  const observation = record.state?.balanceProbe?.observation ?? probe?.observation ?? null;
+  const observation = probe?.observation ?? null;
   if (observation === null) return [];
 
-  const signals: UpstreamSignal[] = readWindows(observation.data).map(item => {
+  const usage = readOllamaAccountUsage(observation.data);
+  const signals: UpstreamSignal[] = readWindows(usage.included).map(item => {
     const label = windowLengthLabel(item.minutes);
     return {
       key: item.key,
       percent: item.percent,
       value: percentValue(t, item.percent),
       label,
-      detail: meterDetail(t, label, item.percent, null, observation.fetchedAt, locale),
+      detail: meterDetail(t, label, item.percent, item.resetsAt, observation.fetchedAt, locale),
     };
   });
 
-  const cost = readActivityCost(probe?.observation?.data);
-  if (cost !== null && !isZeroActivityCost(cost.amount)) {
+  const cost = usage.activity;
+  if (cost.usageUsd !== null && cost.usageUsd !== 0) {
     signals.push({
       key: 'cost',
       percent: null,
-      value: activityCostText(cost.amount),
+      value: activityCostText(cost.usageUsd),
       label: null,
       detail: activityCostHint(cost, t, locale),
     });

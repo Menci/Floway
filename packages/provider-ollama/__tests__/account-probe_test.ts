@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
@@ -127,7 +128,8 @@ const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => vo
       const { pathname } = new URL(request.url);
       onCall(pathname);
       if (pathname === '/api/me') return new Response(JSON.stringify(ME_BODY), { status: 200 });
-      if (pathname === '/api/usage') return new Response('{"limits":{}}', { status: 200 });
+      if (pathname === '/api/usage') return Response.json(USAGE_TOTALS);
+      if (pathname === '/api/balance') return Response.json(CREDIT_BALANCE);
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {

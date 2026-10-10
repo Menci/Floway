@@ -52,8 +52,8 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   ).catch((): null => null);
 
   try {
-    const { observation, balanceObservation } = await refreshOllamaUsageProbe(record.id, config, fetcher);
-    return c.json({ observation, balanceObservation, account: await account });
+    const observation = await refreshOllamaUsageProbe(record.id, config, fetcher);
+    return c.json({ observation, account: await account });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 502);
   }

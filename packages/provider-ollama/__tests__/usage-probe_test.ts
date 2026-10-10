@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
@@ -18,7 +19,6 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   kind: 'ollama',
   name: 'Ollama Cloud',
   enabled: true,
-  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
@@ -32,22 +32,6 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   hue: 210,
   ...overrides,
 });
-
-// A live ollama.com reading, per the shape an account holder posted upstream.
-// https://github.com/ollama/ollama/issues/12532#issuecomment-5117969589
-const USAGE_BODY = {
-  activity: {
-    cost: '0.00000',
-    period: { type: 'last_4_weeks', starting_at: '2026-07-06T00:00:00Z', ending_at: '2026-07-29T12:45:50Z' },
-    models: [],
-  },
-  limits: {
-    session: { usage: 0.046, models: [{ name: 'glm-5.2', request_count: 34 }] },
-    weekly: { usage: 0.051, models: [{ name: 'glm-5.2', request_count: 254 }] },
-  },
-};
-
-const BALANCE_BODY = { included: { balance_usd: 42 }, purchased: { balance_usd: 25 } };
 
 // Installs a repo whose single row starts from `state` and records every write.
 const withStateRepo = (state: unknown = null) => {
@@ -78,9 +62,8 @@ test('the usage refresh reads both Ollama endpoints with the upstream API key fo
     },
     async () => {
       const reading = await refreshOllamaUsageProbe('', config, directFetcher);
-      assertEquals(reading.observation.data, USAGE_BODY);
-      assertEquals(reading.balanceObservation.data, BALANCE_BODY);
-      assertEquals(reading.observation.fetchedAt, reading.balanceObservation.fetchedAt);
+      assertEquals(reading.data.usage, USAGE_BODY);
+      assertEquals(reading.data.balance, BALANCE_BODY);
     },
   );
   assertEquals(paths.toSorted(), ['/api/balance', '/api/usage']);
@@ -94,8 +77,8 @@ test.each(['/api/usage', '/api/balance'])('a failure of %s preserves both prior 
     () => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher),
   );
   const observed = repo.read();
-  assertEquals(observed.usageProbe?.observation?.data, USAGE_BODY);
-  assertEquals(observed.balanceProbe?.observation?.data, BALANCE_BODY);
+  assertEquals(observed.usageProbe?.observation?.data.usage, USAGE_BODY);
+  assertEquals(observed.usageProbe?.observation?.data.balance, BALANCE_BODY);
   assertEquals(repo.writes.length, 1);
 
   await withMockedFetch(
@@ -106,10 +89,7 @@ test.each(['/api/usage', '/api/balance'])('a failure of %s preserves both prior 
   );
   const after = repo.read();
   assertEquals(after.usageProbe?.observation, observed.usageProbe?.observation);
-  assertEquals(after.balanceProbe?.observation, observed.balanceProbe?.observation);
   assertEquals(after.usageProbe?.error, `Ollama ${failedPath} returned 401: invalid credentials`);
-  assertEquals(after.balanceProbe?.error, after.usageProbe?.error);
-  assertEquals(after.balanceProbe?.attemptedAt, after.usageProbe?.attemptedAt);
   assertEquals(repo.writes.length, 2);
 });
 

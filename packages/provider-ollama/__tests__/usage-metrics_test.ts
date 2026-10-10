@@ -1,25 +1,20 @@
 import { expect, test } from 'vitest';
 
+import { LEGACY_BALANCE, USAGE_TOTALS, accountUsage } from './usage-fixture.ts';
 import { ollamaUsageMetrics, resolveUsageMetricDisplayName } from '../src/usage-metrics.ts';
 
-test('Ollama balance and historical utilization share window keys and preserve distinct money gauges', () => {
-  const history = ollamaUsageMetrics({ limits: { session: { usage: 0.25 } }, activity: { cost: '3.50', period: { type: 'last_4_weeks' } } });
-  const balance = ollamaUsageMetrics({ included: { session: { remaining_percent: 75 } }, purchased: { balance_usd: 25 } });
-  expect(balance.get('["window","session"]')).toBe(history.get('["window","session"]'));
-  expect(balance.get('["balance","purchased"]')).toBe(25);
-  expect(history.get('["activity_cost","last_4_weeks"]')).toBe(3.5);
-  expect(resolveUsageMetricDisplayName('["balance","purchased"]')).toEqual({ name: 'purchased', unit: 'usd', windowMinutes: null });
-});
-
-test('Ollama credit plan gauges do not manufacture percentage windows', () => {
-  expect([...ollamaUsageMetrics({ included: { balance_usd: 72.5, allowance_usd: 100 }, purchased: { balance_usd: 0 } })]).toEqual([
-    ['["balance","included"]', 72.5], ['["balance","purchased"]', 0],
+test('credit balances and period consumption retain distinct money gauges', () => {
+  expect([...ollamaUsageMetrics(accountUsage())]).toEqual([
+    ['["balance","included"]', 18], ['["balance","purchased"]', 25], ['["activity_cost","7d"]', 3.25],
   ]);
 });
 
-test('Ollama current activity totals retain their self-contained range', () => {
-  const metrics = ollamaUsageMetrics({ range: '24h', totals: { request_count: 15, usage_usd: 0.01718 } });
-  expect([...metrics]).toEqual([['["activity_cost","24h"]', 0.01718]]);
-  expect(resolveUsageMetricDisplayName('["activity_cost","24h"]')).toEqual({ name: '24h', unit: 'usd', windowMinutes: null });
-  expect(ollamaUsageMetrics({ range: '7d', totals: { request_count: 15 } }).size).toBe(0);
+test('legacy plans retain percentage gauges and omit monetary usage when not supplied', () => {
+  expect([...ollamaUsageMetrics({ balance: LEGACY_BALANCE, usage: { ...USAGE_TOTALS, totals: { request_count: 15 } } })]).toEqual([
+    ['["window","session"]', 25], ['["window","weekly"]', 40], ['["balance","purchased"]', 25],
+  ]);
+});
+
+test('historical metric keys remain readable independently of the retired response format', () => {
+  expect(resolveUsageMetricDisplayName('["activity_cost","last_4_weeks"]')).toEqual({ name: 'cost_last_4_weeks', unit: 'usd', windowMinutes: null });
 });

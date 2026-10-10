@@ -15,3 +15,5 @@ export { isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts'
 export { fetchOllamaAccount, refreshOllamaAccount } from './account-probe.ts';
 
 export { ollamaUsageMetrics, resolveUsageMetricDisplayName } from './usage-metrics.ts';
+
+export { readOllamaAccountUsage, type OllamaAccountUsage, type OllamaUsageData } from './account-usage.ts';

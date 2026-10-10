@@ -3,8 +3,8 @@ import type { UpstreamRecord } from '../../api/types';
 import type { TFunction } from '../../i18n/translation';
 import { formatUsd } from '../../lib/decimal-display';
 import { shortDate } from '../../lib/format-time';
-import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
-import { ollamaUsageMetrics } from '@floway-dev/provider-ollama/browser';
+import { parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
+import type { OllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 
@@ -20,100 +20,16 @@ export const isOllamaCloudBaseUrl = (baseUrl: string): boolean => {
   }
 };
 
-// Legacy plan window names identify the allowance duration.
-// https://ollama.com/pricing
-const WINDOW_MINUTES = {
-  session: FIVE_HOUR_WINDOW_MINUTES,
-  weekly: SEVEN_DAY_WINDOW_MINUTES,
-} as const;
+// Legacy limits still have five-hour and weekly windows.
+// https://ollama.com/blog/transparent-pricing
+const WINDOW_MINUTES = { session: FIVE_HOUR_WINDOW_MINUTES, weekly: SEVEN_DAY_WINDOW_MINUTES } as const;
 
-export interface UsageWindow {
-  key: keyof typeof WINDOW_MINUTES;
-  minutes: number;
-  percent: number;
-}
+export const readWindows = (included: OllamaAccountUsage['included']) => included.kind === 'credits' ? [] : (['session', 'weekly'] as const).map(key => ({
+  key, minutes: WINDOW_MINUTES[key], percent: Math.round((100 - included[key].remainingPercent) * 10) / 10, resetsAt: included[key].resetsAt,
+}));
 
-const isRecordValue = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+export const activityCostHint = (activity: OllamaAccountUsage['activity'], t: TFunction, locale: string): string =>
+  t(activity.scope === 'self' ? 'dashboard.upstreams.signals.costRangeSelf' : 'dashboard.upstreams.signals.costRange', { from: shortDate(activity.from, locale), until: shortDate(activity.until, locale) });
 
-export const readWindows = (data: unknown): UsageWindow[] => {
-  if (!isRecordValue(data)) return [];
-  const metrics = ollamaUsageMetrics(data);
-  return (['session', 'weekly'] as const).flatMap(key => {
-    const percent = metrics.get(JSON.stringify(['window', key]));
-    return percent === undefined ? [] : [{ key, minutes: WINDOW_MINUTES[key], percent: Math.round(percent * 10) / 10 }];
-  });
-};
-
-// Upstream-reported USD value of requests for the supplied period, including
-// plan-covered usage; this is consumption rather than an extra cash bill.
-// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/openapi.yaml#L1028-L1030
-export interface ActivityCost {
-  amount: string;
-  period: string | null;
-  from?: string;
-  until?: string;
-  scope?: string;
-}
-
-export const readActivityCost = (data: unknown): ActivityCost | null => {
-  const activity = isRecordValue(data) ? data.activity : null;
-  if (!isRecordValue(activity) || typeof activity.cost !== 'string') {
-    if (!isRecordValue(data)) return null;
-    for (const [key, amount] of ollamaUsageMetrics(data)) {
-      const [kind, period] = JSON.parse(key) as [string, string];
-      if (kind === 'activity_cost') return {
-        amount: String(amount), period,
-        from: typeof data.from === 'string' ? data.from : undefined,
-        until: typeof data.until === 'string' ? data.until : undefined,
-        scope: typeof data.scope === 'string' ? data.scope : undefined,
-      };
-    }
-    return null;
-  }
-  const period = isRecordValue(activity.period) ? activity.period.type : null;
-  return {
-    amount: activity.cost, period: typeof period === 'string' ? period : null,
-    from: isRecordValue(activity.period) && typeof activity.period.starting_at === 'string' ? activity.period.starting_at : undefined,
-    until: isRecordValue(activity.period) && typeof activity.period.ending_at === 'string' ? activity.period.ending_at : undefined,
-  };
-};
-
-export const activityCostHint = (cost: ActivityCost, t: TFunction, locale: string): string =>
-  cost.from !== undefined && cost.until !== undefined
-    ? t(cost.scope === 'self' ? 'dashboard.upstreams.signals.costRangeSelf' : 'dashboard.upstreams.signals.costRange', { from: shortDate(cost.from, locale), until: shortDate(cost.until, locale) })
-    : t(cost.period === 'last_4_weeks' ? 'dashboard.upstreams.signals.costLast4Weeks' : 'dashboard.upstreams.signals.cost');
-
-// The figure reaches the dashboard on the same money ladder every other cost
-// does -- "0.00000" reads as "$0", a sub-cent charge keeps its digits. The
-// amount is upstream-owned text, so one Ollama does not write as a canonical
-// decimal is forwarded as it arrived rather than dropped.
-export const activityCostText = (cost: string): string => {
-  try {
-    return formatUsd(parseNonNegativeDecimalString(cost));
-  } catch {
-    return `$${cost}`;
-  }
-};
-
-// An account that has spent nothing still reports "0.00000". On the card that
-// zero is worth its line -- it is the difference between spending nothing and
-// reporting nothing -- but a row of live readings is scanned, and a figure that
-// says nothing happened earns none of that width. A charge the money ladder
-// cannot read is not zero, so it stays.
-export const isZeroActivityCost = (cost: string): boolean => {
-  try {
-    return decimalStringIsZero(parseNonNegativeDecimalString(cost));
-  } catch {
-    return false;
-  }
-};
-
-export const readBalances = (data: unknown): Array<{ key: 'included' | 'purchased'; amount: string }> => {
-  if (!isRecordValue(data)) return [];
-  const metrics = ollamaUsageMetrics(data);
-  return (['included', 'purchased'] as const).flatMap(key => {
-    const balance = metrics.get(JSON.stringify(['balance', key]));
-    return balance === undefined ? [] : [{ key, amount: String(balance) }];
-  });
-};
+export const activityCostText = (amount: number): string =>
+  `${amount < 0 ? '-' : ''}${formatUsd(parseNonNegativeDecimalString(String(Math.abs(amount))))}`;

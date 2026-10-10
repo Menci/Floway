@@ -1,5 +1,4 @@
-// Activity and balance are refreshed and committed together. Account identity
-// has its own cadence; both writers merge under saveState's CAS.
+import { readOllamaAccountUsage, type OllamaUsageData } from './account-usage.ts';
 
 // The probe's outcome, kept as three fields rather than one nullable snapshot
 // because the data-plane trigger needs all three:
@@ -25,7 +24,7 @@ export interface OllamaUsageProbeEntry {
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 export interface OllamaUsageObservation {
   fetchedAt: number;
-  data: unknown;
+  data: OllamaUsageData;
 }
 
 // The account behind the API key. It sits in its own slot rather than inside
@@ -44,13 +43,11 @@ export interface OllamaAccountEntry {
 
 export interface OllamaUpstreamState {
   usageProbe: OllamaUsageProbeEntry | null;
-  balanceProbe?: OllamaUsageProbeEntry;
   account: OllamaAccountEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof OllamaUpstreamState, true> = {
   usageProbe: true,
-  balanceProbe: true,
   account: true,
 };
 
@@ -94,11 +91,7 @@ const assertUnixMs = (value: unknown, where: string): void => {
 const assertOllamaUsageObservation = (value: unknown, where: string): void => {
   const obj = assertClosedObject(value, where, ALLOWED_OBSERVATION_KEYS_MAP);
   assertUnixMs(obj.fetchedAt, `${where}.fetchedAt`);
-  // The body's inner shape is upstream-owned; confirming it is a plain object
-  // is the whole contract the dashboard relies on.
-  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
-    throw new TypeError(`${where}.data must be a plain object`);
-  }
+  readOllamaAccountUsage(obj.data);
 };
 
 const assertOptionalString = (value: unknown, where: string): void => {
@@ -129,7 +122,6 @@ export function assertOllamaUpstreamState(value: unknown): asserts value is Olla
   if (obj.usageProbe !== null && obj.usageProbe !== undefined) {
     assertOllamaUsageProbeEntry(obj.usageProbe, 'OllamaUpstreamState.usageProbe');
   }
-  if (obj.balanceProbe !== undefined) assertOllamaUsageProbeEntry(obj.balanceProbe, 'OllamaUpstreamState.balanceProbe');
   if (obj.account !== null && obj.account !== undefined) {
     assertOllamaAccountEntry(obj.account, 'OllamaUpstreamState.account');
   }
@@ -146,7 +138,6 @@ export const readOllamaUpstreamState = (raw: unknown): OllamaUpstreamState => {
   const probe = raw.usageProbe;
   const account = raw.account;
   return {
-    ...(raw.balanceProbe === undefined ? {} : { balanceProbe: raw.balanceProbe }),
     usageProbe: probe
       ? { attemptedAt: probe.attemptedAt, observation: probe.observation ?? null, error: probe.error ?? null }
       : null,

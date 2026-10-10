@@ -467,8 +467,6 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Credits consumed by model requests.',
-          costLast4Weeks: 'Credits consumed by model requests over the past four weeks.',
           costRange: '{{from}} to {{until}}: credits consumed by model requests.',
           costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
         },
@@ -524,14 +522,6 @@ const en = {
         },
       },
       upstreamEditor: {
-        usageRefresh: {
-          title: 'Background usage refresh',
-          description: '0 or blank disables background refresh. No additional model usage is incurred.',
-          claudeCodeRequirement: 'Requires OAuth sign-in.',
-          ollamaRequirement: 'Requires “Fetch account usage” to be enabled.',
-          interval: 'Refresh interval (minutes)',
-          invalid: 'Enter a nonnegative whole number of minutes.',
-        },
         readyToSave: {
           title: 'Ready to save',
           description: 'Save this {{provider}} upstream to load its model catalog.',
@@ -1001,10 +991,20 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        usageRefresh: {
+          title: 'Background usage refresh',
+          description: '0 or blank disables background refresh. No additional model usage is incurred.',
+          claudeCodeRequirement: 'Requires OAuth sign-in.',
+          ollamaRequirement: 'Requires “Fetch account usage” to be enabled.',
+          interval: 'Refresh interval (minutes)',
+          invalid: 'Enter a nonnegative whole number of minutes.',
+        },
         ollama: {
           cloudUsage: 'Fetch account usage',
-          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',
           usage: {
+            allowance: 'Period plan credits {{amount}}',
+            resets: 'Resets {{time}}',
             balance: { included: 'Included balance', purchased: 'Purchased balance' },
             balanceHint: {
               included: 'Remaining plan credits. Reset monthly and used first for model requests.',
@@ -1023,7 +1023,6 @@ const en = {
             },
             observed: 'Observed {{time}}',
             empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
-            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
             backgroundFailed: 'The last background refresh failed: {{message}}',
           },
         },

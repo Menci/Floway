@@ -3,6 +3,7 @@
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 
+import { readOllamaAccountUsage } from './account-usage.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
@@ -33,29 +34,19 @@ const readOllamaObservation = async (response: Response, path: string): Promise<
   return parsed as Record<string, unknown>;
 };
 
-interface OllamaUsageReading {
-  observation: OllamaUsageObservation;
-  balanceObservation: OllamaUsageObservation;
-}
-
-// Commit the pair under one CAS. A failed read preserves both prior readings,
-// and a slower attempt cannot replace a newer pair.
-const persistUsageReading = async (upstreamId: string, attemptedAt: number, reading: OllamaUsageReading | null, error: string | null): Promise<void> => {
+// A single outcome commits both upstream bodies. Failed reads retain the last
+// successful pair, and older attempts cannot replace a newer observation.
+const persistUsageReading = async (upstreamId: string, attemptedAt: number, observation: OllamaUsageObservation | null, error: string | null): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
-    if ((state.usageProbe && state.usageProbe.attemptedAt > attemptedAt)
-      || (state.balanceProbe && state.balanceProbe.attemptedAt > attemptedAt)) return current;
-    return {
-      ...state,
-      usageProbe: { attemptedAt, observation: reading?.observation ?? state.usageProbe?.observation ?? null, error },
-      balanceProbe: { attemptedAt, observation: reading?.balanceObservation ?? state.balanceProbe?.observation ?? null, error },
-    } satisfies OllamaUpstreamState;
+    if (state.usageProbe && state.usageProbe.attemptedAt > attemptedAt) return current;
+    return { ...state, usageProbe: { attemptedAt, observation: observation ?? state.usageProbe?.observation ?? null, error } } satisfies OllamaUpstreamState;
   });
 };
 
-export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageReading> => {
+export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> => {
   const attemptedAt = Date.now();
-  let reading: OllamaUsageReading;
+  let observation: OllamaUsageObservation;
   try {
     const init = { method: 'GET', headers: new Headers({ accept: 'application/json' }) };
     const options = { fetcher, wrapUpstreamCall: identityWrapUpstreamCall };
@@ -63,8 +54,9 @@ export const refreshOllamaUsageProbe = async (upstreamId: string, config: Ollama
       ollamaFetchUsage(config, init, options).then(response => readOllamaObservation(response, '/api/usage')),
       ollamaFetchBalance(config, init, options).then(response => readOllamaObservation(response, '/api/balance')),
     ]);
-    const fetchedAt = Date.now();
-    reading = { observation: { fetchedAt, data: usage }, balanceObservation: { fetchedAt, data: balance } };
+    const data = { usage, balance };
+    readOllamaAccountUsage(data);
+    observation = { fetchedAt: Date.now(), data };
   } catch (error) {
     if (upstreamId !== '') {
       try {
@@ -75,8 +67,8 @@ export const refreshOllamaUsageProbe = async (upstreamId: string, config: Ollama
     }
     throw error;
   }
-  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, reading, null);
-  return reading;
+  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, observation, null);
+  return observation;
 };
 
 const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
@@ -105,10 +97,7 @@ export const runOllamaScheduledTask = async (record: UpstreamRecord, options: Pr
   const { config } = assertOllamaUpstreamRecord(record);
   if (!isOllamaUsageEnabled(config)) return;
   const state = readOllamaUpstreamState(record.state);
-  const usage = state.usageProbe?.observation;
-  const balance = state.balanceProbe?.observation;
-  const observedAt = usage && balance ? Math.min(usage.fetchedAt, balance.fetchedAt) : null;
-  await runScheduledUsageRefresh(record, options, observedAt, async (fresh, fetcher) => {
+  await runScheduledUsageRefresh(record, options, state.usageProbe?.observation?.fetchedAt ?? null, async (fresh, fetcher) => {
     await refreshOllamaUsageProbe(fresh.id, config, fetcher);
   });
 };
