@@ -171,3 +171,19 @@ test('ChatCompletions emits each Responses reasoning carrier before the next ups
   const lastCarrier = output.findLastIndex(frame => frame.event?.choices?.[0]?.delta.reasoning_items !== undefined);
   expect(lastCarrier).toBeLessThan(finish);
 });
+
+test('Messages publishes cumulative usage progress before pulling the rest of the generation', async () => {
+  const initial = chat({ role: 'assistant' });
+  initial.event.usage = { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 };
+  const first = chat({ content: 'A' });
+  first.event.usage = { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 };
+  const last = chat({ content: 'B' }, 'stop');
+  last.event.usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
+  const output = await gated([initial, first], [last, doneFrame()], frames => anthropicMessagesFromIR(irFromOpenAIChatCompletions(frames)), prefix => {
+    expect(prefix).toContainEqual(expect.objectContaining({ event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'A' } } }));
+    expect(prefix.some(frame => frame.event?.type === 'message_delta' && frame.event.delta.stop_reason === null && frame.event.usage.output_tokens === 1)).toBe(true);
+    expect(prefix.some(frame => frame.event?.delta?.stop_reason === 'end_turn')).toBe(false);
+  });
+  const final = output.findLast(frame => frame.event?.type === 'message_delta');
+  expect(final).toMatchObject({ event: { delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 10, output_tokens: 2 } } });
+});
