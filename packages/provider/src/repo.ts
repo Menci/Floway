@@ -29,6 +29,7 @@ export class UpstreamGoneError extends Error {
 }
 
 export interface ProviderRepo {
+  recordUpstreamUsageMetric(upstreamId: string, key: string, value: number, timestamp: number): Promise<void>;
   upstreams: UpstreamsRepoSlim;
 }
 

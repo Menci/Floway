@@ -28,7 +28,7 @@ export interface OllamaUsageProbeEntry {
 // walk the keys it knows. `fetchedAt` is unix ms.
 export interface OllamaUsageObservation {
   fetchedAt: number;
-  data: unknown;
+  data: Record<string, unknown>;
 }
 
 // The account behind the API key. It sits in its own slot rather than inside

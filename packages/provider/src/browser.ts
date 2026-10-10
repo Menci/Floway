@@ -38,3 +38,5 @@ export {
 export type * from './model-prefix.ts';
 
 export { MODEL_PREFIX_REGEX, MODEL_PREFIX_MAX_LENGTH, normalizeModelPrefix } from './model-prefix.ts';
+
+export type { UsageMetricDisplay, UsageMetricUnit } from './usage-metrics.ts';

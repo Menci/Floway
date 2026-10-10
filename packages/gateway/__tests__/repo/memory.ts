@@ -1482,6 +1482,23 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
 }
 
 export class InMemoryRepo implements Repo {
+  private upstreamUsageRecords: import('../../src/repo/types.ts').UpstreamUsageMetricRecord[] = [];
+  upstreamUsageMetrics: import('../../src/repo/types.ts').UpstreamUsageMetricsRepo = {
+    listAll: async () => this.upstreamUsageRecords.toSorted((a, b) => a.timestamp - b.timestamp || a.upstreamId.localeCompare(b.upstreamId) || a.key.localeCompare(b.key)),
+    set: async record => {
+      this.upstreamUsageRecords = this.upstreamUsageRecords.filter(row => row.upstreamId !== record.upstreamId || row.key !== record.key || Math.floor(row.timestamp / 60_000) !== Math.floor(record.timestamp / 60_000));
+      this.upstreamUsageRecords.push({ ...record });
+    },
+    deleteAll: async () => { this.upstreamUsageRecords = []; },
+    record: async record => {
+      const latest = this.upstreamUsageRecords.filter(row => row.upstreamId === record.upstreamId && row.key === record.key).toSorted((a, b) => a.timestamp - b.timestamp).at(-1);
+      if (latest !== undefined && (latest.timestamp > record.timestamp || latest.value === record.value)) return;
+      await this.upstreamUsageMetrics.set(record);
+    },
+    query: async (start, end) => this.upstreamUsageRecords.filter(record => record.timestamp < end && (
+      record.timestamp >= start || !this.upstreamUsageRecords.some(next => next.upstreamId === record.upstreamId && next.key === record.key && next.timestamp > record.timestamp && next.timestamp < start)
+    )).toSorted((a, b) => a.timestamp - b.timestamp),
+  };
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;

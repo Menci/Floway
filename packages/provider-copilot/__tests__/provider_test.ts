@@ -88,6 +88,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
     upstream = { ...upstream, state: next };
   };
   initProviderRepo(() => ({
+    recordUpstreamUsageMetric: async () => {},
     upstreams: {
       getById: () => getByIdImpl(),
       saveState: (id, mutate) => saveStateImpl(id, mutate),

@@ -48,3 +48,7 @@ describe('fetchClaudeCodeUsageProbe', () => {
     await expect(fetchClaudeCodeUsageProbe('at_test', fetcher)).rejects.toThrow(/non-JSON/);
   });
 });
+
+test('rejects array usage bodies at the upstream parsing boundary', async () => {
+  await expect(fetchClaudeCodeUsageProbe('at_test', async () => jsonResponse([]))).rejects.toThrow('non-object body');
+});

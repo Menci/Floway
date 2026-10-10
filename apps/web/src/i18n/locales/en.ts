@@ -90,6 +90,7 @@ const en = {
         apiKeys: 'API Keys',
         apiDocs: 'API Docs',
         requests: 'Requests',
+        upstreamUsage: 'Upstream Usage',
         usage: 'Usage',
         performance: 'Performance',
         users: 'Users',
@@ -115,6 +116,7 @@ const en = {
             'Inspect request records, status, routing results, and error details',
         usage:
             'Track token usage and traffic volume across users, keys, models, and upstreams',
+        upstreamUsage: 'Track subscription and account usage reported by upstreams',
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
@@ -1161,6 +1163,23 @@ const en = {
           cacheCreation: 'Cache Write',
         },
       },
+      upstreamUsage: {
+        refresh: 'Refresh upstream usage',
+        empty: 'No upstream usage observations in this range',
+        value: 'Value',
+        selection: { upstream: 'Upstream', metric: 'Metric' },
+        groupBy: { upstream: 'Upstream', metric: 'Metric' },
+        windows: { minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },
+        metrics: {
+          window: '{{name}} {{window}}',
+          fiveHour: '5-hour window', sevenDay: '7-day window',
+          sevenDaySonnet: '7-day Sonnet window', sevenDayOpus: '7-day Opus window',
+          overage: 'Overage',
+          extraUsage: 'Extra usage', premiumInteractions: 'Premium interactions',
+          chat: 'Chat', completions: 'Completions', session: 'Session',
+          pastMonth: 'Past month', pastMonthCost: 'Past month cost', credits: 'Credit balance',
+        },
+      },
       performance: {
         empty: 'No performance records in this range',
         actions: { refresh: 'Refresh performance' },
@@ -1246,6 +1265,8 @@ const en = {
             usage_other: '{{count, number}} usage records',
             searchUsage_one: '{{count, number}} search-usage record',
             searchUsage_other: '{{count, number}} search-usage records',
+            upstreamUsage_one: '{{count, number}} upstream-usage observation',
+            upstreamUsage_other: '{{count, number}} upstream-usage observations',
             performance_one: '{{count, number}} performance record',
             performance_other: '{{count, number}} performance records',
           },
@@ -1260,6 +1281,7 @@ const en = {
             proxies: 'Proxies',
             usage: 'Usage Records',
             searchUsage: 'Search Usage',
+            upstreamUsage: 'Upstream Usage',
             performance: 'Performance',
           },
         },

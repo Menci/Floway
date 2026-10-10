@@ -33,6 +33,8 @@
 import { type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchUsage } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
+import { ollamaUsageMetrics } from './usage-metrics.ts';
+import { recordUpstreamUsageMetrics } from '@floway-dev/provider';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // Reading the windows takes two things the operator states: that this upstream
@@ -71,7 +73,7 @@ export const fetchOllamaUsageProbe = async (
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`Ollama /api/usage returned a non-object body (${response.status})`);
   }
-  return { fetchedAt: Date.now(), data: parsed };
+  return { fetchedAt: Date.now(), data: parsed as Record<string, unknown> };
 };
 
 // The entry is written under saveState's read-modify-CAS, and the mutator is
@@ -81,9 +83,12 @@ export const fetchOllamaUsageProbe = async (
 // rollback — the clock is coarser than the two attempts, and the later arrival
 // is no staler — so only a strictly newer stored attempt wins.
 const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntry): Promise<void> => {
+  let accepted = false;
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    accepted = false;
     const state = readOllamaUpstreamState(current);
     if (state.usageProbe && state.usageProbe.attemptedAt > entry.attemptedAt) return current;
+    accepted = true;
     return {
       ...state,
       usageProbe: {
@@ -95,6 +100,7 @@ const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntr
       },
     } satisfies OllamaUpstreamState;
   });
+  if (accepted && entry.observation !== null) await recordUpstreamUsageMetrics(upstreamId, ollamaUsageMetrics(entry.observation.data), entry.observation.fetchedAt);
 };
 
 // Runs the probe and records its outcome. Used directly by the operator's

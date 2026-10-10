@@ -50,7 +50,9 @@ const USAGE_BODY = {
 // Installs a repo whose single row starts from `state` and records every write.
 const withStateRepo = (state: unknown = null) => {
   let current = state;
+  const metrics: Array<{ key: string; value: number; timestamp: number }> = [];
   initProviderRepo(() => ({
+    recordUpstreamUsageMetric: async (_upstreamId, key, value, timestamp) => { metrics.push({ key, value, timestamp }); },
     upstreams: {
       getById: async () => ({ ...cloudRecord(), state: current }),
       saveState: async (_id, mutate) => {
@@ -58,7 +60,7 @@ const withStateRepo = (state: unknown = null) => {
       },
     },
   }));
-  return { read: () => readOllamaUpstreamState(current) };
+  return { read: () => readOllamaUpstreamState(current), metrics };
 };
 
 test('the usage probe reads ollama.com with the upstream API key', async () => {
@@ -87,6 +89,12 @@ test('a probe failure keeps the last reading and records the error', async () =>
   );
   const observed = repo.read().usageProbe?.observation;
   assertEquals(observed?.data, USAGE_BODY);
+  assertEquals(repo.metrics.map(({ key, value }) => [key, value]), [
+    [JSON.stringify(['window', 'session']), 4.6],
+    [JSON.stringify(['window', 'weekly']), 5.1],
+    [JSON.stringify(['activity_cost', 'last_4_weeks']), 0],
+  ]);
+  assertEquals(repo.metrics.every(metric => metric.timestamp === observed?.fetchedAt), true);
 
   await withMockedFetch(
     () => new Response('{"error":"invalid credentials"}', { status: 401 }),
@@ -96,6 +104,7 @@ test('a probe failure keeps the last reading and records the error', async () =>
   );
   const after = repo.read().usageProbe;
   assertEquals(after?.observation, observed);
+  assertEquals(repo.metrics.length, 3);
   assertEquals(after?.error, 'Ollama /api/usage returned 401: {"error":"invalid credentials"}');
 });
 

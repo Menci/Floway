@@ -25,7 +25,7 @@ export function TelemetryGroupByField<Key extends string>({
   onGroupByChange,
 }: {
   disabled: boolean;
-  dimensions: readonly TelemetryDimension<Key>[];
+  dimensions: readonly Pick<TelemetryDimension<Key>, 'key' | 'groupLabel'>[];
   groupBy: Key;
   groupByAdornment?: ReactNode;
   groupByLabel: string;

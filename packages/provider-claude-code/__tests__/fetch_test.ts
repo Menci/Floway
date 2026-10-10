@@ -92,6 +92,7 @@ beforeEach(() => {
   vi.useRealTimers();
   seedAccount();
   initProviderRepo(() => ({
+    recordUpstreamUsageMetric: async () => {},
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, mutate) => {

@@ -25,10 +25,7 @@ import type { Fetcher } from '@floway-dev/provider';
 export interface ClaudeCodeUsageProbeResult {
   // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
   fetched_at: string;
-  // The upstream's body verbatim. We surface as `unknown` because the
-  // shape evolves with the CLI version; the dashboard renders by walking
-  // the known field names and ignores anything it doesn't understand.
-  body: unknown;
+  body: Record<string, unknown>;
 }
 
 export const fetchClaudeCodeUsageProbe = async (
@@ -64,10 +61,10 @@ export const fetchClaudeCodeUsageProbe = async (
       { cause: cause as Error },
     );
   }
-  if (typeof parsed !== 'object' || parsed === null) {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(
       `Claude Code /api/oauth/usage returned a non-object body (${response.status})`,
     );
   }
-  return { fetched_at: new Date().toISOString(), body: parsed };
+  return { fetched_at: new Date().toISOString(), body: parsed as Record<string, unknown> };
 };

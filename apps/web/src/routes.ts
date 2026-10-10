@@ -51,6 +51,7 @@ export default [
     route('services/api-keys', 'routes/dashboard-services-api-keys.tsx'),
     route('services/api-docs', 'routes/dashboard-services-api-docs.tsx'),
     route('monitor/requests', 'routes/dashboard-monitor-requests.tsx'),
+    route('monitor/upstream-usage', 'routes/dashboard-monitor-upstream-usage.tsx'),
     route('monitor/usage', 'routes/dashboard-monitor-usage.tsx'),
     route('monitor/performance', 'routes/dashboard-monitor-performance.tsx'),
     route('admin/users', 'routes/dashboard-admin-users.tsx'),

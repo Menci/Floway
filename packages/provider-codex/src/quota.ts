@@ -1,6 +1,7 @@
 import { isUnsafeObjectKey } from './auth/guards.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexQuotaSnapshot, type CodexQuotaSnapshotMap } from './state.ts';
-import { getProviderRepo } from '@floway-dev/provider';
+import { codexUsageMetrics } from './usage-metrics.ts';
+import { recordUpstreamUsageMetrics, getProviderRepo } from '@floway-dev/provider';
 
 export const CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT = 'unknown';
 
@@ -147,9 +148,7 @@ export const putCodexQuota = async (
   accountId: string | null,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
-  // Stamped before the write so a replay against a winning sibling produces
-  // the same document rather than a later `fetchedAt`.
-  const fetchedAt = Date.now();
+  const fetchedAt = Date.parse(snapshot.observed_at);
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readCodexUpstreamState(current);
     const idx = findCodexAccountIndex(state, accountId);
@@ -159,6 +158,7 @@ export const putCodexQuota = async (
       quotaSnapshot: { ...account.quotaSnapshot ?? {}, [codexQuotaActiveLimitKey(snapshot)]: { fetchedAt, data: snapshot } },
     }));
   });
+  await recordUpstreamUsageMetrics(upstreamId, codexUsageMetrics(snapshot), fetchedAt);
 };
 
 // A successful earned reset invalidates every locally observed window. Do not
