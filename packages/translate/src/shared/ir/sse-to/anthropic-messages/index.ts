@@ -60,7 +60,7 @@ export const anthropicMessagesFromIR = async function* (frames: AsyncIterable<IR
     sourceIds = state.extensions?.openaiResponses?.item_ids as IRWire ?? {};
     const tier = irServiceTier(state);
     const usage = { ...usageFromIR(state.usage ?? {}, 'anthropicMessages'), ...((state.extensions?.anthropicMessages as IRWire | undefined)?.usage ?? {}), ...(tier === undefined ? {} : tier === 'fast' ? { speed: 'fast' } : { service_tier: tier }) };
-    if (!messageStarted && (state.choices.some(choice => choice.items.length > 0) || state.usage?.input_tokens_inclusive !== undefined || record.type === 'choice_end' || record.type === 'finish')) {
+    if (!messageStarted && (record.type === 'start' || state.choices.some(choice => choice.items.length > 0) || state.usage?.input_tokens_inclusive !== undefined || record.type === 'choice_end' || record.type === 'finish')) {
       yield emit({ type: 'message_start', message: { id: metadata.id, type: 'message', role: 'assistant', model: metadata.model, content: [], stop_reason: null, stop_sequence: null, stop_details: null, container: null, usage } });
       messageStarted = true;
     }

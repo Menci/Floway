@@ -465,3 +465,24 @@ test('POST /v1/chat/completions leaves TTFT absent on a failure before output', 
   const meta = dumpStubs.stored[0]!.record.meta;
   assertEquals(meta.ttftMs, null);
 });
+
+test.each([undefined, false, true])('continuous usage honors original include_usage=%s through upstream normalization and affinity egress', async include_usage => {
+  for (const continuous_usage_stats of [undefined, false, true]) {
+    installRepo();
+    const events = makeOpenAIChatCompletionsEvents().map(event => event.choices.length === 0 ? event : { ...event, usage: { prompt_tokens: 4, completion_tokens: event.choices[0].finish_reason ? 2 : 0, total_tokens: event.choices[0].finish_reason ? 6 : 4 } });
+    const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({ ok: true, events: makeProtocolFrames(events), modelKey: 'k', headers: new Headers() }));
+    queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+    const response = await makeApp().request('/v1/chat/completions', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }], stream_options: { include_usage, continuous_usage_stats } }),
+    });
+    const chunks = (await response.text()).split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)) as OpenAIChatCompletionsStreamEvent);
+    assert(chunks.every(chunk => Array.isArray(chunk.choices)));
+    const body = chunks.filter(chunk => chunk.choices.length > 0);
+    assert(body.length >= 3);
+    for (const chunk of body) assertEquals(Object.hasOwn(chunk, 'usage'), include_usage === true && continuous_usage_stats === true);
+    assertEquals(chunks.filter(chunk => chunk.choices.length === 0).length, include_usage === true ? 1 : 0);
+    if (include_usage === true) assertEquals(chunks.at(-1)?.usage, { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 });
+    await flushBackground();
+  }
+});

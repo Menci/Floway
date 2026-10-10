@@ -49,6 +49,10 @@ export interface OpenAIChatCompletionsStreamOptionsEx extends OpenAIChatCompleti
   continuous_usage_stats?: boolean;
 }
 
+export interface OpenAIChatCompletionsPayloadEx extends OpenAIChatCompletionsPayload {
+  stream_options?: OpenAIChatCompletionsStreamOptionsEx | null;
+}
+
 export interface OpenAIChatCompletionsFunctionDefinition { name: string; description?: string; parameters?: Record<string, unknown>; strict?: boolean | null }
 export interface OpenAIChatCompletionsFunctionTool { type: 'function'; function: OpenAIChatCompletionsFunctionDefinition }
 export interface OpenAIChatCompletionsCustomTool { type: 'custom'; custom: { name: string; description?: string; format?: { type: 'text' } | { type: 'grammar'; grammar: { definition: string; syntax: 'lark' | 'regex' | (string & {}) } } } }

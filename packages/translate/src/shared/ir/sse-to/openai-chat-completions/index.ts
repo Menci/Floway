@@ -16,7 +16,9 @@ const irChatError = (error: IRJSONObject): IRJSONObject => ({
   ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
 });
 
-export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IROutputOptions = {}): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+export interface IRChatCompletionsOutputOptions extends IROutputOptions { continuousUsageStats?: boolean }
+
+export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IRChatCompletionsOutputOptions = {}): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const projection = createIRProjection();
@@ -30,12 +32,16 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   const opaqueChoices = new Set<number>();
   const startedChoices = new Set<number>();
   let extension: IRWire = {};
-  const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => eventFrame({ ...extension, id: metadata.id, object: 'chat.completion.chunk', model: metadata.model, created: metadata.created, choices, ...fields } as OpenAIChatCompletionsStreamEvent);
+  let usage: IRWire | undefined;
+  // Continuous usage is cumulative metadata on emitted choice chunks, not an extra progress event.
+  // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/chat_completion/serving.py#L798-L871
+  const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => eventFrame({ ...extension, id: metadata.id, object: 'chat.completion.chunk', model: metadata.model, created: metadata.created, choices, ...(options.continuousUsageStats && choices.length > 0 ? { usage: usage ?? null } : {}), ...fields } as OpenAIChatCompletionsStreamEvent);
   const deltaFrame = (choice: number, delta: IRWire): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => chunk([{ index: choice, delta, finish_reason: null }]);
   for await (const { state, record } of consumeIRRecords(frames)) {
     textStream.update(state);
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); started = true; }
     if (!started && record.type !== 'error') continue;
+    usage = state.usage === undefined ? undefined : usageFromIR(state.usage, 'openaiChatCompletions');
     metadata.model = irServingModel(state, metadata.model);
     if (record.type === 'item_end') completedItems.add(`${record.choice}/${record.item}`);
     extension = { ...state.extensions?.openaiChatCompletions };
@@ -49,7 +55,6 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
     }
     if (record.type === 'start' || record.type === 'operation' || record.type === 'part_end' || record.type === 'item_end' || record.type === 'choice_end' || record.type === 'finish') {
       for (let choice = 0; choice < state.choices.length; choice++) {
-        if (state.choices[choice].items.length === 0 && state.usage === undefined && record.type !== 'choice_end' && record.type !== 'finish') continue;
         if (!startedChoices.has(choice)) { yield deltaFrame(choice, { role: 'assistant', content: '' }); startedChoices.add(choice); }
         for (let index = 0; index < state.choices[choice].items.length; index++) {
           const item = state.choices[choice].items[index];

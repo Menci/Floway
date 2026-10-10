@@ -10,8 +10,8 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsStreamOptionsEx } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -20,7 +20,7 @@ export const respondOpenAIChatCompletions = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> | PlainResult,
   wantsStream: boolean,
-  includeUsageChunk: boolean,
+  streamOptions: OpenAIChatCompletionsStreamOptionsEx,
   ctx: GatewayCtx,
 ): Promise<Response> => {
   if (result.type === 'api-error') {
@@ -44,7 +44,7 @@ export const respondOpenAIChatCompletions = async (
 
   const state = new SourceStreamState();
   const observed = observeOpenAIChatCompletionsFrames(result.events, state, ctx);
-  const frames = wrapOpenAIChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
+  const frames = wrapOpenAIChatCompletionsAffinityEgress(observed, { ...affinityEgressOptions(ctx), continuousUsageStats: streamOptions.include_usage === true && streamOptions.continuous_usage_stats === true });
 
   if (!wantsStream) {
     try {
@@ -65,7 +65,7 @@ export const respondOpenAIChatCompletions = async (
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
-      completion = await writeSSEFrames(stream, openaiChatCompletionsSseFrames(frames, includeUsageChunk, state, ctx), {
+      completion = await writeSSEFrames(stream, openaiChatCompletionsSseFrames(frames, streamOptions, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
@@ -112,11 +112,23 @@ const observeOpenAIChatCompletionsFrames = async function* (frames: AsyncIterabl
   state.completed = true;
 };
 
-const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {
+const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, streamOptions: OpenAIChatCompletionsStreamOptionsEx, state: SourceStreamState, ctx: GatewayCtx) {
+  const options = { includeUsageChunk: streamOptions.include_usage === true, continuousUsageStats: streamOptions.include_usage === true && streamOptions.continuous_usage_stats === true };
+  let pendingUsage: ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined;
   try {
     for await (const frame of frames) {
-      const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
+      if (frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) { pendingUsage = frame; continue; }
+      if (frame.type === 'done' && pendingUsage !== undefined) {
+        const usage = openaiChatCompletionsProtocolFrameToSSEFrame(pendingUsage, options);
+        if (usage) yield usage;
+        pendingUsage = undefined;
+      }
+      const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, options);
       if (sse) yield sse;
+    }
+    if (!state.failed && pendingUsage !== undefined) {
+      const usage = openaiChatCompletionsProtocolFrameToSSEFrame(pendingUsage, options);
+      if (usage) yield usage;
     }
   } catch (error) {
     state.failed = true;
