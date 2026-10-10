@@ -1,11 +1,11 @@
 
-import { irRangeToCodePoints } from '../../shared/coordinates.ts';
 import type { IRItem } from '../../ir.ts';
+import { irRangeToCodePoints } from '../../shared/coordinates.ts';
 import { cloneIRJSON } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
 import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
-import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomOpenAIResponsesItemId, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
