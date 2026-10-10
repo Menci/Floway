@@ -13,7 +13,7 @@ export interface OllamaAccountUsage {
     | { kind: 'credits'; balanceUsd: number; allowanceUsd: number; from: string; until: string }
     | { kind: 'legacy'; session: OllamaUsageWindow; weekly: OllamaUsageWindow };
   purchasedBalanceUsd: number;
-  activity: { range: string; scope: string; from: string; until: string; requestCount: number; usageUsd: number | null };
+  activity: { range: string; scope: string; from: string; until: string; usageUsd: number | null };
 }
 
 const object = (value: unknown, path: string): Record<string, unknown> => {
@@ -74,7 +74,7 @@ export const readOllamaAccountUsage = (value: unknown): OllamaAccountUsage => {
     included: allowance, purchasedBalanceUsd: number(purchased.balance_usd, 'Ollama balance.purchased.balance_usd'),
     activity: {
       range: string(usage.range, 'Ollama usage.range'), scope: string(usage.scope, 'Ollama usage.scope'),
-      from: timestamp(usage.from, 'Ollama usage.from'), until: timestamp(usage.until, 'Ollama usage.until'), requestCount,
+      from: timestamp(usage.from, 'Ollama usage.from'), until: timestamp(usage.until, 'Ollama usage.until'),
       // Legacy requests omit monetary totals; absence is not a zero reading.
       // https://github.com/ollama/ollama/blob/f864601538bd283dbcd011244db99e2760b125c1/docs/api/cloud-usage.mdx#L95-L99
       usageUsd: totals.usage_usd === undefined ? null : number(totals.usage_usd, 'Ollama usage.totals.usage_usd'),

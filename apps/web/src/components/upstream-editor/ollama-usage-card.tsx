@@ -60,7 +60,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       {account?.plan && <StatusBadge tone="accent" className="capitalize">{account.plan}</StatusBadge>}
     </div>}
 
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.ollama.usage.title')} description={usage === null ? undefined : t(`dashboard.upstreamEditor.ollama.usage.billing.${usage.included.kind}`)} actions={
+    <SectionHeader level={3} title={t('dashboard.upstreamEditor.ollama.usage.title')} actions={
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
@@ -74,7 +74,6 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
         <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.included')}>{t('dashboard.upstreamEditor.ollama.usage.balance.included')}</InfoLabel>
         <Text>{activityCostText(usage.included.balanceUsd)}</Text>
       </div>
-      {usage.included.allowanceUsd > 0 && <ProgressBar color={quotaBarColor(100 * (1 - usage.included.balanceUsd / usage.included.allowanceUsd))} max={100} thickness="large" value={clampPercent(100 * usage.included.balanceUsd / usage.included.allowanceUsd) ?? undefined} />}
       <div className="flex flex-wrap justify-between gap-x-3">
         <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
         <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
@@ -98,11 +97,8 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>}
 
     {usage !== null && observation !== null && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      <div className="inline-flex flex-wrap gap-x-3">
-        {usage.activity.usageUsd !== null && <Tooltip content={activityCostHint(usage.activity, t, locale)} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(usage.activity.usageUsd)}</Text></Tooltip>}
-        <Tooltip content={t('dashboard.upstreamEditor.ollama.usage.requestsHint', { from: dateTime(usage.activity.from, locale), until: dateTime(usage.activity.until, locale) })} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.requests', { count: usage.activity.requestCount })}</Text></Tooltip>
-      </div>
-      <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>
+      {usage.activity.usageUsd !== null && <Tooltip content={activityCostHint(usage.activity, t, locale)} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(usage.activity.usageUsd)}</Text></Tooltip>}
+      <Text size={200} className="text-fui-fg3 ml-auto">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>
     </div>}
 
     {!observation && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.empty')}</Text>}

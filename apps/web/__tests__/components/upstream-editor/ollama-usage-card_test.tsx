@@ -51,7 +51,7 @@ test.each(['credits', 'legacy'] as const)('the same Pro tier renders its %s bill
     },
   }) as Extract<UpstreamRecord, { kind: 'ollama' }>;
   renderInApp(<OllamaUsageCard record={record} probeRecord={{ ...record }} />);
-  expect(screen.getByText(i18n.t(`dashboard.upstreamEditor.ollama.usage.billing.${kind}`))).toBeTruthy();
+  expect(screen.queryAllByRole('progressbar')).toHaveLength(kind === 'credits' ? 0 : 2);
   if (kind === 'credits') {
     expect(screen.getByText('$18.00')).toBeTruthy();
     expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.ollama.usage.window.session'))).toBeNull();

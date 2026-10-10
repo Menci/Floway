@@ -950,11 +950,8 @@ const zhHansCN = {
           cloudUsage: '获取账号用量',
           cloudUsageHint: '在模型请求后更新账号余额和期间用量。需要配置 Ollama Cloud API Key。',
           usage: {
-            billing: { credits: '月度额度', legacy: '5 小时与每周限额' },
-            allowance: '本期额度 {{amount}}',
+            allowance: '本期订阅额度 {{amount}}',
             resets: '{{time}} 重置',
-            requests: '{{count, number}} 次请求',
-            requestsHint: '{{from}} 至 {{until}}，统计期间的模型请求次数。',
             balance: { included: '订阅余额', purchased: '购买余额' },
             balanceHint: {
               included: '套餐剩余额度，每月重置；使用模型时优先扣减。',
