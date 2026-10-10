@@ -69,6 +69,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
     },
     bucketForHour: createTelemetryBucket({
       bucket,
+      start,
       timeZone: params.value.timeZone,
       timezoneOffsetMinutes,
     }),

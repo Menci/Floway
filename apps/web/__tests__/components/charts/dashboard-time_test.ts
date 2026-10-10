@@ -26,12 +26,56 @@ test('custom aggregation adapts to inclusive calendar-day density', () => {
   vi.stubEnv('TZ', 'UTC');
   const range = (days: number) => ({ start: '2026-01-01', end: calendarDate(new Date(2026, 0, days)) });
   expect(dashboardGranularity(range(1), 0)).toBe('hour');
+  expect(dashboardGranularity(range(3), 0)).toBe('2h');
   expect(dashboardGranularity(range(7), 0)).toBe('4h');
+  expect(dashboardGranularity(range(9), 0)).toBe('6h');
   expect(dashboardGranularity(range(14), 0)).toBe('8h');
+  expect(dashboardGranularity(range(17), 0)).toBe('12h');
   expect(dashboardGranularity(range(30), 0)).toBe('day');
-  expect(dashboardGranularity(range(180), 0)).toBe('week');
-  expect(dashboardGranularity(range(365), 0)).toBe('month');
-  for (const days of [1, 7, 14, 30, 180, 365]) expect(dashboardBucketFrames(range(days), 0).length).toBeLessThanOrEqual(48);
+  expect(dashboardGranularity(range(49), 0)).toBe('2d');
+  expect(dashboardGranularity(range(96), 0)).toBe('2d');
+  expect(dashboardGranularity(range(97), 0)).toBe('3d');
+  expect(dashboardGranularity(range(180), 0)).toBe('4d');
+  expect(dashboardGranularity(range(365), 0)).toBe('8d');
+  for (const days of [1, 2, 3, 4, 5, 8, 9, 12, 13, 16, 17, 24, 25, 48, 49, 96, 97, 180, 365, 20_000]) expect(dashboardBucketFrames(range(days), 0).length).toBeLessThanOrEqual(48);
+});
+
+test('multi-day buckets start at the selected date and clip the last bucket', () => {
+  vi.stubEnv('TZ', 'Asia/Singapore');
+  for (const start of ['2026-01-04', '2026-01-05']) {
+    const last = new Date(`${start}T00:00:00`);
+    last.setDate(last.getDate() + 332);
+    const range = { start, end: calendarDate(last) };
+    const frames = dashboardBucketFrames(range, 0);
+    expect(dashboardGranularity(range, 0)).toBe('7d');
+    expect(frames).toHaveLength(48);
+    expect(frames[0]?.key).toBe(start);
+    expect(frames.at(-1)?.end).toBe(dashboardInterval(range, 0).end);
+    expect(frames.at(-1)!.end - frames.at(-1)!.start).toBe(4 * 24 * 3_600_000);
+  }
+});
+
+test.each([
+  ['America/New_York', '2026-03-07', '2026-03-09'],
+  ['America/New_York', '2026-10-31', '2026-11-02'],
+  ['Australia/Lord_Howe', '2026-10-03', '2026-10-05'],
+  ['America/Santiago', '2026-09-05', '2026-10-24'],
+  ['Pacific/Apia', '2011-12-02', '2012-01-20'],
+  ['Asia/Kathmandu', '2026-01-01', '2026-03-01'],
+])('every source hour stays in its frontend bucket across %s calendar transitions', (zone, start, end) => {
+  vi.stubEnv('TZ', zone);
+  const range = { start, end };
+  const interval = dashboardInterval(range, 0);
+  const frames = dashboardBucketFrames(range, 0);
+  const mapper = dashboardBucketMapper(range, 0);
+  expect(frames.length).toBeLessThanOrEqual(48);
+  expect(frames[0]?.start).toBe(interval.start);
+  expect(frames.at(-1)?.end).toBe(interval.end);
+  expect(frames.reduce((sum, frame) => sum + frame.end - frame.start, 0)).toBe(interval.end - interval.start);
+  for (const [index, frame] of frames.entries()) {
+    if (index > 0) expect(frame.start).toBe(frames[index - 1]!.end);
+    for (let hour = frame.start; hour < frame.end; hour += 3_600_000) expect(mapper(new Date(hour).toISOString().slice(0, 13))).toBe(frame.key);
+  }
 });
 
 test('custom includes the complete last day and remains fixed as time advances', () => {

@@ -689,7 +689,7 @@ test('/api/performance/overview returns operationRows grouped by operation value
   ]);
 });
 
-test('/api/performance/overview merges custom weekly histograms before calculating percentiles', async () => {
+test('/api/performance/overview merges calendar bucket histograms before calculating percentiles', async () => {
   const { repo, apiKey } = await setupAppTest();
   const sample = {
     keyId: apiKey.id, model: 'gpt-5', upstream: 'copilot:1', operation: 'chat' as const,
@@ -699,13 +699,15 @@ test('/api/performance/overview merges custom weekly histograms before calculati
   for (let index = 0; index < 10; index++) await repo.performance.recordSample({ ...sample, hour: '2026-05-01T02', ttftMs: 300 });
   for (const hour of ['2026-04-30T09', '2026-05-03T16']) await repo.performance.recordSample({ ...sample, hour, ttftMs: 10_000 });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T10&end=2026-05-03T16&bucket=week&timezone=Asia%2FSingapore', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.series.length, 1);
-  assertEquals(body.series[0].bucket, '2026-04-27');
-  assertEquals(body.series[0].requests, 100);
-  assertEquals(body.series[0].ttftMsP95, 200 + 100 * 5 / 11);
+  for (const [bucket, key] of [['week', '2026-04-27'], ['2d', '2026-04-30']] as const) {
+    const response = await requestApp(`/api/performance/overview?start=2026-04-30T10&end=2026-05-03T16&bucket=${bucket}&timezone=Asia%2FSingapore`, { headers: { 'x-api-key': apiKey.key } });
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.series.length, 1);
+    assertEquals(body.series[0].bucket, key);
+    assertEquals(body.series[0].requests, 100);
+    assertEquals(body.series[0].ttftMsP95, 200 + 100 * 5 / 11);
+  }
 });
 
 test('telemetry overviews reject invalid or reversed custom timestamps', async () => {
@@ -715,6 +717,7 @@ test('telemetry overviews reject invalid or reversed custom timestamps', async (
       'start=2026-04-31T00&end=2026-05-02T00',
       'start=2026-05-02T00&end=2026-05-01T00',
       'start=2026-05-01T00%3A30&end=2026-05-02T00',
+      ...['0d', '-2d', '1.5d', '02d', '9007199254740992d'].map(bucket => `start=2026-05-01T00&end=2026-05-02T00&bucket=${bucket}`),
     ]) {
       const response = await requestApp(`/api/${endpoint}/overview?${query}`, { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 400);
