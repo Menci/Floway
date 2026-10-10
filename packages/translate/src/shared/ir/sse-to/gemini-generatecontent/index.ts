@@ -1,5 +1,5 @@
 import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
-import type { IRJSONObject, IRSourceCitation } from '../../ir.ts';
+import type { IRItem, IRJSONObject, IRSourceCitation } from '../../ir.ts';
 import { createGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier, type GeminiGenerateContentAssistantTurn } from '../../round-trip/gemini-generate-content.ts';
 import { irRangeToUTF8 } from '../../shared/coordinates.ts';
 import { isCompleteIRJSONObject, parseIRJSONObject } from '../../shared/json.ts';
@@ -8,7 +8,7 @@ import { createIRProjection, type IROutputOptions } from '../../shared/projectio
 import { createIRTextStream, type IRTextUpdate } from '../../shared/text.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
-import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
+import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 // A failed Responses event has no HTTP status; these are target classifications.
@@ -23,6 +23,8 @@ const irGenerateContentError = (error: IRJSONObject): IRJSONObject => {
 };
 
 export interface IRGenerateContentOutputOptions extends IROutputOptions { imageMimeType?: string; audioMimeType?: string }
+
+const streamsText = (item: IRItem): boolean => item.type === 'reasoning' || item.type === 'message' && item.content.every(part => part.type === 'text' || part.type === 'refusal');
 
 export const geminiGenerateContentFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IRGenerateContentOutputOptions = {}): AsyncGenerator<EventFrame<GeminiGenerateContentStreamEvent>> {
   let metadata = { id: '', model: '', created: 0 };
@@ -54,6 +56,7 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
       for (let choice = 0; choice < state.choices.length; choice++) {
         let native = parts.get(choice);
         if (native === undefined) { native = []; parts.set(choice, native); }
+        let textRunEnd = 0;
         for (let index = 0; index < state.choices[choice].items.length; index++) {
           const item = state.choices[choice].items[index];
           const source: IRPath = ['choices', choice, 'items', index];
@@ -71,12 +74,15 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
             lastKind.set(choice, kind);
             return { text: delta, ...(thought ? { thought: true } : {}) };
           };
-          if (item.type === 'message' && item.content.every(part => part.type === 'text' || part.type === 'refusal')) {
-            for (const update of textStream.take(source)) {
-              const delta = textDelta(update, false);
+          if (streamsText(item) && index >= textRunEnd) {
+            textRunEnd = index + 1;
+            while (textRunEnd < state.choices[choice].items.length && streamsText(state.choices[choice].items[textRunEnd])) textRunEnd++;
+            for (const update of textStream.takeMatching(update => update.path[0] === 'choices' && update.path[1] === choice && (update.path[3] as number) >= index && (update.path[3] as number) < textRunEnd)) {
+              const delta = textDelta(update, state.choices[choice].items[update.path[3] as number].type === 'reasoning');
               if (delta !== undefined) yield emitPart(choice, delta);
             }
-          } else if (item.type === 'message') for (let p = 0; p < item.content.length; p++) {
+          }
+          if (item.type === 'message' && !streamsText(item)) for (let p = 0; p < item.content.length; p++) {
             const part = item.content[p]; const path = [...source, 'content', p];
             if (part.type === 'text' || part.type === 'refusal') {
               for (const update of textStream.take([...path, part.type === 'text' ? 'text' : 'refusal'])) {
@@ -110,10 +116,6 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
               emitted.add(key);
             }
           } else if (item.type === 'reasoning') {
-            for (const update of textStream.take(source)) {
-              const delta = textDelta(update, true);
-              if (delta !== undefined) yield emitPart(choice, delta);
-            }
             const key = `${choice}/${index}/signature`;
             if (options.roundTrip === undefined && closed && item.encrypted_content != null && !emitted.has(key)) {
               const value = { thoughtSignature: item.encrypted_content };
@@ -137,7 +139,7 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
             }
             native.push(value); lastKind.set(choice, 'function'); emitted.add(key); yield emitPart(choice, value);
           }
-          if (!closed) break;
+          if (!closed && !streamsText(item)) break;
         }
       }
     }
@@ -179,8 +181,11 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
       }
     }
     if (record.type === 'finish') {
-
-      yield emit({ candidates: terminalCandidates, ...(state.usage === undefined ? {} : { usageMetadata: { ...usageFromIR(state.usage, 'geminiGenerateContent'), ...(irServiceTier(state) === undefined ? {} : { serviceTier: irServiceTier(state) }) } }) });
+      const tier = irServiceTier(state);
+      // GenerateContent names its normal lane standard and its accelerated lane priority.
+      // https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+      const serviceTier = tier === 'fast' ? FAST_SERVICE_TIER : tier === 'default' ? 'standard' : tier;
+      yield emit({ candidates: terminalCandidates, ...(state.usage === undefined ? {} : { usageMetadata: { ...usageFromIR(state.usage, 'geminiGenerateContent'), ...(serviceTier === undefined ? {} : { serviceTier }) } }) });
     }
   }
 };

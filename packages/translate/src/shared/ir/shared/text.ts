@@ -27,12 +27,13 @@ export const createIRTextStream = () => {
       });
     }));
   };
-  const take = (prefix: IRPath): IRTextUpdate[] => {
+  const takeMatching = (matches: (update: IRTextUpdate) => boolean): IRTextUpdate[] => {
     const selected: IRTextUpdate[] = [];
     const remaining: IRTextUpdate[] = [];
-    for (const entry of pending) (prefix.every((key, index) => entry.path[index] === key) ? selected : remaining).push(entry);
+    for (const entry of pending) (matches(entry) ? selected : remaining).push(entry);
     pending = remaining;
     return selected;
   };
-  return { update, take };
+  const take = (prefix: IRPath): IRTextUpdate[] => takeMatching(entry => prefix.every((key, index) => entry.path[index] === key));
+  return { update, take, takeMatching };
 };
