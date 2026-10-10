@@ -1,4 +1,3 @@
-
 import type { IRAudioPart, IRItem, IRMessageItem, IRSourceCitation } from '../../ir.ts';
 import { codePointRangeToIR } from '../../shared/coordinates.ts';
 import { cloneIRJSON } from '../../shared/json.ts';
