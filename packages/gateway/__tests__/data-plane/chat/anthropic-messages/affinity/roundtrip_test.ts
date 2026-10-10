@@ -73,7 +73,7 @@ test('carriers a real codec emits on both Anthropic Messages slots decode on the
   expect(projectionB.materialize().messages).toEqual([]);
 });
 
-test('a synthetic carrier issued for a turn without thinking decodes on the next turn', async () => {
+test('a turn without opaque state remains unpinned on the next turn', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames([

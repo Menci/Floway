@@ -15,7 +15,16 @@ import {
   geminiGenerateContentVisibleText,
 } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../shared/gemini-generate-content-via/schema.ts';
+import {
+  cleanGeminiGenerateContentAssistantTurn,
+  inspectGeminiGenerateContentAssistantTurn,
+  partitionGeminiGenerateContentTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyGeminiGenerateContentReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -213,7 +222,16 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIChatCompletion
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): OpenAIChatCompletionsPayload => {
+type PreparedGeminiAssistantTurn = PreparedIRRoundTripAssistantTurn<GeminiGenerateContentContent[], 'openaiChatCompletions'>;
+type RestoredChatAssistantTurn = Extract<PreparedGeminiAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredGeminiAssistantTurn { sourceCount: number; turn: RestoredChatAssistantTurn }
+
+const buildTargetRequestWithReplay = (
+  payload: GeminiGenerateContentPayload,
+  model: string,
+  restoredTurns: ReadonlyMap<number, RestoredGeminiAssistantTurn>,
+): OpenAIChatCompletionsPayload => {
   const request: OpenAIChatCompletionsPayload = {
     model,
     stream: true,
@@ -226,25 +244,37 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
     request.messages.push({ role: 'system', content: systemText });
   }
 
-  payload.contents?.forEach((content, turnIndex) => {
+  for (let turnIndex = 0; turnIndex < (payload.contents?.length ?? 0); turnIndex++) {
+    const restored = restoredTurns.get(turnIndex);
+    if (restored !== undefined) {
+      request.messages.push(restored.turn as OpenAIChatCompletionsMessage);
+      for (const call of restored.turn.tool_calls ?? []) {
+        const name = call.type === 'function' ? call.function.name : call.custom.name;
+        unmatchedToolCallIds[name] ??= [];
+        unmatchedToolCallIds[name].push(call.id);
+      }
+      turnIndex += restored.sourceCount - 1;
+      continue;
+    }
+    const content = payload.contents![turnIndex];
     if ((content.parts?.length ?? 0) === 0 && (content.role === 'model' || content.role === 'user' || content.role === undefined)) {
       request.messages.push({ role: content.role === 'model' ? 'assistant' : 'user', content: '' });
-      return;
+      continue;
     }
     switch (content.role) {
     case 'model': {
       const message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
       if (message) request.messages.push(message);
-      return;
+      continue;
     }
     case 'user':
     case undefined:
       request.messages.push(...buildUserMessages(content, turnIndex, unmatchedToolCallIds));
-      return;
+      continue;
     default:
       throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
     }
-  });
+  }
 
   applyGenerationConfig(request, payload.generationConfig);
 
@@ -273,4 +303,29 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
   }
 
   return request;
+};
+
+export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): OpenAIChatCompletionsPayload => buildTargetRequestWithReplay(payload, model, new Map());
+
+export const buildRoundTripTargetRequest = async (payload: GeminiGenerateContentPayload, model: string, codec: AssistantTurnSidecarCodec): Promise<OpenAIChatCompletionsPayload> => {
+  const contents = [...(payload.contents ?? [])];
+  const restoredTurns = new Map<number, RestoredGeminiAssistantTurn>();
+  let contentIndex = 0;
+  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+    const start = contentIndex;
+    contentIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'geminiGenerateContent',
+      'openaiChatCompletions',
+      turn.items,
+      codec,
+      inspectGeminiGenerateContentAssistantTurn,
+      verifyGeminiGenerateContentReplayCheck,
+      cleanGeminiGenerateContentAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, { sourceCount: turn.items.length, turn: prepared.turn });
+    else prepared.turn.forEach((content, index) => { contents[start + index] = content; });
+  }
+  return buildTargetRequestWithReplay({ ...payload, contents }, model, restoredTurns);
 };

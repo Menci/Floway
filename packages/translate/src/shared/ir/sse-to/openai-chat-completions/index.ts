@@ -1,4 +1,5 @@
 import type { IRJSONObject } from '../../ir.ts';
+import { createOpenAIChatCompletionsReplayCheck, createOpenAIChatCompletionsSidecarCarrier } from '../../round-trip/openai-chat-completions.ts';
 import { irRangeToCodePoints } from '../../shared/coordinates.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
 import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
@@ -6,7 +7,7 @@ import { createIRTextStream } from '../../shared/text.ts';
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { createOpenAIChatCompletionsReassembler, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const irChatError = (error: IRJSONObject): IRJSONObject => ({
   message: error.message,
@@ -22,6 +23,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const projection = createIRProjection();
+  const nativeReassembler = options.roundTrip === undefined ? undefined : createOpenAIChatCompletionsReassembler();
   const textStream = createIRTextStream();
   const opaqueItems = new Map<number, number>();
   const completedItems = new Set<string>();
@@ -36,7 +38,11 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   let usage: IRWire | undefined;
   // Continuous usage is cumulative metadata on emitted choice chunks, not an extra progress event.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/chat_completion/serving.py#L798-L871
-  const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => eventFrame({ ...extension, id: metadata.id, object: 'chat.completion.chunk', model: metadata.model, created: metadata.created, choices, ...(options.continuousUsageStats && choices.length > 0 ? { usage: usage ?? null } : {}), ...fields } as OpenAIChatCompletionsStreamEvent);
+  const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => {
+    const event = { ...extension, id: metadata.id, object: 'chat.completion.chunk', model: metadata.model, created: metadata.created, choices, ...(options.continuousUsageStats && choices.length > 0 ? { usage: usage ?? null } : {}), ...fields } as OpenAIChatCompletionsStreamEvent;
+    nativeReassembler?.accept(event);
+    return eventFrame(event);
+  };
   const deltaFrame = (choice: number, delta: IRWire): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => chunk([{ index: choice, delta, finish_reason: null }]);
   for await (const { state, record } of consumeIRRecords(frames)) {
     if (record.type === 'operation' && record.operation === 'assign') projection.validateText(state, record.path);
@@ -68,6 +74,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
             const source = [...path, 'content', p];
             if (part.type === 'text' || part.type === 'refusal') {
               const key = part.type === 'text' ? 'content' : 'refusal';
+              projection.markRoundTrip([...target, key]);
               for (const update of textStream.take([...source, part.type === 'text' ? 'text' : 'refusal'])) {
                 const delta = projection.appendText(update, [...target, key]);
                 if (delta !== '') yield deltaFrame(choice, { [key]: delta });
@@ -75,6 +82,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
             } else if (part.type === 'audio') {
               if (part.audio.data === undefined) {
                 if (!closed && !(record.type === 'part_end' && record.choice === choice && record.item === index && record.part === p)) continue;
+                projection.markRoundTrip([...target, 'content']);
                 for (const update of textStream.take([...source, 'audio', 'transcript'])) {
                   const text = projection.appendText(update, [...target, 'content']);
                   if (text !== '') yield deltaFrame(choice, { content: text });
@@ -98,12 +106,13 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
               if (Object.keys(delta).length > 0) yield deltaFrame(choice, { audio: delta });
             }
           } else if (item.type === 'reasoning') {
+            projection.markRoundTrip([...target, 'reasoning_text']);
             for (const update of textStream.take(path)) {
               const delta = projection.appendText(update, [...target, 'reasoning_text']);
               if (delta !== '') yield deltaFrame(choice, { reasoning_text: delta });
             }
             if (item.encrypted_content !== undefined && !opaqueItems.has(choice)) opaqueItems.set(choice, index);
-            if (state.extensions?.anthropicMessages !== undefined && item.encrypted_content != null && closed && opaqueItems.get(choice) === index && !opaqueChoices.has(choice)) {
+            if (options.roundTrip === undefined && state.extensions?.anthropicMessages !== undefined && item.encrypted_content != null && closed && opaqueItems.get(choice) === index && !opaqueChoices.has(choice)) {
               yield deltaFrame(choice, { reasoning_opaque: item.encrypted_content });
               opaqueChoices.add(choice);
             }
@@ -115,6 +124,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
             const field = custom ? 'input' : 'arguments';
             const namespace = custom ? 'custom' : 'function';
             const argument = custom ? item.input : typeof item.arguments === 'object' ? closed ? JSON.stringify(item.arguments) : '' : item.arguments ?? '';
+            projection.markRoundTrip([...target, 'tool_calls', toolIndex, namespace, field]);
             const delta = !custom && typeof item.arguments === 'object' && !closed ? '' : projection.append([...path, field], argument, [...target, 'tool_calls', toolIndex, namespace, field]);
             const name = `${item.call_id ?? ''}\0${item.name}`;
             const changed = names.get(key) !== name;
@@ -180,6 +190,14 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
       if (annotations.length > 0) yield deltaFrame(choice, { annotations });
       const refusal = state.choices[choice].refusal;
       if (refusal?.explanation != null) yield deltaFrame(choice, { refusal: refusal.explanation });
+      if (options.roundTrip !== undefined) {
+        const assistantTurn = nativeReassembler!.choiceMessage(choice) as OpenAIChatCompletionsAssistantMessageEx;
+        const summary = typeof assistantTurn.reasoning_text === 'string' && assistantTurn.reasoning_text !== '' ? assistantTurn.reasoning_text : undefined;
+        assistantTurn.reasoning_details = createOpenAIChatCompletionsSidecarCarrier('', summary);
+        const replayCheck = await createOpenAIChatCompletionsReplayCheck(assistantTurn);
+        const data = await options.roundTrip.prepareSidecar(choice, replayCheck!, projection.roundTripResult());
+        yield deltaFrame(choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data, summary) });
+      }
       yield chunk([{ index: choice, delta: {}, finish_reason: record.finish_reason }]);
     }
     if (record.type === 'finish') {

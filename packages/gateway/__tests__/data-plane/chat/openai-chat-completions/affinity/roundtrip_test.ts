@@ -73,11 +73,15 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
   expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });
 
-test('a synthetic carrier issued for a choice without reasoning decodes on the next turn', async () => {
+test('a sidecar in reasoning_details decodes on the next turn', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
+  const details = [
+    { type: 'reasoning.summary', summary: 'visible', format: 'unknown', index: 0 },
+    { type: 'reasoning.encrypted', data: 'sidecar', format: 'unknown', index: 1 },
+  ];
   const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
-    eventFrame(chunk([{  index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
+    eventFrame(chunk([{ index: 0, delta: { content: 'answer', reasoning_details: details }, finish_reason: 'stop' }])),
     doneFrame(),
   ]), { codec, affinity: targetFor(candidateA) }));
 
@@ -86,7 +90,13 @@ test('a synthetic carrier issued for a choice without reasoning decodes on the n
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
   const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
   expect(projectionA.degrades).toBe(false);
-  expect(projectionB.degrades).toBe(false);
-  expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
-  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionA.materialize().messages[0]).toMatchObject({
+    content: 'answer',
+    reasoning_details: details,
+  });
+  expect(projectionB.materialize().messages[0]).toMatchObject({
+    content: 'answer',
+    reasoning_details: [details[0]],
+  });
 });

@@ -1,4 +1,5 @@
 import type { IRJSONObject } from '../ir.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 // Raw JSON primitives preserve numeric tokens outside the finite or safe-integer range.
 // https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
@@ -13,12 +14,7 @@ export const cloneIRJSON = <T>(value: T): T => {
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, cloneIRJSON(child)])) as T;
 };
 
-export const parseIRJSON = (text: string): unknown => JSON.parse(text, (_key: string, value: unknown, context?: { source: string }) => {
-  if (typeof value === 'number' && (!Number.isFinite(value) || Number.isInteger(value) && !Number.isSafeInteger(value))) return irJSON.rawJSON(context!.source);
-  return value;
-});
-
-export const parseIRJSONObject = (text: string, parser: (text: string) => unknown = parseIRJSON): IRJSONObject => {
+export const parseIRJSONObject = (text: string, parser: (text: string) => unknown = parseJSONWithRawNumbers): IRJSONObject => {
   const value = parser(text);
   if (typeof value !== 'object' || value === null || Array.isArray(value) || irJSON.isRawJSON(value)) throw new TypeError('Tool arguments require a JSON object');
   return value as IRJSONObject;
@@ -26,7 +22,7 @@ export const parseIRJSONObject = (text: string, parser: (text: string) => unknow
 
 export const isCompleteIRJSONObject = (text: string): boolean => {
   try {
-    const value = parseIRJSON(text);
+    const value = parseJSONWithRawNumbers(text);
     return typeof value === 'object' && value !== null && !Array.isArray(value) && !irJSON.isRawJSON(value);
   } catch (error) {
     if (error instanceof SyntaxError) return false;

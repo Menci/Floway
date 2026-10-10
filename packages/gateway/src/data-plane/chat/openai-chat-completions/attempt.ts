@@ -56,6 +56,7 @@ export const openaiChatCompletionsAttempt = {
           invocation.payload,
           p => translateOpenAIChatCompletionsViaAnthropicMessages(p, {
             model: candidate.model.id,
+            assistantTurnSidecar: ctx.assistantTurnSidecar,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
             loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
@@ -68,7 +69,7 @@ export const openaiChatCompletionsAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id }),
+          p => translateOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id, assistantTurnSidecar: ctx.assistantTurnSidecar }),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),

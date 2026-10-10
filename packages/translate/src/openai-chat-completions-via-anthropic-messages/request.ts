@@ -1,5 +1,13 @@
 import { klona } from 'klona/json';
 
+import {
+  cleanOpenAIChatCompletionsAssistantTurn,
+  inspectOpenAIChatCompletionsAssistantTurn,
+  partitionOpenAIChatCompletionsTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyOpenAIChatCompletionsReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { openAIChatCompletionsScalarReasoningText } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
@@ -9,7 +17,7 @@ import { anthropicMessagesServiceTierFieldsFromOpenAI } from '../shared/via-anth
 import { parseToolArgumentsObject } from '../shared/via-anthropic-messages/tool-arguments.ts';
 import { anthropicMessagesToolInputSchema } from '../shared/via-anthropic-messages/tool-input-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { RemoteImageLoader } from '../types.ts';
+import type { AssistantTurnSidecarCodec, RemoteImageLoader } from '../types.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -124,15 +132,29 @@ const convertSystemContent = (content: OpenAIChatCompletionsMessage['content']):
   return blocks;
 };
 
-const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessage[], loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesMessage[]> => {
-  const result: AnthropicMessagesMessage[] = [];
+type PreparedChatAssistantTurn = PreparedIRRoundTripAssistantTurn<OpenAIChatCompletionsAssistantMessageEx, 'anthropicMessages'>;
+type RestoredMessagesAssistantTurn = Extract<PreparedChatAssistantTurn, { kind: 'target' }>['turn'];
 
-  for (const message of messages) {
+const buildAnthropicMessagesInput = async (
+  messages: OpenAIChatCompletionsMessage[],
+  loadRemoteImage: RemoteImageLoader,
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): Promise<{ messages: AnthropicMessagesMessage[]; restoredMessages: Set<AnthropicMessagesMessage> }> => {
+  const result: AnthropicMessagesMessage[] = [];
+  const restoredMessages = new Set<AnthropicMessagesMessage>();
+
+  for (const [messageIndex, message] of messages.entries()) {
     switch (message.role) {
     case 'user':
       appendUserBlocks(result, await convertUserContent(message, loadRemoteImage));
       break;
     case 'assistant':
+      const restoredTurn = restoredTurns.get(messageIndex);
+      if (restoredTurn !== undefined) {
+        result.push(restoredTurn);
+        restoredMessages.add(restoredTurn);
+        break;
+      }
       result.push({
         role: 'assistant',
         content: buildAssistantBlocks(message),
@@ -172,7 +194,7 @@ const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessag
     }
   }
 
-  return result;
+  return { messages: result, restoredMessages };
 };
 
 const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[]): AnthropicMessagesPayload['tools'] =>
@@ -200,7 +222,11 @@ const CHAT_TOOL_CHOICES = {
   required: { type: 'any' },
 } satisfies Record<Extract<OpenAIChatCompletionsPayload['tool_choice'], string>, AnthropicMessagesPayload['tool_choice']>;
 
-export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, options: BuildTargetRequestOptions = {}): Promise<AnthropicMessagesPayload> => {
+const buildTargetRequestWithReplay = async (
+  payload: OpenAIChatCompletionsPayload,
+  options: BuildTargetRequestOptions,
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): Promise<AnthropicMessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to
   // AnthropicMessagesPayload.system, preserving each ContentPart text as its own
   // AnthropicMessagesTextBlockParam so part boundaries survive the hoist. Non-leading
@@ -214,7 +240,12 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
     prefixEnd++;
   }
 
-  const messages = await buildAnthropicMessagesInput(payload.messages.slice(prefixEnd), options.loadRemoteImage ?? unavailableRemoteImageLoader);
+  const translatedMessages = await buildAnthropicMessagesInput(
+    payload.messages.slice(prefixEnd),
+    options.loadRemoteImage ?? unavailableRemoteImageLoader,
+    new Map([...restoredTurns].flatMap(([index, turn]) => index < prefixEnd ? [] : [[index - prefixEnd, turn] as const])),
+  );
+  const { messages } = translatedMessages;
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   const allowedTools = typeof payload.tool_choice === 'object' && payload.tool_choice?.type === 'allowed_tools'
@@ -227,7 +258,7 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
   const tools = selectedTools?.length ? translateOpenAIChatCompletionsTools(selectedTools) : undefined;
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  applyLastMessageCacheBreakpoint(messages.filter(message => !translatedMessages.restoredMessages.has(message)));
 
   // Merge OpenAI Chat Completions `reasoning_effort` + `response_format` into a single Anthropic Messages
   // `output_config` so a chat-source structured-output request survives
@@ -269,4 +300,35 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,
   };
+};
+
+export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload, options: BuildTargetRequestOptions = {}): Promise<AnthropicMessagesPayload> =>
+  buildTargetRequestWithReplay(payload, options, new Map());
+
+export const buildRoundTripTargetRequest = async (
+  payload: OpenAIChatCompletionsPayload,
+  codec: AssistantTurnSidecarCodec,
+  options: BuildTargetRequestOptions = {},
+): Promise<AnthropicMessagesPayload> => {
+  const messages = [...payload.messages];
+  const restoredTurns = new Map<number, RestoredMessagesAssistantTurn>();
+  let messageIndex = 0;
+  for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
+    const start = messageIndex;
+    messageIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const assistantTurn = turn.items[0] as OpenAIChatCompletionsAssistantMessageEx;
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'openaiChatCompletions',
+      'anthropicMessages',
+      assistantTurn,
+      codec,
+      inspectOpenAIChatCompletionsAssistantTurn,
+      verifyOpenAIChatCompletionsReplayCheck,
+      cleanOpenAIChatCompletionsAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, prepared.turn);
+    else messages[start] = prepared.turn;
+  }
+  return await buildTargetRequestWithReplay({ ...payload, messages }, options, restoredTurns);
 };

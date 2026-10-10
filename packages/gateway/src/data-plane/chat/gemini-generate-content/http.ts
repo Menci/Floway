@@ -8,7 +8,8 @@ import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
+import type { GeminiCountTokensPayload, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
 
@@ -39,10 +40,30 @@ const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGene
   return { contents: shape.contents ?? [] };
 };
 
-const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {
+const copyGeminiAssistantFunctionCallArgs = (
+  contents: GeminiGenerateContentContent[],
+  sourceContents: GeminiGenerateContentContent[],
+): void => {
+  contents.forEach((content, contentIndex) => {
+    if (content.role !== 'model' || content.parts === undefined) return;
+    const sourceParts = sourceContents[contentIndex]!.parts!;
+    content.parts.forEach((part, partIndex) => {
+      if (part.functionCall?.args === undefined) return;
+      part.functionCall.args = sourceParts[partIndex]!.functionCall!.args;
+    });
+  });
+};
+
+const parseGeminiGenerateContentBodyBytes = (
+  requestBody: RequestBody,
+  project: (body: unknown) => GeminiGenerateContentPayload,
+): GeminiGenerateContentPayload | Response => {
   try {
-    const raw = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
-    return project(raw);
+    const text = new TextDecoder().decode(requestBody.bytes);
+    const payload = project(JSON.parse(text) as unknown);
+    const sourcePayload = project(parseJSONWithRawNumbers(text));
+    copyGeminiAssistantFunctionCallArgs(payload.contents, sourcePayload.contents);
+    return payload;
   } catch (error) {
     return geminiGenerateContentInternalRpcErrorResponse(500, error);
   }

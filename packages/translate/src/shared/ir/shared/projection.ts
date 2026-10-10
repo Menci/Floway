@@ -1,7 +1,10 @@
 import type { IR, IRJSONObject } from '../ir.ts';
-import { cloneIRJSON, parseIRJSON } from './json.ts';
+import { cloneIRJSON } from './json.ts';
 import type { IRTextUpdate } from './text.ts';
+import type { IRRoundTripWriter } from '../round-trip/stream.ts';
+import type { IRProjectionResult as IRRoundTripProjectionResult } from '../round-trip-projection.ts';
 import type { IRPath } from '../stream.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 export interface IRStringProjection {
   source_path: IRPath;
@@ -18,6 +21,7 @@ export interface IROutputOptions {
   created?: number;
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   parseToolArguments?: (text: string) => IRJSONObject;
+  roundTrip?: IRRoundTripWriter;
 }
 
 export const createIRProjection = () => {
@@ -25,13 +29,14 @@ export const createIRProjection = () => {
   const emittedText = new Map<string, { path: IRPath; text: string }>();
   const contents = new Map<string, IRProjectedContent>();
   const projections: IRStringProjection[] = [];
+  const roundTripTargets = new Set<string>();
   const append = (source: IRPath, text: string, target: IRPath, allowReplacement = false): string => {
     const sourceKey = JSON.stringify(source);
     const old = previous.get(sourceKey) ?? '';
     if (!text.startsWith(old)) {
       if (allowReplacement) { assign(source, text, target); previous.set(sourceKey, text); return ''; }
       if (source.at(-1) === 'arguments') {
-        const parsed: unknown = parseIRJSON(old);
+        const parsed: unknown = parseJSONWithRawNumbers(old);
         if (JSON.stringify(parsed) === text) return '';
       }
       throw new Error(`Downstream SSE cannot replace emitted text at ${sourceKey}`);
@@ -57,6 +62,14 @@ export const createIRProjection = () => {
     projections.push({ source_path: source, source_start: 0, source_end_exclusive: text.length, target_path: target, target_start: 0, target_end_exclusive: text.length });
   };
   const result = (): IRProjectionResult => cloneIRJSON({ contents: [...contents.values()], projections });
+  const markRoundTrip = (target: IRPath): void => { roundTripTargets.add(JSON.stringify(target)); };
+  const roundTripResult = (): IRRoundTripProjectionResult => {
+    const current = result();
+    return {
+      contents: current.contents.map(content => ({ ...content, round_trip: roundTripTargets.has(JSON.stringify(content.path)) })),
+      projections: current.projections.map(projection => ({ ...projection, round_trip: roundTripTargets.has(JSON.stringify(projection.target_path)) })),
+    };
+  };
   const appendText = (update: IRTextUpdate, target: IRPath): string => {
     const key = JSON.stringify(update.path);
     const old = previous.get(key) ?? '';
@@ -74,5 +87,5 @@ export const createIRProjection = () => {
       if (typeof value !== 'string' || !value.startsWith(text)) throw new Error(`Downstream SSE cannot replace emitted text at ${key}`);
     }
   };
-  return { append, appendText, validateText, assign, result };
+  return { append, appendText, validateText, assign, markRoundTrip, result, roundTripResult };
 };

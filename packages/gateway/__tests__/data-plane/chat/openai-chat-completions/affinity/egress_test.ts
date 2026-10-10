@@ -1,9 +1,9 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type OpenAIChatCompletionsAssistantDeltaEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 const affinity: AffinityIdentity = {
   upstreamId: 'up-a',
@@ -27,32 +27,11 @@ const frames = async function* (values: ProtocolFrame<OpenAIChatCompletionsStrea
   yield* values;
 };
 
-const withChoiceExtra = (event: OpenAIChatCompletionsStreamEvent, name: string, value: unknown): OpenAIChatCompletionsStreamEvent => {
-  Object.assign(event.choices[0], { [name]: value });
-  return event;
-};
-
-const withChunkExtra = (event: OpenAIChatCompletionsStreamEvent, name: string, value: unknown): OpenAIChatCompletionsStreamEvent => {
-  Object.assign(event, { [name]: value });
-  return event;
-};
-
 const withUsage = (event: OpenAIChatCompletionsStreamEvent, output: number): OpenAIChatCompletionsStreamEvent => ({
   ...event,
   usage: { prompt_tokens: 10, completion_tokens: output, total_tokens: 10 + output },
 });
-
-class DelayedCodec implements AffinityEgressCodec {
-  readonly calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
-
-  wrap(value: string | undefined): Promise<string> {
-    return new Promise(resolve => this.calls.push({ value, resolve }));
-  }
-}
-
-const immediateCodec: AffinityEgressCodec = {
-  wrap: async value => `wrapped:${value ?? 'synthetic'}`,
-};
+const immediateCodec: AffinityEgressCodec = { wrap: async value => `wrapped:${value}` };
 
 describe('OpenAI Chat Completions affinity egress', () => {
   test('continuous usage follows visible, encrypted carrier and finishing choice frames', async () => {
@@ -84,7 +63,7 @@ describe('OpenAI Chat Completions affinity egress', () => {
       doneFrame(),
     ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
 
-    expect(output.filter(frame => frame.type === 'event')).toHaveLength(3);
+    expect(output.filter(frame => frame.type === 'event')).toHaveLength(2);
     for (const frame of output) if (frame.type === 'event') expect(frame.event.usage).toEqual(withUsage(chunk([]), 2).usage);
   });
 
@@ -95,34 +74,34 @@ describe('OpenAI Chat Completions affinity egress', () => {
       doneFrame(),
     ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
 
-    expect(output.filter(frame => frame.type === 'event')).toHaveLength(3);
+    expect(output.filter(frame => frame.type === 'event')).toHaveLength(1);
     for (const frame of output) if (frame.type === 'event') expect(frame.event.usage).toBeNull();
   });
 
   test('the DONE carrier uses a single choice final usage snapshot', async () => {
     const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
     for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: null }]), 2)),
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer', reasoning_opaque: 'opaque' }, finish_reason: null }]), 2)),
       eventFrame(withUsage(chunk([]), 4)),
       doneFrame(),
     ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
 
-    expect(output[2]).toMatchObject({ event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:synthetic' } }], usage: withUsage(chunk([]), 4).usage } });
+    expect(output[2]).toMatchObject({ event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:opaque' } }], usage: withUsage(chunk([]), 4).usage } });
     expect(output[3]).toEqual(doneFrame());
   });
 
   test('continuous usage keeps per-choice snapshots separate from aggregate trailing accounting', async () => {
     const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
     for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'first' }, finish_reason: null }]), 2)),
-      eventFrame(withUsage(chunk([{ index: 1, delta: { content: 'second' }, finish_reason: null }]), 3)),
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'first', reasoning_opaque: 'first-opaque' }, finish_reason: null }]), 2)),
+      eventFrame(withUsage(chunk([{ index: 1, delta: { content: 'second', reasoning_opaque: 'second-opaque' }, finish_reason: null }]), 3)),
       eventFrame(withUsage(chunk([]), 5)),
       doneFrame(),
     ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
 
     expect(output.slice(3, 5)).toMatchObject([
-      { event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:synthetic' } }], usage: withUsage(chunk([]), 2).usage } },
-      { event: { choices: [{ index: 1, delta: { reasoning_opaque: 'wrapped:synthetic' } }], usage: withUsage(chunk([]), 3).usage } },
+      { event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:first-opaque' } }], usage: withUsage(chunk([]), 2).usage } },
+      { event: { choices: [{ index: 1, delta: { reasoning_opaque: 'wrapped:second-opaque' } }], usage: withUsage(chunk([]), 3).usage } },
     ]);
     expect(output[2]).toMatchObject({ event: { choices: [], usage: withUsage(chunk([]), 5).usage } });
   });
@@ -138,163 +117,110 @@ describe('OpenAI Chat Completions affinity egress', () => {
     for (const frame of output.slice(1)) if (frame.type === 'event') expect(frame.event).not.toHaveProperty('usage');
   });
 
-  test('forwards visible final data before wrapping the last opaque snapshot', async () => {
-    const codec = new DelayedCodec();
+  test('wraps only the latest legacy opaque snapshot before the finish reason', async () => {
+    const calls: Array<{ value: string | undefined; domain: string; resolve: (value: string) => void }> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: (value, _identity, domain) => new Promise(resolve => calls.push({ value, domain, resolve })),
+    };
     const output = wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(chunk([{  index: 0, delta: { reasoning_opaque: 'first' }, finish_reason: null }])),
-      eventFrame(chunk([{
-
-        index: 0,
-        delta: { content: 'visible', reasoning_text: 'thinking', reasoning_opaque: 'latest' },
-        finish_reason: 'stop',
-      }])),
+      eventFrame(chunk([{ index: 0, delta: { content: 'first', reasoning_opaque: 'old' }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: { content: 'latest', reasoning_opaque: 'new' }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
       doneFrame(),
     ]), { codec, affinity })[Symbol.asyncIterator]();
 
-    const visible = await output.next();
-    expect(visible.value).toEqual(eventFrame(chunk([{
+    expect((await output.next()).value).toEqual(eventFrame(chunk([{ index: 0, delta: { content: 'first' }, finish_reason: null }])));
+    expect((await output.next()).value).toEqual(eventFrame(chunk([{ index: 0, delta: { content: 'latest' }, finish_reason: null }])));
+    expect(calls).toHaveLength(0);
 
-      index: 0,
-      delta: { content: 'visible', reasoning_text: 'thinking' },
-      finish_reason: null,
-    }])));
-    expect(codec.calls).toHaveLength(0);
-
-    const wrappedPending = output.next();
-    await Promise.resolve();
-    expect(codec.calls.map(call => call.value)).toEqual(['latest']);
-    codec.calls[0].resolve('wrapped-latest');
-    expect((await wrappedPending).value).toEqual(eventFrame(chunk([{
-
-      index: 0,
-      delta: { reasoning_opaque: 'wrapped-latest' },
-      finish_reason: null,
-    }])));
-
-    expect((await output.next()).value).toEqual(eventFrame(chunk([{
-
-      index: 0,
-      delta: {},
-      finish_reason: 'stop',
-    }])));
+    const pending = output.next();
+    await vi.waitFor(() => expect(calls.map(call => [call.value, call.domain])).toEqual([['new', 'openai-chat-completions.reasoning_opaque']]));
+    calls[0].resolve('wrapped-new');
+    expect((await pending).value).toEqual(eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'wrapped-new' }, finish_reason: null }])));
+    expect((await output.next()).value).toEqual(eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])));
     expect((await output.next()).value).toEqual(doneFrame());
   });
 
-  test('wraps or synthesizes a carrier independently for every finishing choice', async () => {
+  test('wraps the existing encrypted reasoning detail in place', async () => {
+    const calls: Array<{ value: string | undefined; domain: string }> = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async (value, _identity, domain) => {
+        calls.push({ value, domain });
+        return `wrapped:${value}`;
+      },
+    };
+    const details = [
+      { type: 'reasoning.summary', summary: 'visible', format: 'unknown', index: 0 },
+      { type: 'reasoning.encrypted', data: 'sidecar', format: 'unknown', index: 1 },
+    ];
     const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
     for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(chunk([
-        {  index: 0, delta: { reasoning_opaque: 'opaque' }, finish_reason: 'stop' },
-        {  index: 1, delta: {}, finish_reason: 'length' },
-      ])),
+      eventFrame(chunk([{ index: 0, delta: { content: 'answer', reasoning_details: details }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
       doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
+    ]), { codec, affinity })) output.push(frame);
 
-    expect(output[0]).toEqual(eventFrame(chunk([
-      {  index: 0, delta: { reasoning_opaque: 'wrapped:opaque' }, finish_reason: null },
-      {  index: 1, delta: { reasoning_opaque: 'wrapped:synthetic' }, finish_reason: null },
-    ])));
-    expect(output[1]).toEqual(eventFrame(chunk([
-      {  index: 0, delta: {}, finish_reason: 'stop' },
-      {  index: 1, delta: {}, finish_reason: 'length' },
-    ])));
-  });
-
-  test('flushes a carrier before DONE when an upstream omits finish_reason', async () => {
-    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(chunk([{  index: 0, delta: { content: 'visible' }, finish_reason: null }])),
-      doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
+    expect(calls).toEqual([{
+      value: 'sidecar',
+      domain: 'openai-chat-completions.reasoning_details.reasoning.encrypted.data',
+    }]);
     expect(output).toEqual([
-      eventFrame(chunk([{  index: 0, delta: { content: 'visible' }, finish_reason: null }])),
-      eventFrame(chunk([{  index: 0, delta: { reasoning_opaque: 'wrapped:synthetic' }, finish_reason: null }])),
+      eventFrame(chunk([{
+        index: 0,
+        delta: {
+          content: 'answer',
+          reasoning_details: [details[0], { ...details[1], data: 'wrapped:sidecar' }],
+        },
+        finish_reason: null,
+      }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
       doneFrame(),
     ]);
   });
 
-  test('does not turn a successful empty upstream stream into an affinity error', async () => {
-    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(
-      frames([doneFrame()]),
-      { codec: immediateCodec, affinity },
-    )) output.push(frame);
-
-    expect(output).toEqual([doneFrame()]);
-  });
-
-  test('emits choice extras once on the visible projection before carrier encryption', async () => {
-    const codec = new DelayedCodec();
-    const output = wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChoiceExtra(chunk([{
-
-        index: 0,
-        delta: { content: 'visible', reasoning_opaque: 'opaque' },
-        finish_reason: 'stop',
-      }]), 'logprobs', { content: [] })),
-      doneFrame(),
-    ]), { codec, affinity })[Symbol.asyncIterator]();
-
-    expect((await output.next()).value).toEqual(eventFrame(withChoiceExtra(chunk([{
-
-      index: 0,
-      delta: { content: 'visible' },
-      finish_reason: null,
-    }]), 'logprobs', { content: [] })));
-    expect(codec.calls).toHaveLength(0);
-
-    const carrier = output.next();
-    await Promise.resolve();
-    codec.calls[0].resolve('wrapped-opaque');
-    expect(JSON.stringify((await carrier).value)).not.toContain('logprobs');
-    expect(JSON.stringify((await output.next()).value)).not.toContain('logprobs');
-  });
-
-  test('does not drop extras from an opaque-only nonterminal choice', async () => {
-    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChoiceExtra(chunk([{  index: 0, delta: { reasoning_opaque: 'opaque' }, finish_reason: null }]), 'logprobs', null)),
-      eventFrame(chunk([{  index: 0, delta: {}, finish_reason: 'stop' }])),
-      doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toEqual(eventFrame(withChoiceExtra(chunk([{  index: 0, delta: {}, finish_reason: null }]), 'logprobs', null)));
-    expect(JSON.stringify(output.slice(1))).not.toContain('logprobs');
-  });
-
-  test('emits final chunk extras once across split frames and non-stream reassembly', async () => {
-    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChunkExtra(chunk([{
-
-        index: 0,
-        delta: { content: 'answer', reasoning_opaque: 'opaque' },
-        finish_reason: 'stop',
-      }]), 'vendor_text', 'x')),
-      doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(JSON.stringify(output).match(/vendor_text/g)).toHaveLength(1);
-    const chunks = async function* () {
-      for (const frame of output) if (frame.type === 'event') yield frame.event;
+  test('does not add an opaque carrier when none was returned', async () => {
+    const calls: string[] = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async value => {
+        calls.push(value ?? 'missing');
+        return `wrapped:${value}`;
+      },
     };
-    expect(await reassembleOpenAIChatCompletionsEvents(chunks())).toMatchObject({ vendor_text: 'x' });
-  });
-
-  test('preserves chunk extras from an opaque-only nonterminal event', async () => {
     const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
     for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChunkExtra(
-        chunk([{  index: 0, delta: { reasoning_opaque: 'opaque' }, finish_reason: null }]),
-        'vendor_scalar',
-        7,
-      )),
-      eventFrame(chunk([{  index: 0, delta: {}, finish_reason: 'stop' }])),
+      eventFrame(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
       doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
+    ]), { codec, affinity })) output.push(frame);
 
-    expect(output[0]).toMatchObject({ event: { choices: [], vendor_scalar: 7 } });
-    expect(JSON.stringify(output.slice(1))).not.toContain('vendor_scalar');
+    expect(calls).toEqual([]);
+    expect(output).toEqual([
+      eventFrame(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]);
+  });
+
+  test('leaves empty opaque values empty and unwrapped', async () => {
+    const calls: string[] = [];
+    const codec: AffinityEgressCodec = {
+      wrap: async value => {
+        calls.push(value ?? 'missing');
+        return `wrapped:${value}`;
+      },
+    };
+    const details = [{ type: 'reasoning.encrypted', data: '', format: 'unknown', index: 1 }];
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: '', reasoning_details: details }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]), { codec, affinity })) output.push(frame);
+
+    expect(calls).toEqual([]);
+    expect(output).toEqual([
+      eventFrame(chunk([{ index: 0, delta: { reasoning_details: details }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: '' }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]);
   });
 });

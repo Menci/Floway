@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
@@ -31,7 +33,7 @@ export const analyzeAnthropicMessagesAffinity = async (
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
       preferred: projections.every(item => item.projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
+        const candidatePayload = klona(payload);
         const byMessage = Map.groupBy(projections, item => item.location.messageIndex);
         const emptiedByAffinity = new Set<number>();
         for (const [messageIndex, messageProjections] of byMessage) {

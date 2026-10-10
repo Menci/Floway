@@ -6,7 +6,16 @@ import { openAIServiceTierFromAnthropicMessages } from '../shared/anthropic-mess
 import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthropic-messages-via/structured-output.ts';
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
+import {
+  cleanAnthropicMessagesAssistantTurn,
+  inspectAnthropicMessagesAssistantTurn,
+  partitionAnthropicMessagesTurns,
+  prepareIRRoundTripAssistantTurn,
+  verifyAnthropicMessagesReplayCheck,
+  type PreparedIRRoundTripAssistantTurn,
+} from '../shared/ir/round-trip/index.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { AssistantTurnSidecarCodec } from '../types.ts';
 import {
   type AnthropicMessagesAssistantMessage,
   type AnthropicMessagesClientTool,
@@ -147,15 +156,33 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): CanonicalOpenAIResponsesInputItem[] =>
-  messages.flatMap((message, messageIdx): CanonicalOpenAIResponsesInputItem[] => {
+type PreparedMessagesAssistantTurn = PreparedIRRoundTripAssistantTurn<AnthropicMessagesAssistantMessage[], 'openaiResponses'>;
+type RestoredResponsesAssistantTurn = Extract<PreparedMessagesAssistantTurn, { kind: 'target' }>['turn'];
+
+interface RestoredMessagesAssistantTurn { sourceCount: number; turn: RestoredResponsesAssistantTurn }
+
+const translateAnthropicMessagesInput = (
+  messages: AnthropicMessagesMessage[],
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): CanonicalOpenAIResponsesInputItem[] => {
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  for (let messageIdx = 0; messageIdx < messages.length; messageIdx++) {
+    const restored = restoredTurns.get(messageIdx);
+    if (restored !== undefined) {
+      input.push(...restored.turn);
+      messageIdx += restored.sourceCount - 1;
+      continue;
+    }
+    const message = messages[messageIdx];
     switch (message.role) {
-    case 'user': return translateUserMessage(message, messageIdx);
-    case 'assistant': return translateAssistantMessage(message, messageIdx);
-    case 'system': return translateAnthropicMessagesSystem(message);
+    case 'user': input.push(...translateUserMessage(message, messageIdx)); break;
+    case 'assistant': input.push(...translateAssistantMessage(message, messageIdx)); break;
+    case 'system': input.push(...translateAnthropicMessagesSystem(message)); break;
     default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
-  });
+  }
+  return input;
+};
 
 // OpenAI Responses' `instructions` field is `string | null` — it cannot carry
 // multiple text blocks faithfully. When the source `AnthropicMessagesPayload.system`
@@ -229,7 +256,10 @@ const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string
   return [[key, value]];
 }));
 
-export const buildTargetRequest = (payload: AnthropicMessagesPayload): CanonicalOpenAIResponsesPayload => {
+const buildTargetRequestWithReplay = (
+  payload: AnthropicMessagesPayload,
+  restoredTurns: ReadonlyMap<number, RestoredMessagesAssistantTurn>,
+): CanonicalOpenAIResponsesPayload => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
@@ -250,7 +280,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
-    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages)],
+    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages, restoredTurns)],
     ...(instructions !== null ? { instructions } : {}),
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
@@ -263,4 +293,30 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
     ...(text ? { text } : {}),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
+};
+
+export const buildTargetRequest = (payload: AnthropicMessagesPayload): CanonicalOpenAIResponsesPayload => buildTargetRequestWithReplay(payload, new Map());
+
+export const buildRoundTripTargetRequest = async (payload: AnthropicMessagesPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
+  const messages = [...payload.messages];
+  const restoredTurns = new Map<number, RestoredMessagesAssistantTurn>();
+  let messageIndex = 0;
+  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+    const start = messageIndex;
+    messageIndex += turn.items.length;
+    if (turn.role !== 'assistant') continue;
+    const assistantTurn = turn.items as AnthropicMessagesAssistantMessage[];
+    const prepared = await prepareIRRoundTripAssistantTurn(
+      'anthropicMessages',
+      'openaiResponses',
+      assistantTurn,
+      codec,
+      inspectAnthropicMessagesAssistantTurn,
+      verifyAnthropicMessagesReplayCheck,
+      cleanAnthropicMessagesAssistantTurn,
+    );
+    if (prepared.kind === 'target') restoredTurns.set(start, { sourceCount: turn.items.length, turn: prepared.turn });
+    else prepared.turn.forEach((message, index) => { messages[start + index] = message; });
+  }
+  return buildTargetRequestWithReplay({ ...payload, messages }, restoredTurns);
 };

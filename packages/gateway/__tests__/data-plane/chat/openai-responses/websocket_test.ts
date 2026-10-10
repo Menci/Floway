@@ -901,9 +901,7 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
       const prewarmCompleted = prewarmMessages.find(isTerminalResponseEvent) as { type?: unknown; response?: { status?: unknown; output?: Array<{ type: string }> } };
       assertEquals(prewarmCompleted.type, 'response.completed');
       assertEquals(prewarmCompleted.response?.status, 'completed');
-      // Nothing was generated; the only item is the affinity carrier every
-      // routed turn states.
-      assertEquals(prewarmCompleted.response?.output?.map(item => item.type), ['reasoning']);
+      assertEquals(prewarmCompleted.response?.output, []);
       assertEquals(upstreamBodies.length, 0);
 
       const turnTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));

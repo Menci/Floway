@@ -54,10 +54,12 @@
     "@floway-dev/proxy": "workspace:*",
     "@floway-dev/translate": "workspace:*",
     "@hono/zod-validator": "^0.8.0",
+    "cbor-x": "1.6.6",
     "es-toolkit": "^1.49.0",
     "hono": "^4",
     "jsonrepair": "^3.14.0",
     "klona": "2.0.6",
+    "map-obj": "6.0.0",
     "nanoid": "^5.1.16",
     "ulid": "^3.0.2",
     "zod": "^4.4.3"

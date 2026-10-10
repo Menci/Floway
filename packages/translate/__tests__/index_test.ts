@@ -12,6 +12,7 @@ import {
   translateOpenAIResponsesViaOpenAIChatCompletions,
 } from '../src/index.ts';
 import { collect, iterate } from './shared/ir/helpers.ts';
+import { createTestSidecarCodec } from './shared/ir/round-trip/sidecar-codec.ts';
 import { fixtureFrames, nativeResult } from './shared/ir/translation-cases.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -73,15 +74,15 @@ const objectsIn = (value: unknown): Set<object> => {
 };
 
 const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
-  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm' })).target },
-  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await translateOpenAIResponsesViaAnthropicMessages(responses, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
-  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm' })).target },
-  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
-  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIResponses(anthropic, { model: 'm' })).target },
-  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { model: 'm' })).target },
-  { name: 'Gemini to Responses', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIResponses(gemini, { model: 'm' })).target },
-  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { model: 'm' })).target },
-  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16 })).target },
+  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await translateOpenAIResponsesViaOpenAIChatCompletions(responses, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await translateOpenAIResponsesViaAnthropicMessages(responses, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
+  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaOpenAIResponses(chat, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await translateOpenAIChatCompletionsViaAnthropicMessages(chat, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
+  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIResponses(anthropic, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Gemini to Responses', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIResponses(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' })).target },
+  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await translateGeminiGenerateContentViaAnthropicMessages(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', fallbackMaxOutputTokens: 16 })).target },
 ];
 
 test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
@@ -101,15 +102,15 @@ test.each(translations)('$name owns its target payload without retaining source 
 });
 
 const returnedTrips = [
-  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => translateOpenAIResponsesViaOpenAIChatCompletions(responses, { model: 'm' }) },
-  { a: 'openai-responses', b: 'anthropic-messages', trip: () => translateOpenAIResponsesViaAnthropicMessages(responses, { model: 'm', loadRemoteImage: async () => null }) },
-  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => translateOpenAIChatCompletionsViaOpenAIResponses(chat, { model: 'm' }) },
-  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => translateOpenAIChatCompletionsViaAnthropicMessages(chat, { model: 'm', loadRemoteImage: async () => null }) },
-  { a: 'anthropic-messages', b: 'openai-responses', trip: () => translateAnthropicMessagesViaOpenAIResponses(anthropic, { model: 'm' }) },
-  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => translateGeminiGenerateContentViaOpenAIResponses(gemini, { model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => translateGeminiGenerateContentViaAnthropicMessages(gemini, { model: 'm', fallbackMaxOutputTokens: 16 }) },
+  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => translateOpenAIResponsesViaOpenAIChatCompletions(responses, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'openai-responses', b: 'anthropic-messages', trip: () => translateOpenAIResponsesViaAnthropicMessages(responses, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => translateOpenAIChatCompletionsViaOpenAIResponses(chat, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => translateOpenAIChatCompletionsViaAnthropicMessages(chat, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', loadRemoteImage: async () => null }) },
+  { a: 'anthropic-messages', b: 'openai-responses', trip: () => translateAnthropicMessagesViaOpenAIResponses(anthropic, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => translateAnthropicMessagesViaOpenAIChatCompletions(anthropic, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => translateGeminiGenerateContentViaOpenAIResponses(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => translateGeminiGenerateContentViaOpenAIChatCompletions(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' }) },
+  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => translateGeminiGenerateContentViaAnthropicMessages(gemini, { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', fallbackMaxOutputTokens: 16 }) },
 ] as const;
 
 test.each(returnedTrips)('$a via $b returns generated content through its public TranslateTrip', async ({ a, b, trip }) => {

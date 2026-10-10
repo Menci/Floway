@@ -1,5 +1,6 @@
-
+import { restoreNamespaceOutputItem, type NamespaceToolNames } from '../../../openai-responses-via/namespace-tools.ts';
 import type { IRItem } from '../../ir.ts';
+import { createOpenAIResponsesReplayCheck, createOpenAIResponsesSidecarCarrier, type OpenAIResponsesAssistantTurn } from '../../round-trip/openai-responses.ts';
 import { irRangeToCodePoints } from '../../shared/coordinates.ts';
 import { cloneIRJSON, isCompleteIRJSONObject } from '../../shared/json.ts';
 import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
@@ -7,9 +8,13 @@ import { createIRProjection, type IROutputOptions } from '../../shared/projectio
 import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { createRandomOpenAIResponsesItemId, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { createRandomOpenAIResponsesItemId, openaiResponsesResultToEvents, type OpenAIResponsesOutputItemEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IROutputOptions = {}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+export interface IRResponsesOutputOptions extends IROutputOptions {
+  namespaceToolNames?: NamespaceToolNames;
+}
+
+export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFrame>, options: IRResponsesOutputOptions = {}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   let metadata = { id: '', model: '', created: 0 };
   let started = false;
   const projection = createIRProjection();
@@ -112,7 +117,9 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
             native.result = part.image.data;
             // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts#L5805-L5839
             if (part.image.mime_type !== undefined) native.output_format = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' }[part.image.mime_type as 'image/png' | 'image/jpeg' | 'image/webp'];
-            projection.assign([...source, 'content', partIndex!, 'image', 'data'], part.image.data, [...target, 'result']);
+            const targetPath = [...target, 'result'];
+            projection.assign([...source, 'content', partIndex!, 'image', 'data'], part.image.data, targetPath);
+            projection.markRoundTrip(targetPath);
           } else if (part?.type === 'text' || part?.type === 'refusal') {
             const original = partIndex!;
             const p = item.type === 'message' ? original - item.content.slice(0, original).findLastIndex(p => p.type !== 'text' && p.type !== 'refusal') - 1 : 0;
@@ -124,7 +131,9 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
               yield emit({ type: 'response.content_part.added', item_id: native.id, output_index: index, content_index: p, part: cloneIRJSON(native.content[p]) });
             }
             const path = [...source, 'content', original, field];
-            const delta = projection.append(path, text, [...target, 'content', p, field], true);
+            const targetPath = [...target, 'content', p, field];
+            const delta = projection.append(path, text, targetPath, true);
+            projection.markRoundTrip(targetPath);
             native.content[p][field] = text;
             if (delta !== '') yield emit({ type: refusal ? 'response.refusal.delta' : 'response.output_text.delta', item_id: native.id, output_index: index, content_index: p, delta, ...(refusal ? {} : { logprobs: [] }) });
             if (part.type === 'text') {
@@ -150,11 +159,13 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
                 yield emit({ type: field === 'summary' ? 'response.reasoning_summary_part.added' : 'response.content_part.added', item_id: native.id, output_index: index, ...(field === 'summary' ? { summary_index: p } : { content_index: p }), part: cloneIRJSON(native[field][p]) });
               }
               const text = item[field]![p];
-              const delta = projection.append([...source, field, p], text, [...target, field, p, 'text'], true);
+              const targetPath = [...target, field, p, 'text'];
+              const delta = projection.append([...source, field, p], text, targetPath, true);
+              projection.markRoundTrip(targetPath);
               native[field][p].text = text;
               if (delta !== '') yield emit({ type: field === 'summary' ? 'response.reasoning_summary_text.delta' : 'response.reasoning_text.delta', item_id: native.id, output_index: index, ...(field === 'summary' ? { summary_index: p } : { content_index: p }), delta });
             }
-            if (item.encrypted_content !== undefined) {
+            if (item.encrypted_content !== undefined && options.roundTrip === undefined) {
               native.encrypted_content = item.encrypted_content;
               if (item.encrypted_content !== null) projection.assign([...source, 'encrypted_content'], item.encrypted_content, [...target, 'encrypted_content']);
             }
@@ -162,7 +173,9 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
             const custom = item.type === 'custom_tool_call';
             const field = custom ? 'input' : 'arguments';
             const value = custom ? item.input : typeof item.arguments === 'object' ? closing ? JSON.stringify(item.arguments) : native[field] : item.arguments ?? '';
-            const delta = projection.append([...source, field], value, [...target, field], true);
+            const targetPath = [...target, field];
+            const delta = projection.append([...source, field], value, targetPath, true);
+            projection.markRoundTrip(targetPath);
             native[field] = value; native.name = item.name;
             if (item.call_id !== undefined) native.call_id = item.call_id;
             if (delta !== '') yield emit({ type: custom ? 'response.custom_tool_call_input.delta' : 'response.function_call_arguments.delta', item_id: native.id, output_index: index, delta });
@@ -212,10 +225,30 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
       if (refusal?.explanation != null) {
         const item = { type: 'message' as const, id: createRandomOpenAIResponsesItemId('message'), role: 'assistant' as const, status: 'completed' as const, content: [{ type: 'refusal' as const, refusal: refusal.explanation }] };
         const index = output.length;
+        const targetPath: IRPath = ['output', index, 'content', 0, 'refusal'];
+        projection.assign(['choices', 0, 'refusal', 'explanation'], refusal.explanation, targetPath);
+        projection.markRoundTrip(targetPath);
         for (const frame of openaiResponsesResultToEvents({ id: metadata.id, object: 'response', model: metadata.model, status: 'completed', output: [item], error: null, incomplete_details: null })) {
           if (frame.type === 'event' && 'output_index' in frame.event) yield emit({ ...frame.event, output_index: index });
         }
         output.push(item);
+      }
+      if (options.roundTrip !== undefined) {
+        const namespaceToolNames = options.namespaceToolNames;
+        const nativeOutput = namespaceToolNames === undefined
+          ? output
+          : output.map(item => restoreNamespaceOutputItem(item as unknown as OpenAIResponsesOutputItemEx, namespaceToolNames, 'completed'));
+        const carrierId = createRandomOpenAIResponsesItemId('reasoning');
+        const plannedCarrier = { ...createOpenAIResponsesSidecarCarrier(carrierId, ''), status: 'completed' as const };
+        const plannedTurn = [...nativeOutput, plannedCarrier] as unknown as OpenAIResponsesAssistantTurn;
+        const replayCheck = await createOpenAIResponsesReplayCheck(plannedTurn);
+        const data = await options.roundTrip.prepareSidecar(0, replayCheck!, projection.roundTripResult());
+        const carrier = { ...plannedCarrier, encrypted_content: data };
+        const index = output.length;
+        output.push(carrier);
+        for (const frame of openaiResponsesResultToEvents({ id: metadata.id, object: 'response', model: metadata.model, status: 'completed', output: [carrier], error: null, incomplete_details: null })) {
+          if (frame.type === 'event' && 'output_index' in frame.event) yield emit({ ...frame.event, output_index: index });
+        }
       }
       const status = record.status === 'completed' && finishReason === 'content_filter' ? 'incomplete' : record.status;
       yield emit({ type: `response.${status}`, response: { ...response(status, state.usage === undefined ? null : usageFromIR(state.usage, 'openaiResponses')), error: record.error ?? null } });

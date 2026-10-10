@@ -8,6 +8,7 @@ import type {
   AnthropicMessagesUsageDelta,
 } from './index.ts';
 import { cloneAnthropicMessagesUsageIterations, splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
+import { parseJSONWithRawNumbers } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 const normalizeAnthropicMessagesTextCitations = (value: AnthropicMessagesTextCitation[] | null | undefined): AnthropicMessagesTextCitation[] => value == null ? [] : [...value];
@@ -100,7 +101,7 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
 const finalizeToolUseInput = (block: AnthropicMessagesBlockAccumulator | undefined): void => {
   if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || !block.inputJson) return;
 
-  block.input = JSON.parse(block.inputJson);
+  block.input = parseJSONWithRawNumbers(block.inputJson);
 };
 
 const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): AnthropicMessagesAssistantContentBlock => {

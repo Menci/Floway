@@ -1,5 +1,10 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
+export interface AssistantTurnSidecarCodec {
+  encapsulate: (source: string, sidecar: unknown) => Promise<string>;
+  unencapsulate: (source: string, data: unknown) => Promise<unknown | undefined>;
+}
+
 export interface RemoteImageData {
   mediaType: string | null;
   data: Uint8Array;
@@ -8,7 +13,8 @@ export interface RemoteImageData {
 export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
 
 /**
- * Per-trip context. Carries the model name plus a per-pair-declared `TExtras`
+ * Per-trip context. Carries the model name, the assistant-turn sidecar codec,
+ * and a per-pair-declared `TExtras`
  * shape that lists exactly the capability fields and runtime adapters the trip
  * reads. Pairs that need no extra fields pass an empty object type. Callers
  * construct the context at the protocol boundary and inject runtime-owned
@@ -22,6 +28,7 @@ export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>
  */
 export type TranslationContext<TExtras = unknown> = {
   readonly model: string;
+  readonly assistantTurnSidecar: AssistantTurnSidecarCodec;
 } & TExtras;
 
 /**

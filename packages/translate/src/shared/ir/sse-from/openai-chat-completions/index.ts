@@ -1,14 +1,22 @@
 import { unwrapCustomToolInput } from '../../../openai-responses-via/custom-tool-wrap.ts';
+import { registerIAT, type IATSource } from '../../iat.ts';
 import type { IRMessageItem } from '../../ir.ts';
+import { buildOpenAIChatCompletionsThinAssistantTurn } from '../../round-trip/openai-chat-completions.ts';
+import type { IRRoundTripReader } from '../../round-trip/stream.ts';
 import { codePointRangeToIR } from '../../shared/coordinates.ts';
 import { createIRJSONObjectDraft } from '../../shared/json.ts';
 import { usageToIR, type IRWire } from '../../shared/usage.ts';
-import { createIRBuilder, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
+import { createIRBuilder, getIRValue, reconcileIRValue, type IRFrame, type IRPath } from '../../stream.ts';
+import type { IATReference } from '../../thin-types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { createOpenAIChatCompletionsReassembler, type OpenAIChatCompletionsAssistantOutputMessageEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-interface IRChatTool { item?: number; id?: string; name: string; arguments: string; custom: boolean; wrapped: boolean; draft: ReturnType<typeof createIRJSONObjectDraft> }
+type IRChatReasoningField = 'reasoning_text' | 'reasoning_content' | 'reasoning';
+interface IRChatReasoningSources { viewLength: number; sources: IATSource[] }
+interface IRChatPendingSource { sourceStart: number; sourceEndExclusive: number; viewStart: number }
+interface IRChatTool { item?: number; id?: string; name: string; arguments: string; nativeArgumentViewLength: number; custom: boolean; wrapped: boolean; pendingSources: IRChatPendingSource[]; sources: IATSource[]; draft: ReturnType<typeof createIRJSONObjectDraft> }
 interface IRChatTextSpan { item: number; part: number; start: number; end: number }
+
 interface IRChatChoice {
   message?: number;
   text?: number;
@@ -21,16 +29,27 @@ interface IRChatChoice {
   textSpans: IRChatTextSpan[];
   logprobPaths: Map<string, IRPath>;
   closed: Set<number>;
+  contentSources: IATSource[];
+  refusalSources: IATSource[];
+  refusalViewLength: number;
+  reasoningSources: Map<IRChatReasoningField, IRChatReasoningSources>;
   ended: boolean;
   incomplete: boolean;
 }
 
+const appendWithSource = (builder: ReturnType<typeof createIRBuilder>, path: IRPath, text: string, sources: IATSource[], viewStart: number): void => {
+  const sourceStart = (getIRValue(builder.state, path) as string).length;
+  builder.append(path, text);
+  sources.push({ path, sourceStart, sourceEndExclusive: sourceStart + text.length, viewStart });
+};
+
 export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string> } = {},
+  options: { customToolNames?: ReadonlySet<string>; roundTrip?: IRRoundTripReader<'openaiChatCompletions'> } = {},
 ): AsyncGenerator<IRFrame> {
   const b = createIRBuilder();
   const choices = new Map<number, IRChatChoice>();
+  const nativeReassembler = options.roundTrip === undefined ? undefined : createOpenAIChatCompletionsReassembler();
   b.assign(['extensions', 'openaiChatCompletions'], {});
   let started = false;
   const syncAnnotations = (index: number, choice: IRChatChoice): void => {
@@ -72,8 +91,10 @@ export const irFromOpenAIChatCompletions = async function* (
   };
   for await (const frame of frames) {
     if (frame.type === 'done') { yield finish(); return; }
+    const nativeChunk = frame.event as unknown as OpenAIChatCompletionsStreamEvent;
     const chunk = frame.event as unknown as IRWire;
     if (chunk.error !== undefined) { b.event({ type: 'error', error: chunk.error }); yield b.drain(); return; }
+    nativeReassembler?.accept(nativeChunk);
     for (const [key, value] of Object.entries(chunk)) if (!['choices', 'usage', 'object', 'obfuscation'].includes(key)) b.assign(['extensions', 'openaiChatCompletions', key], value);
     if (chunk.usage != null) {
       const usage = usageToIR('openaiChatCompletions', chunk.usage);
@@ -84,7 +105,7 @@ export const irFromOpenAIChatCompletions = async function* (
       const index = entry.index as number;
       b.choice(index);
       let choice = choices.get(index);
-      if (choice === undefined) { choice = { tools: new Map(), annotations: [], contentText: '', textSpans: [], logprobPaths: new Map(), closed: new Set(), ended: false, incomplete: false }; choices.set(index, choice); }
+      if (choice === undefined) { choice = { tools: new Map(), annotations: [], contentText: '', textSpans: [], logprobPaths: new Map(), closed: new Set(), contentSources: [], refusalSources: [], refusalViewLength: 0, reasoningSources: new Map(), ended: false, incomplete: false }; choices.set(index, choice); }
       const delta = entry.delta as IRWire;
       const part = (kind: 'text' | 'refusal' | 'audio'): IRPath => {
         closeReasoning(index, choice!);
@@ -99,11 +120,23 @@ export const irFromOpenAIChatCompletions = async function* (
         if (kind !== 'audio') choice!.logprobPaths.set(kind === 'text' ? 'content' : 'refusal', path);
         return path;
       };
+      let processedReasoningField: IRChatReasoningField | undefined;
       for (const key of ['reasoning_text', 'reasoning_content', 'reasoning']) if (typeof delta[key] === 'string' && delta[key] !== '') {
         closeMessage(index, choice);
         choice.reasoning ??= b.item(index, { type: 'reasoning', summary: [''] });
-        b.append(['choices', index, 'items', choice.reasoning, 'summary', 0], delta[key]);
+        const field = key as IRChatReasoningField;
+        processedReasoningField = field;
         break;
+      }
+      for (const key of ['reasoning_text', 'reasoning_content', 'reasoning'] as const) if (typeof delta[key] === 'string' && delta[key] !== '') {
+        const field = key as IRChatReasoningField;
+        const sources = choice.reasoningSources.get(field) ?? { viewLength: 0, sources: [] };
+        if (field === processedReasoningField) {
+          const path: IRPath = ['choices', index, 'items', choice.reasoning!, 'summary', 0];
+          appendWithSource(b, path, delta[key], sources.sources, sources.viewLength);
+        }
+        sources.viewLength += delta[key].length;
+        choice.reasoningSources.set(field, sources);
       }
       if (delta.reasoning_opaque != null) {
         choice.reasoning ??= b.item(index, { type: 'reasoning', summary: [''] });
@@ -112,13 +145,17 @@ export const irFromOpenAIChatCompletions = async function* (
       if (typeof delta.content === 'string' && delta.content !== '') {
         const path = part('text');
         const start = choice.contentText.length;
+        appendWithSource(b, [...path, 'text'], delta.content, choice.contentSources, start);
         choice.contentText += delta.content;
-        b.append([...path, 'text'], delta.content);
         const span = choice.textSpans.at(-1);
         if (span?.item === path[3] && span.part === path[5]) span.end = choice.contentText.length;
         else choice.textSpans.push({ item: path[3] as number, part: path[5] as number, start, end: choice.contentText.length });
       }
-      if (typeof delta.refusal === 'string' && delta.refusal !== '') b.append([...part('refusal'), 'refusal'], delta.refusal);
+      if (typeof delta.refusal === 'string' && delta.refusal !== '') {
+        const path = [...part('refusal'), 'refusal'];
+        appendWithSource(b, path, delta.refusal, choice.refusalSources, choice.refusalViewLength);
+        choice.refusalViewLength += delta.refusal.length;
+      }
       if (delta.audio != null) {
         const path = [...part('audio'), 'audio'];
         for (const field of ['data', 'transcript']) if (delta.audio[field] !== undefined) b.append([...path, field], delta.audio[field]);
@@ -143,30 +180,50 @@ export const irFromOpenAIChatCompletions = async function* (
       const calls = [...(delta.tool_calls ?? []), ...(delta.function_call === undefined ? [] : [{ index: -1, type: 'function', function: delta.function_call }])];
       for (const call of calls) {
         let tool = choice.tools.get(call.index);
+        const fn = call.custom ?? call.function;
+        const argument = fn?.arguments ?? fn?.input ?? '';
+        const nativeArgumentParts = [call.function?.arguments, call.custom?.input].filter((value): value is string => typeof value === 'string');
+        const nativeArgumentViewStart = (tool?.nativeArgumentViewLength ?? 0) + (call.custom === undefined ? 0 : call.function?.arguments?.length ?? 0);
         if (tool?.item !== undefined && choice.closed.has(tool.item)) {
+          tool.nativeArgumentViewLength += nativeArgumentParts.reduce((length, value) => length + value.length, 0);
           console.warn('Ignoring ChatCompletions update for a closed tool call', { choice: index, tool: call.index });
           continue;
         }
         if (tool === undefined) {
           closeMessage(index, choice);
           closeReasoning(index, choice);
-          tool = { name: '', arguments: '', custom: call.type === 'custom' || call.custom !== undefined, wrapped: false, draft: createIRJSONObjectDraft() };
+          tool = { name: '', arguments: '', nativeArgumentViewLength: 0, custom: call.type === 'custom' || call.custom !== undefined, wrapped: false, pendingSources: [], sources: [], draft: createIRJSONObjectDraft() };
           choice.tools.set(call.index, tool);
         }
-        const fn = call.custom ?? call.function;
         if (call.id !== undefined) tool.id = call.id;
         if (call.index === -1) tool.id ??= `${chunk.id}_${index}_function`;
         if (fn?.name !== undefined) tool.name = fn.name;
-        const argument = fn?.arguments ?? fn?.input ?? '';
+        const previousArgumentLength = tool.arguments.length;
         tool.arguments += argument;
         const complete = !tool.custom && tool.draft.append(argument);
         tool.wrapped = !tool.custom && options.customToolNames?.has(tool.name) === true;
-        if (tool.item === undefined && tool.name !== '') tool.item = b.item(index, tool.custom || tool.wrapped ? { type: 'custom_tool_call', call_id: tool.id ?? '', name: tool.name, input: tool.wrapped ? '' : tool.arguments } : { type: 'function_call', name: tool.name, ...(tool.id === undefined ? {} : { call_id: tool.id }), arguments: tool.arguments });
-        else if (tool.item !== undefined) {
+        tool.nativeArgumentViewLength += nativeArgumentParts.reduce((length, value) => length + value.length, 0);
+        const created = tool.item === undefined && tool.name !== '';
+        if (created) tool.item = b.item(index, tool.custom || tool.wrapped ? { type: 'custom_tool_call', call_id: tool.id ?? '', name: tool.name, input: tool.wrapped ? '' : tool.arguments } : { type: 'function_call', name: tool.name, ...(tool.id === undefined ? {} : { call_id: tool.id }), arguments: tool.arguments });
+        if (tool.item === undefined && argument.length > 0) {
+          tool.pendingSources.push({ sourceStart: previousArgumentLength, sourceEndExclusive: tool.arguments.length, viewStart: nativeArgumentViewStart });
+        } else if (tool.item !== undefined && created && !tool.wrapped) {
+          const field = tool.custom ? 'input' : 'arguments';
+          const argumentPath: IRPath = ['choices', index, 'items', tool.item, field];
+          tool.sources.push(...tool.pendingSources.map(source => ({ path: argumentPath, ...source })));
+          if (argument.length > 0) tool.sources.push({ path: argumentPath, sourceStart: previousArgumentLength, sourceEndExclusive: tool.arguments.length, viewStart: nativeArgumentViewStart });
+          tool.pendingSources = [];
+        } else if (tool.item !== undefined && !created) {
           const path: IRPath = ['choices', index, 'items', tool.item];
           if (tool.id !== undefined) b.assign([...path, 'call_id'], tool.id);
           b.assign([...path, 'name'], tool.name);
-          if (!tool.wrapped) reconcileIRValue(b, [...path, tool.custom ? 'input' : 'arguments'], (b.state.choices[index].items[tool.item] as IRWire)[tool.custom ? 'input' : 'arguments'], tool.arguments);
+          if (!tool.wrapped) {
+            const field = tool.custom ? 'input' : 'arguments';
+            const argumentPath = [...path, field];
+            const previousArguments = getIRValue(b.state, argumentPath) as string;
+            reconcileIRValue(b, argumentPath, previousArguments, tool.arguments);
+            if (tool.arguments.length > previousArguments.length) tool.sources.push({ path: argumentPath, sourceStart: previousArguments.length, sourceEndExclusive: tool.arguments.length, viewStart: nativeArgumentViewStart });
+          }
         }
         if (tool.item !== undefined && complete && tool.id !== undefined) {
           if (tool.wrapped) b.assign(['choices', index, 'items', tool.item, 'input'], unwrapCustomToolInput(tool.arguments));
@@ -181,6 +238,37 @@ export const irFromOpenAIChatCompletions = async function* (
         }
         closeMessage(index, choice, entry.finish_reason === 'length' ? 'incomplete' : 'completed');
         for (let item = 0; item < b.state.choices[index].items.length; item++) closeItem(index, choice, item, entry.finish_reason === 'length' ? 'incomplete' : 'completed');
+        const roundTrip = options.roundTrip;
+        if (roundTrip !== undefined && nativeReassembler !== undefined) {
+          const nativeMessage = nativeReassembler.choiceMessage(index) as OpenAIChatCompletionsAssistantOutputMessageEx;
+          const referencesByProtocolPath = new Map<string, IATReference>();
+          const addTextReference = (nativePath: IRPath, sources: readonly IATSource[], view: string): void => {
+            if (view.length === 0 || sources.length === 0) return;
+            const iatNativePath: IRPath = ['choices', index, 'message', ...nativePath];
+            const reference = registerIAT(roundTrip.iat, iatNativePath, sources, view, view, 'text');
+            referencesByProtocolPath.set(JSON.stringify(nativePath), reference);
+          };
+          if (typeof nativeMessage.content === 'string') addTextReference(['content'], choice.contentSources, nativeMessage.content);
+          if (typeof nativeMessage.refusal === 'string') addTextReference(['refusal'], choice.refusalSources, nativeMessage.refusal);
+          for (const field of ['reasoning_text', 'reasoning_content', 'reasoning'] as const) {
+            const source = choice.reasoningSources.get(field);
+            const value = nativeMessage[field];
+            if (source !== undefined && typeof value === 'string') addTextReference([field], source.sources, value);
+          }
+          const orderedTools = [...choice.tools.entries()].filter(([toolIndex]) => toolIndex !== -1).toSorted(([left], [right]) => left - right);
+          nativeMessage.tool_calls?.forEach((call, callIndex) => {
+            const tool = orderedTools[callIndex]?.[1];
+            if (tool === undefined) return;
+            const view = call.type === 'function' ? call.function.arguments : call.custom.input;
+            const nativePath: IRPath = ['tool_calls', callIndex, call.type === 'function' ? 'function' : 'custom', call.type === 'function' ? 'arguments' : 'input'];
+            addTextReference(nativePath, tool.sources, view);
+          });
+          const legacyFunction = choice.tools.get(-1);
+          if (legacyFunction !== undefined && nativeMessage.function_call !== undefined && nativeMessage.function_call !== null) {
+            addTextReference(['function_call', 'arguments'], legacyFunction.sources, nativeMessage.function_call.arguments);
+          }
+          roundTrip.onAssistantTurn(index, buildOpenAIChatCompletionsThinAssistantTurn(nativeMessage, referencesByProtocolPath));
+        }
         b.event({ type: 'choice_end', choice: index, finish_reason: entry.finish_reason === 'function_call' ? 'tool_calls' : entry.finish_reason });
         choice.ended = true;
         choice.incomplete = entry.finish_reason === 'length';

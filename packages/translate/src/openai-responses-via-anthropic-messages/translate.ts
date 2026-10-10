@@ -1,5 +1,5 @@
 import { translateToSourceEvents } from './events.ts';
-import { buildTargetRequest } from './request.ts';
+import { buildRoundTripTargetRequest } from './request.ts';
 import { restoreNamespaceEvents } from '../shared/openai-responses-via/namespace-tools.ts';
 import type { RemoteImageLoader, TranslateTrip } from '../types.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -18,13 +18,13 @@ export const translateOpenAIResponsesViaAnthropicMessages: TranslateTrip<
   // Tool-name maps are produced inside the request translator (it sees the
   // tools first) and read by the events translator so wrapped custom calls and
   // flattened namespace calls recover their source OpenAI Responses identities.
-  const { target, customToolNames, namespaceToolNames } = await buildTargetRequest(src, {
+  const { target, customToolNames, namespaceToolNames } = await buildRoundTripTargetRequest(src, ctx.assistantTurnSidecar, {
     fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
     loadRemoteImage: ctx.loadRemoteImage,
   });
 
   return {
     target,
-    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, customToolNames), namespaceToolNames),
+    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, customToolNames, ctx.assistantTurnSidecar, namespaceToolNames), namespaceToolNames),
   };
 };

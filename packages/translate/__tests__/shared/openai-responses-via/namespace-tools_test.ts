@@ -6,6 +6,7 @@ import { translateOpenAIResponsesViaAnthropicMessages } from '../../../src/opena
 import { buildTargetRequest as chatRequest } from '../../../src/openai-responses-via-openai-chat-completions/request.ts';
 import { translateOpenAIResponsesViaOpenAIChatCompletions } from '../../../src/openai-responses-via-openai-chat-completions/translate.ts';
 import { flattenNamespaceTools, restoreNamespaceEvents } from '../../../src/shared/openai-responses-via/namespace-tools.ts';
+import { createTestSidecarCodec } from '../ir/round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -106,7 +107,7 @@ test('rejects function/custom ambiguity and distinct tuples with the same qualif
 });
 
 test('the complete Chat Completions trip restores the namespace after target tool calls', async () => {
-  const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(payload(), { model: 'm' });
+  const trip = await translateOpenAIResponsesViaOpenAIChatCompletions(payload(), { assistantTurnSidecar: createTestSidecarCodec(), model: 'm' });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'call1', type: 'function', function: { name: 'agents_spawn_2', arguments: '{}' } }] }, finish_reason: null }] });
     yield eventFrame({ id: 'chat1', object: 'chat.completion.chunk', model: 'm', created: 0, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
@@ -115,11 +116,11 @@ test('the complete Chat Completions trip restores the namespace after target too
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
-  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });
+  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' }), expect.objectContaining({ type: 'reasoning', summary: [], encrypted_content: expect.any(String) })] } });
 });
 
 test('the complete Anthropic Messages trip restores the namespace after target tool calls', async () => {
-  const trip = await translateOpenAIResponsesViaAnthropicMessages(payload(), { model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
+  const trip = await translateOpenAIResponsesViaAnthropicMessages(payload(), { assistantTurnSidecar: createTestSidecarCodec(), model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } });
   const frames = (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
     yield eventFrame({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg1', type: 'message', model: 'm', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
     yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call1', name: 'agents_spawn_2', input: {} } });
@@ -131,5 +132,5 @@ test('the complete Anthropic Messages trip restores the namespace after target t
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of trip.events(frames)) if (frame.type === 'event') events.push(frame.event);
   expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'response.output_item.done', item: expect.objectContaining({ namespace: 'agents', name: 'spawn', arguments: '{}' }) })]));
-  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' })] } });
+  expect(events.at(-1)).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ namespace: 'agents', name: 'spawn' }), expect.objectContaining({ type: 'reasoning', summary: [], encrypted_content: expect.any(String) })] } });
 });
