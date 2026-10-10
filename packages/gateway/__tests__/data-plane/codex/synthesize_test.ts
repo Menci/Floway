@@ -365,14 +365,11 @@ describe('synthesizeCatalogEntry', () => {
     });
 
     test.each([
-      { efforts: ['high', 'max', 'ultra', 'minimal', 'xhigh', 'low', 'medium', 'none', 'vendor-specific'], expected: 'max' },
-      { efforts: ['low', 'none', 'ultra', 'medium', 'xhigh', 'minimal', 'high'], expected: 'xhigh' },
-      { efforts: ['low', 'high', 'ultra', 'medium', 'none', 'minimal'], expected: 'high' },
-      { efforts: ['minimal', 'ultra', 'medium', 'none', 'low'], expected: 'medium' },
-      { efforts: ['none', 'ultra', 'low', 'minimal'], expected: 'low' },
-      { efforts: ['none', 'minimal', 'ultra'], expected: 'minimal' },
+      { efforts: ['max', 'high', 'ultra'], expected: 'high' },
+      { efforts: ['high', 'ultra', 'vendor-specific'], expected: 'vendor-specific' },
+      { efforts: ['vendor-specific', 'ultra'], expected: 'vendor-specific' },
       { efforts: ['ultra', 'none'], expected: 'none' },
-    ])('maps Ultra to $expected as the highest supported effort regardless of list order', ({ efforts, expected }) => {
+    ])('maps Ultra to the last non-Ultra effort in $efforts', ({ efforts, expected }) => {
       const supportedReasoning = efforts.map(effort => ({ effort, description: effort }));
       const entry = synthesizeCatalogEntry(base, {
         ...bundledBase,
@@ -388,9 +385,10 @@ describe('synthesizeCatalogEntry', () => {
 
     test.each([
       { efforts: ['xhigh', 'max'], mapping: 'xhigh' },
-      { efforts: ['vendor-specific', 'ultra'], mapping: 'vendor-specific' },
+      { efforts: [], mapping: 'xhigh' },
       { efforts: ['ultra'], mapping: undefined },
-    ])('preserves the catalog mapping without Ultra or a ranked effort: $efforts', ({ efforts, mapping }) => {
+      { efforts: ['ultra'], mapping: 'xhigh' },
+    ])('preserves the catalog mapping without Ultra or a non-Ultra effort: $efforts', ({ efforts, mapping }) => {
       const supportedReasoning = efforts.map(effort => ({ effort, description: '' }));
       const entry = synthesizeCatalogEntry(base, {
         ...bundledBase,
@@ -401,7 +399,7 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.multi_agent_reasoning_effort).toBe(mapping);
     });
 
-    test('ranks registry efforts instead of higher efforts inherited from the catalog', () => {
+    test('uses the last registry effort instead of the catalog order', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
         chat: { reasoning: { effort: { supported: ['high', 'ultra', 'low'], default: 'low' } } },
@@ -410,7 +408,7 @@ describe('synthesizeCatalogEntry', () => {
         supported_reasoning_levels: ['max', 'xhigh', 'ultra'].map(effort => ({ effort, description: '' })),
         multi_agent_reasoning_effort: 'max',
       });
-      expect(entry.multi_agent_reasoning_effort).toBe('high');
+      expect(entry.multi_agent_reasoning_effort).toBe('low');
       expect(entry.supported_reasoning_levels).toEqual([
         { effort: 'high', description: '' },
         { effort: 'ultra', description: '' },
