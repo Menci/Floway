@@ -1169,7 +1169,7 @@ const en = {
         metricOption: '{{name}} {{unit}}',
         value: 'Value',
         selection: { upstream: 'Upstream', metric: 'Metric' },
-        groupBy: { upstream: 'Upstream', metric: 'Metric name' },
+        groupBy: { upstream: 'Upstream', metric: 'Metric' },
         units: { percent: 'Usage (%)', usd: 'Cost (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },
         metrics: {

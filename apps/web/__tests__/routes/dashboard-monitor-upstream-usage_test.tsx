@@ -31,7 +31,7 @@ it('offers a single selected comparison and date ranges in one control row', asy
   expect(screen.getByText('Custom')).toBeTruthy();
   expect(screen.getByRole('heading', { level: 2, name: 'Copilot seat' })).toBeTruthy();
   fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
-  fireEvent.click(screen.getByRole('option', { name: 'Metric name' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Metric' }));
   await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Premium interactions' })).toBeTruthy());
   expect(screen.getByRole('combobox', { name: 'Metric' })).toBeTruthy();
   expect(screen.queryByRole('combobox', { name: 'Upstream' })).toBeNull();

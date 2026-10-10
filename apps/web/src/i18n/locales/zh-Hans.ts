@@ -1119,7 +1119,7 @@ const zhHansCN = {
         metricOption: '{{name}} {{unit}}',
         value: '数值',
         selection: { upstream: '上游', metric: '维度' },
-        groupBy: { upstream: '上游', metric: '维度名字' },
+        groupBy: { upstream: '上游', metric: '维度' },
         units: { percent: '用量 (%)', usd: '金额 (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}} 分钟窗口', hours: '{{count, number}} 小时窗口', days: '{{count, number}} 天窗口' },
         metrics: {
