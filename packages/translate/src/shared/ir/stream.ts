@@ -1,5 +1,5 @@
 import type { IR, IRJSONValue, IRJSONObject } from './ir.ts';
-import { cloneIRJSON } from './json.ts';
+import { cloneIRJSON } from './shared/json.ts';
 
 export type IRPath = readonly (string | number)[];
 export type IROperation =

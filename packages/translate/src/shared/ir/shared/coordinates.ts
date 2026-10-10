@@ -1,4 +1,4 @@
-import type { IRUTF16TextRange } from './ir.ts';
+import type { IRUTF16TextRange } from '../ir.ts';
 
 // Native Responses probes with 😀 and 📖 select complete links by code-point offsets.
 // https://github.com/Menci/Floway/pull/594#issuecomment-6097199680

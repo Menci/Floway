@@ -1,14 +1,24 @@
-
-import { irRangeToUTF8 } from '../../coordinates.ts';
-import { irGenerateContentError } from '../../errors.ts';
-import type { IRSourceCitation } from '../../ir.ts';
-import { parseIRJSONObject } from '../../json.ts';
-import { irOutputMetadata, irServingModel } from '../../metadata.ts';
-import { createIRProjection, type IROutputOptions } from '../../projection.ts';
+import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
+import type { IRJSONObject, IRSourceCitation } from '../../ir.ts';
+import { irRangeToUTF8 } from '../../shared/coordinates.ts';
+import { parseIRJSONObject } from '../../shared/json.ts';
+import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
+import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
+import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
-import { usageFromIR, irServiceTier, type IRWire } from '../../usage.ts';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+
+// A failed Responses event has no HTTP status; these are target classifications.
+// https://developers.openai.com/api/reference/resources/responses/streaming-events
+// https://ai.google.dev/gemini-api/docs/troubleshooting
+const irGenerateContentError = (error: IRJSONObject): IRJSONObject => {
+  const code = error.code ?? error.type;
+  const [status, statusCode] = code === 'rate_limit_exceeded' || code === 'rate_limit_error' ? ['RESOURCE_EXHAUSTED', 429]
+    : code === 'invalid_prompt' || code === 'invalid_request_error' || isContextExceededError(error) ? ['INVALID_ARGUMENT', 400]
+      : code === 'overloaded_error' ? ['UNAVAILABLE', 503] : ['INTERNAL', 500];
+  return { code: statusCode, status, message: error.message };
+};
 
 export interface IRGenerateContentOutputOptions extends IROutputOptions { imageMimeType?: string; audioMimeType?: string }
 

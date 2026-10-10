@@ -1,13 +1,17 @@
 import { packReasoningSignature } from '../../../anthropic-messages-and-openai-responses/reasoning.ts';
-import { irMessagesError } from '../../errors.ts';
-import type { IRContentPart, IRItem, IRSourceCitation } from '../../ir.ts';
-import { cloneIRJSON, parseIRJSONObject } from '../../json.ts';
-import { irOutputMetadata, irServingModel } from '../../metadata.ts';
-import { createIRProjection, type IROutputOptions } from '../../projection.ts';
+import { isContextExceededError } from '../../../anthropic-messages-via/context-window-error.ts';
+import type { IRJSONObject, IRContentPart, IRItem, IRSourceCitation } from '../../ir.ts';
+import { cloneIRJSON, parseIRJSONObject } from '../../shared/json.ts';
+import { irOutputMetadata, irServingModel } from '../../shared/metadata.ts';
+import { createIRProjection, type IROutputOptions } from '../../shared/projection.ts';
+import { usageFromIR, irServiceTier, type IRWire } from '../../shared/usage.ts';
 import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
-import { usageFromIR, irServiceTier, type IRWire } from '../../usage.ts';
-import type { AnthropicMessagesStreamEventEx, AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesStreamEventEx, type AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
+
+const irMessagesError = (error: IRJSONObject): IRJSONObject => isContextExceededError(error)
+  ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
+  : { type: ['invalid_request_error', 'authentication_error', 'permission_error', 'not_found_error', 'rate_limit_error', 'api_error', 'overloaded_error'].includes(error.type as string) ? error.type : 'api_error', message: error.message };
 
 interface IRMessagesUnit { item: number; part?: number; block?: IRWire; index?: number; closed: boolean; citations: number }
 
