@@ -44,6 +44,9 @@ onlyBuiltDependencies:
 # https://www.w3.org/TR/SVG2/shapes.html#RectElement
 # Raw JSON integer tokens must survive cloning and streaming serialization.
 # https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
+# Assistant-turn sidecars preserve lone-surrogate strings and keys with CBOR Tag 273.
+# https://www.iana.org/assignments/cbor-tags/tags.csv
+# https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
 # Assistant-turn sidecars preserve literal __proto__ keys through object mapping and CBOR decoding.
 # https://github.com/Menci/Floway/blob/54a8e2c783ed2ff1c166270c228821fa32aea252/patches/map-obj%406.0.0.patch
 # https://github.com/Menci/Floway/blob/54a8e2c783ed2ff1c166270c228821fa32aea252/patches/cbor-x%401.6.6.patch

@@ -88,6 +88,32 @@ describe('assistant turn sidecar codec', () => {
     expect(Object.getPrototypeOf(restored.thinAssistantTurn[0])).toBe(Object.prototype);
   });
 
+  test('keeps well-formed strings as CBOR text and preserves lone-surrogate strings and keys with Tag 273', async () => {
+    const astral = String.fromCodePoint(0x1f600);
+    const mixed = astral + String.fromCharCode(0xd800);
+    const sidecar = { source, plain: astral, content: mixed, [mixed]: mixed };
+
+    expect([...encode(astral)]).toEqual([0x64, 0xf0, 0x9f, 0x98, 0x80]);
+    expect([...encode(mixed)]).toEqual([0xd9, 0x01, 0x11, 0x47, 0xf0, 0x9f, 0x98, 0x80, 0xed, 0xa0, 0x80]);
+    expect(decode(Uint8Array.from([0xd9, 0x01, 0x11, 0x41, 0x61]))).toBe('a');
+    const large = '\u8000'.repeat(3_000) + String.fromCharCode(0xd800);
+    const largeBytes = encode(large);
+    expect([...largeBytes.subarray(0, 6)]).toEqual([0xd9, 0x01, 0x11, 0x59, 0x23, 0x2b]);
+    expect(decode(largeBytes)).toBe(large);
+
+    const carrier = await codec.encapsulate(source, sidecar);
+    const payload = decodeForgivingBase64(carrier).subarray(32);
+    const restored = await codec.unencapsulate(source, carrier) as typeof sidecar;
+    const decoded = decode(payload) as typeof sidecar;
+
+    expect(Object.hasOwn(restored, mixed)).toBe(true);
+    expect(restored[mixed]).toBe(mixed);
+    expect(restored.content).toBe(mixed);
+    expect(restored.plain).toBe(astral);
+    expect(Object.hasOwn(decoded, mixed)).toBe(true);
+    expect(decoded[mixed]).toBe(mixed);
+  });
+
   test('packs canonical Base64 and Base64URL strings as CBOR tags 22 and 21', async () => {
     const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
     const base64 = encodeBase64(bytes);

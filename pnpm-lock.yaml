@@ -21,7 +21,7 @@ patchedDependencies:
     hash: 14d55564bb8f6d1cadd22c1ebf4d5604df7dc5420d4510843debe80b7a9ddada
     path: patches/@reclaimprotocol__tls@0.1.2.patch
   cbor-x@1.6.6:
-    hash: 10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de
+    hash: fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7
     path: patches/cbor-x@1.6.6.patch
   klona@2.0.6:
     hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
@@ -388,7 +388,7 @@ importers:
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)
       cbor-x:
         specifier: 1.6.6
-        version: 1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de)
+        version: 1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7)
       es-toolkit:
         specifier: ^1.49.0
         version: 1.49.0
@@ -650,7 +650,7 @@ importers:
         version: link:../protocols
       cbor-x:
         specifier: ^1.6.6
-        version: 1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de)
+        version: 1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7)
       klona:
         specifier: 2.0.6
         version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
@@ -8361,7 +8361,7 @@ snapshots:
       '@cbor-extract/cbor-extract-win32-x64': 2.2.2
     optional: true
 
-  cbor-x@1.6.6(patch_hash=10fdae2e26c9ab033dba337ea8c911bbafda613a57d85c6ec6825db0dfb2b2de):
+  cbor-x@1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7):
     optionalDependencies:
       cbor-extract: 2.2.2
 
