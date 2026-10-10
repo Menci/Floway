@@ -41,19 +41,20 @@ test('measures output when it becomes observable through the provider result', a
   const iterator = result.events[Symbol.asyncIterator]();
   expect((await iterator.next()).value).toEqual(opener);
   now = 500;
+  const pendingOutput = iterator.next();
   releaseOutput();
   await vi.waitFor(() => { expect(buffered).toBe(true); });
   expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
   now = 15000;
   releaseIdentity();
-  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(15000); });
-  expect((await iterator.next()).value).toEqual(delta);
+  expect((await pendingOutput).value).toEqual(delta);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(15000);
   expect((await iterator.next()).value).toEqual(done);
   expect(await iterator.next()).toEqual({ done: true, value: undefined });
   await result.finalMetadata;
 });
 
-test.each([true, false])('timestamps parsed upstream output while downstream is stalled (same byte chunk: %s)', async sameChunk => {
+test.each([true, false])('preserves parser consumption timing under downstream backpressure (same byte chunk: %s)', async sameChunk => {
   let now = 110;
   vi.spyOn(performance, 'now').mockImplementation(() => now);
   let upstream!: ReadableStreamDefaultController<Uint8Array>;
@@ -72,27 +73,34 @@ test.each([true, false])('timestamps parsed upstream output while downstream is 
   }
   now = 500;
   upstream.enqueue(new TextEncoder().encode(sameChunk ? role + text : text));
-  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500); });
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
   now = 5000;
   upstream.close();
   const collected = [];
   for await (const frame of { [Symbol.asyncIterator]: () => iterator }) collected.push(frame);
   expect(collected).toHaveLength(sameChunk ? 2 : 1);
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(5000);
   await result.finalMetadata;
 });
 
-test('return before consumption cancels a pending parser read and settles metadata', async () => {
-  const cancel = vi.fn();
-  const body = new ReadableStream<Uint8Array>({ cancel });
-  const controller = new AbortController();
-  const ctx = mockGatewayCtx({ abortSignal: controller.signal, downstreamAbortController: controller });
-  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIChatCompletionsStream(body, { signal: controller.signal })), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
+test('does not pull the provider stream before consumption or read ahead between frames', async () => {
+  const first: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.created' } };
+  const second: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.output_text.delta', delta: 'hello' } };
+  const source = iter([first, second])[Symbol.asyncIterator]();
+  const next = vi.spyOn(source, 'next');
+  const ctx = mockGatewayCtx();
+  const result = await providerStreamResultToExecuteResult(okStreamResult({ [Symbol.asyncIterator]: () => source }), stubModelCandidate(), 'openaiResponses', ctx, () => null);
   if (result.type !== 'events') throw new Error('Expected events');
-  await result.events[Symbol.asyncIterator]().return?.();
-  expect(cancel).toHaveBeenCalledOnce();
-  expect(controller.signal.aborted).toBe(true);
-  expect((await result.finalMetadata)?.modelIdentity).toBeDefined();
+  expect(next).not.toHaveBeenCalled();
+  const iterator = result.events[Symbol.asyncIterator]();
+  expect((await iterator.next()).value).toBe(first);
+  expect(next).toHaveBeenCalledTimes(1);
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
+  expect((await iterator.next()).value).toBe(second);
+  expect(next).toHaveBeenCalledTimes(2);
+  expect(ctx.attempt.timing.firstOutputTokenAt).not.toBeNull();
+  await iterator.return?.();
+  await result.finalMetadata;
 });
 
 test('observes a terminal-only message after parsed discovery lifecycle without inventing earlier timing', async () => {
@@ -121,25 +129,12 @@ test('observes a terminal-only message after parsed discovery lifecycle without 
     },
   }]));
   upstream.close();
-  await vi.waitFor(() => { expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500); });
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
   const last = await iterator.next();
+  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
   expect(last.value?.type === 'event' && last.value.event.type).toBe('response.completed');
   expect(await iterator.next()).toEqual({ done: true, value: undefined });
   await result.finalMetadata;
-});
-
-test('a saturated prefix keeps the shared attempt timing unavailable across continuations', async () => {
-  const ctx = mockGatewayCtx();
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  const frames: ProtocolFrame<unknown>[] = Array.from({ length: 256 }, () => ({ type: 'event', event: { type: 'response.created' } }));
-  frames.push({ type: 'event', event: { type: 'response.output_item.added', item: { type: 'message' } } });
-  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
-  await vi.waitFor(() => { expect(ctx.attempt.outputObservationUnavailable).toBe(true); });
-  expect(await drainEvents(result)).toEqual(frames);
-  const continuation = await providerStreamResultToExecuteResult(okStreamResult(iter(frames.slice(-1))), stubModelCandidate(), 'openaiResponses', ctx, () => null);
-  await drainEvents(continuation);
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
-  expect(warn).toHaveBeenCalledOnce();
 });
 
 const iter = <T>(items: readonly T[]): AsyncIterable<T> => ({

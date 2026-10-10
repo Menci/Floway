@@ -30,7 +30,7 @@ const ctx = ({ firstOutputTokenAt = null, upstreamCallStartedAt = null }: {
 } = {}) => mockGatewayCtx({
   apiKeyId: 'key_a',
   backgroundScheduler: promise => { background.push(promise); },
-  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, outputObservationUnavailable: false, telemetry: undefined },
+  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, telemetry: undefined },
 });
 
 beforeEach(() => {

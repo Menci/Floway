@@ -66,7 +66,6 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
   for (const candidate of candidates) {
     ctx.attempt.timing.upstreamCallStartedAt = null;
     ctx.attempt.timing.firstOutputTokenAt = null;
-    ctx.attempt.outputObservationUnavailable = false;
     ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
     const result = await run(candidate);
     if (isAttemptSuccess(result)) return result;

@@ -115,7 +115,7 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
   });
 
-  test('collected responses can cancel pending upstream observations', async () => {
+  test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -124,10 +124,8 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertExists(ctx.downstreamAbortController);
-    assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
-    ctx.downstreamAbortController.abort();
-    assertEquals(ctx.abortSignal?.aborted, true);
+    assertEquals(ctx.downstreamAbortController, undefined);
+    assertEquals(ctx.abortSignal, undefined);
   });
 
   test('caller-supplied downstreamAbortController overrides the factory-minted one (websocket path)', async () => {

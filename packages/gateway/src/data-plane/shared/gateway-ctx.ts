@@ -12,7 +12,6 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 export interface AttemptState {
   readonly timing: AttemptTiming;
   telemetry: PerformanceTelemetryContext | undefined;
-  outputObservationUnavailable: boolean;
 }
 
 export interface GatewayCtx {
@@ -39,7 +38,7 @@ export interface CreateGatewayCtxOptions {
   wantsStream: boolean;
   // WebSocket-style call sites own the AbortController (so the upgrade
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
-  // to cancel pending upstream observations, including collected responses.
+  // when wantsStream is true.
   downstreamAbortController?: AbortController;
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
@@ -69,17 +68,17 @@ export interface CreateGatewayCtxOptions {
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
-  const controller = opts.downstreamAbortController ?? new AbortController();
+  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined, outputObservationUnavailable: false };
+  const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt.timing);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
     requestStartedAt: Date.now(),
     upstreamIds,
-    abortSignal: controller.signal,
+    abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,

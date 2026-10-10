@@ -1,5 +1,4 @@
 import { firstOutputTokenSignal } from './first-output-token.ts';
-import { observeStreamPrefix } from './observe-stream-prefix.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -40,34 +39,35 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   // abort settles it too; whichever fires first wins, and the later call is a
   // no-op.
   ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
-  // Provider normalization determines when a frame crosses this observation
-  // boundary. Its internal buffering remains included in the measurement.
-  const stampedEvents = observeStreamPrefix(providerResult.events, frame => {
-    if (!ctx.abortSignal?.aborted && !ctx.attempt.outputObservationUnavailable && ctx.attempt.timing.firstOutputTokenAt === null) {
-      const signal = firstOutputTokenSignal(frame, targetApi);
-      if (signal !== null) {
-        ctx.attempt.timing.firstOutputTokenAt = performance.now();
-        if (signal.type === 'runtime-output') {
-          console.warn('Floway: first output timing started from runtime output without an earlier decode signal in this response', {
-            outputType: signal.outputType,
-            upstream: identity.upstream,
-            model: identity.model,
-            modelKey: identity.modelKey,
-          });
+  // Timing follows ordinary provider-stream consumption. Provider buffering
+  // and downstream backpressure can delay observation of the first signal.
+  const stampedEvents = (async function* () {
+    try {
+      for await (const frame of providerResult.events) {
+        if (ctx.attempt.timing.firstOutputTokenAt === null) {
+          const signal = firstOutputTokenSignal(frame, targetApi);
+          if (signal !== null) {
+            ctx.attempt.timing.firstOutputTokenAt = performance.now();
+            if (signal.type === 'runtime-output') {
+              console.warn('Floway: first output timing started from runtime output without an earlier decode signal in this response', {
+                outputType: signal.outputType,
+                upstream: identity.upstream,
+                model: identity.model,
+                modelKey: identity.modelKey,
+              });
+            }
+          }
         }
+        if (frame.type === 'event') {
+          const reported = readBillableUsage(frame.event);
+          if (reported !== null) billableUsage = reported;
+        }
+        yield frame;
       }
+    } finally {
+      settleMetadata();
     }
-    if (frame.type === 'event') {
-      const reported = readBillableUsage(frame.event);
-      if (reported !== null) billableUsage = reported;
-    }
-    return ctx.attempt.timing.firstOutputTokenAt !== null || ctx.attempt.outputObservationUnavailable;
-  }, () => {
-    ctx.attempt.outputObservationUnavailable = true;
-    console.warn('Floway: first output timing unavailable because the observation prefix reached its buffer limit', {
-      upstream: identity.upstream, model: identity.model, modelKey: identity.modelKey,
-    });
-  }, settleMetadata, () => { ctx.downstreamAbortController?.abort(); });
+  })();
   return {
     ...eventResult(stampedEvents, identity, { performance: context, headers: providerResult.headers }),
     finalMetadata,

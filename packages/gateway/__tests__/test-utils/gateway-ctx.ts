@@ -18,7 +18,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   runtimeLocation: 'TEST',
   dump: null,
   backgroundScheduler: promise => { void promise; },
-  attempt: { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined, outputObservationUnavailable: false },
+  attempt: { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined },
   ...overrides,
 });
 
