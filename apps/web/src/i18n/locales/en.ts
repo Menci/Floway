@@ -467,8 +467,8 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Charged to this account',
-          costLast4Weeks: 'Charged to this account in the last 4 weeks',
+          costRange: '{{from}} to {{until}}: credits consumed by model requests.',
+          costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -993,8 +993,15 @@ const en = {
         },
         ollama: {
           cloudUsage: 'Fetch account usage',
-          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',
           usage: {
+            allowance: 'Period plan credits {{amount}}',
+            resets: 'Resets {{time}}',
+            balance: { included: 'Included balance', purchased: 'Purchased balance' },
+            balanceHint: {
+              included: 'Remaining plan credits. Reset monthly and used first for model requests.',
+              purchased: 'Remaining purchased credits. Used after plan credits run out.',
+            },
             title: 'Usage',
             load: 'Load',
             refresh: 'Refresh',
@@ -1008,7 +1015,6 @@ const en = {
             },
             observed: 'Observed {{time}}',
             empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
-            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
             backgroundFailed: 'The last background refresh failed: {{message}}',
           },
         },

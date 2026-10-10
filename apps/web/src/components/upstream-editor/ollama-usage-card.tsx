@@ -1,11 +1,3 @@
-// Ollama Cloud account and usage. The account names the plan the windows are a
-// fraction of; the windows are percentages with no reset timestamp — that is
-// everything the upstream reports — so each row is a bar and a number.
-//
-// The data plane refreshes the same reading in the background after the calls
-// it serves, so this card is normally current on open; the refresh action is
-// the operator's unconditional read.
-
 import { useCallback, useState } from 'react';
 
 import { api, callApi } from '../../api/client';
@@ -21,11 +13,12 @@ import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
-import { activityCostText, type OllamaRecord, readActivityCost, readWindows } from '../upstreams/ollama-usage';
+import { activityCostHint, activityCostText, type OllamaRecord, readWindows } from '../upstreams/ollama-usage';
 import { ProviderIcon } from '../upstreams/provider-badge';
 import { quotaBarColor } from '../upstreams/subscription-quota';
+import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
-const { ProgressBar, Text } = fluentComponents;
+const { InfoLabel, ProgressBar, Text, Tooltip } = fluentComponents;
 
 export function OllamaUsageCard({ probeRecord, record }: { probeRecord: UpstreamRecordEnvelope; record: OllamaRecord }) {
   const { t } = useTranslation();
@@ -38,11 +31,8 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
   const stored = record.state?.usageProbe ?? null;
   const observation = refreshed?.observation ?? stored?.observation ?? null;
   const account = refreshed?.account ?? record.state?.account ?? null;
-  const windows = readWindows(observation?.data);
-  const activityCost = readActivityCost(observation?.data);
-  // A background probe records its failure on the upstream rather than
-  // interrupting the request that armed it, so this is where it surfaces. A
-  // manual refresh that succeeded has already answered the question.
+  const usage = observation === null ? null : readOllamaAccountUsage(observation.data);
+  const windows = usage === null ? [] : readWindows(usage.included);
   const backgroundError = refreshed === null ? stored?.error ?? null : null;
   const accountName = account?.name ?? account?.email ?? null;
 
@@ -79,6 +69,17 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       />
     } />
 
+    {usage?.included.kind === 'credits' && <div className="grid gap-1">
+      <div className="flex items-baseline justify-between gap-3">
+        <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.included')}>{t('dashboard.upstreamEditor.ollama.usage.balance.included')}</InfoLabel>
+        <Text>{activityCostText(usage.included.balanceUsd)}</Text>
+      </div>
+      <div className="flex flex-wrap justify-between gap-x-3">
+        <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
+        <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
+      </div>
+    </div>}
+
     {windows.map(usageWindow => <div className="grid gap-1" key={usageWindow.key}>
       <div className="flex items-baseline justify-between gap-3">
         <Text size={300}>{t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}</Text>
@@ -87,22 +88,20 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
         </Text>
       </div>
       <ProgressBar color={quotaBarColor(usageWindow.percent)} max={100} thickness="large" value={clampPercent(usageWindow.percent) ?? undefined} />
+      <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>
     </div>)}
 
-    {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost.amount)}</Text>}
-      <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}
-      </Text>
+    {usage !== null && <div className="flex justify-between gap-3">
+      <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.purchased')}>{t('dashboard.upstreamEditor.ollama.usage.balance.purchased')}</InfoLabel>
+      <Text>{activityCostText(usage.purchasedBalanceUsd)}</Text>
     </div>}
 
-    {observation && windows.length === 0 && <Text size={200} className="text-fui-fg3">
-      {t('dashboard.upstreamEditor.ollama.usage.unreadable')}
-    </Text>}
+    {usage !== null && observation !== null && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+      {usage.activity.usageUsd !== null && <Tooltip content={activityCostHint(usage.activity, t, locale)} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(usage.activity.usageUsd)}</Text></Tooltip>}
+      <Text size={200} className="text-fui-fg3 ml-auto">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>
+    </div>}
 
-    {!observation && !loading && <Text size={200} className="text-fui-fg3">
-      {t('dashboard.upstreamEditor.ollama.usage.empty')}
-    </Text>}
+    {!observation && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.empty')}</Text>}
 
     {backgroundError !== null && <OutcomeMessageBar intent="warning">
       {t('dashboard.upstreamEditor.ollama.usage.backgroundFailed', { message: backgroundError })}

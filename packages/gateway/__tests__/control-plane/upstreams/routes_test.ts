@@ -3163,3 +3163,31 @@ test('POST /api/upstreams/claude-code/oauth/refresh recovers as success when a s
   assertEquals(storedState.accounts[0].refreshToken, 'rt_sibling_rotated');
   assertEquals(storedState.accounts[0].accessToken?.token, 'at_sibling_rotated');
 });
+
+test('manual Ollama usage refresh commits activity and current balance together', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  const record = buildCustomUpstreamRecord({
+    id: 'up_ollama_manual', kind: 'ollama',
+    config: { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, state: null,
+  });
+  await saveUpstreamForTest(repo.upstreams, record);
+  const paths: string[] = [];
+  await withMockedFetch(request => {
+    const path = new URL(request.url).pathname;
+    paths.push(path);
+    if (path === '/api/usage') return jsonResponse({ range: '7d', scope: 'self', from: '2026-10-04T00:00:00Z', until: '2026-10-11T04:00:00Z', totals: { request_count: 15, usage_usd: 3.5 } });
+    if (path === '/api/balance') return jsonResponse({ included: { balance_usd: 42, allowance_usd: 60, period: { from: '2026-10-01T00:00:00Z', until: '2026-11-01T00:00:00Z' } }, purchased: { balance_usd: 25 } });
+    if (path === '/api/me') return jsonResponse({ name: 'Tester', email: 'test@example.com', plan: 'pro' });
+    throw new Error(`Unexpected Ollama request ${path}`);
+  }, async () => {
+    const response = await requestApp('/api/upstreams/ollama/usage', authed(adminSession, { record: envelopeFromRecord(record) }));
+    assertEquals(response.status, 200);
+    const body = await response.json() as JsonObject;
+    assertEquals(body.observation.data.usage.totals.usage_usd, 3.5);
+    assertEquals(body.observation.data.balance.purchased.balance_usd, 25);
+    const state = (await repo.upstreams.getById(record.id))!.state as JsonObject;
+    assertEquals(state.usageProbe.observation.data.usage.totals.usage_usd, 3.5);
+    assertEquals(state.usageProbe.observation.data.balance.included.balance_usd, 42);
+  });
+  assertEquals(paths.toSorted(), ['/api/balance', '/api/me', '/api/usage']);
+});
