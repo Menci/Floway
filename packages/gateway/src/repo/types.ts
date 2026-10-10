@@ -572,6 +572,9 @@ export interface UpstreamUsageMetricRecord {
 }
 
 export interface UpstreamUsageMetricsRepo {
+  listAll(): Promise<UpstreamUsageMetricRecord[]>;
+  set(record: UpstreamUsageMetricRecord): Promise<void>;
+  deleteAll(): Promise<void>;
   record(record: UpstreamUsageMetricRecord): Promise<void>;
   query(start: number, end: number): Promise<UpstreamUsageMetricRecord[]>;
 }

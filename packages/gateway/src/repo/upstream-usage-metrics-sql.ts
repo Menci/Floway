@@ -8,8 +8,8 @@ export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
   constructor(private db: SqlDatabase) {}
 
   async record(record: UpstreamUsageMetricRecord): Promise<void> {
-    // Coalesce in SQL so concurrent requests and separate Worker isolates retain
-    // the latest observation in each interval without relying on process timers.
+    // Coalesce changed values in SQL so concurrent requests and separate Worker
+    // isolates share interval state without process timers.
     await this.db.prepare(`
       INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value, provider, upstream_name, upstream_hue)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?
@@ -27,6 +27,25 @@ export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
       WHERE excluded.timestamp >= upstream_usage_metrics.timestamp
     `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value, record.provider, record.upstreamName, record.upstreamHue,
       record.upstreamId, record.key, record.timestamp, record.upstreamId, record.key, record.value, record.upstreamId, record.key).run();
+  }
+
+  async listAll(): Promise<UpstreamUsageMetricRecord[]> {
+    const { results } = await this.db.prepare(`SELECT ${columns} FROM upstream_usage_metrics ORDER BY timestamp, upstreamId, key`).all<UpstreamUsageMetricRecord>();
+    return results;
+  }
+
+  async set(record: UpstreamUsageMetricRecord): Promise<void> {
+    await this.db.prepare(`
+      INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value, provider, upstream_name, upstream_hue)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (upstream_id, metric_key, bucket) DO UPDATE SET
+        timestamp = excluded.timestamp, value = excluded.value, provider = excluded.provider,
+        upstream_name = excluded.upstream_name, upstream_hue = excluded.upstream_hue
+    `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value, record.provider, record.upstreamName, record.upstreamHue).run();
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM upstream_usage_metrics').run();
   }
 
   async query(start: number, end: number): Promise<UpstreamUsageMetricRecord[]> {

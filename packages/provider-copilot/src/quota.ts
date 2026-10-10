@@ -295,10 +295,6 @@ export const putCopilotSeat = async (upstreamId: string, seat: CopilotSeat): Pro
 export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<Response> =>
   fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/user`, { headers: githubHeaders(githubToken) });
 
-// Both sources land in the same slot, so whichever observed the seat most
-// recently is what the dashboard shows. `fetchedAt` is stamped outside the
-// mutator: the mutator is re-run on a lost race and must return the same
-// snapshot each time.
 export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
   const fetchedAt = Date.parse(snapshot.observed_at);
   await getProviderRepo().upstreams.saveState(upstreamId, current => ({

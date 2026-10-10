@@ -9,3 +9,11 @@ it('records Ollama dynamic window percentages and hidden dollar cost, including 
   expect(resolveUsageMetricDisplayName(costKey)).toEqual({ name: 'last_4_weeks', unit: 'usd', windowMinutes: null });
   expect(ollamaUsageMetrics({ ...observation, activity: { cost: '12.34567', period: { type: 'last_4_weeks' } } }).get(costKey)).toBe(12.34567);
 });
+
+it('exposes malformed recognized costs and delivers nonfinite numeric usage to recording', () => {
+  for (const cost of ['   ', 'invalid', true, null]) {
+    expect(() => ollamaUsageMetrics({ activity: { cost, period: { type: 'last_4_weeks' } } })).toThrow(TypeError);
+  }
+  const body = JSON.parse('{"limits":{"session":{"usage":1e400}}}') as Record<string, unknown>;
+  expect(ollamaUsageMetrics(body).get(JSON.stringify(['window', 'session']))).toBe(Infinity);
+});

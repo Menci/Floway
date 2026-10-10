@@ -14,3 +14,8 @@ it('keeps header overage separate from the OAuth extra usage budget', () => {
   expect(claudeCodeQuotaUsageMetrics(snapshot)).toEqual(new Map([['overage', 20]]));
   expect(claudeCodeProbeUsageMetrics({ extra_usage: { utilization: 30 } })).toEqual(new Map([['extra_usage', 30]]));
 });
+
+it('delivers nonfinite numeric utilization to the recording boundary', () => {
+  const body = JSON.parse('{"five_hour":{"utilization":1e400}}') as Record<string, unknown>;
+  expect(claudeCodeProbeUsageMetrics(body).get('five_hour')).toBe(Infinity);
+});

@@ -24,7 +24,7 @@ it('does not resurrect an upstream deleted during an observation', async () => {
 
 it('rejects invalid observations at the recording boundary', async () => {
   const record = createUpstreamUsageRecorder(new InMemoryRepo());
-  for (const [key, value, timestamp] of [['', 20, 1_000], ['usage', NaN, 1_000], ['usage', 20, -1], ['usage', 20, 0.5]] as const) {
+  for (const [key, value, timestamp] of [['', 20, 1_000], ['usage', NaN, 1_000], ['usage', Infinity, 1_000], ['usage', 20, -1], ['usage', 20, 0.5]] as const) {
     await expect(record('up-1', key, value, timestamp)).rejects.toThrow(TypeError);
   }
 });

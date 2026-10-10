@@ -6,7 +6,7 @@ import { errorMessage } from '../../lib/error-message';
 
 // Annotated with the gateway's own literal so a bump there fails this
 // assignment instead of silently rejecting every backup the deployment writes.
-export const BACKUP_FILE_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 20;
+export const BACKUP_FILE_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 21;
 
 const backupFileSchema = z.object({
   version: z.literal(BACKUP_FILE_VERSION),
@@ -18,6 +18,7 @@ const backupFileSchema = z.object({
     proxies: z.array(z.unknown()),
     usage: z.array(z.unknown()),
     searchUsage: z.array(z.unknown()),
+    upstreamUsage: z.array(z.unknown()),
     performance: z.array(z.unknown()).optional(),
     performanceIncluded: z.boolean(),
     searchConfig: z.unknown(),

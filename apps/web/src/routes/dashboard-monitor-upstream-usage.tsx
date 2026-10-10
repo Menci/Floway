@@ -5,11 +5,11 @@ import type { Route } from './+types/dashboard-monitor-upstream-usage';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { parseDashboardRange, serializeDashboardRange, sameDashboardRange, type DashboardRange } from '../components/charts/dashboard-time';
+import { TelemetryGroupByField } from '../components/telemetry/dimension-controls';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
-import { Dropdown } from '../components/ui/fluent-form-controls';
 import { PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
@@ -19,11 +19,8 @@ import { UpstreamUsageChartSection } from '../components/upstream-usage/chart';
 import { loadUpstreamUsage } from '../components/upstream-usage/data';
 import { resolveUsageMetricDisplayName } from '../components/upstream-usage/display-name';
 import { buildUpstreamUsageCharts, type UpstreamUsageGroupBy } from '../components/upstream-usage/plot';
-import { fluentComponents } from '../fluent';
 import { useTranslation } from '../i18n/translation';
 import { useEntryRewrite } from '../lib/page-navigation';
-
-const { Field, Option } = fluentComponents;
 
 export const clientLoader = async ({ request }: Route.ClientLoaderArgs) => {
   await requireDashboardAdmin();
@@ -69,8 +66,8 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
   }, [groupBy, loadedRange, rewrite, setSearchParams]);
   const charts = useMemo(() => {
     if (data === null || data.start >= loadedAt) return [];
-    const upstreams = new Map(data.records.map(record => [record.upstreamId, record]));
-    return buildUpstreamUsageCharts(data.records, groupBy, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, upstreams, t));
+    const observations = new Map(data.records.map(record => [JSON.stringify([record.upstreamId, record.key]), record]));
+    return buildUpstreamUsageCharts(data.records, groupBy, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, observations, t));
   }, [data, groupBy, loadedAt, t]);
   const changeRange = (next: DashboardRange) => {
     if (sameDashboardRange(next, range)) void refresh();
@@ -81,14 +78,16 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
-        <Field className="w-[160px] flex-none" label={t('dashboard.usage.groupBy.label')}>
-          <Dropdown aria-label={t('dashboard.usage.groupBy.label')} disabled={refreshing} selectedOptions={[groupBy]} value={t(`dashboard.upstreamUsage.groupBy.${groupBy}`)} onOptionSelect={(_, selection) => {
-            if (selection.optionValue !== undefined) setGroupBy(selection.optionValue as UpstreamUsageGroupBy);
-          }}>
-            <Option value="upstream">{t('dashboard.upstreamUsage.groupBy.upstream')}</Option>
-            <Option value="metric">{t('dashboard.upstreamUsage.groupBy.metric')}</Option>
-          </Dropdown>
-        </Field>
+        <TelemetryGroupByField<UpstreamUsageGroupBy>
+          disabled={refreshing}
+          dimensions={[
+            { key: 'upstream', groupLabel: t('dashboard.upstreamUsage.groupBy.upstream') },
+            { key: 'metric', groupLabel: t('dashboard.upstreamUsage.groupBy.metric') },
+          ]}
+          groupBy={groupBy}
+          groupByLabel={t('dashboard.usage.groupBy.label')}
+          onGroupByChange={setGroupBy}
+        />
         <div className="ml-auto flex-none"><TelemetryTimeRange addressOf={addressOf} ariaLabel={t('dashboard.usage.range.label')} loadedAt={loadedAt} onChange={changeRange} onEditingChange={setEditingRange} range={loadedRange} /></div>
       </div>
       {data === null ? <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine> : charts.length === 0 ? <EmptyStateLine>{t('dashboard.upstreamUsage.empty')}</EmptyStateLine> : charts.map(chart => <UpstreamUsageChartSection chart={chart} end={Math.min(data.end, loadedAt)} key={JSON.stringify([groupBy, chart.id])} start={data.start} />)}

@@ -8,6 +8,7 @@ it('restricts upstream subscription history to administrators and validates quer
   expect((await requestApp('/api/upstream-usage?start=0&end=60000', { headers })).status).toBe(403);
   const user = await repo.users.getById(apiKey.userId);
   await repo.users.save({ ...user!, isAdmin: true });
+  expect((await requestApp('/api/upstream-usage?start=-86400000&end=0', { headers })).status).toBe(200);
   expect((await requestApp('/api/upstream-usage?start=60000&end=0', { headers })).status).toBe(400);
   expect((await requestApp('/api/upstream-usage?start=abc&end=60000', { headers })).status).toBe(400);
   await repo.upstreamUsageMetrics.record({ upstreamId: 'historical', key: 'premium_interactions', timestamp: 10_000, value: 25, provider: 'copilot', upstreamName: 'Deleted seat', upstreamHue: 200 });

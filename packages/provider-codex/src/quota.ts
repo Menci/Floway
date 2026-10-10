@@ -148,8 +148,6 @@ export const putCodexQuota = async (
   accountId: string | null,
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
-  // Stamped before the write so a replay against a winning sibling produces
-  // the same document rather than a later `fetchedAt`.
   const fetchedAt = Date.parse(snapshot.observed_at);
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readCodexUpstreamState(current);

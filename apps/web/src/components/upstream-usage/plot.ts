@@ -43,7 +43,7 @@ export const buildUpstreamUsageCharts = (
 
 export const gaugePoints = (observations: readonly { timestamp: number; value: number }[], start: number, end: number) => {
   const points = observations.map(point => ({ x: new Date(Math.max(start, point.timestamp)), y: point.value }));
-  const latest = points.at(-1);
-  if (latest !== undefined && latest.x.getTime() < end) points.push({ x: new Date(end), y: latest.y });
+  const latest = points.at(-1)!;
+  if (latest.x.getTime() < end) points.push({ x: new Date(end), y: latest.y });
   return points;
 };

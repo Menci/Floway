@@ -34,7 +34,7 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
   const renderCallout = (point?: CustomizedCalloutData) => point === undefined ? null : <ChartCalloutTable
     columns={[{ key: 'value', label: unitLabel }]}
     rows={point.values.map(value => ({ key: value.legend, label: value.legend, color: value.color, values: [format(Number(value.y))] }))}
-    title={point.x instanceof Date ? formatAxisDate(point.x) : String(point.x)}
+    title={formatAxisDate(point.x as Date)}
   />;
   return <ChartSection controlsLabel={chart.title} emptyText={t('dashboard.upstreamUsage.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={setHidden} title={t('dashboard.upstreamUsage.chartTitle', { name: chart.title, unit: unitLabel })}>
     <ChartHost className="" emptyText={t('dashboard.upstreamUsage.empty')} hasData={data.lineChartData.length > 0}>

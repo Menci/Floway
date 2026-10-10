@@ -11,11 +11,10 @@ export const claudeCodeQuotaUsageMetrics = (snapshot: ClaudeCodeQuotaSnapshot): 
   return metrics;
 };
 
-export const claudeCodeProbeUsageMetrics = (body: unknown): Map<string, number> => {
+export const claudeCodeProbeUsageMetrics = (body: Record<string, unknown>): Map<string, number> => {
   const metrics = new Map<string, number>();
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new TypeError('Claude Code usage observation must be an object');
   for (const [key, value] of Object.entries(body)) {
-    if (typeof value === 'object' && value !== null && 'utilization' in value && typeof value.utilization === 'number' && Number.isFinite(value.utilization)) metrics.set(key, value.utilization);
+    if (typeof value === 'object' && value !== null && 'utilization' in value && typeof value.utilization === 'number') metrics.set(key, value.utilization);
   }
   return metrics;
 };

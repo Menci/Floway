@@ -12,6 +12,17 @@ for (const [name, create] of [
   ['memory', async () => new InMemoryRepo()],
 ] as const) {
   describe(`${name} upstream usage gauges`, () => {
+    it('restores complete gauge snapshots and clears them for replacement imports', async () => {
+      const repo = (await create()).upstreamUsageMetrics;
+      await repo.set(point(70_000, 20));
+      await repo.set(point(1_000, 20));
+      await repo.set(point(70_000, 30));
+      await repo.record(point(20_000, 25));
+      expect(await repo.listAll()).toEqual([point(1_000, 20), point(70_000, 30)]);
+      await repo.deleteAll();
+      expect(await repo.query(0, 90_000)).toEqual([]);
+    });
+
     it('coalesces changes to the latest observation per minute and preserves resets', async () => {
       const repo = (await create()).upstreamUsageMetrics;
       await repo.record(point(1_000, 20));

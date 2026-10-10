@@ -7,39 +7,38 @@ import { resolveUsageMetricDisplayName as copilotDisplay } from '@floway-dev/pro
 import { resolveUsageMetricDisplayName as ollamaDisplay } from '@floway-dev/provider-ollama/browser';
 
 type Translate = ReturnType<typeof useTranslation>['t'];
-const names: Partial<Record<string, Exclude<Extract<TranslationKey, `dashboard.upstreamUsage.metrics.${string}`>, 'dashboard.upstreamUsage.metrics.window' | 'dashboard.upstreamUsage.metrics.unnamedWindow'>>> = {
-  five_hour: 'dashboard.upstreamUsage.metrics.fiveHour',
-  seven_day: 'dashboard.upstreamUsage.metrics.sevenDay',
-  seven_day_sonnet: 'dashboard.upstreamUsage.metrics.sevenDaySonnet',
-  seven_day_opus: 'dashboard.upstreamUsage.metrics.sevenDayOpus',
-  overage: 'dashboard.upstreamUsage.metrics.overage',
-  extra_usage: 'dashboard.upstreamUsage.metrics.extraUsage',
-  premium_interactions: 'dashboard.upstreamUsage.metrics.premiumInteractions',
-  chat: 'dashboard.upstreamUsage.metrics.chat',
-  completions: 'dashboard.upstreamUsage.metrics.completions',
-  session: 'dashboard.upstreamUsage.metrics.session',
-  weekly: 'dashboard.upstreamUsage.metrics.sevenDay',
-  last_4_weeks: 'dashboard.upstreamUsage.metrics.fourWeeks',
-  credits_balance: 'dashboard.upstreamUsage.metrics.credits',
-};
+const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstreamUsage.metrics.${string}`>, 'dashboard.upstreamUsage.metrics.window' | 'dashboard.upstreamUsage.metrics.unnamedWindow'>>([
+  ['five_hour', 'dashboard.upstreamUsage.metrics.fiveHour'],
+  ['seven_day', 'dashboard.upstreamUsage.metrics.sevenDay'],
+  ['seven_day_sonnet', 'dashboard.upstreamUsage.metrics.sevenDaySonnet'],
+  ['seven_day_opus', 'dashboard.upstreamUsage.metrics.sevenDayOpus'],
+  ['overage', 'dashboard.upstreamUsage.metrics.overage'],
+  ['extra_usage', 'dashboard.upstreamUsage.metrics.extraUsage'],
+  ['premium_interactions', 'dashboard.upstreamUsage.metrics.premiumInteractions'],
+  ['chat', 'dashboard.upstreamUsage.metrics.chat'],
+  ['completions', 'dashboard.upstreamUsage.metrics.completions'],
+  ['session', 'dashboard.upstreamUsage.metrics.session'],
+  ['weekly', 'dashboard.upstreamUsage.metrics.sevenDay'],
+  ['last_4_weeks', 'dashboard.upstreamUsage.metrics.fourWeeks'],
+  ['credits_balance', 'dashboard.upstreamUsage.metrics.credits'],
+]);
 
 export const resolveUsageMetricDisplayName = (
   upstreamId: string,
   key: string,
-  upstreams: ReadonlyMap<string, UpstreamUsageMetricRecord>,
+  observations: ReadonlyMap<string, UpstreamUsageMetricRecord>,
   t: Translate,
 ): UsageMetricDisplay => {
-  const upstream = upstreams.get(upstreamId);
-  if (upstream === undefined) throw new TypeError('Upstream usage metadata is missing');
+  const observation = observations.get(JSON.stringify([upstreamId, key]))!;
   let display: UsageMetricDisplay;
-  switch (upstream.provider) {
+  switch (observation.provider) {
   case 'codex': display = codexDisplay(key); break;
   case 'copilot': display = copilotDisplay(key); break;
   case 'claude-code': display = claudeCodeDisplay(key); break;
   case 'ollama': display = ollamaDisplay(key); break;
   default: throw new TypeError('Provider does not expose upstream usage metrics');
   }
-  const translation = names[display.name];
+  const translation = names.get(display.name);
   const name = translation === undefined ? display.name : t(translation);
   return {
     ...display,

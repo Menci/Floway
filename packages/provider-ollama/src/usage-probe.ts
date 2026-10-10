@@ -73,7 +73,7 @@ export const fetchOllamaUsageProbe = async (
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`Ollama /api/usage returned a non-object body (${response.status})`);
   }
-  return { fetchedAt: Date.now(), data: parsed };
+  return { fetchedAt: Date.now(), data: parsed as Record<string, unknown> };
 };
 
 // The entry is written under saveState's read-modify-CAS, and the mutator is
