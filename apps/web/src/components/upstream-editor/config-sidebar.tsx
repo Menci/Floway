@@ -85,6 +85,14 @@ export function UpstreamConfigSidebar({
         >
           <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
         </EditorSection>
+        {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+          title={t('dashboard.upstreamEditor.usageRefresh.title')}
+          description={t('dashboard.upstreamEditor.usageRefresh.description')}
+        >
+          <Controller control={control} name="usageRefreshEnabled" render={({ field }) => (
+            <Checkbox checked={field.value} onChange={(_, data) => field.onChange(data.checked === true)} label={t('dashboard.upstreamEditor.usageRefresh.enabled')} />
+          )} />
+        </EditorSection>}
         <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
           <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
         </EditorSection>

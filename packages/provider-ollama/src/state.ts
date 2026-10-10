@@ -21,11 +21,10 @@ export interface OllamaUsageProbeEntry {
   error: string | null;
 }
 
-// `data` is the upstream body verbatim. Ollama serves the usage endpoint
-// undocumented (docs.ollama.com covers /api/usage as per-response performance
-// metrics, not account quota) and has already changed its per-model field
-// naming once, so the gateway stores what it received and lets the dashboard
-// walk the keys it knows. `fetchedAt` is unix ms.
+// Persist both usage history and current balance bodies verbatim. The dashboard
+// selects the fields appropriate to the account's plan; `fetchedAt` is unix ms.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
 export interface OllamaUsageObservation {
   fetchedAt: number;
   data: unknown;
@@ -47,11 +46,13 @@ export interface OllamaAccountEntry {
 
 export interface OllamaUpstreamState {
   usageProbe: OllamaUsageProbeEntry | null;
+  balanceProbe?: OllamaUsageProbeEntry;
   account: OllamaAccountEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof OllamaUpstreamState, true> = {
   usageProbe: true,
+  balanceProbe: true,
   account: true,
 };
 
@@ -130,6 +131,7 @@ export function assertOllamaUpstreamState(value: unknown): asserts value is Olla
   if (obj.usageProbe !== null && obj.usageProbe !== undefined) {
     assertOllamaUsageProbeEntry(obj.usageProbe, 'OllamaUpstreamState.usageProbe');
   }
+  if (obj.balanceProbe !== undefined) assertOllamaUsageProbeEntry(obj.balanceProbe, 'OllamaUpstreamState.balanceProbe');
   if (obj.account !== null && obj.account !== undefined) {
     assertOllamaAccountEntry(obj.account, 'OllamaUpstreamState.account');
   }
@@ -146,6 +148,7 @@ export const readOllamaUpstreamState = (raw: unknown): OllamaUpstreamState => {
   const probe = raw.usageProbe;
   const account = raw.account;
   return {
+    ...(raw.balanceProbe === undefined ? {} : { balanceProbe: raw.balanceProbe }),
     usageProbe: probe
       ? { attemptedAt: probe.attemptedAt, observation: probe.observation ?? null, error: probe.error ?? null }
       : null,

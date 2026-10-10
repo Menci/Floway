@@ -67,6 +67,7 @@ import {
 } from './upstream-codecs.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
+import { SqlUpstreamScheduledTasksRepo } from './upstream-scheduled-tasks-sql.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
@@ -882,7 +883,7 @@ const MODELS_CACHE_EPOCH_SQL = `CASE
   ELSE 0
 END`;
 
-const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, usage_refresh_enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
@@ -904,13 +905,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
         RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         upstream.id,
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshEnabled ? 1 : 0,
         upstream.sortOrder,
         upstream.createdAt,
         upstream.updatedAt,
@@ -962,6 +964,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            provider = ?,
            name = ?,
            enabled = ?,
+           usage_refresh_enabled = ?,
            sort_order = ?,
            updated_at = ?,
            config_version = ?,
@@ -976,6 +979,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND provider = ?
            AND name = ?
            AND enabled = ?
+           AND usage_refresh_enabled = ?
            AND sort_order = ?
            AND updated_at = ?
            AND config_version = ?
@@ -992,6 +996,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshEnabled ? 1 : 0,
         upstream.sortOrder,
         upstream.updatedAt,
         configVersion,
@@ -1007,6 +1012,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.kind,
         previous.name,
         previous.enabled ? 1 : 0,
+        previous.usageRefreshEnabled ? 1 : 0,
         previous.sortOrder,
         previous.updatedAt,
         previous.configVersion,
@@ -1131,6 +1137,7 @@ interface UpstreamRow {
   provider: string;
   name: string;
   enabled: number;
+  usage_refresh_enabled: number;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -1158,6 +1165,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
     modelsCache: parseModelsCache(row),
     name: row.name,
     enabled: row.enabled !== 0,
+    usageRefreshEnabled: row.usage_refresh_enabled !== 0,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1700,6 +1708,7 @@ export class SqlRepo implements Repo {
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
+  upstreamScheduledTasks: SqlUpstreamScheduledTasksRepo;
   agentSetup: AgentSetupRepository;
 
   constructor(db: SqlDatabase) {
@@ -1719,6 +1728,7 @@ export class SqlRepo implements Repo {
     this.spilledFiles = new SqlSpilledFilesRepo(db);
     this.expirationSweeps = new SqlExpirationSweepsRepo(db);
     this.scheduledMaintenance = new SqlScheduledMaintenanceRepo(db);
+    this.upstreamScheduledTasks = new SqlUpstreamScheduledTasksRepo(db);
     this.agentSetup = new SqlAgentSetupRepo(db);
   }
 }

@@ -75,6 +75,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
     enabled: z.boolean(),
+    usageRefreshEnabled: z.boolean(),
     hue: z.number(),
     proxyFallbackList: z.any(),
     modelPrefix: z.any(),

@@ -1481,6 +1481,28 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
   }
 }
 
+class MemoryUpstreamScheduledTasksRepo {
+  private readonly rows = new Map<string, { token: string; nextAttemptAt: number; failureCount: number }>();
+
+  constructor(private readonly upstreams: UpstreamRepo) {}
+
+  async tryClaim(claim: import('@floway-dev/provider').ScheduledTaskClaim): Promise<number | null> {
+    const upstream = await this.upstreams.getById(claim.upstreamId);
+    if (upstream === null || !upstream.enabled || !upstream.usageRefreshEnabled) return null;
+    const key = JSON.stringify([claim.upstreamId, claim.task]);
+    const prior = this.rows.get(key);
+    if (prior && prior.nextAttemptAt > claim.now) return null;
+    const failureCount = prior?.failureCount ?? 0;
+    this.rows.set(key, { token: claim.token, nextAttemptAt: claim.nextAttemptAt, failureCount });
+    return failureCount;
+  }
+
+  async finish(claim: import('@floway-dev/provider').ScheduledTaskClaim, outcome: { nextAttemptAt: number; failureCount: number; error: string | null }): Promise<void> {
+    const key = JSON.stringify([claim.upstreamId, claim.task]);
+    if (this.rows.get(key)?.token === claim.token) this.rows.set(key, { token: '', ...outcome });
+  }
+}
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
@@ -1498,6 +1520,7 @@ export class InMemoryRepo implements Repo {
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
+  upstreamScheduledTasks: MemoryUpstreamScheduledTasksRepo;
   agentSetup: AgentSetupRepository;
 
   constructor() {
@@ -1511,6 +1534,7 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
+    this.upstreamScheduledTasks = new MemoryUpstreamScheduledTasksRepo(this.upstreams);
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.modelAliases = new MemoryModelAliasesRepo();

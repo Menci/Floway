@@ -15,6 +15,7 @@
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "@floway-dev/provider-custom": "workspace:*",
+    "@floway-dev/provider-ollama": "workspace:*",
     "@floway-dev/proxy": "workspace:*",
     "@fluentui/react-charts": "^9.3.22",
     "@fluentui/react-components": "^9.74.4",

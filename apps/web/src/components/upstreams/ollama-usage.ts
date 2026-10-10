@@ -1,11 +1,8 @@
-// Ollama Cloud account usage. The windows are percentages with no reset
-// timestamp -- that is everything the upstream reports -- so a window is a
-// percentage and nothing else.
-
 import { FIVE_HOUR_WINDOW_MINUTES, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { formatUsd } from '../../lib/decimal-display';
 import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
+import { ollamaUsageMetrics } from '@floway-dev/provider-ollama/browser';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 
@@ -21,9 +18,7 @@ export const isOllamaCloudBaseUrl = (baseUrl: string): boolean => {
   }
 };
 
-// Ollama states the session allowance resets every five hours and the other
-// weekly; the endpoint reports neither the length nor a reset time, so the
-// lengths are stated here and the field name is what selects them.
+// Legacy plan window names identify the allowance duration.
 // https://ollama.com/pricing
 const WINDOW_MINUTES = {
   session: FIVE_HOUR_WINDOW_MINUTES,
@@ -39,25 +34,13 @@ export interface UsageWindow {
 const isRecordValue = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// `usage` is a 0..1 fraction of the plan's allowance for that window. It is
-// kept to a decimal place on the way out: an early-in-the-window reading like
-// 0.046 rounds to a whole "5%" that reads as coarser than the upstream is.
-//
-// The endpoint also reports a per-model request count per window. It is not
-// shown: Ollama meters the allowance by model and by input, cached-input, and
-// output tokens, so a request count is a different quantity from the
-// percentage beside it and reads as an explanation of it.
-// https://ollama.com/pricing
-const readWindow = (key: UsageWindow['key'], value: unknown): UsageWindow | null => {
-  if (!isRecordValue(value) || typeof value.usage !== 'number' || !Number.isFinite(value.usage)) return null;
-  return { key, minutes: WINDOW_MINUTES[key], percent: Math.round(value.usage * 1000) / 10 };
-};
-
 export const readWindows = (data: unknown): UsageWindow[] => {
-  const limits = isRecordValue(data) ? data.limits : null;
-  if (!isRecordValue(limits)) return [];
-  return [readWindow('session', limits.session), readWindow('weekly', limits.weekly)]
-    .filter((usageWindow): usageWindow is UsageWindow => usageWindow !== null);
+  if (!isRecordValue(data)) return [];
+  const metrics = ollamaUsageMetrics(data);
+  return (['session', 'weekly'] as const).flatMap(key => {
+    const percent = metrics.get(JSON.stringify(['window', key]));
+    return percent === undefined ? [] : [{ key, minutes: WINDOW_MINUTES[key], percent: Math.round(percent * 10) / 10 }];
+  });
 };
 
 // What the account has been charged, as a plain decimal string in USD, over the
@@ -99,4 +82,13 @@ export const isZeroActivityCost = (cost: string): boolean => {
   } catch {
     return false;
   }
+};
+
+export const readBalances = (data: unknown): Array<{ key: 'included' | 'purchased'; amount: string }> => {
+  if (!isRecordValue(data)) return [];
+  const metrics = ollamaUsageMetrics(data);
+  return (['included', 'purchased'] as const).flatMap(key => {
+    const balance = metrics.get(JSON.stringify(['balance', key]));
+    return balance === undefined ? [] : [{ key, amount: String(balance) }];
+  });
 };

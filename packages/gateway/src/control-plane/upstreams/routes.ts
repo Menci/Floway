@@ -243,6 +243,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     kind: body.kind,
     name: body.name,
     enabled: body.enabled ?? true,
+    usageRefreshEnabled: body.usage_refresh_enabled ?? false,
     sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,
     updatedAt: now,
@@ -321,6 +322,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
   if (body.name !== undefined) next = { ...next, name: body.name };
   if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
+  if (body.usage_refresh_enabled !== undefined) next = { ...next, usageRefreshEnabled: body.usage_refresh_enabled };
   if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };

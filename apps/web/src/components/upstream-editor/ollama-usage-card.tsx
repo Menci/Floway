@@ -1,11 +1,3 @@
-// Ollama Cloud account and usage. The account names the plan the windows are a
-// fraction of; the windows are percentages with no reset timestamp — that is
-// everything the upstream reports — so each row is a bar and a number.
-//
-// The data plane refreshes the same reading in the background after the calls
-// it serves, so this card is normally current on open; the refresh action is
-// the operator's unconditional read.
-
 import { useCallback, useState } from 'react';
 
 import { api, callApi } from '../../api/client';
@@ -21,7 +13,7 @@ import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
-import { activityCostText, type OllamaRecord, readActivityCost, readWindows } from '../upstreams/ollama-usage';
+import { activityCostText, type OllamaRecord, readActivityCost, readWindows, readBalances } from '../upstreams/ollama-usage';
 import { ProviderIcon } from '../upstreams/provider-badge';
 import { quotaBarColor } from '../upstreams/subscription-quota';
 
@@ -38,12 +30,15 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
   const stored = record.state?.usageProbe ?? null;
   const observation = refreshed?.observation ?? stored?.observation ?? null;
   const account = refreshed?.account ?? record.state?.account ?? null;
-  const windows = readWindows(observation?.data);
+  const balanceProbe = record.state?.balanceProbe;
+  const balanceObservation = balanceProbe?.observation;
+  const windows = readWindows(balanceObservation?.data ?? observation?.data);
+  const balances = readBalances(balanceObservation?.data);
   const activityCost = readActivityCost(observation?.data);
   // A background probe records its failure on the upstream rather than
   // interrupting the request that armed it, so this is where it surfaces. A
   // manual refresh that succeeded has already answered the question.
-  const backgroundError = refreshed === null ? stored?.error ?? null : null;
+  const backgroundError = balanceProbe?.error ?? (refreshed === null ? stored?.error ?? null : null);
   const accountName = account?.name ?? account?.email ?? null;
 
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
@@ -89,18 +84,23 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       <ProgressBar color={quotaBarColor(usageWindow.percent)} max={100} thickness="large" value={clampPercent(usageWindow.percent) ?? undefined} />
     </div>)}
 
-    {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+    {balances.map(balance => <div className="flex justify-between gap-3" key={balance.key}>
+      <Text>{t(`dashboard.upstreamEditor.ollama.usage.balance.${balance.key}`)}</Text>
+      <Text>{activityCostText(balance.amount)}</Text>
+    </div>)}
+
+    {(balanceObservation || observation) && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
       {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost.amount)}</Text>}
       <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}
+        {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime((balanceObservation ?? observation)!.fetchedAt, locale) })}
       </Text>
     </div>}
 
-    {observation && windows.length === 0 && <Text size={200} className="text-fui-fg3">
+    {observation && windows.length === 0 && balances.length === 0 && <Text size={200} className="text-fui-fg3">
       {t('dashboard.upstreamEditor.ollama.usage.unreadable')}
     </Text>}
 
-    {!observation && !loading && <Text size={200} className="text-fui-fg3">
+    {!observation && !balanceObservation && !loading && <Text size={200} className="text-fui-fg3">
       {t('dashboard.upstreamEditor.ollama.usage.empty')}
     </Text>}
 

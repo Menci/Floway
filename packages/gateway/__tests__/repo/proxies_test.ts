@@ -23,6 +23,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   kind: 'custom',
   name: id,
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',

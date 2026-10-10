@@ -192,6 +192,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     kind: 'azure',
     name: 'azure-images',
     enabled: true,
+    usageRefreshEnabled: false,
     sortOrder: 1,
     createdAt: '2026-05-25T00:00:00Z',
     updatedAt: '2026-05-25T00:00:00Z',

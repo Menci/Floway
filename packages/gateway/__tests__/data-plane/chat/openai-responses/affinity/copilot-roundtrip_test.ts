@@ -15,6 +15,7 @@ const upstream: UpstreamRecord = {
   kind: 'copilot',
   name: 'Copilot',
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-07-21T00:00:00.000Z',
   updatedAt: '2026-07-21T00:00:00.000Z',

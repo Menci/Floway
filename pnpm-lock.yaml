@@ -159,6 +159,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../../packages/provider-custom
+      '@floway-dev/provider-ollama':
+        specifier: workspace:*
+        version: link:../../packages/provider-ollama
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy

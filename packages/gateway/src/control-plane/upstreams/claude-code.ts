@@ -8,13 +8,14 @@ import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, clau
 import { saveUpstream } from '../shared/save-upstreams.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
-  type ClaudeCodeAccountCredential,
   type ClaudeCodeUpstreamConfig,
   type ClaudeCodeUpstreamState,
   ClaudeCodeOAuthSessionTerminatedError,
   buildClaudeCodeAuthorizeUrl,
   ensureClaudeCodeAccessToken,
   fetchClaudeCodeUsageProbe,
+  mergeClaudeCodeUsageProbe,
+  persistClaudeCodeUsageProbe,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
@@ -231,27 +232,8 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     return c.json({ error: errorMessage(err) }, 502);
   }
 
-  const snapshotPatch = {
-    usageProbeSnapshot: { fetchedAt: Date.parse(probe.fetched_at), data: probe.body },
-  };
-  const mergeSnapshotInto = (state: ClaudeCodeUpstreamState): ClaudeCodeUpstreamState => ({
-    ...state,
-    accounts: state.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
-  });
-
-  // Merge the freshly-fetched snapshot into the caller's draft state so the
-  // response carries a whole state slot the caller can hand to its uniform
-  // patch merger — the wire contract stays symmetric with refresh/exchange
-  // instead of asking the client to hand-merge into accounts[0].
-  const merged = mergeSnapshotInto(readClaudeCodeUpstreamState(record.state));
-
-  // The snapshot rides on top of whatever state is current at write time, so a
-  // concurrent rotation neither loses its own write nor is overwritten by this
-  // one. A draft that has never been saved has no row to write to.
-  if (record.id !== '') {
-    await getRepo().upstreams.saveState(record.id, current =>
-      mergeSnapshotInto(readClaudeCodeUpstreamState(current)));
-  }
+  const merged = mergeClaudeCodeUsageProbe(readClaudeCodeUpstreamState(record.state), probe);
+  if (record.id !== '') await persistClaudeCodeUsageProbe(record.id, probe);
 
   logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });
   return c.json({

@@ -495,6 +495,11 @@ const zhHansCN = {
         },
       },
       upstreamEditor: {
+        usageRefresh: {
+          title: '后台刷新用量',
+          description: '每 5 分钟检查账号用量，跳过新鲜读数，失败后退避重试。Claude Code 需要 OAuth，Ollama 需要开启云用量。',
+          enabled: '启用自动刷新用量',
+        },
         readyToSave: {
           title: '可以保存了',
           description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
@@ -950,6 +955,7 @@ const zhHansCN = {
           cloudUsage: '获取账号用量',
           cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
           usage: {
+            balance: { included: '订阅余额', purchased: '购买余额' },
             title: '用量',
             load: '加载',
             refresh: '刷新',

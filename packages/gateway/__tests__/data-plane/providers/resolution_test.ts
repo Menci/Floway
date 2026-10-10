@@ -255,6 +255,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
     kind: 'azure',
     name: 'X',
     enabled: true,
+    usageRefreshEnabled: false,
     sortOrder: 1,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',

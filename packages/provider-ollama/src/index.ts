@@ -13,3 +13,5 @@ export { pricingForOllamaModelKey } from './pricing.ts';
 export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
 export { fetchOllamaUsageProbe, isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';
 export { fetchOllamaAccount, refreshOllamaAccount } from './account-probe.ts';
+
+export { ollamaUsageMetrics, resolveUsageMetricDisplayName } from './usage-metrics.ts';

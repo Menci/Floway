@@ -18,6 +18,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   kind: 'ollama',
   name: 'Ollama',
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-06-19T00:00:00.000Z',
   updatedAt: '2026-06-19T00:00:00.000Z',

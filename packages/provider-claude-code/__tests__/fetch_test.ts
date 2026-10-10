@@ -52,6 +52,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   kind: 'claude-code',
   name: 'CC',
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',

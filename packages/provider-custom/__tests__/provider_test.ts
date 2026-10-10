@@ -18,6 +18,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   kind: 'custom',
   name: 'Custom Provider',
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',

@@ -53,3 +53,16 @@ test('discovery input edits exclude metadata-only changes', () => {
   expect(hasUnsavedDiscoveryInputs({ flagOverrides: true })).toBe(true);
   expect(hasUnsavedDiscoveryInputs({ name: true })).toBe(false);
 });
+
+
+test('background usage refresh remains explicit through editor create, preview and update', () => {
+  const values = valuesFromRecord(record);
+  expect(values.usageRefreshEnabled).toBe(false);
+  for (const enabled of [true, false]) {
+    values.usageRefreshEnabled = enabled;
+    expect(createBody(record, values).usage_refresh_enabled).toBe(enabled);
+    expect(previewRecord(record, values).usage_refresh_enabled).toBe(enabled);
+    expect(updateBody(record, values).usage_refresh_enabled).toBe(enabled);
+    expect(hasUnsavedDiscoveryInputs({ usageRefreshEnabled: true })).toBe(false);
+  }
+});

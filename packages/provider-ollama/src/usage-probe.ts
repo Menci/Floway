@@ -1,39 +1,12 @@
-// Ollama Cloud account usage probe.
-//
-// ollama.com serves `GET /api/usage` behind the same API key the data plane
-// already uses. It answers with the account's rolling session window, its
-// weekly window, per-model request counts, and an `activity` block over a
-// trailing four-week period:
-//
-//   {"activity": {"cost": "0.00000",
-//                 "period": {"type": "last_4_weeks", "starting_at": "...", "ending_at": "..."},
-//                 "models": []},
-//    "limits": {"session": {"usage": 0.046, "models": [{"name": "...", "request_count": 34}]},
-//               "weekly":  {"usage": 0.051, "models": [...]}}}
-//
-// The endpoint is real but unannounced: it is absent from docs.ollama.com
-// (whose `/api/usage` page documents per-response performance counters, an
-// unrelated surface), and the request for it is still open upstream. An Ollama
-// maintainer pointed users at it on 2026-07-29, and the response body above is
-// the reading an account holder posted back in the same thread — the closest
-// thing to a specification it has.
-// https://github.com/ollama/ollama/issues/12532#issuecomment-5117276581
-// https://github.com/ollama/ollama/issues/12532#issuecomment-5117969589
-//
-// Because it is unannounced, the body is persisted verbatim and the dashboard
-// walks the keys it knows — the per-model rows have already been reported under
-// two different field namings, so a strict parser would reject a live account.
-// The response carries no reset timestamps, so a window is a percentage only.
-//
-// Nothing equivalent rides on the inference responses: Ollama Cloud sends no
-// rate-limit headers (its documented error contract is a bare 429 with a JSON
-// `error` string), so an active probe is the only way to observe the windows.
-// https://github.com/ollama/ollama/blob/f0078ae4766d0d570e196158f20dde309bd96124/docs/api/errors.mdx
+// Ollama account usage history and current cloud balance use separate APIs.
+// GET /api/usage reports activity; GET /api/balance reports remaining quota.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/cloud-usage.mdx
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 
-import { type OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchUsage } from './fetch.ts';
+import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
+import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Reading the windows takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
@@ -80,17 +53,18 @@ export const fetchOllamaUsageProbe = async (
 // cannot roll the slot back to its older reading. Equal stamps are not a
 // rollback — the clock is coarser than the two attempts, and the later arrival
 // is no staler — so only a strictly newer stored attempt wins.
-const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntry): Promise<void> => {
+const persistProbeEntry = async (upstreamId: string, slot: 'usageProbe' | 'balanceProbe', entry: OllamaUsageProbeEntry): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
-    if (state.usageProbe && state.usageProbe.attemptedAt > entry.attemptedAt) return current;
+    const previous = state[slot];
+    if (previous && previous.attemptedAt > entry.attemptedAt) return current;
     return {
       ...state,
-      usageProbe: {
+      [slot]: {
         attemptedAt: entry.attemptedAt,
         // A failed probe keeps the last good reading rather than blanking the
         // card; only a success replaces it.
-        observation: entry.observation ?? state.usageProbe?.observation ?? null,
+        observation: entry.observation ?? previous?.observation ?? null,
         error: entry.error,
       },
     } satisfies OllamaUpstreamState;
@@ -110,14 +84,14 @@ export const refreshOllamaUsageProbe = async (
   try {
     observation = await fetchOllamaUsageProbe(config, fetcher);
   } catch (error) {
-    await persistProbeEntry(upstreamId, {
+    await persistProbeEntry(upstreamId, 'usageProbe', {
       attemptedAt,
       observation: null,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
-  await persistProbeEntry(upstreamId, { attemptedAt, observation, error: null });
+  await persistProbeEntry(upstreamId, 'usageProbe', { attemptedAt, observation, error: null });
   return observation;
 };
 
@@ -148,4 +122,27 @@ export const scheduleOllamaUsageProbe = (
   waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
     console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);
   }));
+};
+
+export const runOllamaScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
+  const { config } = assertOllamaUpstreamRecord(record);
+  if (!isOllamaUsageEnabled(config)) return;
+  const observedAt = readOllamaUpstreamState(record.state).balanceProbe?.observation?.fetchedAt ?? null;
+  await runScheduledUsageRefresh(record, options, observedAt, async (fresh, fetcher) => {
+    const currentConfig = assertOllamaUpstreamRecord(fresh).config;
+    if (!isOllamaUsageEnabled(currentConfig)) return;
+    const attemptedAt = Date.now();
+    let observation: OllamaUsageObservation;
+    try {
+      const response = await ollamaFetchBalance(currentConfig, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      if (!response.ok) throw new Error(`Ollama /api/balance returned ${response.status}: ${(await response.text()).trim().slice(0, 256)}`);
+      const body: unknown = await response.json();
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new TypeError('Ollama balance must be an object');
+      observation = { fetchedAt: Date.now(), data: body };
+    } catch (error) {
+      await persistProbeEntry(fresh.id, 'balanceProbe', { attemptedAt, observation: null, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+    await persistProbeEntry(fresh.id, 'balanceProbe', { attemptedAt, observation, error: null });
+  });
 };

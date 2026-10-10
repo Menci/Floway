@@ -9,7 +9,7 @@ import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntr
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
-import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
+import { activityCostText, isZeroActivityCost, readActivityCost, readWindows, readBalances } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
@@ -200,7 +200,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const probe = record.state?.usageProbe ?? null;
-  const observation = probe?.observation ?? null;
+  const observation = record.state?.balanceProbe?.observation ?? probe?.observation ?? null;
   if (observation === null) return [];
 
   const signals: UpstreamSignal[] = readWindows(observation.data).map(item => {
@@ -210,12 +210,17 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
       percent: item.percent,
       value: percentValue(t, item.percent),
       label,
-      // Ollama reports no reset instant for either window.
       detail: meterDetail(t, label, item.percent, null, observation.fetchedAt, locale),
     };
   });
 
-  const cost = readActivityCost(observation.data);
+  for (const balance of readBalances(record.state?.balanceProbe?.observation?.data)) {
+    signals.push({
+      key: `balance-${balance.key}`, percent: null, value: activityCostText(balance.amount), label: null,
+      detail: t(`dashboard.upstreamEditor.ollama.usage.balance.${balance.key}`),
+    });
+  }
+  const cost = readActivityCost(probe?.observation?.data);
   if (cost !== null && !isZeroActivityCost(cost.amount)) {
     signals.push({
       key: 'cost',

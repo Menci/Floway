@@ -14,6 +14,7 @@ const record: StoredUpstreamRecord = {
   kind: 'custom',
   name: 'Refresh',
   enabled: true,
+  usageRefreshEnabled: false,
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',

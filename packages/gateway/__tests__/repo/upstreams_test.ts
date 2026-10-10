@@ -13,6 +13,7 @@ import { assert, assertEquals, assertRejects, assertThrows } from '@floway-dev/t
 const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind' | 'createdAt' | 'sortOrder'>): UpstreamRecord => ({
   name: overrides.id,
   enabled: true,
+  usageRefreshEnabled: false,
   updatedAt: overrides.createdAt,
   config: { nested: { value: overrides.id }, endpoints: { openaiChatCompletions: {} } },
   state: null,
@@ -69,6 +70,7 @@ test('memory upstream repo inserts, replaces, lists, deletes, and clears rows', 
     ...custom,
     name: 'Custom A Updated',
     enabled: false,
+    usageRefreshEnabled: false,
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
@@ -203,6 +205,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     ...custom,
     name: 'Custom SQL Updated',
     enabled: false,
+    usageRefreshEnabled: false,
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
@@ -242,6 +245,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     provider: 'custom',
     name: 'Bad Config',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -266,6 +270,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     provider: 'custom',
     name: 'Bad Fixes',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -290,6 +295,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     provider: 'custom',
     name: 'Array Fixes',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -318,6 +324,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     provider: 'custom',
     name: 'Non-boolean Fixes',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -346,6 +353,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     provider: 'custom',
     name: 'Bad Prefix JSON',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -370,6 +378,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     provider: 'custom',
     name: 'Bad Prefix Shape',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
@@ -396,6 +405,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     kind: 'custom',
     name: 'Prefix Round-Trip',
     enabled: true,
+    usageRefreshEnabled: false,
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
@@ -441,6 +451,7 @@ test('SQL upstream repo rejects a stored hue outside the circle', async () => {
     provider: 'custom',
     name: 'Bad Hue',
     enabled: 1,
+    usage_refresh_enabled: 0,
     sort_order: 0,
     created_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-01T00:00:00.000Z',
@@ -957,6 +968,7 @@ type FakeUpstreamRow = {
   provider: string;
   name: string;
   enabled: number;
+  usage_refresh_enabled: number;
   sort_order: number;
   created_at: string;
   updated_at: string;

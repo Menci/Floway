@@ -522,6 +522,11 @@ const en = {
         },
       },
       upstreamEditor: {
+        usageRefresh: {
+          title: 'Background usage refresh',
+          description: 'Check account usage every 5 minutes, skipping fresh observations and backing off after failures. Requires OAuth for Claude Code and cloud usage for Ollama.',
+          enabled: 'Enable automatic usage refresh',
+        },
         readyToSave: {
           title: 'Ready to save',
           description: 'Save this {{provider}} upstream to load its model catalog.',
@@ -995,6 +1000,7 @@ const en = {
           cloudUsage: 'Fetch account usage',
           cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
           usage: {
+            balance: { included: 'Included balance', purchased: 'Purchased balance' },
             title: 'Usage',
             load: 'Load',
             refresh: 'Refresh',
