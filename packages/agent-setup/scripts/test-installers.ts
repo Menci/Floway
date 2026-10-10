@@ -2852,13 +2852,14 @@ for (const [label, runner] of [['Bash', runShellInstaller], ['PowerShell', runPo
   test('codex', `${label}: real Codex app-server writes config.toml`, async t => {
     if (!realCodex) throw new Error('The real Codex CLI is required; install @openai/codex@latest and add it to PATH or set CODEX_TEST_BIN');
     if (label === 'PowerShell' && !hostPwsh) throw new Error('PowerShell is required for the real Codex installer test');
-    const version = spawnSync(realCodex, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+    const codexBinary = resolve(realCodex);
+    const version = spawnSync(codexBinary, ['--version'], { encoding: 'utf8', timeout: 10_000 });
     if (version.error) throw version.error;
     t.equal(version.status, 0, `real Codex --version should succeed:\n${version.stderr}`);
     t.ok(version.stdout.trim().length > 0, 'the real CLI reports its version');
     console.log(`  Codex compatibility (${label}): ${version.stdout.trim()}`);
     const ws = makeWorkspace();
-    symlinkSync(realCodex, join(ws.binDir, 'codex'));
+    symlinkSync(codexBinary, join(ws.binDir, 'codex'));
     const codexHome = join(ws.root, 'real-codex-home');
     const run = await runner({
       workspace: ws, baseUrl: modelServer.url,
