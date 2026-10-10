@@ -1,6 +1,6 @@
 // Executes the served installer prefix and body in isolated configuration roots.
 // Fake CLIs cover install, upgrade and rollback. Native Pi/OMP exercise discovery
-// and inference; pinned Codex checks its app-server configuration.
+// and inference; real Codex checks its app-server configuration.
 // Run `pnpm run test:installers`, optionally selecting `--agent <name>`.
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -2194,19 +2194,7 @@ const assertStagedToken = (t: Assert, ws: Workspace, codexHome?: string): void =
   t.equal(readCodexToken(ws, codexHome), SENTINEL_KEY, 'provider token carries the setup API key byte-for-byte');
 };
 
-// The real Codex 0.144.5 binary on the host, used by the end-to-end smoke test.
-// It must be exactly 0.144.5 so the wire protocol matches the version the
-// installer was built against; any other version self-skips rather than
-// asserting against an unverified protocol.
-const PINNED_CODEX_VERSION = '0.144.5';
-const parseCodexCliVersion = (output: string): string | null =>
-  /^codex-cli ([0-9]+\.[0-9]+\.[0-9]+)$/.exec(output.trim())?.[1] ?? null;
-const hostCodex = ((): string | null => {
-  const resolved = resolveTool('codex');
-  if (!resolved) return null;
-  const probe = spawnSync(resolved, ['--version'], { encoding: 'utf8' });
-  return probe.status === 0 && parseCodexCliVersion(probe.stdout) === PINNED_CODEX_VERSION ? resolved : null;
-})();
+const realCodex = process.env.CODEX_TEST_BIN ?? resolveTool('codex');
 
 // The two absolute locations `codex_discover` consults beyond $HOME and PATH.
 // The install-from-absent tests require discovery to find nothing, so they
@@ -2214,13 +2202,6 @@ const hostCodex = ((): string | null => {
 // host-condition guarding as the pwsh and network tests.
 const GLOBAL_CODEX_LOCATIONS = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex'];
 const globalCodexPresent = (): boolean => GLOBAL_CODEX_LOCATIONS.some(p => existsSync(p));
-
-test('codex', 'real app-server smoke version guard requires exact codex-cli semantic version', t => {
-  t.equal(parseCodexCliVersion('codex-cli 0.144.5'), '0.144.5', 'the pinned output parses exactly');
-  t.equal(parseCodexCliVersion('codex-cli 0.144.50'), '0.144.50', 'a longer patch version stays distinct');
-  t.ok(parseCodexCliVersion('codex-cli 0.144.50') !== PINNED_CODEX_VERSION, '0.144.50 cannot pass the 0.144.5 guard');
-  t.equal(parseCodexCliVersion('codex-cli 0.144.5 extra'), null, 'extra output invalidates the exact version contract');
-});
 
 test('codex', 'existing CLI configures via the app-server and stages the provider token', async t => {
   const ws = makeWorkspace();
@@ -2867,29 +2848,41 @@ test('codex', 'PowerShell: a Codex script never configures Claude when Codex fai
 
 // --- Codex real-binary smoke test -------------------------------------------
 
-test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server writes config.toml', async t => {
-  if (!hostCodex) skip('real Codex 0.144.5 is not installed on this host');
-  const ws = makeWorkspace();
-  symlinkSync(hostCodex, join(ws.binDir, 'codex'));
-  const codexHome = join(ws.root, 'real-codex-home');
-  const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url,
-    configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
-    codexHome, withCodexInstallHook: false,
+for (const [label, runner] of [['Bash', runShellInstaller], ['PowerShell', runPowerShellInstaller]] as const) {
+  test('codex', `${label}: real Codex app-server writes config.toml`, async t => {
+    if (!realCodex) throw new Error('The real Codex CLI is required; install @openai/codex@latest and add it to PATH or set CODEX_TEST_BIN');
+    if (label === 'PowerShell' && !hostPwsh) throw new Error('PowerShell is required for the real Codex installer test');
+    const version = spawnSync(realCodex, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+    if (version.error) throw version.error;
+    t.equal(version.status, 0, `real Codex --version should succeed:\n${version.stderr}`);
+    t.ok(version.stdout.trim().length > 0, 'the real CLI reports its version');
+    console.log(`  Codex compatibility (${label}): ${version.stdout.trim()}`);
+    const ws = makeWorkspace();
+    symlinkSync(realCodex, join(ws.binDir, 'codex'));
+    const codexHome = join(ws.root, 'real-codex-home');
+    const run = await runner({
+      workspace: ws, baseUrl: modelServer.url,
+      configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
+      codexHome, withCodexInstallHook: false,
+    });
+    t.equal(run.code, 0, `real codex app-server configuration should succeed:\n${run.combined}`);
+    const configText = readFileSync(codexConfigPath(ws, codexHome), 'utf8');
+    const codexBase = `${modelServer.url.replace(/\/$/, '')}/azure-api.codex`;
+    t.includes(configText, 'model_provider = "floway"', 'real config.toml carries the provider selection');
+    t.includes(configText, 'wire_api = "responses"', 'real config.toml carries the wire_api');
+    t.includes(configText, 'supports_websockets = true', 'real config.toml carries websocket support');
+    t.includes(configText, 'x-openai-actor-authorization', 'real config.toml carries the actor-authorization marker');
+    t.includes(configText, 'standalone_web_search = true', 'real config.toml enables client-owned web search');
+    t.includes(configText, 'suppress_unstable_features_warning = true', 'real config.toml suppresses the paired under-development warning');
+    t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
+    t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
+    t.includes(configText, 'model_reasoning_effort = "high"', 'real config.toml carries the selected effort');
+    t.includes(configText, 'command = "sh"', 'real config.toml carries command auth on Unix');
+    t.excludes(configText, SENTINEL_KEY, 'the provider token is kept outside config.toml');
+    t.excludes(run.combined, SENTINEL_KEY, 'the provider token is never logged');
+    assertStagedToken(t, ws, codexHome);
   });
-  t.equal(run.code, 0, `real codex app-server configuration should succeed:\n${run.combined}`);
-  const configText = readFileSync(codexConfigPath(ws, codexHome), 'utf8');
-  const codexBase = `${modelServer.url.replace(/\/$/, '')}/azure-api.codex`;
-  t.includes(configText, 'model_provider = "floway"', 'real config.toml carries the provider selection');
-  t.includes(configText, 'wire_api = "responses"', 'real config.toml carries the wire_api');
-  t.includes(configText, 'supports_websockets = true', 'real config.toml carries websocket support');
-  t.includes(configText, 'x-openai-actor-authorization', 'real config.toml carries the actor-authorization marker');
-  t.includes(configText, 'standalone_web_search = true', 'real config.toml enables client-owned web search');
-  t.includes(configText, 'suppress_unstable_features_warning = true', 'real config.toml suppresses the paired under-development warning');
-  t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
-  t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
-  assertStagedToken(t, ws, codexHome);
-});
+}
 
 // --- output contract --------------------------------------------------------
 
