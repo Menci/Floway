@@ -10,6 +10,7 @@ import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderHandle, useReorderList } from '../ui/reorder-list';
@@ -87,11 +88,10 @@ export function UpstreamConfigSidebar({
         </EditorSection>
         {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
           title={t('dashboard.upstreamEditor.usageRefresh.title')}
-          description={t('dashboard.upstreamEditor.usageRefresh.description')}
         >
           <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
             <Field
-              label={t('dashboard.upstreamEditor.usageRefresh.interval')}
+              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), t('dashboard.upstreamEditor.usageRefresh.description')) }}
               validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
               validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
             >
