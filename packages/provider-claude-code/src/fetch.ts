@@ -9,9 +9,11 @@ import {
   replaceSoleAccount,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
+import { claudeCodeQuotaUsageMetrics } from './usage-metrics.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { recordUpstreamUsageMetrics } from '@floway-dev/provider';
 import {
   getProviderRepo,
   headersForAnthropicMessagesCall,
@@ -160,6 +162,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
       quotaSnapshot: { fetchedAt, data: snapshot },
     }));
   });
+  await recordUpstreamUsageMetrics(upstreamId, claudeCodeQuotaUsageMetrics(snapshot), fetchedAt);
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
   // with one event per request; the dashboard already reads the snapshot

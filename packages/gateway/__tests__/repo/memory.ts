@@ -1482,6 +1482,18 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
 }
 
 export class InMemoryRepo implements Repo {
+  private upstreamUsageRecords: import('../../src/repo/types.ts').UpstreamUsageMetricRecord[] = [];
+  upstreamUsageMetrics: import('../../src/repo/types.ts').UpstreamUsageMetricsRepo = {
+    record: async record => {
+      const latest = this.upstreamUsageRecords.findLast(row => row.upstreamId === record.upstreamId && row.key === record.key);
+      if (latest !== undefined && (latest.timestamp > record.timestamp || latest.value === record.value)) return;
+      this.upstreamUsageRecords = this.upstreamUsageRecords.filter(row => row.upstreamId !== record.upstreamId || row.key !== record.key || Math.floor(row.timestamp / 60_000) !== Math.floor(record.timestamp / 60_000));
+      this.upstreamUsageRecords.push({ ...record });
+    },
+    query: async (start, end) => this.upstreamUsageRecords.filter(record => record.timestamp < end && (
+      record.timestamp >= start || !this.upstreamUsageRecords.some(next => next.upstreamId === record.upstreamId && next.key === record.key && next.timestamp > record.timestamp && next.timestamp < start)
+    )).toSorted((a, b) => a.timestamp - b.timestamp),
+  };
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;

@@ -90,6 +90,7 @@ const en = {
         apiKeys: 'API Keys',
         apiDocs: 'API Docs',
         requests: 'Requests',
+        upstreamUsage: 'Upstream Usage',
         usage: 'Usage',
         performance: 'Performance',
         users: 'Users',
@@ -115,6 +116,7 @@ const en = {
             'Inspect request records, status, routing results, and error details',
         usage:
             'Track token usage and traffic volume across users, keys, models, and upstreams',
+        upstreamUsage: 'Track subscription and account usage reported by upstreams',
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
@@ -1159,6 +1161,23 @@ const en = {
           cached: 'Cached Input',
           cachedRate: 'Cached Rate',
           cacheCreation: 'Cache Write',
+        },
+      },
+      upstreamUsage: {
+        refresh: 'Refresh upstream usage',
+        empty: 'No upstream usage observations in this range',
+        chartTitle: '{{name}} · {{unit}}',
+        groupBy: { upstream: 'Upstream', metric: 'Metric name' },
+        units: { percent: 'Usage (%)', usd: 'Cost (USD)', credits: 'Credits' },
+        metrics: {
+          unnamedWindow: '{{minutes, number}}-minute window',
+          window: '{{name}} {{minutes, number}}-minute window',
+          fiveHour: '5-hour window', sevenDay: '7-day window',
+          sevenDaySonnet: '7-day Sonnet window', sevenDayOpus: '7-day Opus window',
+          overage: 'Overage',
+          extraUsage: 'Extra usage', premiumInteractions: 'Premium interactions',
+          chat: 'Chat', completions: 'Completions', session: 'Session',
+          fourWeeks: 'Last 4 weeks', credits: 'Credit balance',
         },
       },
       performance: {

@@ -44,7 +44,11 @@
     "remend": "^1.3.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "@floway-dev/provider-codex": "workspace:*",
+    "@floway-dev/provider-copilot": "workspace:*",
+    "@floway-dev/provider-claude-code": "workspace:*",
+    "@floway-dev/provider-ollama": "workspace:*"
   },
   "devDependencies": {
     "@floway-dev/gateway": "workspace:*",

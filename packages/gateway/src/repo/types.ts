@@ -561,7 +561,23 @@ export interface ScheduledMaintenanceRepo {
 // here satisfy that contract. Re-exported so the repo layer imports one source.
 export type { AgentSetupMutation, AgentSetupRecord, AgentSetupRenewal, AgentSetupRepository } from '@floway-dev/agent-setup';
 
+export interface UpstreamUsageMetricRecord {
+  upstreamId: string;
+  key: string;
+  timestamp: number;
+  value: number;
+  provider: UpstreamRecord['kind'];
+  upstreamName: string;
+  upstreamHue: number;
+}
+
+export interface UpstreamUsageMetricsRepo {
+  record(record: UpstreamUsageMetricRecord): Promise<void>;
+  query(start: number, end: number): Promise<UpstreamUsageMetricRecord[]>;
+}
+
 export interface Repo {
+  upstreamUsageMetrics: UpstreamUsageMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;

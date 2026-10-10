@@ -63,6 +63,7 @@ export const navGroups: NavGroup[] = [
     labelKey: 'dashboard.groups.monitor',
     items: [
       { to: '/dashboard/monitor/requests', labelKey: 'dashboard.nav.requests', icon: Clipboard20Color },
+      { to: '/dashboard/monitor/upstream-usage', labelKey: 'dashboard.nav.upstreamUsage', icon: DataPie20Color, adminOnly: true },
       { to: '/dashboard/monitor/usage', labelKey: 'dashboard.nav.usage', icon: DataPie20Color },
       { to: '/dashboard/monitor/performance', labelKey: 'dashboard.nav.performance', icon: Gauge20Color },
     ],

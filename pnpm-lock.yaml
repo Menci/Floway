@@ -156,9 +156,21 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../../packages/provider
+      '@floway-dev/provider-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/provider-claude-code
+      '@floway-dev/provider-codex':
+        specifier: workspace:*
+        version: link:../../packages/provider-codex
+      '@floway-dev/provider-copilot':
+        specifier: workspace:*
+        version: link:../../packages/provider-copilot
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../../packages/provider-custom
+      '@floway-dev/provider-ollama':
+        specifier: workspace:*
+        version: link:../../packages/provider-ollama
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy

@@ -47,7 +47,7 @@ beforeEach(() => {
   repo = createUpstreamStateRepoStub(() => current, state => {
     current = { ...current!, state: state as CodexUpstreamState };
   });
-  initProviderRepo(() => ({ upstreams: repo }));
+  initProviderRepo(() => ({ recordUpstreamUsageMetric: async () => {}, upstreams: repo }));
 });
 
 afterEach(() => vi.restoreAllMocks());

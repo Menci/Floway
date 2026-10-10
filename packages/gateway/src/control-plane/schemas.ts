@@ -835,3 +835,8 @@ export const performanceQuery = z.object({
   filter_operation: filterValues(z.string()),
   filter_runtime_location: filterValues(z.string()),
 });
+
+export const upstreamUsageQuery = z.object({
+  start: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative()),
+  end: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative()),
+}).refine(query => query.end > query.start, { message: 'Usage interval end must be later than start' });

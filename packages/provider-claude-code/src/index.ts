@@ -23,3 +23,5 @@ export * from './interceptors/anthropic-messages/system-blocks.ts';
 export * from './pricing.ts';
 export * from './fetch.ts';
 export * from './provider.ts';
+
+export { claudeCodeProbeUsageMetrics } from './usage-metrics.ts';

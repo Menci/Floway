@@ -6,7 +6,9 @@ import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody } from '../schemas.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
+import { recordUpstreamUsageMetrics } from '@floway-dev/provider';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import { claudeCodeProbeUsageMetrics } from '@floway-dev/provider-claude-code';
 import {
   type ClaudeCodeAccountCredential,
   type ClaudeCodeUpstreamConfig,
@@ -251,6 +253,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   if (record.id !== '') {
     await getRepo().upstreams.saveState(record.id, current =>
       mergeSnapshotInto(readClaudeCodeUpstreamState(current)));
+    await recordUpstreamUsageMetrics(record.id, claudeCodeProbeUsageMetrics(probe.body), snapshotPatch.usageProbeSnapshot.fetchedAt);
   }
 
   logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });

@@ -29,7 +29,8 @@
 import { githubHeaders } from './auth.ts';
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
-import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
+import { copilotUsageMetrics } from './usage-metrics.ts';
+import { recordUpstreamUsageMetrics, getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 // One quota bucket. A seat reports three kinds of bucket and both sources spell
 // them differently, so nothing but the pair below is safe to read:
@@ -299,9 +300,10 @@ export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetch
 // mutator: the mutator is re-run on a lost race and must return the same
 // snapshot each time.
 export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
-  const fetchedAt = Date.now();
+  const fetchedAt = Date.parse(snapshot.observed_at);
   await getProviderRepo().upstreams.saveState(upstreamId, current => ({
     ...readCopilotUpstreamState(current),
     quotaSnapshot: { fetchedAt, data: snapshot },
   } satisfies CopilotUpstreamState));
+  await recordUpstreamUsageMetrics(upstreamId, copilotUsageMetrics(snapshot), fetchedAt);
 };

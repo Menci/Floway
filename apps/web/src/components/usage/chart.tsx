@@ -8,6 +8,7 @@ import { useTranslation } from '../../i18n/translation';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
+import { chartMargins } from '../charts/layout';
 import { visibleSeriesData } from '../charts/series-selection';
 
 const { makeStyles } = fluentComponents;
@@ -29,8 +30,6 @@ const useAreaBoundaryStyles = makeStyles({
     '& path[id*="-graph-"]': { fillOpacity: '0.42' },
   },
 });
-
-const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
 export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChartModel; hidden: Set<string>; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();

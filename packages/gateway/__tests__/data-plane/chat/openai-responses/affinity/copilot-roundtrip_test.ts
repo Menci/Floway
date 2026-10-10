@@ -64,6 +64,7 @@ const collectEvents = async (
 
 test('Copilot item-id and generic affinity trailers compose and unwrap in boundary order', async () => {
   initProviderRepo(() => ({
+    recordUpstreamUsageMetric: async () => {},
     upstreams: {
       getById: async () => upstream,
       saveState: async () => {},
