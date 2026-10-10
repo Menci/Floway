@@ -333,7 +333,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
             </div>)}
           </div>
-          <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+          <div className="flex items-end justify-between gap-4 min-w-0 flex-wrap">
             <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
               { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
               { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },

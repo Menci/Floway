@@ -35,11 +35,15 @@ const open = () => { const custom = screen.getByRole('radio', { name: 'Custom' }
 const day = (value: number) => fireEvent.click(screen.getByRole('gridcell', { name: `October ${value}, 2026` }));
 const outside = () => screen.getByRole('button', { name: 'Outside' }).focus();
 
-test('only Custom opens a day range and a complete range applies on group blur', async () => {
+test('only Custom opens a day range and the second date closes and applies once', async () => {
   const { change } = renderEditor();
   expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
-  open(); day(6); day(16);
+  open(); day(6);
   expect(change).not.toHaveBeenCalled();
+  expect(screen.getByRole('grid')).toBeTruthy();
+  day(16);
+  expect(screen.queryByRole('grid')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Custom' }));
   outside();
   await waitFor(() => expect(change.mock.calls).toEqual([[{ start: '2026-10-06', end: '2026-10-16' }]]));
   expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
@@ -47,7 +51,7 @@ test('only Custom opens a day range and a complete range applies on group blur',
 
 test('the date caption appears only after a successful load and both entries reopen the same picker', async () => {
   const { commit } = renderEditor();
-  open(); day(6); day(16); outside();
+  open(); day(6); day(16);
   await waitFor(() => expect(screen.queryByRole('grid')).toBeNull());
   expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
   commit({ start: '2026-10-06', end: '2026-10-16' });
@@ -66,14 +70,14 @@ test('an incomplete range or Escape keeps the loaded preset', async () => {
   open(); day(8); outside();
   await Promise.resolve();
   expect(change).not.toHaveBeenCalled();
-  open(); day(8); day(9);
+  open(); day(8);
   fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
   expect(change).not.toHaveBeenCalled();
 });
 
 test('preset activation discards a draft without an intermediate custom query', () => {
   const { change } = renderEditor();
-  open(); day(8); day(9);
+  open(); day(8);
   const preset = screen.getByRole('radio', { name: '7 Days' });
   preset.focus(); fireEvent.click(preset);
   expect(change.mock.calls).toEqual([['7d']]);
@@ -81,9 +85,9 @@ test('preset activation discards a draft without an intermediate custom query', 
 
 test('the native range semantics sort reversed clicks and allow the same day', async () => {
   const { change } = renderEditor();
-  open(); day(16); day(6); outside();
+  open(); day(16); day(6);
   await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-06', end: '2026-10-16' }));
-  open(); day(8); day(8); outside();
+  open(); day(8); day(8);
   await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-08', end: '2026-10-08' }));
 });
 
