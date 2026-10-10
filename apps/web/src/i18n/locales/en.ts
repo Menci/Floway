@@ -724,7 +724,7 @@ const en = {
             'openai-responses-store-false': {
               label: 'Request Stateful Upstreams to Use Stateless Mode',
               description:
-                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway do not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
+                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway does not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
             },
           },
         },
