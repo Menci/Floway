@@ -19,6 +19,7 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
   const styles = useChartFrame();
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const unitLabel = t(`dashboard.upstreamUsage.units.${chart.unit}`);
+  const margins = { ...chartMargins, left: chart.unit === 'usd' ? 100 : chartMargins.left };
   const format = (value: number) => chart.unit === 'percent' ? `${value.toLocaleString(locale, { maximumFractionDigits: 2 })}%`
     : chart.unit === 'usd' ? value.toLocaleString(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: 5 })
       : value.toLocaleString(locale, { maximumFractionDigits: 2 });
@@ -39,14 +40,14 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
   return <ChartSection controlsLabel={chart.title} emptyText={t('dashboard.upstreamUsage.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={setHidden} title={t('dashboard.upstreamUsage.chartTitle', { name: chart.title, unit: unitLabel })}>
     <ChartHost className="" emptyText={t('dashboard.upstreamUsage.empty')} hasData={data.lineChartData.length > 0}>
       {({ size }) => {
-        const tickCount = Math.max(2, Math.min(7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
+        const tickCount = Math.max(2, Math.min(7, Math.floor(Math.max(0, size.width - margins.left - margins.right) / 120)));
         return <LineChart
           customDateTimeFormatter={formatAxisDate}
           data={data}
           enablePerfOptimization
           height={size.height}
           hideLegend
-          margins={chartMargins}
+          margins={margins}
           onRenderCalloutPerStack={renderCallout}
           styles={styles}
           tickValues={Array.from({ length: tickCount }, (_, index) => new Date(start + (end - start) * index / (tickCount - 1)))}
