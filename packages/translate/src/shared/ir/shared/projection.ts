@@ -1,10 +1,10 @@
 import type { IRJSONObject } from '../ir.ts';
-import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import { cloneIRJSON } from './json.ts';
 import type { IRTextUpdate } from './text.ts';
 import type { IRRoundTripWriter } from '../round-trip/stream.ts';
 import type { IRProjectionResult as IRRoundTripProjectionResult } from '../round-trip-projection.ts';
 import type { IRPath } from '../stream.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 export interface IRStringProjection {
   source_path: IRPath;

@@ -1,5 +1,5 @@
-import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import type { IRJSONObject } from '../ir.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 // Raw JSON primitives preserve numeric tokens outside the finite or safe-integer range.
 // https://tc39.es/proposal-json-parse-with-source/#sec-json.rawjson
