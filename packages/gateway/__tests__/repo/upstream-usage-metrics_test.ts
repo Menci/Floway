@@ -5,7 +5,7 @@ import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamUsageMetricRecord } from '../../src/repo/types.ts';
 
-const point = (timestamp: number, value: number, key = 'premium_interactions'): UpstreamUsageMetricRecord => ({ upstreamId: 'up-1', key, timestamp, value, provider: 'copilot', upstreamName: 'Seat', upstreamHue: 210 });
+const point = (timestamp: number, value: number, key = 'premium_interactions'): UpstreamUsageMetricRecord => ({ upstreamId: 'up-1', key, timestamp, value });
 
 for (const [name, create] of [
   ['SQL', async () => new SqlRepo(await createSqliteTestDb())],

@@ -35,7 +35,7 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
     .filter(unit => chart.entries.some(entry => entry.unit === unit))
     .sort((left, right) => unitAxes[right].priority - unitAxes[left].priority);
   const data = useMemo(() => upstreamUsagePlotRows(chart, start, end), [chart, end, start]);
-  const series = withUniqueSeriesLegends(chart.entries.map(entry => ({ ...entry, label: units.length > 1 ? t('dashboard.upstreamUsage.metricOption', { name: entry.label, unit: t(`dashboard.upstreamUsage.units.${entry.unit}`) }) : entry.label })));
+  const series = withUniqueSeriesLegends(chart.entries);
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
   const formatters: Record<UsageMetricUnit, (value: number) => string> = {
     percent: value => `${numberFormat.format(value)}%`,

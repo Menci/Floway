@@ -1,5 +1,5 @@
 import type { TranslationKey, useTranslation } from '../../i18n/translation';
-import type { UpstreamUsageMetricRecord } from '@floway-dev/gateway/browser';
+import type { UpstreamUsageMetadata } from './data';
 import type { UsageMetricDisplay } from '@floway-dev/provider/browser';
 import { resolveUsageMetricDisplayName as claudeCodeDisplay } from '@floway-dev/provider-claude-code/browser';
 import { resolveUsageMetricDisplayName as codexDisplay } from '@floway-dev/provider-codex/browser';
@@ -20,7 +20,8 @@ const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstrea
   ['completions', 'dashboard.upstreamUsage.metrics.completions'],
   ['session', 'dashboard.upstreamUsage.metrics.session'],
   ['weekly', 'dashboard.upstreamUsage.metrics.sevenDay'],
-  ['last_4_weeks', 'dashboard.upstreamUsage.metrics.fourWeeks'],
+  ['last_4_weeks', 'dashboard.upstreamUsage.metrics.pastMonth'],
+  ['cost_last_4_weeks', 'dashboard.upstreamUsage.metrics.pastMonthCost'],
   ['credits_balance', 'dashboard.upstreamUsage.metrics.credits'],
 ]);
 
@@ -33,12 +34,12 @@ const fixedWindows = new Map<TranslationKey, number>([
 export const resolveUsageMetricDisplayName = (
   upstreamId: string,
   key: string,
-  observations: ReadonlyMap<string, UpstreamUsageMetricRecord>,
+  upstreams: ReadonlyMap<string, UpstreamUsageMetadata>,
   t: Translate,
 ): ResolvedUsageMetricDisplay => {
-  const observation = observations.get(JSON.stringify([upstreamId, key]))!;
+  const upstream = upstreams.get(upstreamId)!;
   let display: UsageMetricDisplay;
-  switch (observation.provider) {
+  switch (upstream.kind) {
   case 'codex': display = codexDisplay(key); break;
   case 'copilot': display = copilotDisplay(key); break;
   case 'claude-code': display = claudeCodeDisplay(key); break;

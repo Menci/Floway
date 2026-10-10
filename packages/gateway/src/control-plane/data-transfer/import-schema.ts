@@ -461,9 +461,6 @@ const upstreamUsageSchema = z.object({
   key: z.string().min(1),
   timestamp: z.number().int().nonnegative(),
   value: z.number(),
-  provider: z.enum(ALL_PROVIDER_KINDS),
-  upstreamName: z.string(),
-  upstreamHue: z.number().min(0).lt(360),
 }).strict();
 
 export const parseImportData = (value: unknown): ImportDataParseResult => {

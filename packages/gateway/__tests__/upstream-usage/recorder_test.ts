@@ -5,7 +5,6 @@ import { InMemoryRepo } from '../repo/memory.ts';
 
 it('propagates the original storage failure and retries an unchanged observation', async () => {
   const repo = new InMemoryRepo();
-  vi.spyOn(repo.upstreams, 'getById').mockResolvedValue({ kind: 'copilot', name: 'Seat', hue: 210 } as never);
   const error = new Error('Database unavailable');
   const persist = vi.spyOn(repo.upstreamUsageMetrics, 'record').mockRejectedValueOnce(error);
   const record = createUpstreamUsageRecorder(repo);
@@ -15,11 +14,13 @@ it('propagates the original storage failure and retries an unchanged observation
   expect(await repo.upstreamUsageMetrics.query(0, 2_000)).toMatchObject([{ upstreamId: 'up-1', value: 20 }]);
 });
 
-it('does not resurrect an upstream deleted during an observation', async () => {
+it('records upstream identities without fetching display metadata', async () => {
   const repo = new InMemoryRepo();
+  const lookup = vi.spyOn(repo.upstreams, 'getById');
   const persist = vi.spyOn(repo.upstreamUsageMetrics, 'record');
   await createUpstreamUsageRecorder(repo)('gone', 'premium_interactions', 20, 1_000);
-  expect(persist).not.toHaveBeenCalled();
+  expect(persist).toHaveBeenCalledWith({ upstreamId: 'gone', key: 'premium_interactions', value: 20, timestamp: 1_000 });
+  expect(lookup).not.toHaveBeenCalled();
 });
 
 it('rejects invalid observations at the recording boundary', async () => {

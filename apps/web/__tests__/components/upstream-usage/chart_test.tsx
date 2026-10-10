@@ -58,6 +58,7 @@ it('shows the two highest-priority unit axes while retaining every curve and too
   fireEvent.keyDown(application, { key: 'ArrowRight' });
   fireEvent.keyDown(application, { key: 'ArrowRight' });
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('200'));
+  expect(screen.getByRole('status').textContent).not.toContain('credits');
   expect(screen.getByRole('status').textContent).toContain('$3.00');
   expect(screen.getByRole('status').textContent).toContain('25%');
 });

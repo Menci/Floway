@@ -19,7 +19,7 @@ import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UpstreamUsageChartSection } from '../components/upstream-usage/chart';
 import { loadUpstreamUsage } from '../components/upstream-usage/data';
 import { resolveUsageMetricDisplayName } from '../components/upstream-usage/display-name';
-import { buildUpstreamUsageCharts, type UpstreamUsageChart, type UpstreamUsageGroupBy } from '../components/upstream-usage/plot';
+import { buildUpstreamUsageCharts, type UpstreamUsageGroupBy } from '../components/upstream-usage/plot';
 import { fluentComponents } from '../fluent';
 import { useTranslation } from '../i18n/translation';
 import { useEntryRewrite } from '../lib/page-navigation';
@@ -59,12 +59,11 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
   useTelemetryPolling(poll, loadedRange, !editingRange && !refreshing);
   const charts = useMemo(() => {
     if (data === null || data.start >= loadedAt) return [];
-    const observations = new Map(data.records.map(record => [JSON.stringify([record.upstreamId, record.key]), record]));
-    return buildUpstreamUsageCharts(data.records, groupBy, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, observations, t));
+    const upstreams = new Map(data.upstreams.map(upstream => [upstream.id, upstream]));
+    return buildUpstreamUsageCharts(data.records, groupBy, upstreams, (upstreamId, key) => resolveUsageMetricDisplayName(upstreamId, key, upstreams, t));
   }, [data, groupBy, loadedAt, t]);
   const chart = charts.find(item => item.id === selected[groupBy]) ?? charts[0];
   const selectedId = chart?.id;
-  const choiceLabel = (item: UpstreamUsageChart) => groupBy === 'upstream' ? item.title : t('dashboard.upstreamUsage.metricOption', { name: item.title, unit: t(`dashboard.upstreamUsage.units.${item.entries[0]!.unit}`) });
   const addressOf = (next: DashboardRange) => {
     const search = new URLSearchParams();
     serializeDashboardRange(search, next);
@@ -105,10 +104,10 @@ export default function DashboardMonitorUpstreamUsage({ loaderData }: Route.Comp
             disabled={refreshing || charts.length === 0}
             listWidth="content"
             selectedOptions={selectedId === undefined ? [] : [selectedId]}
-            value={chart === undefined ? '' : choiceLabel(chart)}
+            value={chart === undefined ? '' : chart.title}
             onOptionSelect={(_, selection) => setSelected(current => ({ ...current, [groupBy]: selection.optionValue! }))}
           >
-            {charts.map(item => <Option key={item.id} value={item.id}>{choiceLabel(item)}</Option>)}
+            {charts.map(item => <Option key={item.id} value={item.id}>{item.title}</Option>)}
           </Dropdown>
         </Field>
         <div className="ml-auto flex-none"><TelemetryTimeRange addressOf={addressOf} ariaLabel={t('dashboard.usage.range.label')} loadedAt={loadedAt} onChange={changeRange} onEditingChange={setEditingRange} range={loadedRange} /></div>

@@ -4,9 +4,6 @@ CREATE TABLE upstream_usage_metrics (
   bucket INTEGER NOT NULL,
   timestamp INTEGER NOT NULL,
   value REAL NOT NULL,
-  provider TEXT NOT NULL,
-  upstream_name TEXT NOT NULL,
-  upstream_hue REAL NOT NULL,
   PRIMARY KEY (upstream_id, metric_key, bucket)
 );
 CREATE INDEX upstream_usage_metrics_time ON upstream_usage_metrics (timestamp);

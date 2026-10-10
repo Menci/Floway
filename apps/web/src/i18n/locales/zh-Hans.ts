@@ -1116,11 +1116,9 @@ const zhHansCN = {
       upstreamUsage: {
         refresh: '刷新上游用量',
         empty: '此时间范围内没有上游用量观察记录',
-        metricOption: '{{name}} {{unit}}',
         value: '数值',
         selection: { upstream: '上游', metric: '维度' },
         groupBy: { upstream: '上游', metric: '维度' },
-        units: { percent: '用量 (%)', usd: '金额 (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}} 分钟窗口', hours: '{{count, number}} 小时窗口', days: '{{count, number}} 天窗口' },
         metrics: {
           window: '{{name}} {{window}}',
@@ -1129,7 +1127,7 @@ const zhHansCN = {
           overage: '超额用量',
           extraUsage: '额外用量', premiumInteractions: 'Premium interactions',
           chat: '对话', completions: '补全', session: '会话',
-          fourWeeks: '最近 4 周', credits: 'Credit 余额',
+          pastMonth: '最近一个月', pastMonthCost: '最近一个月费用', credits: 'Credit 余额',
         },
       },
       performance: {

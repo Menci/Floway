@@ -1,4 +1,5 @@
 import type { ResolvedUsageMetricDisplay } from './display-name';
+import type { UpstreamUsageMetadata } from './data';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { SeriesLegendEntry } from '../charts/series-legends';
 import type { UpstreamUsageMetricRecord } from '@floway-dev/gateway/browser';
@@ -16,25 +17,28 @@ export interface UpstreamUsageChart {
 export const buildUpstreamUsageCharts = (
   records: readonly UpstreamUsageMetricRecord[],
   groupBy: UpstreamUsageGroupBy,
+  upstreams: ReadonlyMap<string, UpstreamUsageMetadata>,
   resolve: (upstreamId: string, key: string) => ResolvedUsageMetricDisplay,
 ): UpstreamUsageChart[] => {
   const charts = new Map<string, UpstreamUsageChart>();
   const identities = new Map<string, { record: UpstreamUsageMetricRecord; display: ResolvedUsageMetricDisplay }>();
-  for (const record of records) {
+  const available = records.filter(record => upstreams.has(record.upstreamId));
+  for (const record of available) {
     identities.set(JSON.stringify([record.upstreamId, record.key]), { record, display: resolve(record.upstreamId, record.key) });
   }
   for (const [id, { record, display }] of identities) {
+    const upstream = upstreams.get(record.upstreamId)!;
     const chartId = groupBy === 'upstream' ? record.upstreamId : display.metricId;
     let chart = charts.get(chartId);
     if (chart === undefined) {
-      chart = { id: chartId, title: groupBy === 'upstream' ? record.upstreamName : display.name, entries: [], values: new Map() };
+      chart = { id: chartId, title: groupBy === 'upstream' ? upstream.name : display.name, entries: [], values: new Map() };
       charts.set(chartId, chart);
     }
-    const label = groupBy === 'upstream' ? display.name : record.upstreamName;
-    chart.entries.push({ id, label, unit: display.unit, hue: groupBy === 'upstream' ? hueForSeriesSlot(chart.entries.length) : record.upstreamHue });
+    const label = groupBy === 'upstream' ? display.name : upstream.name;
+    chart.entries.push({ id, label, unit: display.unit, hue: groupBy === 'upstream' ? hueForSeriesSlot(chart.entries.length) : upstream.hue });
     chart.values.set(id, []);
   }
-  for (const record of records) {
+  for (const record of available) {
     const id = JSON.stringify([record.upstreamId, record.key]);
     const { display } = identities.get(id)!;
     const chartId = groupBy === 'upstream' ? record.upstreamId : display.metricId;

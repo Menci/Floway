@@ -566,9 +566,6 @@ export interface UpstreamUsageMetricRecord {
   key: string;
   timestamp: number;
   value: number;
-  provider: UpstreamRecord['kind'];
-  upstreamName: string;
-  upstreamHue: number;
 }
 
 export interface UpstreamUsageMetricsRepo {

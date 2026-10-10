@@ -20,5 +20,7 @@ export const resolveUsageMetricDisplayName = (key: string): UsageMetricDisplay =
   if (key === 'credits_balance') return { name: key, unit: 'credits', windowMinutes: null };
   const [kind, name, windowMinutes] = JSON.parse(key) as [string, string, number];
   if (kind !== 'window' || typeof name !== 'string' || !Number.isFinite(windowMinutes) || windowMinutes <= 0) throw new TypeError('Invalid Codex usage metric key');
-  return { name, unit: 'percent', windowMinutes };
+  // "codex" identifies the default quota family, so only named families qualify the window label.
+  // https://github.com/openai/codex/blob/6c0c6759d0617d7670826b61aca0a931bbb6db1f/codex-rs/codex-api/src/rate_limits.rs#L55-L64
+  return { name: name === 'codex' ? '' : name, unit: 'percent', windowMinutes };
 };

@@ -1166,11 +1166,9 @@ const en = {
       upstreamUsage: {
         refresh: 'Refresh upstream usage',
         empty: 'No upstream usage observations in this range',
-        metricOption: '{{name}} {{unit}}',
         value: 'Value',
         selection: { upstream: 'Upstream', metric: 'Metric' },
         groupBy: { upstream: 'Upstream', metric: 'Metric' },
-        units: { percent: 'Usage (%)', usd: 'Cost (USD)', credits: 'Credits' },
         windows: { minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },
         metrics: {
           window: '{{name}} {{window}}',
@@ -1179,7 +1177,7 @@ const en = {
           overage: 'Overage',
           extraUsage: 'Extra usage', premiumInteractions: 'Premium interactions',
           chat: 'Chat', completions: 'Completions', session: 'Session',
-          fourWeeks: 'Last 4 weeks', credits: 'Credit balance',
+          pastMonth: 'Past month', pastMonthCost: 'Past month cost', credits: 'Credit balance',
         },
       },
       performance: {

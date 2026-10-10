@@ -12,7 +12,7 @@ afterEach(() => { useAuthStore.getState().clear(); vi.unstubAllGlobals(); });
 const loadedAt = Date.UTC(2026, 9, 10, 12);
 const loaderData = {
   range: 'today' as const, groupBy: 'upstream' as const, selectedUpstream: null as string | null, selectedMetric: null as string | null, loadedAt,
-  result: { data: { start: loadedAt - 86_400_000, end: loadedAt, records: [{ upstreamId: 'up-1', key: 'premium_interactions', value: 25, timestamp: loadedAt - 60_000, provider: 'copilot' as const, upstreamName: 'Copilot seat', upstreamHue: 210 }] } },
+  result: { data: { start: loadedAt - 86_400_000, end: loadedAt, upstreams: [{ id: 'up-1', name: 'Copilot seat', kind: 'copilot' as const, hue: 210 }], records: [{ upstreamId: 'up-1', key: 'premium_interactions', value: 25, timestamp: loadedAt - 60_000 }] } },
 };
 const renderPage = (data: Parameters<typeof DashboardMonitorUpstreamUsage>[0]['loaderData']) => {
   const router = createMemoryRouter([{ path: '/', Component: () => <DashboardMonitorUpstreamUsage loaderData={data} matches={[] as never} params={{}} /> }]);
@@ -53,7 +53,7 @@ it('refuses non-admin navigation before requesting subscription history', async 
 
 it('changes the selected upstream without displaying additional charts', async () => {
   const first = loaderData.result.data.records[0]!;
-  renderPage({ ...loaderData, result: { data: { ...loaderData.result.data, records: [first, { ...first, upstreamId: 'up-2', upstreamName: 'Second seat', value: 40 }] } } });
+  renderPage({ ...loaderData, result: { data: { ...loaderData.result.data, upstreams: [...loaderData.result.data.upstreams, { ...loaderData.result.data.upstreams[0]!, id: 'up-2', name: 'Second seat' }], records: [first, { ...first, upstreamId: 'up-2', value: 40 }] } } });
   fireEvent.click(screen.getByRole('combobox', { name: 'Upstream' }));
   fireEvent.click(screen.getByRole('option', { name: 'Second seat' }));
   await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Second seat' })).toBeTruthy());

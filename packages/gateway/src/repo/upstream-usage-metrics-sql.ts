@@ -2,7 +2,7 @@ import type { UpstreamUsageMetricRecord, UpstreamUsageMetricsRepo } from './type
 import type { SqlDatabase } from '@floway-dev/platform';
 
 export const UPSTREAM_USAGE_INTERVAL_MS = 60_000;
-const columns = 'upstream_id AS upstreamId, metric_key AS key, timestamp, value, provider, upstream_name AS upstreamName, upstream_hue AS upstreamHue';
+const columns = 'upstream_id AS upstreamId, metric_key AS key, timestamp, value';
 
 export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
   constructor(private db: SqlDatabase) {}
@@ -11,8 +11,8 @@ export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
     // Coalesce changed values in SQL so concurrent requests and separate Worker
     // isolates share interval state without process timers.
     await this.db.prepare(`
-      INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value, provider, upstream_name, upstream_hue)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?
+      INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value)
+      SELECT ?, ?, ?, ?, ?
       WHERE NOT EXISTS (
         SELECT 1 FROM upstream_usage_metrics
         WHERE upstream_id = ? AND metric_key = ? AND timestamp > ?
@@ -22,10 +22,9 @@ export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
           AND timestamp = (SELECT MAX(timestamp) FROM upstream_usage_metrics WHERE upstream_id = ? AND metric_key = ?)
       )
       ON CONFLICT (upstream_id, metric_key, bucket) DO UPDATE SET
-        timestamp = excluded.timestamp, value = excluded.value, provider = excluded.provider,
-        upstream_name = excluded.upstream_name, upstream_hue = excluded.upstream_hue
+        timestamp = excluded.timestamp, value = excluded.value
       WHERE excluded.timestamp >= upstream_usage_metrics.timestamp
-    `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value, record.provider, record.upstreamName, record.upstreamHue,
+    `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value,
       record.upstreamId, record.key, record.timestamp, record.upstreamId, record.key, record.value, record.upstreamId, record.key).run();
   }
 
@@ -36,12 +35,11 @@ export class SqlUpstreamUsageMetricsRepo implements UpstreamUsageMetricsRepo {
 
   async set(record: UpstreamUsageMetricRecord): Promise<void> {
     await this.db.prepare(`
-      INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value, provider, upstream_name, upstream_hue)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO upstream_usage_metrics (upstream_id, metric_key, bucket, timestamp, value)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (upstream_id, metric_key, bucket) DO UPDATE SET
-        timestamp = excluded.timestamp, value = excluded.value, provider = excluded.provider,
-        upstream_name = excluded.upstream_name, upstream_hue = excluded.upstream_hue
-    `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value, record.provider, record.upstreamName, record.upstreamHue).run();
+        timestamp = excluded.timestamp, value = excluded.value
+    `).bind(record.upstreamId, record.key, Math.floor(record.timestamp / UPSTREAM_USAGE_INTERVAL_MS), record.timestamp, record.value).run();
   }
 
   async deleteAll(): Promise<void> {
