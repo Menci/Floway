@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { billableUsageFromOpenAIResponsesEvent } from '../../../../src/data-plane/chat/openai-responses/usage.ts';
+import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { recordPerformance } from '../../../../src/data-plane/shared/telemetry/performance.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -111,10 +111,16 @@ test.each([true, false])('includes streamed reasoning in the generation interval
       { ts: 4448, event: { type: 'response.output_item.added', item: { type: 'function_call', name: 'search' } } },
       { ts: 4448, event: { type: 'response.function_call_arguments.delta', delta: '{' } },
     ] : []),
-    { ts: 5392, event: { type: 'response.completed', response: { usage: {
-      input_tokens: 76936, output_tokens: 202, total_tokens: 77138,
-      output_tokens_details: { reasoning_tokens: 91 },
-    } } } },
+    {
+      ts: 5392, event: {
+        type: 'response.completed', response: {
+          usage: {
+            input_tokens: 76936, output_tokens: 202, total_tokens: 77138,
+            output_tokens_details: { reasoning_tokens: 91 },
+          },
+        },
+      },
+    },
   ];
   const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
     for (const { ts, event } of timeline) {

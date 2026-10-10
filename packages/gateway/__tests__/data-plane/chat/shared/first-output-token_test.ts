@@ -175,10 +175,12 @@ describe('first output across supported stream payloads', () => {
   });
 
   it('finds the first generated output across all choices', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [
-      { index: 0, delta: { role: 'assistant' } },
-      { index: 1, delta: { reasoning_content: 'thinking' } },
-    ] }), 'openaiChatCompletions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({
+      choices: [
+        { index: 0, delta: { role: 'assistant' } },
+        { index: 1, delta: { reasoning_content: 'thinking' } },
+      ],
+    }), 'openaiChatCompletions')).toBe(true);
     expect(isFirstOutputTokenFrame(eventFrame({ choices: [] }), 'openaiChatCompletions')).toBe(false);
   });
 
