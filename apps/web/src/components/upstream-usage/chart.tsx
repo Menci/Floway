@@ -15,7 +15,11 @@ import { ChartSection } from '../charts/section';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import type { UsageMetricUnit } from '@floway-dev/provider/browser';
 
-const axisWidths: Record<UsageMetricUnit, number> = { percent: 72, usd: 100, credits: 76 };
+const unitAxes: Record<UsageMetricUnit, { priority: number; width: number }> = {
+  percent: { priority: 3, width: 72 },
+  usd: { priority: 2, width: 100 },
+  credits: { priority: 1, width: 76 },
+};
 const calloutStyle = {
   ...chartCalloutStyle,
   border: '1px solid var(--winui-surface-stroke-flyout)',
@@ -27,7 +31,9 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
   const { t } = useTranslation();
   const locale = useLocale();
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const units = (Object.keys(axisWidths) as UsageMetricUnit[]).filter(unit => chart.entries.some(entry => entry.unit === unit));
+  const units = (Object.keys(unitAxes) as UsageMetricUnit[])
+    .filter(unit => chart.entries.some(entry => entry.unit === unit))
+    .sort((left, right) => unitAxes[right].priority - unitAxes[left].priority);
   const data = useMemo(() => upstreamUsagePlotRows(chart, start, end), [chart, end, start]);
   const series = withUniqueSeriesLegends(chart.entries.map(entry => ({ ...entry, label: units.length > 1 ? t('dashboard.upstreamUsage.metricOption', { name: entry.label, unit: t(`dashboard.upstreamUsage.units.${entry.unit}`) }) : entry.label })));
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
@@ -46,7 +52,7 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
   return <ChartSection controlsLabel={chart.title} emptyText={t('dashboard.upstreamUsage.empty')} entries={series} hidden={hidden} onHiddenChange={setHidden} title={chart.title}>
     <ChartHost className="" emptyText={t('dashboard.upstreamUsage.empty')} hasData={chart.entries.some(entry => !hidden.has(entry.id))}>
       {({ size }) => {
-        const plotWidth = size.width - units.reduce((width, unit) => width + axisWidths[unit], 0);
+        const plotWidth = size.width - units.slice(0, 2).reduce((width, unit) => width + unitAxes[unit].width, 0);
         const tickCount = Math.max(2, Math.min(7, Math.floor(plotWidth / 120)));
         return <LineChart
           accessibilityLayer
@@ -56,7 +62,7 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
           margin={{ top: chartMargins.top, right: 0, bottom: 0, left: 0 }}
           width={size.width}
         >
-          <CartesianGrid stroke="var(--colorNeutralStroke2)" vertical={false} />
+          <CartesianGrid stroke="var(--colorNeutralStroke2)" vertical={false} yAxisId={units[0]!} />
           <XAxis
             axisLine={false}
             dataKey="timestamp"
@@ -78,13 +84,14 @@ export function UpstreamUsageChartSection({ chart, start, end }: { chart: Upstre
               return [lower, upper === lower ? upper + 1 : upper];
             }}
             includeHidden
+            hide={index >= 2}
             key={unit}
             label={{ value: t(`dashboard.upstreamUsage.units.${unit}`), angle: index === 0 ? -90 : 90, position: index === 0 ? 'insideLeft' : 'insideRight', ...chartTickStyle }}
             orientation={index === 0 ? 'left' : 'right'}
             tick={chartTickStyle}
             tickFormatter={formatters[unit]}
             tickLine={false}
-            width={axisWidths[unit]}
+            width={index < 2 ? unitAxes[unit].width : 0}
             yAxisId={unit}
           />)}
           <Tooltip content={renderCallout} cursor={{ stroke: 'var(--colorNeutralStroke1)' }} filterNull isAnimationActive={false} itemSorter="dataKey" />
