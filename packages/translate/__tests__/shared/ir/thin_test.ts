@@ -170,7 +170,6 @@ describe('thin items and IAT', () => {
 
 });
 
-
 it('references ChatCompletions structured reasoning carrier leaves', async () => {
   const iat = createIRIAT(source('hello'));
   const pending = createIRPendingThinItems('openaiChatCompletions', [{ role: 'assistant', content: 'answer', reasoning_items: [{ type: 'reasoning', id: 'rs_carrier', summary: [{ type: 'summary_text', text: 'hello' }] }] }], iat);
