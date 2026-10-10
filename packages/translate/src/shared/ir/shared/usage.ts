@@ -1,6 +1,6 @@
 import type { IR, IRUsage } from '../ir.ts';
 import { createAnthropicMessagesUsage, splitAnthropicMessagesCacheCreationTokens } from '@floway-dev/protocols/anthropic-messages';
-import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import { splitInclusiveInputTokens, splitInclusiveOutputTokens } from '@floway-dev/protocols/common';
 
 export interface IRWire { [key: string]: any }
 
@@ -47,21 +47,24 @@ export const usageFromIR = (usage: IRUsage, protocol: 'openaiChatCompletions' | 
     cache_creation_input_tokens: usage.cache_creation_input_tokens ?? null,
     output_tokens_details: usage.reasoning_tokens === undefined ? null : { thinking_tokens: usage.reasoning_tokens },
   };
-  if (protocol === 'geminiGenerateContent') return {
-    promptTokenCount: input,
-    candidatesTokenCount: output - (usage.reasoning_tokens ?? 0),
-    totalTokenCount: usage.total_tokens ?? input + output,
-    ...(usage.cached_input_tokens === undefined ? {} : { cachedContentTokenCount: usage.cached_input_tokens }),
-    ...(usage.reasoning_tokens === undefined ? {} : { thoughtsTokenCount: usage.reasoning_tokens }),
-    ...(['input', 'output'] as const).reduce<IRWire>((details, direction) => {
-      const tokens = ['audio', 'image', 'text'].flatMap(modality => {
-        const count = usage[`${direction}_${modality}_tokens` as keyof IRUsage];
-        return count === undefined ? [] : [{ modality: modality.toUpperCase(), tokenCount: count }];
-      });
-      if (tokens.length > 0) details[direction === 'input' ? 'promptTokensDetails' : 'candidatesTokensDetails'] = tokens;
-      return details;
-    }, {}),
-  };
+  if (protocol === 'geminiGenerateContent') {
+    const split = splitInclusiveOutputTokens(output, usage.reasoning_tokens);
+    return {
+      promptTokenCount: input,
+      candidatesTokenCount: split.output,
+      totalTokenCount: usage.total_tokens ?? input + output,
+      ...(usage.cached_input_tokens === undefined ? {} : { cachedContentTokenCount: usage.cached_input_tokens }),
+      ...(usage.reasoning_tokens === undefined ? {} : { thoughtsTokenCount: usage.reasoning_tokens }),
+      ...(['input', 'output'] as const).reduce<IRWire>((details, direction) => {
+        const tokens = ['audio', 'image', 'text'].flatMap(modality => {
+          const count = usage[`${direction}_${modality}_tokens` as keyof IRUsage];
+          return count === undefined ? [] : [{ modality: modality.toUpperCase(), tokenCount: count }];
+        });
+        if (tokens.length > 0) details[direction === 'input' ? 'promptTokensDetails' : 'candidatesTokensDetails'] = tokens;
+        return details;
+      }, {}),
+    };
+  }
   const chat = protocol === 'openaiChatCompletions';
   const inputDetails: IRWire = {};
   const outputDetails: IRWire = {};

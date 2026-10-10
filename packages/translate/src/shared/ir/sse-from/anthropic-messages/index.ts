@@ -59,11 +59,11 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     switch (e.type) {
     case 'message_start':
       if (usage !== undefined) throw new Error('Duplicate Messages message_start');
-      b.event({ type: 'start', id: e.message.id, model: e.message.model });
       for (const [key, value] of Object.entries(e.message)) if (!['content', 'usage'].includes(key)) b.assign(['extensions', 'anthropicMessages', key], value);
       usage = cloneIRJSON(e.message.usage);
       b.assign(['usage'], usageToIR('anthropicMessages', usage!));
       b.assign(['extensions', 'anthropicMessages', 'usage'], usage);
+      b.event({ type: 'start', id: e.message.id, model: e.message.model });
       break;
     case 'content_block_start':
       if (e.content_block.type === 'fallback') b.assign(['extensions', 'anthropicMessages', 'model'], e.content_block.to.model);
@@ -95,7 +95,9 @@ export const irFromAnthropicMessages = async function* (frames: AsyncIterable<Pr
     }
     case 'message_delta':
       if (usage === undefined) throw new Error('Messages message_delta arrived before message_start');
-      for (const [key, value] of Object.entries(e.usage)) if (value != null) usage[key] = key === 'cache_creation' ? { ...usage.cache_creation, ...value as IRWire } : value;
+      // Late TTL breakdowns are whole snapshots; zero buckets omitted on the wire must not inherit older values.
+      // https://github.com/QuantumNous/new-api/blob/6370b29424168039e94d40d610191e7d2e65dbf4/relaykit/dto/usage_merge.go#L178-L184
+      for (const [key, value] of Object.entries(e.usage)) if (value != null || key === 'cache_creation') usage[key] = value;
       b.assign(['usage'], usageToIR('anthropicMessages', usage));
       b.assign(['extensions', 'anthropicMessages', 'usage'], usage);
       if (e.delta.stop_reason === 'compaction') throw new TypeError('Cannot translate Messages compaction stop');

@@ -65,8 +65,9 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
     }
     if (state.choices.length > 1) throw new Error('Responses cannot represent multiple choices');
     if (record.type === 'start') {
-      yield emit({ type: 'response.created', response: response('in_progress') });
-      yield emit({ type: 'response.in_progress', response: response('in_progress') });
+      const initialUsage = state.usage === undefined ? null : usageFromIR(state.usage, 'openaiResponses');
+      yield emit({ type: 'response.created', response: response('in_progress', initialUsage) });
+      yield emit({ type: 'response.in_progress', response: response('in_progress', initialUsage) });
     }
     if (record.type === 'operation' || record.type === 'item_end' || record.type === 'part_end' || record.type === 'choice_end' || record.type === 'finish') {
       let startsBlocked = false;

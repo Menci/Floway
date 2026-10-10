@@ -100,9 +100,9 @@ export const irFromOpenAIResponses = async function* (frames: AsyncIterable<Prot
     }
     if (e.response !== undefined) {
       const response = e.response as IRWire;
-      if (!started) { b.event({ type: 'start', id: response.id, model: response.model, created: response.created_at }); started = true; }
       for (const [key, value] of Object.entries(response)) if (!['output', 'usage'].includes(key) && value !== undefined) b.assign(['extensions', 'openaiResponses', key], value);
       if (response.usage != null) b.assign(['usage'], usageToIR('openaiResponses', response.usage));
+      if (!started) { b.event({ type: 'start', id: response.id, model: response.model, created: response.created_at }); started = true; }
       if (['response.completed', 'response.incomplete', 'response.failed'].includes(e.type)) {
         response.output.forEach((item: IRWire, index: number) => replace(index, item, true));
         flush();

@@ -140,3 +140,19 @@ test('GenerateContent retains reasoning arrival order while it waits for a prior
   expect(parts[0].functionCall.id).toBe('call_0');
   expect(parts.filter((part: any) => part.thought).map((part: any) => part.text).join('')).toBe('CS');
 });
+
+test.each([false, true])('GenerateContent keeps parallel text arrival order with a prior tool: %s', async buffered => {
+  const block = (index: number) => eventFrame({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } } as any);
+  const text = (index: number, value: string) => eventFrame({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: value } } as any);
+  const stop = (index: number) => eventFrame({ type: 'content_block_stop', index } as any);
+  const offset = buffered ? 1 : 0;
+  const prefix = [messageStart, ...(buffered ? [eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call', name: 'lookup', input: {} } } as any), eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"x":' } } as any)] : []), block(offset), text(offset, 'a'), block(offset + 1), text(offset + 1, 'b'), text(offset, 'c')];
+  const suffix = [...(buffered ? [eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '1}' } } as any), stop(0)] : []), stop(offset + 1), stop(offset), ...messageEnd(buffered ? 'tool_use' : 'end_turn')];
+  const frames = await gated(prefix, suffix, source => geminiGenerateContentFromIR(irFromAnthropicMessages(source)), output => {
+    const text = output.flatMap(frame => frame.event.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []).map((part: any) => part.text ?? '').join('');
+    expect(text).toBe(buffered ? '' : 'abc');
+  });
+  const parts = frames.flatMap(frame => (frame.event as any).candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []);
+  expect(parts.map((part: any) => part.text ?? '').join('')).toBe('abc');
+  if (buffered) expect(parts[0].functionCall).toMatchObject({ id: 'call', args: { x: 1 } });
+});
