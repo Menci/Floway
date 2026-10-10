@@ -198,7 +198,10 @@ export const openaiResponsesFromIR = async function* (frames: AsyncIterable<IRFr
     if (record.type === 'finish') {
       const refusal = state.choices[0]?.refusal;
       if (refusal?.category === 'cyber' || refusal?.category === 'bio') {
-        yield emit({ type: 'response.failed', response: { ...response('failed', state.usage === undefined ? null : usageFromIR(state.usage, 'openaiResponses')), error: { code: `${refusal.category}_policy`, message: refusal.explanation } } });
+        // Codex replaces absent/blank biology explanations with an OpenAI enrollment notice.
+        // https://github.com/openai/codex/blob/de8fab6d7adfcef8b4ce6f02f3b5c8be4092015a/codex-rs/codex-api/src/sse/responses_error.rs#L59
+        const message = refusal.explanation == null || refusal.explanation.trim() === '' ? `The upstream declined this request under the ${refusal.category} policy category.` : refusal.explanation;
+        yield emit({ type: 'response.failed', response: { ...response('failed', state.usage === undefined ? null : usageFromIR(state.usage, 'openaiResponses')), error: { code: `${refusal.category}_policy`, message } } });
         return;
       }
       if (record.status === 'failed') {

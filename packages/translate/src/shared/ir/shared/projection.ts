@@ -1,4 +1,4 @@
-import type { IRJSONObject } from '../ir.ts';
+import type { IR, IRJSONObject } from '../ir.ts';
 import { cloneIRJSON, parseIRJSON } from './json.ts';
 import type { IRTextUpdate } from './text.ts';
 import type { IRPath } from '../stream.ts';
@@ -22,6 +22,7 @@ export interface IROutputOptions {
 
 export const createIRProjection = () => {
   const previous = new Map<string, string>();
+  const emittedText = new Map<string, { path: IRPath; text: string }>();
   const contents = new Map<string, IRProjectedContent>();
   const projections: IRStringProjection[] = [];
   const append = (source: IRPath, text: string, target: IRPath, allowReplacement = false): string => {
@@ -57,10 +58,21 @@ export const createIRProjection = () => {
   };
   const result = (): IRProjectionResult => cloneIRJSON({ contents: [...contents.values()], projections });
   const appendText = (update: IRTextUpdate, target: IRPath): string => {
-    if (update.replacement) return append(update.path, update.text, target);
-    const old = previous.get(JSON.stringify(update.path)) ?? '';
-    if (old.length !== update.start) throw new Error('IR text projection received an out-of-order fragment');
-    return append(update.path, old + update.text, target);
+    const key = JSON.stringify(update.path);
+    const old = previous.get(key) ?? '';
+    if (!update.replacement && old.length !== update.start) throw new Error('IR text projection received an out-of-order fragment');
+    const text = update.replacement ? update.text : old + update.text;
+    const delta = append(update.path, text, target);
+    if (delta !== '') emittedText.set(key, { path: update.path, text });
+    return delta;
   };
-  return { append, appendText, assign, result };
+  const validateText = (state: IR, changed: IRPath): void => {
+    for (const [key, { path, text }] of emittedText) {
+      if (!path.slice(0, Math.min(path.length, changed.length)).every((segment, index) => segment === changed[index])) continue;
+      let value: unknown = state;
+      for (const segment of path) value = typeof value === 'object' && value !== null ? (value as Record<string | number, unknown>)[segment] : undefined;
+      if (typeof value !== 'string' || !value.startsWith(text)) throw new Error(`Downstream SSE cannot replace emitted text at ${key}`);
+    }
+  };
+  return { append, appendText, validateText, assign, result };
 };

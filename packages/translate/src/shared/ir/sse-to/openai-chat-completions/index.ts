@@ -25,6 +25,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   const textStream = createIRTextStream();
   const opaqueItems = new Map<number, number>();
   const completedItems = new Set<string>();
+  const reasoningCarriers = new Set<number>();
   const tools = new Map<string, number>();
   const names = new Map<string, string>();
   const logprobLengths = new Map<string, number>();
@@ -38,6 +39,7 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
   const chunk = (choices: IRWire[], fields: IRWire = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => eventFrame({ ...extension, id: metadata.id, object: 'chat.completion.chunk', model: metadata.model, created: metadata.created, choices, ...(options.continuousUsageStats && choices.length > 0 ? { usage: usage ?? null } : {}), ...fields } as OpenAIChatCompletionsStreamEvent);
   const deltaFrame = (choice: number, delta: IRWire): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => chunk([{ index: choice, delta, finish_reason: null }]);
   for await (const { state, record } of consumeIRRecords(frames)) {
+    if (record.type === 'operation' && record.operation === 'assign') projection.validateText(state, record.path);
     textStream.update(state);
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); started = true; }
     if (!started && record.type !== 'error') continue;
@@ -138,6 +140,17 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
         }
       }
     }
+    if (state.extensions?.openaiResponses !== undefined && (record.type === 'item_end' && record.choice === 0 || record.type === 'choice_end' && record.choice === 0 || record.type === 'finish')) {
+      const ids = state.extensions.openaiResponses.item_ids as IRWire;
+      const items = state.choices[0]?.items ?? [];
+      const indices = record.type === 'item_end' ? [record.item] : items.map((_, index) => index);
+      for (const index of indices) {
+        const item = items[index];
+        if (item.type !== 'reasoning' || reasoningCarriers.has(index)) continue;
+        yield deltaFrame(0, { reasoning_items: [{ type: 'reasoning', id: ids[index], summary: (item.summary ?? []).map(text => ({ type: 'summary_text', text })) }] });
+        reasoningCarriers.add(index);
+      }
+    }
     if (record.type === 'choice_end') {
       const choice = record.choice;
       if (state.choices[choice].items.some(item => item.type === 'message' && item.content.some(part => part.type === 'audio' && part.audio.data !== undefined))) {
@@ -170,11 +183,6 @@ export const openaiChatCompletionsFromIR = async function* (frames: AsyncIterabl
       yield chunk([{ index: choice, delta: {}, finish_reason: record.finish_reason }]);
     }
     if (record.type === 'finish') {
-      if (state.extensions?.openaiResponses !== undefined) {
-        const ids = state.extensions.openaiResponses.item_ids as IRWire;
-        const reasoning = state.choices[0]?.items.flatMap((item, index) => item.type === 'reasoning' ? [{ type: 'reasoning', id: ids[index], summary: (item.summary ?? []).map(text => ({ type: 'summary_text', text })) }] : []);
-        if (reasoning?.length) yield deltaFrame(0, { reasoning_items: reasoning });
-      }
       if (state.usage !== undefined) yield chunk([], { usage: usageFromIR(state.usage, 'openaiChatCompletions') });
 
       yield doneFrame();

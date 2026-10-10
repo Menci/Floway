@@ -156,3 +156,18 @@ test.each([false, true])('GenerateContent keeps parallel text arrival order with
   expect(parts.map((part: any) => part.text ?? '').join('')).toBe('abc');
   if (buffered) expect(parts[0].functionCall).toMatchObject({ id: 'call', args: { x: 1 } });
 });
+
+test('ChatCompletions emits each Responses reasoning carrier before the next upstream pull and the finish reason', async () => {
+  const first = { type: 'reasoning', id: 'rs_first', summary: [{ type: 'summary_text', text: 'visible' }] };
+  const empty = { type: 'reasoning', id: 'rs_empty', summary: [] };
+  const source = [responseStart, add(0, first), eventFrame({ type: 'response.output_item.done', output_index: 0, item: first } as any), add(1, empty), eventFrame({ type: 'response.output_item.done', output_index: 1, item: empty } as any)];
+  const carriers = (frames: any[]) => frames.flatMap(frame => frame.event?.choices?.[0]?.delta.reasoning_items ?? []);
+  const output = await gated(source, [eventFrame({ type: 'response.completed', response: response([first, empty]) } as any)], frames => openaiChatCompletionsFromIR(irFromOpenAIResponses(frames)), prefix => {
+    expect(carriers(prefix)).toEqual([first, empty]);
+    expect(prefix.some(frame => frame.event?.choices?.[0]?.finish_reason != null)).toBe(false);
+  });
+  expect(carriers(output)).toEqual([first, empty]);
+  const finish = output.findIndex(frame => frame.event?.choices?.[0]?.finish_reason != null);
+  const lastCarrier = output.findLastIndex(frame => frame.event?.choices?.[0]?.delta.reasoning_items !== undefined);
+  expect(lastCarrier).toBeLessThan(finish);
+});

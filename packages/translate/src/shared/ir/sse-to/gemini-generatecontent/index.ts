@@ -40,6 +40,7 @@ export const geminiGenerateContentFromIR = async function* (frames: AsyncIterabl
   const emit = (event: IRWire): EventFrame<GeminiGenerateContentStreamEvent> => eventFrame({ ...extension, responseId: metadata.id, modelVersion: metadata.model, ...event } as GeminiGenerateContentStreamEvent);
   const emitPart = (choice: number, part: IRWire): EventFrame<GeminiGenerateContentStreamEvent> => emit({ candidates: [{ index: choice, content: { role: 'model', parts: [part] } }] });
   for await (const { state, record } of consumeIRRecords(frames)) {
+    if (record.type === 'operation' && record.operation === 'assign') projection.validateText(state, record.path);
     textStream.update(state);
     if (record.type === 'start') { metadata = irOutputMetadata(record, options); started = true; }
     if (!started && record.type !== 'error') continue;

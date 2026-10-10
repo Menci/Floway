@@ -299,7 +299,6 @@ test('translateToSourceEvents streams independent text before deferred reasoning
       { role: 'assistant', content: '' },
       { content: 'answer' },
       { reasoning_text: 'trace' },
-      {},
       {
         reasoning_items: [
           {
@@ -309,6 +308,7 @@ test('translateToSourceEvents streams independent text before deferred reasoning
           },
         ],
       },
+      {},
     ],
   );
 

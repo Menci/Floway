@@ -93,3 +93,22 @@ test('late reasoning carriers preserve messages on either side of reasoning', as
   const ir = await collectIR(irFromOpenAIChatCompletions(iterate(frames as any)));
   expect(ir.choices[0].items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'before' }] }, { type: 'reasoning', summary: ['think'] }, { type: 'message', content: [{ type: 'text', text: 'after' }] }]);
 });
+
+for (const category of ['bio', 'cyber']) {
+  test.each([null, '', ' \t\n', 'Upstream explanation.', '  Original spacing.  '])(`Responses via Messages preserves nonblank ${category} explanations and supplies a native error message when absent: %j`, async explanation => {
+    const frames = fixtureFrames('anthropic-messages', { stop: 'content_filter' });
+    for (const frame of frames) if (frame.type === 'event' && frame.event.type === 'message_delta') frame.event.delta.stop_details = { type: 'refusal', category, explanation };
+    const output = await collect(responsesViaMessages(iterate(frames)));
+    expect(output.at(-1)).toMatchObject({
+      event: {
+        type: 'response.failed',
+        response: {
+          error: {
+            code: `${category}_policy`,
+            message: explanation == null || explanation.trim() === '' ? `The upstream declined this request under the ${category} policy category.` : explanation,
+          },
+        },
+      },
+    });
+  });
+}
