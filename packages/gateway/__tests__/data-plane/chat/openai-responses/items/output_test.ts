@@ -168,10 +168,10 @@ test('client output waits for persistence before publishing output_item.done', a
 
   releaseInsert();
   const done = await pendingDone;
-  if (done.value?.type !== 'event' || done.value.event.type !== 'response.output_item.done' || done.value.event.item === null) {
+  if (done.value?.type !== 'event' || done.value.event.type !== 'response.output_item.done') {
     throw new Error('Expected completed output item');
   }
-  const clientId = done.value.event.item.id;
+  const clientId = done.value.event.item.id!;
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId], 0)).toHaveLength(1);
   await iterator.return?.(doneFrame());
 });
@@ -216,7 +216,7 @@ test('store=false passes the emitted item id through without persistence', async
   expect(terminal.response.id).toBe('resp_public');
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
-  expect(added?.type === 'response.output_item.added' && added.item?.id).toBe('rs_upstream');
+  expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
   expect(await repo.openaiResponsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toEqual([]);
 });
 
@@ -248,7 +248,7 @@ test('client output uses one item id across lifecycle snapshots without committi
   }
 
   const ids = events.flatMap(event => {
-    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item?.id];
+    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item.id];
     if ('response' in event) return event.response.output.map(output => output.id);
     return [];
   });
@@ -357,10 +357,10 @@ test('client output persists a completed item when its consumer cancels', async 
   })[Symbol.asyncIterator]();
 
   const first = await iterator.next();
-  if (first.value?.type !== 'event' || first.value.event.type !== 'response.output_item.done' || first.value.event.item === null) {
+  if (first.value?.type !== 'event' || first.value.event.type !== 'response.output_item.done') {
     throw new Error('Expected completed output item');
   }
-  const clientId = first.value.event.item.id;
+  const clientId = first.value.event.item.id!;
   await iterator.return?.(doneFrame());
 
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId], 0)).toHaveLength(1);
@@ -397,11 +397,11 @@ test('client output makes every finalized item durable before publishing its don
   for (const item of items) {
     const next = await iterator.next();
     expect(next.value?.type === 'event' && next.value.event.type).toBe('response.output_item.done');
-    if (next.value?.type !== 'event' || next.value.event.type !== 'response.output_item.done' || next.value.event.item === null) {
+    if (next.value?.type !== 'event' || next.value.event.type !== 'response.output_item.done') {
       throw new Error('Expected finalized output item');
     }
-    expect(next.value.event.item?.id).toBe(item.id);
-    expect(await repo.openaiResponsesItems.lookupMany('key-a', [next.value.event.item.id], 0)).toHaveLength(1);
+    expect(next.value.event.item.id).toBe(item.id);
+    expect(await repo.openaiResponsesItems.lookupMany('key-a', [next.value.event.item.id!], 0)).toHaveLength(1);
   }
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 
@@ -463,26 +463,6 @@ test('stateful output rejects a terminal item that never emitted output_item.don
   await expect(collect()).rejects.toThrow('terminal output_index 0 arrived before output_item.done');
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test.each(['response.completed', 'response.incomplete', 'response.failed'] as const)('a nullable close persists its terminal materialization before publishing %s', async terminalType => {
-  const { repo, store } = memoryOutputHarness();
-  const response = responseFor([completedReasoningItem]);
-  const source = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: null });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: null });
-    yield eventFrame({ type: terminalType, response });
-  })();
-  const iterator = wrapOpenAIResponsesClientOutput(source, { store, responseId: 'resp_public' });
-  expect((await iterator.next()).value).toEqual(eventFrame({ type: 'response.output_item.added', output_index: 0, item: null }));
-  expect((await iterator.next()).value).toEqual(eventFrame({ type: 'response.output_item.done', output_index: 0, item: null }));
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [completedReasoningItem.id], 0)).toEqual([]);
-  expect((await iterator.next()).value).toEqual(eventFrame({ type: terminalType, response: { ...response, id: 'resp_public' } }));
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [completedReasoningItem.id], 0)).toHaveLength(1);
-  const snapshot = await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0);
-  if (terminalType === 'response.failed') expect(snapshot).toBeNull();
-  else expect(snapshot?.itemIds).toEqual([completedReasoningItem.id]);
-  await iterator.return?.(doneFrame());
 });
 
 test('store=false forwards an id-less finalized item without persistence work', async () => {
@@ -694,16 +674,4 @@ test('snapshot retains completed streamed items omitted from the terminal output
 
   expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual([call.id]);
   expect((await repo.openaiResponsesItems.lookupMany('key-a', [call.id], 0))[0].payload.item).toEqual(call);
-});
-
-test('nullable done frames stay visible without being persisted as items', async () => {
-  const { store } = memoryOutputHarness();
-  const persist = vi.spyOn(store, 'persistOutputItem');
-  const nil = eventFrame({ type: 'response.output_item.done' as const, output_index: 0, item: null });
-  const input = (async function* () { yield nil; yield eventFrame({ type: 'response.completed' as const, response: responseFor([]) }); })();
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input, { store, responseId: 'resp_public' })) output.push(frame);
-  expect(output[0]).toEqual(nil);
-  expect(persist).not.toHaveBeenCalled();
-  expect(output[1]).toMatchObject({ event: { type: 'response.completed', response: { id: 'resp_public', output: [] } } });
 });

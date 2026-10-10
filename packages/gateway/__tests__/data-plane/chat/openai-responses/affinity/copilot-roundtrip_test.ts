@@ -138,7 +138,6 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const done = publicEvents.find(event => event.type === 'response.output_item.done');
       if (done?.type !== 'response.output_item.done') throw new Error('expected public done item');
       const publicItem = done.item;
-      if (publicItem === null) throw new Error('expected materialized public item');
       expect(publicItem.id).toMatch(/^rs_[0-9a-f]{32}$/);
       if (publicItem.type !== 'reasoning') throw new Error('expected public reasoning item');
       expect(publicItem.encrypted_content).not.toBe('opaque reasoning');

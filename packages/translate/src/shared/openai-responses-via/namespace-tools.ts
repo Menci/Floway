@@ -173,7 +173,6 @@ export const restoreNamespaceEvents = async function* (
     const event = frame.event;
     const identity = 'item_id' in event ? items.get(event.item_id) : undefined;
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-      if (event.item === null) { yield frame; continue; }
       const item = restoreItem(event.item, event.type === 'response.output_item.added' ? 'in_progress' : 'completed');
       if ((item.type === 'function_call' || item.type === 'custom_tool_call') && typeof item.id === 'string') items.set(item.id, { name: item.name, type: item.type });
       yield item === event.item ? frame : { ...frame, event: { ...event, item } };

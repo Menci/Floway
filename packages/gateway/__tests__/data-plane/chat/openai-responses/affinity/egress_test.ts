@@ -275,7 +275,7 @@ describe('OpenAI Responses affinity egress', () => {
       if (frame.type === 'event') output.push(frame.event);
     }
 
-    const reasoningDone = output.find(event => event.type === 'response.output_item.done' && event.item?.type === 'reasoning');
+    const reasoningDone = output.find(event => event.type === 'response.output_item.done' && event.item.type === 'reasoning');
     expect(reasoningDone).toMatchObject({ item: { encrypted_content: 'wrapped:synthetic-slot' } });
     const terminal = output.at(-1);
     expect(terminal?.type).toBe(eventType);
@@ -305,66 +305,4 @@ describe('OpenAI Responses affinity egress', () => {
     expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'wrapped:synthetic-slot' });
     expect(terminal.response.output[1]).toEqual(program);
   });
-});
-
-test('keeps a nullable opener and its materialized message on the same shifted index', async () => {
-  const item: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello', annotations: [] }] };
-  const input = [
-    eventFrame({ type: 'response.created' as const, response: response([], 'in_progress'), sequence_number: 0 }),
-    eventFrame({ type: 'response.output_item.added' as const, output_index: 0, item: null, sequence_number: 1 }),
-    eventFrame({ type: 'response.output_text.delta' as const, output_index: 0, content_index: 0, item_id: 'msg_1', delta: 'hello', sequence_number: 2 }),
-    eventFrame({ type: 'response.output_item.done' as const, output_index: 0, item, sequence_number: 3 }),
-    eventFrame({ type: 'response.completed' as const, response: response([item]), sequence_number: 4 }),
-  ];
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesAffinityEgress(frames(input), { codec: immediateCodec, affinity })) output.push(frame);
-  const events = output.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
-  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5, 6]);
-  expect(events[3]).toMatchObject({ type: 'response.output_item.added', item: null, output_index: 1 });
-  expect(events[4]).toMatchObject({ type: 'response.output_text.delta', output_index: 1, delta: 'hello' });
-  expect(events[5]).toMatchObject({ type: 'response.output_item.done', output_index: 1, item });
-  expect(events[6]).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ type: 'reasoning' }), item] } });
-});
-
-test('flushes nullable lifecycle frames before rethrowing the original upstream error', async () => {
-  const error = new Error('upstream stream failure');
-  const frame = eventFrame({ type: 'response.output_item.added' as const, item: null, output_index: 0, sequence_number: 0 });
-  const input = (async function* () { yield frame; throw error; })();
-  const output = wrapOpenAIResponsesAffinityEgress(input, { codec: immediateCodec, affinity })[Symbol.asyncIterator]();
-  expect((await output.next()).value).toEqual(frame);
-  await expect(output.next()).rejects.toBe(error);
-});
-
-test('preserves an empty nullable lifecycle without creating an affinity carrier', async () => {
-  const input = [
-    eventFrame({ type: 'response.output_item.added' as const, output_index: 0, item: null, sequence_number: 0 }),
-    eventFrame({ type: 'response.output_item.done' as const, output_index: 0, item: null, sequence_number: 1 }),
-    eventFrame({ type: 'response.completed' as const, response: response([]), sequence_number: 2 }),
-  ];
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesAffinityEgress(frames(input), { codec: immediateCodec, affinity })) output.push(frame);
-  expect(output).toEqual(input);
-});
-
-test('waits for the nullable first item while a later item materializes', async () => {
-  const message = (id: string): OpenAIResponsesOutputItemEx => ({ type: 'message', id, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: id, annotations: [] }] });
-  const first = message('msg_first');
-  const later = message('msg_later');
-  const input = [
-    eventFrame({ type: 'response.created' as const, response: response([], 'in_progress'), sequence_number: 0 }),
-    eventFrame({ type: 'response.output_item.added' as const, output_index: 0, item: null, sequence_number: 1 }),
-    eventFrame({ type: 'response.output_item.added' as const, output_index: 1, item: later, sequence_number: 2 }),
-    eventFrame({ type: 'response.output_item.done' as const, output_index: 1, item: later, sequence_number: 3 }),
-    eventFrame({ type: 'response.output_item.done' as const, output_index: 0, item: first, sequence_number: 4 }),
-    eventFrame({ type: 'response.completed' as const, response: response([first, later]), sequence_number: 5 }),
-  ];
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesAffinityEgress(frames(input), { codec: immediateCodec, affinity })) output.push(frame);
-  const events = output.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
-  expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-  expect(events[3]).toMatchObject({ type: 'response.output_item.added', output_index: 1, item: null });
-  expect(events[4]).toMatchObject({ type: 'response.output_item.added', output_index: 2, item: later });
-  expect(events[5]).toMatchObject({ type: 'response.output_item.done', output_index: 2, item: later });
-  expect(events[6]).toMatchObject({ type: 'response.output_item.done', output_index: 1, item: first });
-  expect(events[7]).toMatchObject({ type: 'response.completed', response: { output: [expect.objectContaining({ type: 'reasoning' }), first, later] } });
 });

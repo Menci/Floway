@@ -1,5 +1,4 @@
 import { geminiGenerateContentCandidateEvent, parseStrictJsonObject } from '../shared/gemini-generate-content-via/gemini-generate-content.ts';
-import { materializeNullableResponsesLifecycle } from '../shared/via-openai-responses/nullable-lifecycle.ts';
 import { eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentFinishReason, GeminiGenerateContentPart, GeminiGenerateContentStreamEvent, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputFunctionCallEx, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -135,7 +134,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     emittedTextKeys: new Set(),
   };
 
-  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(materializeNullableResponsesLifecycle(frames))) {
+  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {
     switch (event.type) {
     case 'response.created': {
       const response = (event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>).response;
@@ -173,7 +172,6 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
     case 'response.output_item.added': {
       const addedEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>;
-      if (addedEvent.item === null) break;
       if (addedEvent.item.type === 'function_call') {
         state.functionCalls.set(addedEvent.output_index, {
           id: addedEvent.item.call_id,
@@ -200,7 +198,6 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
     case 'response.output_item.done': {
       const doneEvent = event as Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>;
-      if (doneEvent.item === null) break;
       if (doneEvent.item.type === 'reasoning') {
         yield* reasoningItemDoneFrames(doneEvent.item, doneEvent.output_index, state);
       } else if (doneEvent.item.type === 'function_call') {

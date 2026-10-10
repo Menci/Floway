@@ -1,8 +1,7 @@
 import { hashOpenAIResponsesJson } from '../../../../repo/openai-responses-hash.ts';
 import { encodeHex } from '@floway-dev/protocols/common';
 
-export const openaiResponsesItemId = (item: object | null): string | null => {
-  if (item === null) return null;
+export const openaiResponsesItemId = (item: object): string | null => {
   const id = 'id' in item ? item.id : undefined;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };

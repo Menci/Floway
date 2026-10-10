@@ -244,7 +244,7 @@ test('thinking stream block start emits a plain reasoning item', () => {
   if (added?.type !== 'response.output_item.added') {
     throw new Error('expected response.output_item.added event');
   }
-  if (added.item?.type !== 'reasoning') {
+  if (added.item.type !== 'reasoning') {
     throw new Error('expected reasoning item');
   }
 
@@ -276,7 +276,7 @@ test('thinking stream block stop emits a plain reasoning item', () => {
   if (done?.type !== 'response.output_item.done') {
     throw new Error('expected response.output_item.done event');
   }
-  if (done.item?.type !== 'reasoning') {
+  if (done.item.type !== 'reasoning') {
     throw new Error('expected reasoning item');
   }
 
@@ -365,8 +365,8 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
 
   const added = startEvents.find((e): e is OpenAIResponsesOutputItemAddedEvent => e.type === 'response.output_item.added');
   if (!added) throw new Error('expected output_item.added');
-  assertEquals(added.item?.type, 'custom_tool_call');
-  if (added.item?.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(added.item.type, 'custom_tool_call');
+  if (added.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
   assertEquals(added.item.name, 'apply_patch');
   assertEquals(added.item.input, '');
 
@@ -408,8 +408,8 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
 
   assertEquals(inputDelta.delta, '*** Begin Patch\n*** End Patch');
   assertEquals(inputDone.input, '*** Begin Patch\n*** End Patch');
-  assertEquals(itemDone.item?.type, 'custom_tool_call');
-  if (itemDone.item?.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(itemDone.item.type, 'custom_tool_call');
+  if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
   assertEquals(itemDone.item.input, '*** Begin Patch\n*** End Patch');
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });

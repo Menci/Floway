@@ -78,7 +78,7 @@ const wrapNaturalOpenAIResponsesAffinity = async function* (
     }
     const event = frame.event;
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-      yield eventFrame({ ...event, item: event.item === null ? null : await wrapItem(event.item, event.output_index) });
+      yield eventFrame({ ...event, item: await wrapItem(event.item, event.output_index) });
       continue;
     }
     if (
@@ -118,8 +118,6 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   let prefix: SyntheticPrefix | undefined;
   let sequenceOffset = 0;
-  const pendingFirstItemEvents: OpenAIResponsesStreamEventEx[] = [];
-  let pendingFirstOutputIndex: number | undefined;
 
   const outputIndexOffset = (outputIndex: number): number =>
     prefix !== undefined && outputIndex >= prefix.originalOutputIndex ? 1 : 0;
@@ -129,17 +127,6 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
       ? { ...event, output_index: event.output_index + outputIndexOffset(event.output_index) } as OpenAIResponsesStreamEventEx
       : event;
     return addSequenceOffset(outputShifted, sequenceOffset);
-  };
-
-  // A nullable opener does not reveal whether the first item can carry
-  // affinity. Keep its lifecycle/indexed events together until materialization
-  // determines prefix insertion, so indexes and sequence numbers cannot split.
-  // https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L39-L80
-  const prefixSequence = (event: OpenAIResponsesStreamEventEx): number | undefined =>
-    pendingFirstItemEvents[0]?.sequence_number ?? event.sequence_number;
-
-  const flushPending = function* (): Generator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    for (const event of pendingFirstItemEvents.splice(0)) yield eventFrame(shifted(event));
   };
 
   const ensureItemCarrier = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<OpenAIResponsesOutputItemEx> => {
@@ -245,100 +232,67 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
     if (!firstItem.canCarry) yield* insertPrefix(0, sequenceNumber);
   };
 
-  try {
-    for await (const frame of frames) {
-      if (frame.type !== 'event') {
-        yield* flushPending();
-        yield frame;
-        continue;
-      }
-      const event = frame.event;
-      const materializedLifecycle = (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
-        && event.item !== null && event.output_index === pendingFirstOutputIndex;
-      const terminal = event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
-      if (firstItem === undefined && pendingFirstItemEvents.length > 0 && !materializedLifecycle && !terminal) {
-        pendingFirstItemEvents.push(event);
-        continue;
-      }
-
-      if (event.type === 'response.output_item.added') {
-        if (event.item === null) {
-          if (firstItem === undefined) {
-            pendingFirstOutputIndex ??= event.output_index;
-            pendingFirstItemEvents.push(event);
-          } else yield eventFrame(shifted(event));
-          continue;
-        }
-        if (firstItem === undefined) {
-          firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
-          if (!firstItem.canCarry) yield* insertPrefix(event.output_index, prefixSequence(event));
-        }
-        yield* flushPending();
-        yield eventFrame(shifted(event));
-        continue;
-      }
-
-      if (event.type === 'response.output_item.done') {
-        if (event.item === null) {
-          if (firstItem === undefined) {
-            pendingFirstOutputIndex ??= event.output_index;
-            pendingFirstItemEvents.push(event);
-          } else yield eventFrame(shifted(event));
-          continue;
-        }
-        if (firstItem === undefined) {
-          firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
-          if (!firstItem.canCarry) yield* insertPrefix(event.output_index, prefixSequence(event));
-        }
-        yield* flushPending();
-        const item = firstItem.canCarry && event.output_index === firstItem.outputIndex
-          ? await ensureItemCarrier(event.item, event.output_index)
-          : event.item;
-        yield eventFrame(shifted({ ...event, item }));
-        continue;
-      }
-
-      if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-        if (firstItem === undefined) {
-          const item = event.response.output[0];
-          firstItem = item === undefined ? undefined : { outputIndex: 0, canCarry: canCarryAffinity(item) };
-          if (!firstItem?.canCarry && (item !== undefined || pendingFirstOutputIndex === undefined)) yield* insertPrefix(0, prefixSequence(event));
-        }
-        yield* flushPending();
-        const response = await rewriteResponse(event.response, true);
-        yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
-        return;
-      }
-
-      if (event.type === 'response.queued') {
-        const response = await rewriteResponse(event.response, false);
-        yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
-        continue;
-      }
-
-      if (event.type === 'response.created' || event.type === 'response.in_progress') {
-        yield* discoverFirstFromSnapshot(event.response, event.sequence_number);
-        const response = await rewriteResponse(event.response, false);
-        yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
-        continue;
-      }
-
-      if (event.type === 'response.failed') {
-        yield* flushPending();
-        const response = await rewriteResponse(event.response, false);
-        yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
-        return;
-      }
-
-      yield* flushPending();
-      yield eventFrame(shifted(event));
-      if (event.type === 'error') return;
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
     }
-  } catch (error) {
-    yield* flushPending();
-    throw error;
+    const event = frame.event;
+
+    if (event.type === 'response.output_item.added') {
+      if (firstItem === undefined) {
+        firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
+        if (!firstItem.canCarry) yield* insertPrefix(event.output_index, event.sequence_number);
+      }
+      yield eventFrame(shifted(event));
+      continue;
+    }
+
+    if (event.type === 'response.output_item.done') {
+      if (firstItem === undefined) {
+        firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
+        if (!firstItem.canCarry) yield* insertPrefix(event.output_index, event.sequence_number);
+      }
+      const item = firstItem.canCarry && event.output_index === firstItem.outputIndex
+        ? await ensureItemCarrier(event.item, event.output_index)
+        : event.item;
+      yield eventFrame(shifted({ ...event, item }));
+      continue;
+    }
+
+    if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      if (firstItem === undefined) {
+        const item = event.response.output[0];
+        firstItem = item === undefined ? undefined : { outputIndex: 0, canCarry: canCarryAffinity(item) };
+        if (!firstItem?.canCarry) yield* insertPrefix(0, event.sequence_number);
+      }
+      const response = await rewriteResponse(event.response, true);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      return;
+    }
+
+    if (event.type === 'response.queued') {
+      const response = await rewriteResponse(event.response, false);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      continue;
+    }
+
+    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+      yield* discoverFirstFromSnapshot(event.response, event.sequence_number);
+      const response = await rewriteResponse(event.response, false);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      continue;
+    }
+
+    if (event.type === 'response.failed') {
+      const response = await rewriteResponse(event.response, false);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      return;
+    }
+
+    yield eventFrame(shifted(event));
+    if (event.type === 'error') return;
   }
-  yield* flushPending();
 };
 
 export const wrapOpenAIResponsesAffinityEgress = (

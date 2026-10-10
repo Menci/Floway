@@ -38,7 +38,7 @@ const isOutputItemDoneEvent = (event: OpenAIResponsesStreamEventEx): event is Op
 
 export const recordOpenAIResponsesOutputOrderEvent = (event: OpenAIResponsesStreamEventEx, state: OpenAIResponsesOutputOrderState, shouldTrack: ShouldTrackOpenAIResponsesOutputItem): void => {
   if (isOutputItemAddedEvent(event)) {
-    if (event.item !== null && shouldTrack(event.item, event.output_index)) {
+    if (shouldTrack(event.item, event.output_index)) {
       state.pendingOutputIndexes.add(event.output_index);
     }
     return;

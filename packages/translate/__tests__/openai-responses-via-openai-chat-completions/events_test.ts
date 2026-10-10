@@ -183,7 +183,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   ]);
 
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
-  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
 
   assertEquals(reasoningDone.length, 1);
   assertEquals(reasoningDone[0].item, {
@@ -206,7 +206,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves reaso
   ]);
 
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
-  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
 
   assertEquals(reasoningDone.length, 1);
   assertEquals(reasoningDone[0].item, {
@@ -224,7 +224,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoni
     chunk({}, 'stop'),
   ]);
 
-  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDone = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
 
   assertEquals(reasoningDone.length, 1);
   assertEquals(reasoningDone[0].item, {
@@ -364,7 +364,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
   );
   const added = startEvents.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
   if (!added) throw new Error('expected output_item.added');
-  assertEquals(added.item?.type, 'custom_tool_call');
+  assertEquals(added.item.type, 'custom_tool_call');
 
   // Second chunk completes the wrapped JSON; still no live delta.
   const continueEvents = translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(
@@ -399,8 +399,8 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
 
   const itemDone = finalEvents.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
   if (!itemDone) throw new Error('expected output_item.done');
-  assertEquals(itemDone.item?.type, 'custom_tool_call');
-  if (itemDone.item?.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(itemDone.item.type, 'custom_tool_call');
+  if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
   assertEquals(itemDone.item.input, '*** Begin Patch\n*** End Patch');
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });
@@ -415,7 +415,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps late opaq
     ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
 
   assertEquals(reasoningDoneEvents.length, 1);
   assertEquals(reasoningDoneEvents[0].output_index, 0);
@@ -448,7 +448,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents prefers reasoni
     ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
 
   assertEveryAddedOutputItemIsDone(events);
@@ -511,7 +511,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps terminal 
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
 
   assertEquals(
-    added.map(event => [event.output_index, event.item?.type]),
+    added.map(event => [event.output_index, event.item.type]),
     [
       [0, 'function_call'],
       [1, 'reasoning'],
@@ -546,7 +546,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents discards scalar
     ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item?.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as OpenAIResponsesOutputItemDoneEvent).item.type === 'reasoning') as OpenAIResponsesOutputItemDoneEvent[];
   const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
 
   assertEveryAddedOutputItemIsDone(events);
@@ -582,7 +582,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents ignores empty t
   const contentEvents = translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({ content: 'hello' }), state);
   const addedEvents = contentEvents.filter(event => event.type === 'response.output_item.added') as OpenAIResponsesOutputItemAddedEvent[];
   assertEquals(addedEvents.length, 1, 'content delta should create one message output item');
-  assertEquals(addedEvents[0].item?.type, 'message');
+  assertEquals(addedEvents[0].item.type, 'message');
 
   const deltaEvents = contentEvents.filter(event => event.type === 'response.output_text.delta');
   assertEquals(deltaEvents.length, 1);

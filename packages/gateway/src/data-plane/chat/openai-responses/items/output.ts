@@ -23,7 +23,6 @@ export const wrapOpenAIResponsesClientOutput = async function* (
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { store, responseId } = args;
   const finalizedOutputIds = new Map<number, string>();
-  const finalizedWithoutPayload = new Set<number>();
   let sawCompactionItem = false;
 
   const finalizedRow = async (item: OpenAIResponsesOutputItemEx): Promise<StoredOpenAIResponsesItem> => {
@@ -68,8 +67,7 @@ export const wrapOpenAIResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.output_item.done') {
-      if (event.item === null) finalizedWithoutPayload.add(event.output_index);
-      if (store.writesState && event.item !== null) {
+      if (store.writesState) {
         if (isOpenAIResponsesCompactionItem(event.item)) sawCompactionItem = true;
         await persistFinalizedItem(event.item, event.output_index);
       }
@@ -77,25 +75,15 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       continue;
     }
 
-    if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
-      if (store.writesState) {
-        // A nullable close establishes finalization without supplying the
-        // reusable payload; its terminal snapshot supplies that payload later.
-        // https://github.com/openresponses/openresponses/blob/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/schema/events.tsp#L39-L80
-        for (const [outputIndex, item] of event.response.output.entries()) {
-          if (finalizedWithoutPayload.has(outputIndex)) {
-            if (isOpenAIResponsesCompactionItem(item)) sawCompactionItem = true;
-            await persistFinalizedItem(item, outputIndex);
-          }
-          if (event.type !== 'response.failed' && !finalizedOutputIds.has(outputIndex)) {
-            throw new TypeError(`OpenAI Responses terminal output_index ${outputIndex} arrived before output_item.done`);
-          }
-        }
-      }
-    }
-
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       if (store.writesState) {
+        // Persisted snapshots require the lifecycle that made each item
+        // reusable. A terminal-only item has not reached that boundary.
+        event.response.output.forEach((_item, outputIndex) => {
+          if (!finalizedOutputIds.has(outputIndex)) {
+            throw new TypeError(`OpenAI Responses terminal output_index ${outputIndex} arrived before output_item.done`);
+          }
+        });
         const orderedOutputIds = [...finalizedOutputIds]
           .sort(([left], [right]) => left - right)
           .map(([, id]) => id);

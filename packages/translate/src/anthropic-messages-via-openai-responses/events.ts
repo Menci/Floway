@@ -1,6 +1,5 @@
 import { packReasoningSignature } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { isContextExceededError } from '../shared/anthropic-messages-via/context-window-error.ts';
-import { materializeNullableResponsesLifecycle } from '../shared/via-openai-responses/nullable-lifecycle.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
 import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDeltaEx, PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesResult, type AnthropicMessagesStreamEventEx, type AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
@@ -152,7 +151,7 @@ const handleResponseCreated = (response: OpenAIResponsesResultEx): AnthropicMess
 ];
 
 const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.added' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
-  if (event.item?.type !== 'function_call') return [];
+  if (event.item.type !== 'function_call') return [];
 
   const blockIndex = state.nextBlockIndex++;
   const toolCallId = event.item.call_id ?? `tool_${blockIndex}`;
@@ -186,7 +185,7 @@ const handleOutputItemAdded = (event: Extract<OpenAIResponsesStreamEventEx, { ty
 };
 
 const handleOutputItemDone = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>, state: OpenAIResponsesToAnthropicMessagesStreamState): AnthropicMessagesStreamEventEx[] => {
-  if (event.item?.type !== 'reasoning') return [];
+  if (event.item.type !== 'reasoning') return [];
 
   const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
   const trimmedSummary = event.item.summary
@@ -542,7 +541,7 @@ export const translateOpenAIResponsesStreamEventToAnthropicMessagesEvents = (eve
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const state = createOpenAIResponsesToAnthropicMessagesStreamState();
 
-  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(materializeNullableResponsesLifecycle(frames))) {
+  for await (const event of upstreamOpenAIResponsesEventsUntilTerminal(frames)) {
     for (const translated of translateOpenAIResponsesStreamEventToAnthropicMessagesEvents(event, state)) {
       yield eventFrame(translated);
     }

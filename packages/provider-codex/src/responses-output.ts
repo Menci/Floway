@@ -22,7 +22,6 @@ export const restoreCodexResponsesOutput = async function* (
     }
     const event = frame.event;
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-      if (event.item === null) { yield frame; continue; }
       if (event.item.id != null) {
         const previousIndex = itemIndices.get(event.item.id);
         if (previousIndex !== undefined && previousIndex !== event.output_index) {
@@ -36,7 +35,7 @@ export const restoreCodexResponsesOutput = async function* (
         indexedIds.set(event.output_index, event.item.id);
       }
     }
-    if (event.type === 'response.output_item.done' && event.item !== null) {
+    if (event.type === 'response.output_item.done') {
       closedItems.set(event.output_index, event.item);
     }
     if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
