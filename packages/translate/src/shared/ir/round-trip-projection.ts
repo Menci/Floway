@@ -1,4 +1,4 @@
-import type { IRProjectedContent as IRContent, IRStringProjection as IRProjection } from './projection.ts';
+import type { IRProjectedContent as IRContent, IRStringProjection as IRProjection } from './shared/projection.ts';
 
 export interface IRStringProjection extends IRProjection { round_trip: boolean }
 export interface IRProjectedContent extends IRContent { round_trip: boolean }

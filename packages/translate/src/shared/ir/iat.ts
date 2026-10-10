@@ -1,5 +1,5 @@
 import type { IR } from './ir.ts';
-import { cloneIRJSON, irJSON, parseIRJSONObject } from './json.ts';
+import { cloneIRJSON, irJSON, parseIRJSONObject } from './shared/json.ts';
 import type { IRProjectionResult, IRStringProjection } from './round-trip-projection.ts';
 import type { IRPath } from './stream.ts';
 import type { IRReferencePayload } from './thin-types.ts';
