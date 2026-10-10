@@ -17,7 +17,7 @@ import { activityCostText, type OllamaRecord, readActivityCost, readWindows, rea
 import { ProviderIcon } from '../upstreams/provider-badge';
 import { quotaBarColor } from '../upstreams/subscription-quota';
 
-const { ProgressBar, Text } = fluentComponents;
+const { InfoLabel, ProgressBar, Text, Tooltip } = fluentComponents;
 
 export function OllamaUsageCard({ probeRecord, record }: { probeRecord: UpstreamRecordEnvelope; record: OllamaRecord }) {
   const { t } = useTranslation();
@@ -85,12 +85,12 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>)}
 
     {balances.map(balance => <div className="flex justify-between gap-3" key={balance.key}>
-      <Text>{t(`dashboard.upstreamEditor.ollama.usage.balance.${balance.key}`)}</Text>
+      <InfoLabel info={t(`dashboard.upstreamEditor.ollama.usage.balanceHint.${balance.key}`)}>{t(`dashboard.upstreamEditor.ollama.usage.balance.${balance.key}`)}</InfoLabel>
       <Text>{activityCostText(balance.amount)}</Text>
     </div>)}
 
     {(balanceObservation ?? observation) && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost.amount)}</Text>}
+      {activityCost !== null && <Tooltip content={activityCost.period === 'last_4_weeks' ? t('dashboard.upstreams.signals.costLast4Weeks') : t('dashboard.upstreams.signals.cost')} relationship="description"><Text tabIndex={0} size={200} className="winui-focus-rect text-fui-fg3">{activityCostText(activityCost.amount)}</Text></Tooltip>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime((balanceObservation ?? observation)!.fetchedAt, locale) })}
       </Text>

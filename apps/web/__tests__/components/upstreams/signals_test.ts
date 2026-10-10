@@ -284,10 +284,10 @@ describe('upstream readout by provider', () => {
     };
     expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
     const cost = readoutOf(record).signals.at(-1);
-    expect(cost?.detail).toBe('Charged to this account in the last 4 weeks');
+    expect(cost?.detail).toBe('USD value of model requests recorded by the upstream over the past four weeks.');
   });
 
-  it('leaves the charge unqualified when the upstream named no period for it', () => {
+  it('leaves USD usage unqualified when the upstream named no period for it', () => {
     const signals = readoutOf({
       kind: 'ollama',
       state: {
@@ -300,7 +300,7 @@ describe('upstream readout by provider', () => {
         },
       },
     }).signals;
-    expect(signals.at(-1)?.detail).toBe('Charged to this account');
+    expect(signals.at(-1)?.detail).toBe('USD value of model requests recorded by the upstream over its reporting period.');
   });
 
   // The card keeps that zero; a row of live readings does not, because a figure

@@ -442,8 +442,8 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          cost: '该账号已产生的费用',
-          costLast4Weeks: '该账号最近 4 周产生的费用',
+          cost: '上游在统计周期内记录的模型请求用量，按美元计价汇总。',
+          costLast4Weeks: '上游在过去 4 周记录的模型请求用量，按美元计价汇总。',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -959,6 +959,10 @@ const zhHansCN = {
           cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
           usage: {
             balance: { included: '订阅余额', purchased: '购买余额' },
+            balanceHint: {
+              included: '当前订阅周期内套餐所含用量额度的剩余金额。套餐每月补充额度，模型请求优先使用此额度。',
+              purchased: '额外购买且仍在有效期内的用量额度余额。套餐额度用完后，模型请求继续使用此额度。',
+            },
             title: '用量',
             load: '加载',
             refresh: '刷新',

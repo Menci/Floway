@@ -467,8 +467,8 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Charged to this account',
-          costLast4Weeks: 'Charged to this account in the last 4 weeks',
+          cost: 'USD value of model requests recorded by the upstream over its reporting period.',
+          costLast4Weeks: 'USD value of model requests recorded by the upstream over the past four weeks.',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -1004,6 +1004,10 @@ const en = {
           cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
           usage: {
             balance: { included: 'Included balance', purchased: 'Purchased balance' },
+            balanceHint: {
+              included: 'Remaining usage credits included in the current subscription period. The plan replenishes these credits each month, and requests use them first.',
+              purchased: 'Remaining purchased usage credits within their validity period. Requests use these credits after the included allowance is consumed.',
+            },
             title: 'Usage',
             load: 'Load',
             refresh: 'Refresh',
