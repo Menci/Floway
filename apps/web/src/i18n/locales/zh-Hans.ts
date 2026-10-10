@@ -497,8 +497,9 @@ const zhHansCN = {
       upstreamEditor: {
         usageRefresh: {
           title: '后台刷新用量',
-          description: '每 5 分钟检查账号用量，跳过新鲜读数，失败后退避重试。Claude Code 需要 OAuth，Ollama 需要开启云用量。',
-          enabled: '启用自动刷新用量',
+          description: '填 0 或留空禁用后台刷新，保留请求时更新用量的逻辑。跳过新鲜读数，失败或上游限流时延迟重试。Claude Code 需要 OAuth，Ollama 需要开启云用量。',
+          interval: '刷新间隔（分钟）',
+          invalid: '请输入大于或等于 0 的整数分钟数。',
         },
         readyToSave: {
           title: '可以保存了',

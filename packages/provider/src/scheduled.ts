@@ -8,11 +8,12 @@ export interface ScheduledTaskClaim {
   token: string;
   now: number;
   nextAttemptAt: number;
+  intervalMs: number;
 }
 
 export interface ProviderScheduledTasksRepo {
   tryClaim(claim: ScheduledTaskClaim): Promise<number | null>;
-  finish(claim: ScheduledTaskClaim, outcome: { nextAttemptAt: number; failureCount: number; error: string | null }): Promise<void>;
+  finish(claim: ScheduledTaskClaim, outcome: { nextAttemptAt: number; completedAt: number | null; failureCount: number; error: string | null }): Promise<void>;
 }
 
 export interface ProviderScheduledOptions {
@@ -20,9 +21,6 @@ export interface ProviderScheduledOptions {
   tasks: ProviderScheduledTasksRepo;
 }
 
-// Five minutes is our polling policy, shared with failure backoff. Providers
-// can avoid a probe when traffic has already produced a newer observation.
-export const USAGE_REFRESH_INTERVAL_MS = 5 * 60_000;
 const MAX_RETRY_INTERVAL_MS = 60 * 60_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -33,27 +31,34 @@ export const runScheduledUsageRefresh = async (
   refresh: (record: UpstreamRecord, fetcher: Fetcher) => Promise<unknown>,
 ): Promise<void> => {
   const now = Date.now();
-  if (!record.enabled || !record.usageRefreshEnabled
-    || (lastObservedAt !== null && now - lastObservedAt < USAGE_REFRESH_INTERVAL_MS)) return;
+  let intervalMs = record.usageRefreshIntervalMinutes * 60_000;
+  if (!record.enabled || !record.usageRefreshIntervalMinutes
+    || (lastObservedAt !== null && now - lastObservedAt < intervalMs)) return;
   const claim: ScheduledTaskClaim = {
     upstreamId: record.id,
     task: 'usage-refresh',
     token: crypto.randomUUID(),
     now,
-    nextAttemptAt: now + USAGE_REFRESH_INTERVAL_MS,
+    nextAttemptAt: now + intervalMs,
+    intervalMs,
   };
   const failureCount = await options.tasks.tryClaim(claim);
   if (failureCount === null) return;
-  let retryAt = claim.nextAttemptAt;
+  let retryAt = now;
   try {
     const fresh = await getProviderRepo().upstreams.getById(record.id);
-    if (fresh === null || !fresh.enabled || !fresh.usageRefreshEnabled || fresh.kind !== record.kind) {
-      await options.tasks.finish(claim, { nextAttemptAt: now, failureCount: 0, error: null });
+    if (fresh === null || !fresh.enabled || !fresh.usageRefreshIntervalMinutes || fresh.kind !== record.kind) {
+      await options.tasks.finish(claim, { nextAttemptAt: now, completedAt: null, failureCount: 0, error: null });
+      return;
+    }
+    intervalMs = fresh.usageRefreshIntervalMinutes * 60_000;
+    if (lastObservedAt !== null && now - lastObservedAt < intervalMs) {
+      await options.tasks.finish(claim, { nextAttemptAt: now, completedAt: null, failureCount: 0, error: null });
       return;
     }
     const fetcher = await options.fetcher(fresh);
     if (fetcher === null) {
-      await options.tasks.finish(claim, { nextAttemptAt: now, failureCount: 0, error: null });
+      await options.tasks.finish(claim, { nextAttemptAt: now, completedAt: null, failureCount: 0, error: null });
       return;
     }
     const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
@@ -81,10 +86,11 @@ export const runScheduledUsageRefresh = async (
     await refresh(fresh, timedFetcher);
   } catch (error) {
     const nextFailureCount = failureCount + 1;
-    retryAt = Math.max(retryAt, Date.now() + Math.min(MAX_RETRY_INTERVAL_MS, USAGE_REFRESH_INTERVAL_MS * 2 ** Math.min(nextFailureCount, 4)));
+    retryAt = Math.max(retryAt, Date.now() + Math.max(intervalMs, Math.min(MAX_RETRY_INTERVAL_MS, intervalMs * 2 ** Math.min(nextFailureCount, 6))));
     try {
       await options.tasks.finish(claim, {
         nextAttemptAt: retryAt,
+        completedAt: null,
         failureCount: nextFailureCount,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -93,5 +99,5 @@ export const runScheduledUsageRefresh = async (
     }
     throw error;
   }
-  await options.tasks.finish(claim, { nextAttemptAt: Math.max(retryAt, Date.now() + USAGE_REFRESH_INTERVAL_MS), failureCount: 0, error: null });
+  await options.tasks.finish(claim, { nextAttemptAt: retryAt, completedAt: Date.now(), failureCount: 0, error: null });
 };

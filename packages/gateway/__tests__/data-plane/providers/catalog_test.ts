@@ -106,7 +106,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
   const { repo } = await setupAppTest();
 
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshEnabled: false, sortOrder: 50 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshIntervalMinutes: 0, sortOrder: 50 }));
 
   await withMockedFetch(
     request => {
@@ -265,7 +265,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     kind: 'azure' as const,
     name: over.id,
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: over.sortOrder,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',

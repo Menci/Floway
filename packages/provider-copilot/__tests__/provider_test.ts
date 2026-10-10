@@ -34,7 +34,7 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     kind: 'copilot',
     name: 'GitHub Copilot (tester)',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-03-15T00:00:00.000Z',
     updatedAt: '2026-03-15T00:00:00.000Z',

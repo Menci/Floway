@@ -343,7 +343,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     kind: 'azure',
     name: 'Azure Single Endpoint',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
@@ -391,7 +391,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     kind: 'azure',
     name: 'Azure Per-Model Flags',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-07-08T00:00:00.000Z',
     updatedAt: '2026-07-08T00:00:00.000Z',
@@ -437,7 +437,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   const baseRow = {
     kind: 'custom' as const,
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
@@ -530,7 +530,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     kind: 'custom',
     name: 'Disabled Custom',
     enabled: false,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 5,
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
@@ -743,7 +743,7 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
     kind: 'custom',
     name: 'Refresh Custom',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
@@ -2684,7 +2684,7 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
     kind: 'custom',
     name: 'Original',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
@@ -3176,17 +3176,29 @@ test('usage refresh defaults off and can be opted in and out without changing mo
   const created = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', config: copilotConfig, state: null })));
   assertEquals(created.status, 201);
   const body = await created.json() as JsonObject;
-  assertEquals(body.usage_refresh_enabled, false);
+  assertEquals(body.usage_refresh_interval_minutes, 0);
   const version = (await repo.upstreams.getById(body.id))!.configVersion;
-  for (const enabled of [true, false]) {
+  for (const interval of [1, 15, 0]) {
     const response = await requestApp(`/api/upstreams/${body.id}`, {
-      ...authed(adminSession, { usage_refresh_enabled: enabled }), method: 'PATCH',
+      ...authed(adminSession, { usage_refresh_interval_minutes: interval }), method: 'PATCH',
     });
     assertEquals(response.status, 200);
-    assertEquals((await response.json() as JsonObject).usage_refresh_enabled, enabled);
+    assertEquals((await response.json() as JsonObject).usage_refresh_interval_minutes, interval);
     const saved = (await repo.upstreams.getById(body.id))!;
-    assertEquals(saved.usageRefreshEnabled, enabled);
+    assertEquals(saved.usageRefreshIntervalMinutes, interval);
     assertEquals(saved.configVersion, version);
+  }
+});
+
+test('usage refresh rejects negative, fractional and boolean intervals', async () => {
+  const { adminSession } = await setupAppTest();
+  const created = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', config: copilotConfig, state: null })));
+  const body = await created.json() as JsonObject;
+  for (const interval of [-1, 1.5, true]) {
+    const response = await requestApp(`/api/upstreams/${body.id}`, {
+      ...authed(adminSession, { usage_refresh_interval_minutes: interval }), method: 'PATCH',
+    });
+    assertEquals(response.status, 400);
   }
 });
 

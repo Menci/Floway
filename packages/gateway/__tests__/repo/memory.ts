@@ -1482,22 +1482,22 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
 }
 
 class MemoryUpstreamScheduledTasksRepo {
-  private readonly rows = new Map<string, { token: string; nextAttemptAt: number; failureCount: number }>();
+  private readonly rows = new Map<string, { token: string; nextAttemptAt: number; completedAt: number | null; failureCount: number }>();
 
   constructor(private readonly upstreams: UpstreamRepo) {}
 
   async tryClaim(claim: import('@floway-dev/provider').ScheduledTaskClaim): Promise<number | null> {
     const upstream = await this.upstreams.getById(claim.upstreamId);
-    if (upstream === null || !upstream.enabled || !upstream.usageRefreshEnabled) return null;
+    if (upstream === null || !upstream.enabled || !upstream.usageRefreshIntervalMinutes) return null;
     const key = JSON.stringify([claim.upstreamId, claim.task]);
     const prior = this.rows.get(key);
-    if (prior && prior.nextAttemptAt > claim.now) return null;
+    if (prior && (prior.nextAttemptAt > claim.now || (prior.failureCount === 0 && prior.completedAt !== null && prior.completedAt + claim.intervalMs > claim.now))) return null;
     const failureCount = prior?.failureCount ?? 0;
-    this.rows.set(key, { token: claim.token, nextAttemptAt: claim.nextAttemptAt, failureCount });
+    this.rows.set(key, { token: claim.token, nextAttemptAt: claim.nextAttemptAt, completedAt: prior?.completedAt ?? null, failureCount });
     return failureCount;
   }
 
-  async finish(claim: import('@floway-dev/provider').ScheduledTaskClaim, outcome: { nextAttemptAt: number; failureCount: number; error: string | null }): Promise<void> {
+  async finish(claim: import('@floway-dev/provider').ScheduledTaskClaim, outcome: { nextAttemptAt: number; completedAt: number | null; failureCount: number; error: string | null }): Promise<void> {
     const key = JSON.stringify([claim.upstreamId, claim.task]);
     if (this.rows.get(key)?.token === claim.token) this.rows.set(key, { token: '', ...outcome });
   }

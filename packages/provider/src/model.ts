@@ -68,7 +68,7 @@ export interface UpstreamRecord {
   kind: UpstreamProviderKind;
   name: string;
   enabled: boolean;
-  usageRefreshEnabled: boolean;
+  usageRefreshIntervalMinutes: number;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

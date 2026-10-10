@@ -89,8 +89,24 @@ export function UpstreamConfigSidebar({
           title={t('dashboard.upstreamEditor.usageRefresh.title')}
           description={t('dashboard.upstreamEditor.usageRefresh.description')}
         >
-          <Controller control={control} name="usageRefreshEnabled" render={({ field }) => (
-            <Checkbox checked={field.value} onChange={(_, data) => field.onChange(data.checked === true)} label={t('dashboard.upstreamEditor.usageRefresh.enabled')} />
+          <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
+            <Field
+              label={t('dashboard.upstreamEditor.usageRefresh.interval')}
+              validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
+              validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
+            >
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                placeholder="0"
+                name={field.name}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                value={field.value === 0 ? '' : String(field.value)}
+                onChange={(_, data) => field.onChange(Number(data.value))}
+              />
+            </Field>
           )} />
         </EditorSection>}
         <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>

@@ -42,7 +42,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
     kind: 'copilot',
     name: 'Copilot (pivot tester)',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-03-15T00:00:00.000Z',
     updatedAt: '2026-03-15T00:00:00.000Z',

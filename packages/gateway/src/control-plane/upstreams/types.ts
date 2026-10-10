@@ -133,7 +133,7 @@ interface SerializedUpstreamRecordBase {
   id: string;
   name: string;
   enabled: boolean;
-  usage_refresh_enabled: boolean;
+  usage_refresh_interval_minutes: number;
   sort_order: number;
   created_at: string;
   updated_at: string;

@@ -16,7 +16,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 2,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
@@ -39,7 +39,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     state: null,
   });
   await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshEnabled: false, sortOrder: 0 }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshIntervalMinutes: 0, sortOrder: 0 }));
 
   const providers = await listModelProviders(null);
   assertEquals(providers.map(provider => provider.upstreamId), ['up_custom', 'up_azure', 'up_copilot']);

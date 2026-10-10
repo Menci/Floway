@@ -12,7 +12,7 @@ const flagDefaults = Object.fromEntries(OPTIONAL_FLAG_IDS.map(id => [id, false])
 const commonFields = {
   name: 'Upstream',
   enabled: true,
-  usage_refresh_enabled: false,
+  usage_refresh_interval_minutes: 0,
   sort_order: 1,
   created_at: '',
   updated_at: '',

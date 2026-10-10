@@ -56,12 +56,12 @@ test('discovery input edits exclude metadata-only changes', () => {
 
 test('background usage refresh remains explicit through editor create, preview and update', () => {
   const values = valuesFromRecord(record);
-  expect(values.usageRefreshEnabled).toBe(false);
-  for (const enabled of [true, false]) {
-    values.usageRefreshEnabled = enabled;
-    expect(createBody(record, values).usage_refresh_enabled).toBe(enabled);
-    expect(previewRecord(record, values).usage_refresh_enabled).toBe(enabled);
-    expect(updateBody(record, values).usage_refresh_enabled).toBe(enabled);
-    expect(hasUnsavedDiscoveryInputs({ usageRefreshEnabled: true })).toBe(false);
+  expect(values.usageRefreshIntervalMinutes).toBe(0);
+  for (const interval of [1, 15, 0]) {
+    values.usageRefreshIntervalMinutes = interval;
+    expect(createBody(record, values).usage_refresh_interval_minutes).toBe(interval);
+    expect(previewRecord(record, values).usage_refresh_interval_minutes).toBe(interval);
+    expect(updateBody(record, values).usage_refresh_interval_minutes).toBe(interval);
+    expect(hasUnsavedDiscoveryInputs({ usageRefreshIntervalMinutes: 5 })).toBe(false);
   }
 });

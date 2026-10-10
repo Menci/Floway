@@ -13,7 +13,7 @@ const installRepoAndConfig = async () => {
     kind: 'copilot',
     name: 'fetch-models-test',
     enabled: true,
-    usageRefreshEnabled: false,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-03-15T00:00:00.000Z',
     updatedAt: '2026-03-15T00:00:00.000Z',

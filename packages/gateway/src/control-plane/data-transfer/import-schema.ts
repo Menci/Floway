@@ -156,7 +156,7 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     kind,
     name: parseValue(nonEmptyStringSchema('name'), wire.name),
     enabled,
-    usageRefreshEnabled: parseValue(z.boolean({ error: 'usage_refresh_enabled must be a boolean' }), wire.usage_refresh_enabled),
+    usageRefreshIntervalMinutes: parseValue(z.number({ error: 'usage_refresh_interval_minutes must be a nonnegative integer' }).int().nonnegative(), wire.usage_refresh_interval_minutes),
     sortOrder,
     createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
     updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),

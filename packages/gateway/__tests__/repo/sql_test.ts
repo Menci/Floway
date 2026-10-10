@@ -16,7 +16,7 @@ const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstre
   kind: 'codex',
   name: 'Codex Test',
   enabled: true,
-  usageRefreshEnabled: false,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-05T00:00:00.000Z',
   updatedAt: GENERATION,

@@ -9,7 +9,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'azure',
   name: 'Azure Resource',
   enabled: true,
-  usageRefreshEnabled: false,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-05-21T00:00:00.000Z',
   updatedAt: '2026-05-21T00:00:00.000Z',

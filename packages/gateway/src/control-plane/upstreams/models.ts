@@ -27,7 +27,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     kind,
     name: record.name ?? 'draft',
     enabled: record.enabled ?? true,
-    usageRefreshEnabled: record.usage_refresh_enabled ?? false,
+    usageRefreshIntervalMinutes: record.usage_refresh_interval_minutes ?? 0,
     sortOrder: record.sort_order ?? 0,
     createdAt: record.created_at ?? '',
     updatedAt: record.updated_at ?? '',

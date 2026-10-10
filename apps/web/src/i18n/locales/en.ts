@@ -524,8 +524,9 @@ const en = {
       upstreamEditor: {
         usageRefresh: {
           title: 'Background usage refresh',
-          description: 'Check account usage every 5 minutes, skipping fresh observations and backing off after failures. Requires OAuth for Claude Code and cloud usage for Ollama.',
-          enabled: 'Enable automatic usage refresh',
+          description: '0 or blank disables background refresh and keeps usage updates on requests. Fresh observations are skipped; failures and upstream rate limits delay retries. Requires OAuth for Claude Code and cloud usage for Ollama.',
+          interval: 'Refresh interval (minutes)',
+          invalid: 'Enter a nonnegative whole number of minutes.',
         },
         readyToSave: {
           title: 'Ready to save',
