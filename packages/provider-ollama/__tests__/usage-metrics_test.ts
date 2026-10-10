@@ -16,3 +16,10 @@ test('Ollama credit plan gauges do not manufacture percentage windows', () => {
     ['["balance","included"]', 72.5], ['["balance","purchased"]', 0],
   ]);
 });
+
+test('Ollama current activity totals retain their self-contained range', () => {
+  const metrics = ollamaUsageMetrics({ range: '24h', totals: { request_count: 15, usage_usd: 0.01718 } });
+  expect([...metrics]).toEqual([['["activity_cost","24h"]', 0.01718]]);
+  expect(resolveUsageMetricDisplayName('["activity_cost","24h"]')).toEqual({ name: '24h', unit: 'usd', windowMinutes: null });
+  expect(ollamaUsageMetrics({ range: '7d', totals: { request_count: 15 } }).size).toBe(0);
+});

@@ -40,6 +40,12 @@ export const ollamaUsageMetrics = (body: unknown): Map<string, number> => {
       }
     }
   }
+  const totals = observation.totals;
+  if (typeof totals === 'object' && totals !== null && 'usage_usd' in totals) {
+    if (typeof totals.usage_usd !== 'number' || !Number.isFinite(totals.usage_usd)) throw new TypeError('Ollama usage total must be finite');
+    if (typeof observation.range !== 'string') throw new TypeError('Ollama usage total requires its range');
+    metrics.set(JSON.stringify(['activity_cost', observation.range]), totals.usage_usd);
+  }
   return metrics;
 };
 

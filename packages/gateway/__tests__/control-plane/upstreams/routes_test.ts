@@ -3170,7 +3170,6 @@ test('POST /api/upstreams/claude-code/oauth/refresh recovers as success when a s
   assertEquals(storedState.accounts[0].accessToken?.token, 'at_sibling_rotated');
 });
 
-
 test('usage refresh defaults off and can be opted in and out without changing model configuration', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -3190,7 +3189,6 @@ test('usage refresh defaults off and can be opted in and out without changing mo
     assertEquals(saved.configVersion, version);
   }
 });
-
 
 test('manual Ollama usage refresh reads and persists activity and current balance separately', async () => {
   const { repo, adminSession } = await setupAppTest();

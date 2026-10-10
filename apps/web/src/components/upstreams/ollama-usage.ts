@@ -54,7 +54,14 @@ export interface ActivityCost {
 
 export const readActivityCost = (data: unknown): ActivityCost | null => {
   const activity = isRecordValue(data) ? data.activity : null;
-  if (!isRecordValue(activity) || typeof activity.cost !== 'string') return null;
+  if (!isRecordValue(activity) || typeof activity.cost !== 'string') {
+    if (!isRecordValue(data)) return null;
+    for (const [key, amount] of ollamaUsageMetrics(data)) {
+      const [kind, period] = JSON.parse(key) as [string, string];
+      if (kind === 'activity_cost') return { amount: String(amount), period };
+    }
+    return null;
+  }
   const period = isRecordValue(activity.period) ? activity.period.type : null;
   return { amount: activity.cost, period: typeof period === 'string' ? period : null };
 };
