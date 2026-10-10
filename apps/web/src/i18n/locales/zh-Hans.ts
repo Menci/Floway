@@ -1116,12 +1116,12 @@ const zhHansCN = {
       upstreamUsage: {
         refresh: '刷新上游用量',
         empty: '此时间范围内没有上游用量观察记录',
-        chartTitle: '{{name}} · {{unit}}',
+        chartTitle: '{{name}} {{unit}}',
         groupBy: { upstream: '上游', metric: '维度名字' },
         units: { percent: '用量 (%)', usd: '金额 (USD)', credits: 'Credits' },
+        windows: { minutes: '{{count, number}} 分钟窗口', hours: '{{count, number}} 小时窗口', days: '{{count, number}} 天窗口' },
         metrics: {
-          unnamedWindow: '{{minutes, number}} 分钟窗口',
-          window: '{{name}} {{minutes, number}} 分钟窗口',
+          window: '{{name}} {{window}}',
           fiveHour: '5 小时窗口', sevenDay: '7 天窗口',
           sevenDaySonnet: '7 天 Sonnet 窗口', sevenDayOpus: '7 天 Opus 窗口',
           overage: '超额用量',

@@ -1166,12 +1166,12 @@ const en = {
       upstreamUsage: {
         refresh: 'Refresh upstream usage',
         empty: 'No upstream usage observations in this range',
-        chartTitle: '{{name}} · {{unit}}',
+        chartTitle: '{{name}} {{unit}}',
         groupBy: { upstream: 'Upstream', metric: 'Metric name' },
         units: { percent: 'Usage (%)', usd: 'Cost (USD)', credits: 'Credits' },
+        windows: { minutes: '{{count, number}}-minute window', hours: '{{count, number}}-hour window', days: '{{count, number}}-day window' },
         metrics: {
-          unnamedWindow: '{{minutes, number}}-minute window',
-          window: '{{name}} {{minutes, number}}-minute window',
+          window: '{{name}} {{window}}',
           fiveHour: '5-hour window', sevenDay: '7-day window',
           sevenDaySonnet: '7-day Sonnet window', sevenDayOpus: '7-day Opus window',
           overage: 'Overage',

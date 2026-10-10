@@ -7,7 +7,7 @@ import { resolveUsageMetricDisplayName as copilotDisplay } from '@floway-dev/pro
 import { resolveUsageMetricDisplayName as ollamaDisplay } from '@floway-dev/provider-ollama/browser';
 
 type Translate = ReturnType<typeof useTranslation>['t'];
-const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstreamUsage.metrics.${string}`>, 'dashboard.upstreamUsage.metrics.window' | 'dashboard.upstreamUsage.metrics.unnamedWindow'>>([
+const names = new Map<string, Exclude<Extract<TranslationKey, `dashboard.upstreamUsage.metrics.${string}`>, 'dashboard.upstreamUsage.metrics.window'>>([
   ['five_hour', 'dashboard.upstreamUsage.metrics.fiveHour'],
   ['seven_day', 'dashboard.upstreamUsage.metrics.sevenDay'],
   ['seven_day_sonnet', 'dashboard.upstreamUsage.metrics.sevenDaySonnet'],
@@ -40,10 +40,13 @@ export const resolveUsageMetricDisplayName = (
   }
   const translation = names.get(display.name);
   const name = translation === undefined ? display.name : t(translation);
+  if (display.windowMinutes === null) return { ...display, name };
+  const minutes = display.windowMinutes;
+  const window = minutes % 1440 === 0 ? t('dashboard.upstreamUsage.windows.days', { count: minutes / 1440 })
+    : minutes % 60 === 0 ? t('dashboard.upstreamUsage.windows.hours', { count: minutes / 60 })
+      : t('dashboard.upstreamUsage.windows.minutes', { count: minutes });
   return {
     ...display,
-    name: display.windowMinutes === null ? name : name === ''
-      ? t('dashboard.upstreamUsage.metrics.unnamedWindow', { minutes: display.windowMinutes })
-      : t('dashboard.upstreamUsage.metrics.window', { name, minutes: display.windowMinutes }),
+    name: name === '' ? window : t('dashboard.upstreamUsage.metrics.window', { name, window }),
   };
 };

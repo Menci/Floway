@@ -27,10 +27,10 @@ it('offers the two groupings and date ranges in one control row', async () => {
   expect(screen.getByText('7 Days')).toBeTruthy();
   expect(screen.getByText('30 Days')).toBeTruthy();
   expect(screen.getByText('Custom')).toBeTruthy();
-  expect(screen.getByRole('heading', { level: 2, name: 'Copilot seat · Usage (%)' })).toBeTruthy();
+  expect(screen.getByRole('heading', { level: 2, name: 'Copilot seat Usage (%)' })).toBeTruthy();
   fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
   fireEvent.click(screen.getByRole('option', { name: 'Metric name' }));
-  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Premium interactions · Usage (%)' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Premium interactions Usage (%)' })).toBeTruthy());
 });
 
 it('renders fetch failure separately from a successful empty query', () => {
