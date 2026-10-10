@@ -127,16 +127,107 @@ describe('first output across supported stream payloads', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type, delta: '' }), 'openaiResponses')).toBe(false);
   });
 
-  it.each([
-    { type: 'reasoning', id: 'rs_1', summary: [] },
-    { type: 'message', role: 'assistant', content: [] },
-    { type: 'function_call', name: '', arguments: '' },
-    { type: 'custom_tool_call', name: '', input: '' },
-    { type: 'mcp_call', name: '', arguments: '' },
-    { type: 'shell_call', action: { commands: [] } },
-    { type: 'future_model_output', id: 'item_1' },
-  ])('recognizes any output item at creation: %j', item => {
+  it.each(['future_model_output', 'constructor'])('recognizes unknown %s items only on added', type => {
+    const item = { type, id: 'item_1' };
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item }), 'openaiResponses')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.done', item }), 'openaiResponses')).toBe(false);
+  });
+
+  describe.each(['response.output_item.added', 'response.output_item.done'])('known item data on %s', type => {
+    it.each([
+      { type: 'message', content: [{ type: 'output_text', text: 'hello' }] },
+      { type: 'message', content: [{ type: 'refusal', refusal: 'declined' }] },
+      { type: 'reasoning', summary: [{ type: 'summary_text', text: 'thinking' }] },
+      { type: 'reasoning', summary: [], content: [{ type: 'reasoning_text', text: 'thinking' }] },
+      { type: 'function_call', name: 'search', arguments: '' },
+      { type: 'function_call', name: '', arguments: '{}' },
+      { type: 'custom_tool_call', name: 'shell', input: '' },
+      { type: 'custom_tool_call', name: '', input: 'ls' },
+      { type: 'mcp_call', name: 'search', arguments: '' },
+      { type: 'mcp_call', name: '', arguments: '{}' },
+      { type: 'mcp_approval_request', name: 'search', arguments: '' },
+      { type: 'web_search_call', action: { type: 'search', queries: ['search terms'] } },
+      { type: 'web_search_call', action: { type: 'search', query: 'search terms' } },
+      { type: 'web_search_call', action: { type: 'open_page', url: 'https://example.com' } },
+      { type: 'web_search_call', action: { type: 'find_in_page', url: '', pattern: 'match' } },
+      { type: 'file_search_call', queries: ['search terms'] },
+      { type: 'computer_call', action: { type: 'wait' } },
+      { type: 'computer_call', actions: [{ type: 'screenshot' }] },
+      { type: 'tool_search_call', arguments: { query: 'search tools' } },
+      { type: 'tool_search_call', arguments: {} },
+      { type: 'program', code: 'print(1)' },
+      { type: 'agent_message', content: [{ type: 'text', text: 'hello' }] },
+      { type: 'multi_agent_call', action: 'list_agents', arguments: '' },
+      { type: 'code_interpreter_call', code: 'print(1)' },
+      { type: 'local_shell_call', action: { command: ['ls'] } },
+      { type: 'shell_call', action: { commands: ['ls'] } },
+      { type: 'apply_patch_call', operation: { type: 'delete_file', path: 'file.txt' } },
+      { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: 'content' } },
+      { type: 'image_generation_call', revised_prompt: 'A landscape' },
+    ])('recognizes generated data in %j', item => {
+      expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(true);
+    });
+
+    it.each([
+      { type: 'message', content: [] },
+      { type: 'reasoning', summary: [], encrypted_content: 'opaque' },
+      { type: 'function_call', name: '', arguments: '' },
+      { type: 'custom_tool_call', name: '', input: '' },
+      { type: 'mcp_call', name: '', arguments: '', output: 'tool output' },
+      { type: 'mcp_approval_request', name: '', arguments: '', server_label: 'server' },
+      { type: 'web_search_call', results: [{ text: 'tool output' }] },
+      { type: 'web_search_call', action: { type: 'search', queries: [], sources: [{ url: 'https://example.com' }] } },
+      { type: 'web_search_call', action: { type: 'open_page' } },
+      { type: 'file_search_call', queries: [], results: [{ text: 'tool output' }] },
+      { type: 'computer_call', actions: [], pending_safety_checks: [{ id: 'check_1' }] },
+      { type: 'tool_search_call', arguments: null, execution: 'server' },
+      { type: 'program', code: '', fingerprint: 'fingerprint' },
+      { type: 'agent_message', content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }], author: 'agent', recipient: 'agent' },
+      { type: 'multi_agent_call', action: '', arguments: '', agent: { agent_name: 'agent' } },
+      { type: 'code_interpreter_call', code: null, outputs: [{ type: 'logs', logs: 'tool output' }] },
+      { type: 'local_shell_call', action: { command: [], env: { PATH: '/bin' } } },
+      { type: 'shell_call', action: { commands: [], timeout_ms: 1000 } },
+      { type: 'apply_patch_call', operation: { type: 'create_file', path: '', diff: '' } },
+      { type: 'image_generation_call', result: 'image', status: 'completed' },
+      { type: 'function_call_output', output: 'tool output' },
+      { type: 'custom_tool_call_output', output: 'tool output' },
+      { type: 'computer_call_output', output: { type: 'computer_screenshot', image_url: 'data:image/png;base64,AAAA' } },
+      { type: 'tool_search_output', tools: [{ name: 'search' }] },
+      { type: 'program_output', result: 'tool output' },
+      { type: 'multi_agent_call_output', output: [{ type: 'output_text', text: 'tool output' }] },
+      { type: 'local_shell_call_output', output: 'tool output' },
+      { type: 'shell_call_output', output: [{ stdout: 'tool output' }] },
+      { type: 'apply_patch_call_output', output: 'tool output' },
+      { type: 'additional_tools', tools: [{ name: 'search' }] },
+      { type: 'mcp_list_tools', tools: [{ name: 'search' }] },
+      { type: 'mcp_approval_response', approve: true },
+      { type: 'compaction', encrypted_content: 'opaque' },
+      { type: 'compaction_summary', encrypted_content: 'opaque' },
+      { type: 'context_compaction', encrypted_content: 'opaque' },
+    ])('waits through metadata or returned data in %j', item => {
+      expect(isFirstOutputTokenFrame(eventFrame({ type, item }), 'openaiResponses')).toBe(false);
+    });
+  });
+
+  it.each([
+    { type: 'response.content_part.added', part: { type: 'output_text', text: 'hello' } },
+    { type: 'response.content_part.done', part: { type: 'refusal', refusal: 'declined' } },
+    { type: 'response.reasoning_summary_part.added', part: { type: 'summary_text', text: 'thinking' } },
+    { type: 'response.reasoning_summary_part.done', part: { type: 'summary_text', text: 'thinking' } },
+    { type: 'response.output_text.done', text: 'hello' },
+    { type: 'response.reasoning.done', text: 'thinking' },
+    { type: 'response.reasoning_text.done', text: 'thinking' },
+    { type: 'response.reasoning_summary_text.done', text: 'thinking' },
+    { type: 'response.refusal.done', refusal: 'declined' },
+    { type: 'response.function_call_arguments.done', arguments: '{}' },
+    { type: 'response.mcp_call_arguments.done', arguments: '{}' },
+    { type: 'response.custom_tool_call_input.done', input: 'ls' },
+    { type: 'response.code_interpreter_call_code.done', code: 'print(1)' },
+    { type: 'response.shell_call_command.added', command: 'ls' },
+    { type: 'response.shell_call_command.done', command: 'ls' },
+    { type: 'response.apply_patch_call_operation_diff.done', diff: 'content' },
+  ])('recognizes known content arriving on %j', event => {
+    expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(true);
   });
 
   it.each([
@@ -148,12 +239,15 @@ describe('first output across supported stream payloads', () => {
     expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
   });
 
-  it('excludes execution output, progress, and completion snapshots', () => {
+  it('excludes execution output, progress, and empty content snapshots', () => {
     for (const event of [
       { type: 'response.shell_call_output_content.delta', delta: { stdout: 'tool output', stderr: '' } },
       { type: 'response.mcp_list_tools.completed', tools: [{ name: 'search' }] },
       { type: 'response.code_interpreter_call.in_progress' },
-      { type: 'response.reasoning.done', text: 'complete reasoning' },
+      { type: 'response.reasoning.done', text: '' },
+      { type: 'response.content_part.added', part: { type: 'output_text', text: '' } },
+      { type: 'response.reasoning_summary_part.added', part: { type: 'summary_text', text: '' } },
+      { type: 'response.shell_call_command.added', command: '' },
     ]) expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
   });
 

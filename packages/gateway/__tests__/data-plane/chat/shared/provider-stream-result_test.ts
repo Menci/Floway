@@ -104,7 +104,7 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   const recordSample = vi.spyOn(repo.performance, 'recordSample');
   const timeline = [
     { ts: 3582, event: { type: 'response.created' } },
-    { ts: 3596, event: { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1' } } },
+    { ts: 3596, event: { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1', summary: [] } } },
     { ts: 3598, event: { type: 'response.reasoning.delta', delta: 'Let me think' } },
     { ts: 4393, event: { type: 'response.reasoning.delta', delta: '.' } },
     ...(withTools ? [
@@ -135,13 +135,13 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
-  expect(stamps[0]).toBe(null);
-  expect(stamps.slice(1)).toEqual(timeline.slice(1).map(() => 3596));
+  expect(stamps.slice(0, 2)).toEqual([null, null]);
+  expect(stamps.slice(2)).toEqual(timeline.slice(2).map(() => 3598));
   const metadata = await result.finalMetadata!;
   expect(metadata.billableUsage?.output).toBe(202);
   recordPerformance(ctx, mockPerfTelemetryContext(), false, metadata.billableUsage!.output, 5408);
   await Promise.all(pending);
-  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3281, tpotUs: 9015, success: true }));
+  expect(recordSample).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ttftMs: 3283, tpotUs: 9005, success: true }));
   expect(await repo.performance.listAll()).toEqual([expect.objectContaining({ ttftSamplesOk: 1, tpotSamples: 1, neutral: 0 })]);
 });
 
@@ -166,4 +166,29 @@ test('waits for generated tool content after Chat Completions identity frames', 
   const stamps: (number | null)[] = [];
   for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
   expect(stamps).toEqual([null, null, 300, 300]);
+});
+
+test.each([
+  { item: { type: 'message', content: [] }, completed: { type: 'message', content: [{ type: 'output_text', text: 'hello' }] }, firstOutput: 600 },
+  { item: { type: 'future_model_output', id: 'item_1' }, completed: { type: 'future_model_output', id: 'item_1' }, firstOutput: 200 },
+])('distinguishes known data arrival from unknown item announcement: %j', async ({ item, completed, firstOutput }) => {
+  const ctx = mockGatewayCtx();
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const timeline = [
+    { ts: 100, event: { type: 'response.created' } },
+    { ts: 200, event: { type: 'response.output_item.added', item } },
+    { ts: 600, event: { type: 'response.output_item.done', item: completed } },
+  ];
+  const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
+    for (const { ts, event } of timeline) {
+      now = ts;
+      yield { type: 'event', event };
+    }
+  })();
+  const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'openaiResponses', ctx, () => null);
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+  const stamps: (number | null)[] = [];
+  for await (const _ of result.events) stamps.push(ctx.attempt.timing.firstOutputTokenAt);
+  expect(stamps).toEqual([null, firstOutput === 200 ? 200 : null, firstOutput]);
 });
