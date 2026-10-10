@@ -1,8 +1,8 @@
 
-import { codePointRangeToIR } from './coordinates.ts';
-import type { IRMessageItem, IRSourceCitation } from './ir.ts';
-import { createIRBuilder, type IRFrame, type IRPath } from './stream.ts';
-import { usageToIR, type IRWire } from './usage.ts';
+import { codePointRangeToIR } from '../../coordinates.ts';
+import type { IRMessageItem, IRSourceCitation } from '../../ir.ts';
+import { createIRBuilder, type IRFrame, type IRPath } from '../../stream.ts';
+import { usageToIR, type IRWire } from '../../usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 

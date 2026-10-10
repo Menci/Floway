@@ -1,8 +1,8 @@
-import type { IRContentPart, IRItem, IRSourceCitation } from './ir.ts';
-import { cloneIRJSON, parseIRJSONObject } from './json.ts';
-import { createIRProjection, type IROutputOptions } from './projection.ts';
-import { consumeIRRecords, type IRFrame, type IRPath } from './stream.ts';
-import { usageFromIR, type IRWire } from './usage.ts';
+import type { IRContentPart, IRItem, IRSourceCitation } from '../../ir.ts';
+import { cloneIRJSON, parseIRJSONObject } from '../../json.ts';
+import { createIRProjection, type IROutputOptions } from '../../projection.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
+import { usageFromIR, type IRWire } from '../../usage.ts';
 import type { AnthropicMessagesStreamEventEx, AnthropicMessagesTextCitation } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 

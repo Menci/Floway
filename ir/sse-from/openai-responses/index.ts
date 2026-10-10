@@ -1,9 +1,9 @@
 
-import { codePointRangeToIR } from './coordinates.ts';
-import type { IRAudioPart, IRItem, IRMessageItem, IRSourceCitation } from './ir.ts';
-import { cloneIRJSON } from './json.ts';
-import { createIRBuilder, reconcileIRValue, type IRFrame } from './stream.ts';
-import { usageToIR, type IRWire } from './usage.ts';
+import { codePointRangeToIR } from '../../coordinates.ts';
+import type { IRAudioPart, IRItem, IRMessageItem, IRSourceCitation } from '../../ir.ts';
+import { cloneIRJSON } from '../../json.ts';
+import { createIRBuilder, reconcileIRValue, type IRFrame } from '../../stream.ts';
+import { usageToIR, type IRWire } from '../../usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 

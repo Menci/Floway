@@ -1,10 +1,10 @@
 
-import { irRangeToUTF8 } from './coordinates.ts';
-import type { IRSourceCitation } from './ir.ts';
-import { parseIRJSONObject } from './json.ts';
-import { createIRProjection, type IROutputOptions } from './projection.ts';
-import { consumeIRRecords, type IRFrame, type IRPath } from './stream.ts';
-import { usageFromIR, type IRWire } from './usage.ts';
+import { irRangeToUTF8 } from '../../coordinates.ts';
+import type { IRSourceCitation } from '../../ir.ts';
+import { parseIRJSONObject } from '../../json.ts';
+import { createIRProjection, type IROutputOptions } from '../../projection.ts';
+import { consumeIRRecords, type IRFrame, type IRPath } from '../../stream.ts';
+import { usageFromIR, type IRWire } from '../../usage.ts';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 

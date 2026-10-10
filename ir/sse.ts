@@ -1,14 +1,14 @@
 
-import { irFromAnthropicMessages } from './from-anthropic-messages.ts';
-import { irFromOpenAIChatCompletions } from './from-openai-chat-completions.ts';
-import { irFromOpenAIResponses } from './from-openai-responses.ts';
 import type { IRProtocol } from './ir.ts';
 import type { IROutputOptions } from './projection.ts';
+import { irFromAnthropicMessages } from './sse-from/anthropic-messages/index.ts';
+import { irFromOpenAIChatCompletions } from './sse-from/openai-chat-completions/index.ts';
+import { irFromOpenAIResponses } from './sse-from/openai-responses/index.ts';
+import { anthropicMessagesFromIR, type IRMessagesOutputOptions } from './sse-to/anthropic-messages/index.ts';
+import { geminiGenerateContentFromIR, type IRGenerateContentOutputOptions } from './sse-to/gemini-generatecontent/index.ts';
+import { openaiChatCompletionsFromIR } from './sse-to/openai-chat-completions/index.ts';
+import { openaiResponsesFromIR } from './sse-to/openai-responses/index.ts';
 import { irFrameToSSEFrame, parseIRStream } from './stream.ts';
-import { anthropicMessagesFromIR, type IRMessagesOutputOptions } from './to-anthropic-messages.ts';
-import { geminiGenerateContentFromIR, type IRGenerateContentOutputOptions } from './to-gemini-generate-content.ts';
-import { openaiChatCompletionsFromIR } from './to-openai-chat-completions.ts';
-import { openaiResponsesFromIR } from './to-openai-responses.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame, parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { geminiGenerateContentProtocolFrameToSSEFrame } from '@floway-dev/protocols/gemini-generate-content';

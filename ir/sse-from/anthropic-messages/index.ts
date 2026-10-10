@@ -1,7 +1,7 @@
-import type { IRItem, IRSourceCitation } from './ir.ts';
-import { cloneIRJSON, parseIRJSONObject } from './json.ts';
-import { createIRBuilder, reconcileIRValue, type IRFrame } from './stream.ts';
-import { usageToIR, type IRWire } from './usage.ts';
+import type { IRItem, IRSourceCitation } from '../../ir.ts';
+import { cloneIRJSON, parseIRJSONObject } from '../../json.ts';
+import { createIRBuilder, reconcileIRValue, type IRFrame } from '../../stream.ts';
+import { usageToIR, type IRWire } from '../../usage.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
