@@ -106,3 +106,112 @@ describe('isFirstOutputTokenFrame — done sentinel', () => {
     expect(isFirstOutputTokenFrame(done, 'openaiChatCompletions')).toBe(false);
   });
 });
+
+describe('first output across supported stream payloads', () => {
+  it.each([
+    'response.reasoning.delta',
+    'response.reasoning_text.delta',
+    'response.reasoning_summary_text.delta',
+    'response.output_text.delta',
+    'response.refusal.delta',
+    'response.function_call_arguments.delta',
+    'response.custom_tool_call_input.delta',
+    'response.audio.delta',
+    'response.audio.transcript.delta',
+    'response.code_interpreter_call_code.delta',
+    'response.mcp_call_arguments.delta',
+    'response.shell_call_command.delta',
+    'response.apply_patch_call_operation_diff.delta',
+  ])('recognizes generated %s content and rejects its empty envelope', type => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type, delta: 'output' }), 'openaiResponses')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ type, delta: '' }), 'openaiResponses')).toBe(false);
+  });
+
+  it.each(['function_call', 'custom_tool_call', 'mcp_call'])('recognizes generated Responses %s names', type => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item: { type, name: 'search' } }), 'openaiResponses')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.output_item.added', item: { type, id: 'call_1', name: '' } }), 'openaiResponses')).toBe(false);
+  });
+
+  it('excludes execution output, progress, and completion snapshots', () => {
+    for (const event of [
+      { type: 'response.shell_call_output_content.delta', delta: { stdout: 'tool output', stderr: '' } },
+      { type: 'response.mcp_list_tools.completed', tools: [{ name: 'search' }] },
+      { type: 'response.code_interpreter_call.in_progress' },
+      { type: 'response.reasoning.done', text: 'complete reasoning' },
+      { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1' } },
+    ]) expect(isFirstOutputTokenFrame(eventFrame(event), 'openaiResponses')).toBe(false);
+  });
+
+  it.each([
+    { function_call: { name: 'search' } },
+    { function_call: { arguments: '{' } },
+    { tool_calls: [{ index: 0, function: { name: 'search' } }] },
+    { tool_calls: [{ index: 0, function: { arguments: '{' } }] },
+    { tool_calls: [{ index: 0, custom: { name: 'shell' } }] },
+    { tool_calls: [{ index: 0, custom: { input: 'ls' } }] },
+    { audio: { data: 'YXVkaW8=' } },
+    { audio: { transcript: 'hello' } },
+    { reasoning_details: [{ type: 'reasoning.text', text: 'thinking' }] },
+    { reasoning_details: [{ type: 'reasoning.summary', summary: 'summary' }] },
+    { reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'thinking' }] }] },
+  ])('recognizes generated Chat Completions payload %j', delta => {
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toBe(true);
+  });
+
+  it.each([
+    { function_call: { name: '', arguments: '' } },
+    { tool_calls: [{ index: 0, id: 'call_1', type: 'function' }] },
+    { tool_calls: [{ index: 0, function: { name: '', arguments: '' } }] },
+    { tool_calls: [{ index: 0, custom: { name: '', input: '' } }] },
+    { audio: { id: 'audio_1', expires_at: 10, data: '', transcript: '' } },
+    { reasoning_details: [{ type: 'reasoning.text', text: '', signature: 'signature' }] },
+    { reasoning_details: [{ type: 'reasoning.summary', summary: '' }] },
+    { reasoning_details: [{ type: 'reasoning.encrypted', data: 'opaque' }] },
+    { reasoning_items: [{ type: 'reasoning', id: 'rs_1', summary: [] }] },
+    { reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: '' }] }] },
+    { reasoning_opaque: 'opaque' },
+  ])('rejects Chat Completions metadata-only payload %j', delta => {
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta }] }), 'openaiChatCompletions')).toBe(false);
+  });
+
+  it('finds the first generated output across all choices', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [
+      { index: 0, delta: { role: 'assistant' } },
+      { index: 1, delta: { reasoning_content: 'thinking' } },
+    ] }), 'openaiChatCompletions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [] }), 'openaiChatCompletions')).toBe(false);
+  });
+
+  it.each([
+    { type: 'tool_use', name: 'search' },
+    { type: 'server_tool_use', name: 'web_search' },
+    { type: 'text', text: 'hello' },
+    { type: 'thinking', thinking: 'thinking' },
+  ])('recognizes content already present on an Anthropic block start: %j', content_block => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBe(true);
+  });
+
+  it('excludes compaction iterations from ordinary output-token timing', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'compaction_delta', content: 'summary' } }), 'anthropicMessages')).toBe(false);
+  });
+
+  it.each([
+    { type: 'signature_delta', signature: 'signature' },
+    { type: 'compaction_delta', content: '', encrypted_content: 'opaque' },
+    { type: 'compaction_delta', content: null, encrypted_content: 'opaque' },
+  ])('rejects Anthropic integrity and replay metadata: %j', delta => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta }), 'anthropicMessages')).toBe(false);
+  });
+
+  it.each([
+    { type: 'tool_use', id: 'call_1', name: '', input: {} },
+    { type: 'text', text: '' },
+    { type: 'thinking', thinking: '', signature: 'signature' },
+    { type: 'compaction', content: 'summary' },
+    { type: 'compaction', content: '' },
+    { type: 'redacted_thinking', data: 'opaque' },
+    { type: 'web_search_tool_result', content: [{ title: 'tool output' }] },
+  ])('rejects Anthropic empty starts and tool results: %j', content_block => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBe(false);
+  });
+});

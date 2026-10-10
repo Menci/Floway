@@ -64,7 +64,6 @@ describe('recordPerformance', () => {
   });
 
   it('records neutral for chat with upstream call but no first generated token', async () => {
-    // Stream aborted or reasoning-only: upstream was called but no generated token arrived.
     const ctx = ctxWith({ timing: { firstOutputTokenAt: null, upstreamCallStartedAt: 50 }, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
