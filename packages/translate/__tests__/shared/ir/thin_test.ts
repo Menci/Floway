@@ -3,8 +3,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { createIRIAT, fillIRIAT, hashIRContent } from '../../../src/shared/ir/iat.ts';
 import type { IR } from '../../../src/shared/ir/ir.ts';
-import { cloneIRJSON, irJSON, parseIRJSONObject } from '../../../src/shared/ir/shared/json.ts';
 import type { IRProjectionResult } from '../../../src/shared/ir/round-trip-projection.ts';
+import { cloneIRJSON, irJSON, parseIRJSONObject } from '../../../src/shared/ir/shared/json.ts';
 import type { IRTextReference, IRThinResponsesItem, IRThinValue } from '../../../src/shared/ir/thin-types.ts';
 import { buildIRReplayItems, createIRPendingThinItems, createIRThinCodec, finalizeIRThinItems } from '../../../src/shared/ir/thin.ts';
 
