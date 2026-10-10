@@ -1,13 +1,15 @@
 import { fireEvent, screen } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { CalendarRange } from '../../../src/components/ui/calendar-range';
 import { renderInApp } from '../../render';
 
+beforeEach(() => {
+  vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
+});
 afterEach(() => vi.restoreAllMocks());
 
 test('all four native views hide outside dates and transfer focus before disabling the last heading', () => {
-  vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
   const change = vi.fn();
   renderInApp(<CalendarRange displayDate="2026-10-16" onChange={change} value={{ start: '2026-10-06', end: '2026-10-16' }} />);
   expect(screen.getAllByRole('gridcell')).toHaveLength(31);
@@ -27,4 +29,71 @@ test('all four native views hide outside dates and transfer focus before disabli
   expect(screen.getAllByRole('gridcell')).toHaveLength(31);
   expect(document.activeElement?.getAttribute('role')).toBe('gridcell');
   expect(change).not.toHaveBeenCalled();
+});
+
+const renderCalendar = (displayDate: string) => {
+  const change = vi.fn();
+  renderInApp(<CalendarRange autoFocus displayDate={displayDate} onChange={change} value={{ start: null, end: null }} />);
+  return change;
+};
+const focusedDate = () => (document.activeElement as HTMLElement).dataset.date;
+const focusKey = (key: string, ctrlKey = false) => fireEvent.keyDown(document.activeElement!, { key, ctrlKey });
+
+test('Page keys preserve the focused date and clamp short months', () => {
+  renderCalendar('2026-10-16');
+  focusKey('PageDown');
+  expect(focusedDate()).toBe('2026-11-16');
+  focusKey('PageUp');
+  expect(focusedDate()).toBe('2026-10-16');
+  focusKey('ArrowUp', true);
+  expect(focusedDate()).toBe('2026-10-01');
+  focusKey('PageDown');
+  expect(focusedDate()).toBe('2027-10-01');
+});
+
+test('PageDown from January31 focuses the final day of February', () => {
+  renderCalendar('2026-01-31');
+  focusKey('PageDown');
+  expect(focusedDate()).toBe('2026-02-28');
+});
+
+test('keyboard navigation clamps to the minimum date instead of displaying an empty month', () => {
+  renderCalendar('1920-01-05');
+  focusKey('ArrowUp');
+  expect(focusedDate()).toBe('1920-01-01');
+  focusKey('PageUp');
+  expect(focusedDate()).toBe('1920-01-01');
+  expect(screen.getByRole('button', { name: 'January 1920, choose a month' })).toBeTruthy();
+});
+
+test('End in the partial final century focuses its last enabled decade', () => {
+  renderCalendar('2120-12-31');
+  focusKey('ArrowUp', true); focusKey('ArrowUp', true); focusKey('ArrowUp', true);
+  focusKey('Home');
+  expect(focusedDate()).toBe('2100-01-01');
+  focusKey('End');
+  expect(focusedDate()).toBe('2120-01-01');
+  focusKey('PageDown');
+  expect(focusedDate()).toBe('2120-01-01');
+});
+
+test('Ctrl+Down selects the focused day in month view', () => {
+  const change = renderCalendar('2026-10-16');
+  focusKey('ArrowDown', true);
+  expect(change).toHaveBeenCalledWith({ start: '2026-10-16', end: null });
+});
+
+test('header arrow keys return focus to the current scope origin', () => {
+  renderCalendar('2026-10-16');
+  const header = screen.getByRole('button', { name: 'October 2026, choose a month' });
+  header.focus(); focusKey('ArrowDown');
+  expect(focusedDate()).toBe('2026-10-01');
+});
+
+test('a pending start on today retains the native single-selection paint state', () => {
+  vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 9, 10, 12).getTime());
+  renderInApp(<CalendarRange displayDate="2026-10-10" onChange={vi.fn()} value={{ start: '2026-10-10', end: null }} />);
+  const today = screen.getByRole('gridcell', { name: 'October 10, 2026' });
+  expect(today.hasAttribute('data-today')).toBe(true);
+  expect(today.hasAttribute('data-single')).toBe(true);
 });

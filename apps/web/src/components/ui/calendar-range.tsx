@@ -40,12 +40,20 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
   const focusKey = calendarDate(cellDate(mode, parseCalendarDate(focused)));
   const firstWeekday = locale.startsWith('zh') ? 1 : 0;
   const panelRef = useRef<HTMLDivElement>(null);
-  const snapshotsRef = useRef<HTMLDivElement>(null);
+  const navigationSnapshotsRef = useRef<HTMLDivElement>(null);
+  const drillSnapshotsRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
   const focusAfterChange = useRef(autoFocus);
   const motion = useRef<{ kind: 'navigate' | 'up' | 'down'; direction: number } | null>(null);
   const snapshot = useRef<HTMLElement | null>(null);
-  const animations = useRef<Animation[]>([]);
+  // Native grid slides remain available during view drills and inherit their
+  // opacity/scale; keep the two animation scopes and snapshot hosts independent.
+  // https://www.nuget.org/packages/Syncfusion.Calendar.WinUI/35.1.39
+  const animations = useRef<{ navigation: Animation[]; drill: Animation[]; header: Animation[] }>({ navigation: [], drill: [], header: [] });
+  const cancelAnimations = (kind: keyof typeof animations.current) => {
+    animations.current[kind].forEach(animation => animation.cancel());
+    animations.current[kind] = [];
+  };
   const start = scope(mode, date);
   const end = scopeEnd(mode, start);
   const columns = mode === 'month' ? 7 : RANGE_LARGE_COLUMNS;
@@ -58,21 +66,26 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
     : mode === 'year' ? date.getFullYear().toLocaleString(locale, { useGrouping: false }) : `${start.getFullYear()} - ${end.getFullYear()}`;
 
   const transitionTo = (nextMode: Mode, nextDate: Date, nextFocus: string, transferFocus: boolean) => {
-    const root = panelRef.current;
-    const host = snapshotsRef.current;
-    if (!root || !host) throw new Error('The range calendar must be mounted');
-    animations.current.forEach(animation => animation.cancel());
-    animations.current = [];
-    host.replaceChildren();
     const kind = nextMode === mode ? 'navigate' : modes.indexOf(nextMode) > modes.indexOf(mode) ? 'up' : 'down';
+    const root = panelRef.current;
+    const host = kind === 'navigate' ? navigationSnapshotsRef.current : drillSnapshotsRef.current;
+    if (!root || !host) throw new Error('The range calendar must be mounted');
+    cancelAnimations('navigation');
+    navigationSnapshotsRef.current!.replaceChildren();
+    if (kind !== 'navigate') {
+      cancelAnimations('drill');
+      cancelAnimations('header');
+      drillSnapshotsRef.current!.replaceChildren();
+    }
     const target = kind === 'navigate' ? root.querySelector<HTMLElement>('.floway-range-grid')! : root;
     const copy = target.cloneNode(true) as HTMLElement;
     copy.classList.add('floway-range-snapshot');
     copy.setAttribute('aria-hidden', 'true');
     copy.inert = true;
     copy.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'));
-    copy.style.top = `${target.getBoundingClientRect().top - root.getBoundingClientRect().top}px`;
-    copy.style.width = `${target.getBoundingClientRect().width}px`;
+    copy.style.top = `${target === root ? 0 : target.offsetTop}px`;
+    copy.style.width = `${target.offsetWidth}px`;
+    copy.style.height = `${target.offsetHeight}px`;
     host.append(copy);
     snapshot.current = copy;
     motion.current = { kind, direction: nextDate.getTime() < date.getTime() ? -1 : 1 };
@@ -101,8 +114,6 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
     if (!transition || !old || !panel) return;
     motion.current = null;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { old.remove(); return; }
-    const headerAnimation = headerRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: RANGE_HEADER_FADE_MS, fill: 'both' });
-    if (headerAnimation) animations.current.push(headerAnimation);
     if (transition.kind === 'navigate') {
       const target = panel.querySelector<HTMLElement>('.floway-range-grid')!;
       const distance = transition.direction * RANGE_CONTENT_SIZE;
@@ -110,33 +121,51 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
       const incoming = target.animate(rangeNavigationFrames(distance, true), { duration: RANGE_NAVIGATION_MS, fill: 'both' });
       const hide = old.animate([{ visibility: 'visible' }, { visibility: 'hidden' }], { duration: 0, delay: RANGE_SNAPSHOT_MS, fill: 'both' });
       incoming.addEventListener('finish', () => { old.remove(); incoming.cancel(); }, { once: true });
-      animations.current.push(outgoing, incoming, hide);
+      animations.current.navigation.push(outgoing, incoming, hide);
     } else {
+      const headerAnimation = headerRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: RANGE_HEADER_FADE_MS, fill: 'both' });
+      if (headerAnimation) animations.current.header.push(headerAnimation);
       const upward = transition.kind === 'up';
       const outgoing = old.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: `scale(${upward ? 0.84 : 1.29})` }], { duration: RANGE_DRILL_OUT_MS, easing: RANGE_DRILL_EASING, fill: 'both' });
       const incoming = panel.animate([{ opacity: 0, transform: `scale(${upward ? 1.29 : 0.84})` }, { opacity: 1, transform: 'scale(1)' }], { duration: RANGE_DRILL_MS - RANGE_DRILL_OUT_MS, delay: RANGE_DRILL_OUT_MS, easing: RANGE_DRILL_EASING, fill: 'both' });
       outgoing.addEventListener('finish', () => old.remove(), { once: true });
       incoming.addEventListener('finish', () => incoming.cancel(), { once: true });
-      animations.current.push(outgoing, incoming);
+      animations.current.drill.push(outgoing, incoming);
     }
   }, [view, focusKey]);
-  useLayoutEffect(() => () => animations.current.forEach(animation => animation.cancel()), []);
+  useLayoutEffect(() => () => Object.values(animations.current).flat().forEach(animation => animation.cancel()), []);
+  const clampDate = (date: Date) => parseCalendarDate(calendarDate(date) < MIN_DATE ? MIN_DATE : calendarDate(date) > MAX_DATE ? MAX_DATE : calendarDate(date));
+  const addMonths = (date: Date, count: number) => {
+    const month = dateAt(date.getFullYear(), date.getMonth() + count);
+    return dateAt(month.getFullYear(), month.getMonth(), Math.min(date.getDate(), dateAt(month.getFullYear(), month.getMonth() + 1, 0).getDate()));
+  };
+  // Native keyboard navigation changes the focused date without grid slides.
+  // https://www.nuget.org/packages/Syncfusion.Calendar.WinUI/35.1.39
+  const focusDate = (next: Date) => {
+    const key = calendarDate(next);
+    focusAfterChange.current = true;
+    setView({ mode, date: next, focused: key });
+  };
   const keyDown = (event: KeyboardEvent<HTMLButtonElement>, current: Date) => {
     if (event.ctrlKey && event.key === 'ArrowUp' && mode !== 'century') {
       event.preventDefault(); transitionTo(modes[modes.indexOf(mode) + 1], current, calendarDate(current), true); return;
     }
-    if (event.ctrlKey && event.key === 'ArrowDown' && mode !== 'month') { event.preventDefault(); select(current); return; }
+    if (event.ctrlKey && event.key === 'ArrowDown') { event.preventDefault(); select(current); return; }
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === 'PageUp' || event.key === 'PageDown') { event.preventDefault(); navigate(event.key === 'PageUp' ? -1 : 1, true); return; }
     const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : null;
-    const next = event.key === 'Home' ? start : event.key === 'End' ? end : step === null ? null : shiftDate(mode, current, step);
-    if (!next || calendarDate(next) < MIN_DATE || calendarDate(next) > MAX_DATE) return;
+    const page = event.key === 'PageUp' ? -1 : event.key === 'PageDown' ? 1 : null;
+    const next = page !== null ? addMonths(current, page * (mode === 'month' ? 1 : mode === 'year' ? 12 : mode === 'decade' ? 120 : 1200))
+      : event.key === 'Home' ? start
+        : event.key === 'End' ? mode === 'month' ? end : mode === 'year' ? dateAt(current.getFullYear(), 11) : dateAt(start.getFullYear() + (mode === 'decade' ? 9 : 90))
+          : step === null ? null : shiftDate(mode, current, step);
+    if (next === null) return;
     event.preventDefault();
-    const key = calendarDate(next);
-    if (cells.some(cell => calendarDate(cell) === key && sameScope(mode, cell, date))) {
-      setView(previous => ({ ...previous, focused: key }));
-      panelRef.current?.querySelector<HTMLButtonElement>(`button[data-date="${key}"]`)?.focus({ preventScroll: true });
-    } else transitionTo(mode, next, key, true);
+    focusDate(clampDate(next));
+  };
+  const headerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || !(event.target instanceof Element) || !event.target.closest('.floway-range-header')) return;
+    event.preventDefault();
+    focusDate(start);
   };
   const [today] = useState(() => parseCalendarDate(calendarDate(new Date(Date.now()))));
   const cellSize = mode === 'month' ? RANGE_CELL_SIZE : RANGE_CONTENT_SIZE / RANGE_LARGE_COLUMNS;
@@ -148,14 +177,14 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
   const shapeLayoutSize = Math.ceil(circleSize + RANGE_CELL_STROKE / 2);
   const shapeOffset = (cellSize - shapeLayoutSize) / 2;
   const circleCenter = shapeOffset + radius;
-  return <div className="floway-range-calendar" data-view={mode}>
+  return <div className="floway-range-calendar" data-view={mode} onKeyDown={headerKeyDown}>
     <div className="floway-range-header">
       <button aria-label={t(mode === 'month' ? 'common.calendar.previousMonth' : mode === 'year' ? 'common.calendar.previousYear' : mode === 'decade' ? 'common.calendar.previousDecade' : 'common.calendar.previousCentury')} className="floway-range-navigation" disabled={calendarDate(start) <= MIN_DATE} onClick={() => navigate(-1)} type="button"><CalendarNavigationIcon direction="left" /></button>
       <button aria-label={mode === 'century' ? header : t(mode === 'month' ? 'common.calendar.chooseMonth' : mode === 'year' ? 'common.calendar.chooseYear' : 'common.calendar.chooseDecade').replace('{0}', header)} className="floway-range-heading" disabled={mode === 'century'} onClick={() => transitionTo(modes[modes.indexOf(mode) + 1], date, focused, false)} ref={headerRef} type="button">{header}</button>
       <button aria-label={t(mode === 'month' ? 'common.calendar.nextMonth' : mode === 'year' ? 'common.calendar.nextYear' : mode === 'decade' ? 'common.calendar.nextDecade' : 'common.calendar.nextCentury')} className="floway-range-navigation" disabled={calendarDate(end) >= MAX_DATE} onClick={() => navigate(1)} type="button"><CalendarNavigationIcon direction="right" /></button>
     </div>
     <div className="floway-range-viewport">
-      <div className="floway-range-view" ref={panelRef}>
+      <div className="floway-range-view" data-view={mode} ref={panelRef}>
         {mode === 'month' && <div className="floway-range-weekdays" role="row">{Array.from({ length: 7 }, (_, index) => dateAt(2026, 5, 7 + firstWeekday + index)).map(day => <span aria-label={day.toLocaleDateString(locale, { weekday: 'long' })} key={day.getDay()} role="columnheader">{day.toLocaleDateString(locale, { weekday: 'short' }).slice(0, 2)}</span>)}</div>}
         <div aria-label={header} className="floway-range-grid" role="grid" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)`, gridTemplateRows: `repeat(${mode === 'month' ? 6 : 4}, 1fr)` }}>
           {Array.from({ length: mode === 'month' ? 6 : 4 }, (_, row) => <div className="floway-range-row" key={row} role="row">{cells.slice(row * columns, (row + 1) * columns).map(cell => {
@@ -163,7 +192,7 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
             const last = mode === 'month' ? key : calendarDate(mode === 'year' ? dateAt(cell.getFullYear(), cell.getMonth() + 1, 0) : dateAt(cell.getFullYear() + (mode === 'century' ? 10 : 1), 0, 0));
             const endpoint = value.start !== null && key <= value.start && value.start <= last ? 'start' : value.end !== null && key <= value.end && value.end <= last ? 'end' : undefined;
             const inRange = value.start !== null && value.end !== null && key > value.start && last < value.end;
-            const single = endpoint === 'start' && value.end !== null && key <= value.end && value.end <= last;
+            const single = endpoint === 'start' && (value.end === null || key <= value.end && value.end <= last);
             const current = mode === 'month' ? calendarDate(today) === key : mode === 'year' ? cell.getFullYear() === today.getFullYear() && cell.getMonth() === today.getMonth() : today.getFullYear() >= cell.getFullYear() && today.getFullYear() < cell.getFullYear() + (mode === 'century' ? 10 : 1);
             const label = mode === 'month' ? String(cell.getDate()) : mode === 'year' ? formatDate(cell, locale, { month: 'short' }) : mode === 'decade' ? String(cell.getFullYear()) : `${cell.getFullYear()}-\n${cell.getFullYear() + 9}`;
             const rangeStart = endpoint === 'start';
@@ -180,8 +209,9 @@ export function CalendarRange({ autoFocus = false, displayDate, onChange, value 
             </button>;
           })}</div>)}
         </div>
+        <div aria-hidden="true" className="floway-range-snapshots" ref={navigationSnapshotsRef} />
       </div>
-      <div aria-hidden="true" className="floway-range-snapshots" ref={snapshotsRef} />
+      <div aria-hidden="true" className="floway-range-snapshots" ref={drillSnapshotsRef} />
     </div>
   </div>;
 }
