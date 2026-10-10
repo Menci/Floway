@@ -237,14 +237,16 @@ const responderCases = pairs.flatMap(([source, target, translate]) => [false, tr
 
 test.each(responderCases)('$source via $target survives the real HTTP output boundary (stream=$stream)', async ({ source, target, translate, stream }) => {
   initRepo(new InMemoryRepo());
-  const trip = await translate(payloadFor(source), ctx);
+  const streamOptions = source === 'chat' && stream ? { include_usage: true, continuous_usage_stats: true } : {};
+  const sourcePayload = { ...payloadFor(source), ...(source === 'chat' ? { stream_options: streamOptions } : {}) };
+  const trip = await translate(sourcePayload, ctx);
   const gatewayCtx = mockChatGatewayCtx({ assistantTurnSidecar: codec, wantsStream: stream });
   const candidate = stubModelCandidate({ model: { endpoints: { [sourceNames[target]]: {} } } });
   gatewayCtx.affinity.select(candidate);
   const result = eventResult<ProtocolFrame<any>>(trip.events(iterate(framesFor(target))), testTelemetryModelIdentity);
   const app = new Hono();
   app.get('/', async c => {
-    if (source === 'chat') return await respondOpenAIChatCompletions(c, result as any, stream, false, gatewayCtx);
+    if (source === 'chat') return await respondOpenAIChatCompletions(c, result as any, stream, streamOptions, gatewayCtx);
     if (source === 'messages') return await respondAnthropicMessages(c, result as any, stream, gatewayCtx);
     if (source === 'gemini') return await respondGeminiGenerateContent(c, result as any, stream, gatewayCtx);
     return await respondOpenAIResponses(c, result as any, stream, gatewayCtx, payloadFor(source));

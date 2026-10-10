@@ -9,7 +9,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
 
@@ -28,7 +28,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const response = await respondOpenAIChatCompletions(c, result, false, false, effectiveCtx);
+  const response = await respondOpenAIChatCompletions(c, result, false, {}, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -38,7 +38,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const response = await respondOpenAIChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, false, effectiveCtx);
+  const response = await respondOpenAIChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, {}, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -47,17 +47,14 @@ export const openaiChatCompletionsHttp = {
     const requestBody = await readRequestBody(c);
     let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayload;
+      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayloadEx;
       const wantsStream = payload.stream === true;
-      // Read the caller's intent BEFORE any interceptor mutates
-      // `payload.stream_options.include_usage`. Capturing it here means the
-      // downstream renderer never needs to consult per-request Hono context
-      // slots — the value lives in this http-entry closure for the duration of
-      // the request.
-      const includeUsageChunk = payload.stream_options?.include_usage === true;
+      // Upstream interceptors enable usage for accounting; downstream preferences
+      // must retain the original request's opt-in flags.
+      const streamOptions = { ...payload.stream_options };
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
       const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
+      const response = await respondOpenAIChatCompletions(c, result, wantsStream, streamOptions, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);

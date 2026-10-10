@@ -3,11 +3,16 @@ import { irFromOpenAIResponses } from '../shared/ir/sse-from/openai-responses/in
 import { openaiChatCompletionsFromIR } from '../shared/ir/sse-to/openai-chat-completions/index.ts';
 import type { AssistantTurnSidecarCodec } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsStreamOptionsEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-export const translateToSourceEvents = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, codec?: AssistantTurnSidecarCodec): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => {
-  if (codec === undefined) return openaiChatCompletionsFromIR(irFromOpenAIResponses(frames));
+export const translateToSourceEvents = (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  streamOptions: OpenAIChatCompletionsStreamOptionsEx = {},
+  codec?: AssistantTurnSidecarCodec,
+): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => {
+  const outputOptions = { continuousUsageStats: streamOptions.include_usage === true && streamOptions.continuous_usage_stats === true };
+  if (codec === undefined) return openaiChatCompletionsFromIR(irFromOpenAIResponses(frames), outputOptions);
   const stream = createIRRoundTripStream('openaiChatCompletions', 'openaiResponses', codec);
-  return openaiChatCompletionsFromIR(irFromOpenAIResponses(frames, { roundTrip: stream.reader }), { roundTrip: stream.writer });
+  return openaiChatCompletionsFromIR(irFromOpenAIResponses(frames, { roundTrip: stream.reader }), { ...outputOptions, roundTrip: stream.writer });
 };

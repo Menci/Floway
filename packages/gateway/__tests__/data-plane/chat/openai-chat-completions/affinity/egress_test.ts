@@ -27,7 +27,96 @@ const frames = async function* (values: ProtocolFrame<OpenAIChatCompletionsStrea
   yield* values;
 };
 
+const withUsage = (event: OpenAIChatCompletionsStreamEvent, output: number): OpenAIChatCompletionsStreamEvent => ({
+  ...event,
+  usage: { prompt_tokens: 10, completion_tokens: output, total_tokens: 10 + output },
+});
+const immediateCodec: AffinityEgressCodec = { wrap: async value => `wrapped:${value}` };
+
 describe('OpenAI Chat Completions affinity egress', () => {
+  test('continuous usage follows visible, encrypted carrier and finishing choice frames', async () => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(withUsage(chunk([{ index: 0, delta: { role: 'assistant' }, finish_reason: null }]), 0)),
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer', reasoning_opaque: 'opaque' }, finish_reason: 'stop' }]), 4)),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
+
+    const chunks = output.flatMap(frame => frame.type === 'event' && frame.event.choices.length > 0 ? [frame.event] : []);
+    expect(chunks.map(event => event.usage)).toEqual([
+      withUsage(chunk([]), 0).usage,
+      withUsage(chunk([]), 4).usage,
+      withUsage(chunk([]), 4).usage,
+      withUsage(chunk([]), 4).usage,
+    ]);
+    expect(chunks.map(event => event.choices[0].delta)).toEqual([
+      { role: 'assistant' }, { content: 'answer' }, { reasoning_opaque: 'wrapped:opaque' }, {},
+    ]);
+    expect(chunks.at(-1)?.choices[0].finish_reason).toBe('stop');
+  });
+
+  test('continuous usage preserves the latest known counters across a usage-less finish', async () => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: null }]), 2)),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
+
+    expect(output.filter(frame => frame.type === 'event')).toHaveLength(2);
+    for (const frame of output) if (frame.type === 'event') expect(frame.event.usage).toEqual(withUsage(chunk([]), 2).usage);
+  });
+
+  test('continuous usage keeps unknown accounting null on generated choice frames', async () => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
+
+    expect(output.filter(frame => frame.type === 'event')).toHaveLength(1);
+    for (const frame of output) if (frame.type === 'event') expect(frame.event.usage).toBeNull();
+  });
+
+  test('the DONE carrier uses a single choice final usage snapshot', async () => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer', reasoning_opaque: 'opaque' }, finish_reason: null }]), 2)),
+      eventFrame(withUsage(chunk([]), 4)),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
+
+    expect(output[2]).toMatchObject({ event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:opaque' } }], usage: withUsage(chunk([]), 4).usage } });
+    expect(output[3]).toEqual(doneFrame());
+  });
+
+  test('continuous usage keeps per-choice snapshots separate from aggregate trailing accounting', async () => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'first', reasoning_opaque: 'first-opaque' }, finish_reason: null }]), 2)),
+      eventFrame(withUsage(chunk([{ index: 1, delta: { content: 'second', reasoning_opaque: 'second-opaque' }, finish_reason: null }]), 3)),
+      eventFrame(withUsage(chunk([]), 5)),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats: true })) output.push(frame);
+
+    expect(output.slice(3, 5)).toMatchObject([
+      { event: { choices: [{ index: 0, delta: { reasoning_opaque: 'wrapped:first-opaque' } }], usage: withUsage(chunk([]), 2).usage } },
+      { event: { choices: [{ index: 1, delta: { reasoning_opaque: 'wrapped:second-opaque' } }], usage: withUsage(chunk([]), 3).usage } },
+    ]);
+    expect(output[2]).toMatchObject({ event: { choices: [], usage: withUsage(chunk([]), 5).usage } });
+  });
+
+  test.each([undefined, false])('default usage remains on the original projection only (continuous=%s)', async continuousUsageStats => {
+    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
+      eventFrame(withUsage(chunk([{ index: 0, delta: { content: 'answer' }, finish_reason: 'stop' }]), 4)),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity, continuousUsageStats })) output.push(frame);
+
+    expect(output[0]).toMatchObject({ event: { usage: withUsage(chunk([]), 4).usage } });
+    for (const frame of output.slice(1)) if (frame.type === 'event') expect(frame.event).not.toHaveProperty('usage');
+  });
+
   test('wraps only the latest legacy opaque snapshot before the finish reason', async () => {
     const calls: Array<{ value: string | undefined; domain: string; resolve: (value: string) => void }> = [];
     const codec: AffinityEgressCodec = {
