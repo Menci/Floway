@@ -2,14 +2,17 @@ import { calendarDate, nextCalendarDate, parseCalendarDate, validateCalendarRang
 import { numericDateTime, numericTime } from '../../lib/format-time';
 import {
   createTelemetryBucket,
+  isTelemetryHourlyBucket,
   TELEMETRY_HOUR_MS,
+  telemetryDayOrdinal,
+  telemetryHourBucketSizes,
   telemetryHourKey,
   type TelemetryBucketGranularity,
 } from '@floway-dev/protocols/browser';
 
 export type DashboardPreset = 'today' | '7d' | '30d';
 export type DashboardRange = DashboardPreset | CalendarDateRange;
-export type DashboardGranularity = Exclude<TelemetryBucketGranularity, 'all'>;
+export type DashboardGranularity = Exclude<TelemetryBucketGranularity, 'all' | 'week' | 'month' | 'year'>;
 
 export interface DashboardBucketFrame {
   date: Date;
@@ -22,13 +25,12 @@ export interface ChartBucket extends DashboardBucketFrame { label: string }
 
 const local4hStart = (date: Date) => {
   const aligned = new Date(date);
-  aligned.setMinutes(0, 0, 0);
-  aligned.setHours(aligned.getHours() - aligned.getHours() % 4);
+  aligned.setHours(aligned.getHours() - aligned.getHours() % 4, 0, 0, 0);
   return aligned;
 };
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const AUTO_BUCKET_TARGET = 48;
-const AUTO_GRANULARITIES: DashboardGranularity[] = ['hour', '4h', '8h', 'day', 'week', 'month', 'year'];
+const AUTO_GRANULARITIES: DashboardGranularity[] = [...Object.keys(telemetryHourBucketSizes) as Array<keyof typeof telemetryHourBucketSizes>, 'day'];
 
 export const validateDashboardInterval = (start: number, end: number): void => {
   telemetryHourKey(start);
@@ -69,26 +71,31 @@ export const sameDashboardRange = (left: DashboardRange, right: DashboardRange):
 const floorCalendarBucket = (ms: number, granularity: DashboardGranularity): Date => {
   const date = new Date(ms);
   if (granularity === 'hour') return new Date(Math.floor(ms / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS);
-  date.setMinutes(0, 0, 0);
-  if (granularity === '4h' || granularity === '8h') {
-    const hours = granularity === '4h' ? 4 : 8;
-    date.setHours(date.getHours() - date.getHours() % hours);
+  if (isTelemetryHourlyBucket(granularity)) {
+    const hours = telemetryHourBucketSizes[granularity];
+    date.setHours(date.getHours() - date.getHours() % hours, 0, 0, 0);
   } else {
     date.setHours(0, 0, 0, 0);
-    if (granularity === 'week') date.setDate(date.getDate() - (date.getDay() + 6) % 7);
-    if (granularity === 'month') date.setDate(1);
-    if (granularity === 'year') date.setMonth(0, 1);
   }
   return date;
 };
 
-const nextCalendarBucket = (date: Date, granularity: DashboardGranularity): Date => {
+const nextCalendarBucket = (date: Date, granularity: DashboardGranularity, origin: Date): Date => {
   const next = new Date(date);
   if (granularity === 'hour') return new Date(date.getTime() + TELEMETRY_HOUR_MS);
-  if (granularity === '4h' || granularity === '8h') next.setHours(next.getHours() + (granularity === '4h' ? 4 : 8));
-  else if (granularity === 'day' || granularity === 'week') next.setDate(next.getDate() + (granularity === 'day' ? 1 : 7));
-  else if (granularity === 'month') next.setMonth(next.getMonth() + 1);
-  else next.setFullYear(next.getFullYear() + 1);
+  if (isTelemetryHourlyBucket(granularity)) {
+    const hours = telemetryHourBucketSizes[granularity];
+    // A skipped wall-clock boundary may normalize forward; resume at the next
+    // aligned boundary rather than carrying that normalized hour/minute offset.
+    next.setHours((Math.floor(next.getHours() / hours) + 1) * hours, 0, 0, 0);
+  } else {
+    const days = granularity === 'day' ? 1 : Number(granularity.slice(0, -1));
+    const offset = telemetryDayOrdinal(calendarDate(date)) - telemetryDayOrdinal(calendarDate(origin));
+    // Anchor every boundary so an entirely skipped civil date cannot shift
+    // the following multi-day buckets.
+    next.setFullYear(origin.getFullYear(), origin.getMonth(), origin.getDate() + (Math.floor(offset / days) + 1) * days);
+    next.setHours(0, 0, 0, 0);
+  }
   return next;
 };
 
@@ -101,11 +108,13 @@ const framesForInterval = (
     bucket: granularity,
     timeZone: granularity === 'hour' ? 'UTC' : timeZone(),
     timezoneOffsetMinutes: 0,
+    start: telemetryHourKey(interval.start),
   });
   const frames: DashboardBucketFrame[] = [];
-  let date = floorCalendarBucket(interval.start, granularity);
+  const origin = floorCalendarBucket(interval.start, granularity);
+  let date = origin;
   while (date.getTime() < interval.end) {
-    const next = nextCalendarBucket(date, granularity);
+    const next = nextCalendarBucket(date, granularity, origin);
     const start = Math.max(interval.start, Math.ceil(date.getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS);
     const end = Math.min(interval.end, Math.ceil(next.getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS);
     if (start < end) {
@@ -123,7 +132,8 @@ export const dashboardGranularity = (range: DashboardRange, nowMs: number): Dash
   for (const granularity of AUTO_GRANULARITIES) {
     if (framesForInterval(interval, granularity, AUTO_BUCKET_TARGET).length <= AUTO_BUCKET_TARGET) return granularity;
   }
-  return 'year';
+  const days = telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1;
+  return `${Math.ceil(days / AUTO_BUCKET_TARGET)}d`;
 };
 
 export const dashboardBucketFrames = (range: DashboardRange, nowMs: number): DashboardBucketFrame[] =>
@@ -144,7 +154,7 @@ export const dashboardRangeQuery = (range: DashboardRange, nowMs: number) => {
 
 export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
   const query = dashboardRangeQuery(range, nowMs);
-  return createTelemetryBucket({ bucket: query.bucket, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
+  return createTelemetryBucket({ bucket: query.bucket, start: query.start, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
 };
 
 export const parseDashboardRange = (search: URLSearchParams): DashboardRange => {

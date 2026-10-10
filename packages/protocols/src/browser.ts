@@ -130,7 +130,7 @@ export { captureExtras } from './common/reassemble-extras.ts';
 
 export { sseFrame, sseCommentFrame, eventFrame, doneFrame } from './common/sse.ts';
 
-export { createTelemetryBucket, TELEMETRY_HOUR_MS, telemetryHourKey } from './common/telemetry-time.ts';
+export { createTelemetryBucket, isTelemetryHourlyBucket, TELEMETRY_HOUR_MS, telemetryDayOrdinal, telemetryHourBucketSizes, telemetryHourKey } from './common/telemetry-time.ts';
 
 export {
   usageUpstreamDimensionPrefix,
