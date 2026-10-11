@@ -5,7 +5,7 @@ import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { computeAnnouncedMetadata } from './announced-metadata';
-import { aliasBody, aliasDefaults, blankTarget, kindAnnouncesMetadata, metadataForKind, type AliasFormValues } from './form-data';
+import { aliasBody, aliasDefaults, blankTarget, copiedAliasName, kindAnnouncesMetadata, metadataForKind, type AliasFormValues } from './form-data';
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { announcedMetadataIssues, targetIssue, ANNOUNCED_METADATA_FIELDS } from './validation';
@@ -49,9 +49,9 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
   const copySource = mode === 'copy' ? record : null;
   const initialValues = useMemo(() => {
     const defaults = aliasDefaults(record);
-    if (copySource) defaults.name = t('dashboard.modelAliases.copy.nameSuffix', { name: copySource.name });
+    if (copySource) defaults.name = copiedAliasName(copySource.name, aliases);
     return defaults;
-  }, [copySource, record, t]);
+  }, [aliases, copySource, record]);
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.modelAliases.validation.nameRequired'),
     displayName: z.string(),

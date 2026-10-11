@@ -1313,7 +1313,6 @@ const en = {
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', copyNamed: 'Copy alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}', copyTitle: 'Copy alias: {{name}}' },
-        copy: { nameSuffix: '{{name}} copy' },
         form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
         selection: { first: 'First available', random: 'Random' },
