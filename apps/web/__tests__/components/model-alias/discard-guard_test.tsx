@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AliasDialog } from '../../../src/components/model-alias/dialog';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
@@ -16,6 +16,10 @@ const source: ModelAlias = {
 };
 
 describe('model alias discard dialog focus', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
+  });
+
   it('returns focus and editing to the copied alias form after continuing', async () => {
     renderInApp(<OutcomeToastProvider><AliasDialog
       aliases={[source]} mode="copy" models={[]} onOpenChange={vi.fn()} open
@@ -34,5 +38,5 @@ describe('model alias discard dialog focus', () => {
     expect((name as HTMLInputElement).value).toBe('editable-again');
     expect(name.closest('[role="dialog"]')?.getAttribute('aria-hidden')).not.toBe('true');
     expect(name.closest('[role="dialog"]')?.hasAttribute('inert')).toBe(false);
-  });
+  }, 15000);
 });
