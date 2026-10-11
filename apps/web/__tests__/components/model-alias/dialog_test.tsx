@@ -5,7 +5,7 @@ import { AliasDialog } from '../../../src/components/model-alias/dialog';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
 import { i18n, setLanguage } from '../../../src/i18n';
 import { renderInApp } from '../../render';
-import type { ModelAlias } from '@floway-dev/protocols/common';
+import type { ModelAlias } from '@floway-dev/protocols/browser';
 
 const source: ModelAlias = {
   id: 'alias-source', name: 'source', kind: 'chat', selection: 'first-available', display_name: null,
