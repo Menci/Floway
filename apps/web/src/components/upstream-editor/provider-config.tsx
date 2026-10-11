@@ -422,6 +422,12 @@ function OAuthConfig({ record, onPatch }: {
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const config = values.config as typeof record.config;
   const hasAccount = config.accounts.length > 0;
+  // Refresh delegates to the server's `ensureCodexAccessToken` /
+  // `claudeCodeRefresh`, which read from and CAS-write to the stored row, so it
+  // has no target before Save lands the upstream. A create-state record carries
+  // the OAuth exchange's fresh credentials already; the button joins the
+  // reimport beside it only once there is a row to refresh.
+  const persisted = isPersisted(record);
   const [refreshing, setRefreshing] = useState(false);
 
   const refreshCredential = async () => {
@@ -484,11 +490,11 @@ function OAuthConfig({ record, onPatch }: {
           probing={probing}
           record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
         />)}
-    {hasAccount && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
+    {hasAccount && !persisted && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
-      <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
+      {persisted && <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {t('dashboard.upstreamEditor.oauth.refresh')}
-      </Button>
+      </Button>}
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
