@@ -5,7 +5,7 @@ import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import DashboardProvidersModelAliases from '../../src/routes/dashboard-providers-model-aliases';
 import { REPOSITION_ANIMATION_MS } from '../../src/winui/motion';
 import { renderInApp } from '../render';
-import type { ModelAlias } from '@floway-dev/protocols/common';
+import type { ModelAlias } from '@floway-dev/protocols/browser';
 
 const mocks = vi.hoisted(() => ({
   aliasList: vi.fn(),
