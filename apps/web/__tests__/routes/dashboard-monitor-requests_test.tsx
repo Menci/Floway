@@ -12,6 +12,7 @@ import { renderInApp } from '../render';
 const loaderData = {
   collected: null,
   upstreamCollected: null,
+  exchangeStreams: [],
   error: 'HTTP 500',
   keys: [],
   record: null,
