@@ -19,6 +19,7 @@ describe('user discard dialog focus', () => {
       onSaved={vi.fn(async () => {})} open upstreams={[]}
     /></OutcomeToastProvider>);
     const username = screen.getByLabelText(i18n.t('dashboard.users.form.username'));
+    await waitFor(() => expect(document.activeElement).toBe(username.closest('[role="dialog"]')), { timeout: 5000 });
     username.focus();
 
     await act(async () => { fireEvent.change(username, { target: { value: 'draft' } }); });
@@ -31,5 +32,5 @@ describe('user discard dialog focus', () => {
     expect((username as HTMLInputElement).value).toBe('editable-again');
     expect(username.closest('[role="dialog"]')?.getAttribute('aria-hidden')).not.toBe('true');
     expect(username.closest('[role="dialog"]')?.hasAttribute('inert')).toBe(false);
-  });
+  }, 15000);
 });

@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AliasDialog } from '../../../src/components/model-alias/dialog';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
@@ -16,16 +16,14 @@ const source: ModelAlias = {
 };
 
 describe('model alias discard dialog focus', () => {
-  beforeEach(() => {
-    vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
-  });
-
   it('returns focus and editing to the copied alias form after continuing', async () => {
     renderInApp(<OutcomeToastProvider><AliasDialog
       aliases={[source]} mode="copy" models={[]} onOpenChange={vi.fn()} open
       onSaved={vi.fn(async () => {})} record={source}
     /></OutcomeToastProvider>);
     const name = screen.getByLabelText(i18n.t('dashboard.modelAliases.form.name'));
+    // Let the parent modal finish its initial autofocus before opening a nested modal.
+    await waitFor(() => expect(document.activeElement).toBe(name.closest('[role="dialog"]')), { timeout: 5000 });
     name.focus();
 
     await act(async () => { fireEvent.change(name, { target: { value: 'edited-copy' } }); });
