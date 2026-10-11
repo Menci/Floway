@@ -1235,7 +1235,7 @@ const zhHansCN = {
       modelAliases: {
         description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
-        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
+        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', reorder: '拖动排序别名 {{name}}', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}', copyTitle: '复制别名：{{name}}' },
         copy: { nameSuffix: '{{name}} 副本' },
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求' },
