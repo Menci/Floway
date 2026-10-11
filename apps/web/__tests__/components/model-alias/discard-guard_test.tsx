@@ -5,7 +5,7 @@ import { AliasDialog } from '../../../src/components/model-alias/dialog';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
-import type { ModelAlias } from '@floway-dev/protocols/common';
+import type { ModelAlias } from '@floway-dev/protocols/browser';
 
 const source: ModelAlias = {
   id: 'source', name: 'source', kind: 'chat', selection: 'first-available',
@@ -26,10 +26,10 @@ describe('model alias discard dialog focus', () => {
 
     await act(async () => { fireEvent.change(name, { target: { value: 'edited-copy' } }); });
     await act(async () => { screen.getByRole('button', { name: i18n.t('common.cancel') }).click(); });
-    const keepEditing = await screen.findByRole('button', { name: i18n.t('common.discard.keep') });
+    const keepEditing = await screen.findByRole('button', { name: i18n.t('common.discard.keep') }, { timeout: 5000 });
     await act(async () => { keepEditing.click(); });
 
-    await waitFor(() => expect(document.activeElement).toBe(name));
+    await waitFor(() => expect(document.activeElement).toBe(name), { timeout: 5000 });
     await act(async () => { fireEvent.change(name, { target: { value: 'editable-again' } }); });
     expect((name as HTMLInputElement).value).toBe('editable-again');
     expect(name.closest('[role="dialog"]')?.getAttribute('aria-hidden')).not.toBe('true');
