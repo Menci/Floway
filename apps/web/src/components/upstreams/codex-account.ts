@@ -88,7 +88,7 @@ const window = (
   percent: number | undefined,
   resetAt: string | undefined,
   windowMinutes: number | undefined,
-): QuotaWindow | null => typeof percent === 'number' && Number.isFinite(percent)
+): QuotaWindow | null => typeof percent === 'number' && Number.isFinite(percent) && windowMinutes !== 0
   ? { key, percent, resetAt: resetAt ?? null, windowMinutes: windowMinutes ?? null }
   : null;
 
