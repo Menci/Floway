@@ -31,6 +31,7 @@ const flagGroupById = {
   'usage-exclusive-cached-tokens': 'apiCompatibility',
   'strip-billing-attribution': 'sanitization',
   'strip-prompt-cache-key': 'sanitization',
+  'openai-responses-store-false': 'sanitization',
 } as const satisfies Record<FlagId, FlagGroupId>;
 
 export function FeatureFlagsEditor({

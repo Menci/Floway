@@ -690,6 +690,11 @@ const zhHansCN = {
               description:
                   'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
             },
+            'openai-responses-store-false': {
+              label: '向有状态的上游请求使用无状态模式',
+              description:
+                  '使用 OpenAI Responses 协议连接上游时，不论下游如何设置 `store` 参数，总是指定 `{"store": false}` 来关闭有状态模式。\nFloway 在上游方向不使用有状态的功能，因此关闭状态或有助于控制数据留存。',
+            },
           },
         },
         models: {

@@ -20,4 +20,8 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // As of October 2026, Ollama silently ignores `previous_response_id`.
+  // So a subsequent turn would look like a fresh context with no history to models.
+  // There is no point to request stateful mode from Ollama.
+  'openai-responses-store-false': true,
 };

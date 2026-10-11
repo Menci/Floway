@@ -721,6 +721,11 @@ const en = {
               description:
                   'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
             },
+            'openai-responses-store-false': {
+              label: 'Request Stateful Upstreams to Use Stateless Mode',
+              description:
+                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway does not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
+            },
           },
         },
         models: {

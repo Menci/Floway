@@ -28,6 +28,10 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // Copilot's `/responses` rejects `store: true` with
+  // `400 {"error":{"message":"store is not
+  // supported","code":"unsupported_value","param":"store"}}`.
+  'openai-responses-store-false': true,
 };
 
 // True when the model id names a Claude release Copilot can serve an inline

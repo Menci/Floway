@@ -39,6 +39,7 @@ export const OPTIONAL_FLAG_IDS = [
   'strip-billing-attribution',
   'strip-prompt-cache-key',
   'usage-exclusive-cached-tokens',
+  'openai-responses-store-false',
 ] as const;
 
 export type FlagId = (typeof OPTIONAL_FLAG_IDS)[number];
