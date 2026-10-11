@@ -15,6 +15,7 @@ const loaderData = {
   keys: null,
   upstreams: null,
   models: null,
+  targetModels: null,
   error: 'Failed to fetch',
   selectedKeyId: '',
   setupError: null,
