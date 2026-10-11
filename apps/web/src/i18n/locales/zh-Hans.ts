@@ -120,6 +120,7 @@ const zhHansCN = {
         api: '协议',
         model: '模型',
         modelPlaceholder: '搜索模型',
+        useModelId: '将“{{id}}”用作模型 ID',
         messagePlaceholder: '输入消息',
         imagePlaceholder: 'https://example.com/image.png',
         empty: '发送一条消息以开始对话',
