@@ -51,7 +51,7 @@ describe('upstream readout by provider', () => {
         },
       },
     };
-    expect(rowOf(record)).toBe('Copilot | 71% remaining until Sep 1, 2026');
+    expect(rowOf(record)).toBe('Copilot | 71% until Sep 1, 2026');
     // The bucket's own name is what the row had no width for, so it is the tooltip.
     expect(readoutOf(record).signals[0].detail).toContain('premium interactions: 71% remaining');
   });
@@ -89,11 +89,11 @@ describe('upstream readout by provider', () => {
       },
     });
 
-    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe('ChatGPT Pro | 88% remaining 5h | Rate limited 2h 30m');
-    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe('ChatGPT Pro | 88% remaining 5h | Rate limited 45m');
+    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 2h 30m');
+    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 45m');
     // A day out still reads in hours, and any time left never reads as none.
-    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe('ChatGPT Pro | 88% remaining 5h | Rate limited 48h');
-    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 88% remaining 5h | Rate limited 1m');
+    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 48h');
+    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 1m');
   });
 
   it('lets an elapsed Codex rate limit go rather than holding it on the row', () => {
@@ -102,7 +102,7 @@ describe('upstream readout by provider', () => {
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
       codex_quota: { premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: '2020-01-01T00:00:00.000Z' } },
-    })).toBe('ChatGPT Pro | 88% remaining 5h');
+    })).toBe('ChatGPT Pro | 88% 5h');
   });
 
   it('states a Claude Code refusal from the status Anthropic reports it under', () => {
@@ -145,7 +145,7 @@ describe('upstream readout by provider', () => {
         },
       },
     };
-    expect(rowOf(record)).toBe('ChatGPT Pro | 75% remaining 5h | 60% remaining 7d');
+    expect(rowOf(record)).toBe('ChatGPT Pro | 75% 5h | 60% 7d');
   });
 
   it('forwards a ChatGPT plan this dashboard has not seen', () => {
@@ -163,7 +163,7 @@ describe('upstream readout by provider', () => {
       state: { accounts: [] },
       codex_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25 } },
     };
-    expect(rowOf(record)).toBe('ChatGPT Plus | 75% remaining Primary');
+    expect(rowOf(record)).toBe('ChatGPT Plus | 75% Primary');
   });
 
   it('states the Codex limit observed last rather than every key the map holds', () => {
@@ -176,7 +176,7 @@ describe('upstream readout by provider', () => {
         current: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300 },
       },
     };
-    expect(rowOf(record)).toBe('ChatGPT Plus | 88% remaining 5h');
+    expect(rowOf(record)).toBe('ChatGPT Plus | 88% 5h');
   });
 
   it('carries the Codex credit balance beside the windows', () => {
@@ -214,7 +214,7 @@ describe('upstream readout by provider', () => {
         }],
       },
     };
-    expect(rowOf(record)).toBe('Claude Max 20x | 75% remaining 5h | 60% remaining 7d | 92% remaining 7d Sonnet');
+    expect(rowOf(record)).toBe('Claude Max 20x | 75% 5h | 60% 7d | 92% 7d Sonnet');
   });
 
   it('names a Claude subscription that carries no multiple by the subscription alone', () => {
@@ -271,13 +271,13 @@ describe('upstream readout by provider', () => {
 
   it('keeps legacy percentage signals while using current balance reset times', () => {
     const record = ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15 } } });
-    expect(rowOf(record)).toBe('Ollama Pro | 75% remaining 5h | 60% remaining 7d');
+    expect(rowOf(record)).toBe('Ollama Pro | 75% 5h | 60% 7d');
     expect(readoutOf(record).signals[0]?.detail).toContain('Oct 11, 2026');
   });
 
   it('shows remaining plan credits against their period allowance', () => {
     const record = ollamaRecord({ balance: creditBalance, usage: usageTotals });
-    expect(rowOf(record)).toBe('Ollama Pro | 30% remaining $42.00 / $60.00');
+    expect(rowOf(record)).toBe('Ollama Pro | 30% $42.00 / $60.00');
     expect(readoutOf(record).signals[0]?.percent).toBe(70);
     expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026 to Nov 1, 2026: plan credits used this period.');
   });
@@ -288,7 +288,7 @@ describe('upstream readout by provider', () => {
       usage: { ...usageTotals, from: '2026-10-27T00:00:00Z', until: '2026-11-03T04:00:00Z', totals: { request_count: 15, usage_usd: 10 } },
     })).signals;
     expect(signals).toHaveLength(1);
-    expect(signals[0]?.value).toBe('95% remaining');
+    expect(signals[0]?.value).toBe('95%');
     expect(signals[0]?.label).toBe('$3.00 / $60.00');
     expect(signals[0]?.percent).toBe(5);
     expect(signals[0]?.detail).toContain('Nov 1, 2026 to Dec 1, 2026: plan credits used this period.');
@@ -296,11 +296,11 @@ describe('upstream readout by provider', () => {
 
   it('renders a zero allowance with a full remaining ring and finite percentage', () => {
     const signals = readoutOf(ollamaRecord({ balance: { ...creditBalance, included: { ...creditBalance.included, balance_usd: 0, allowance_usd: 0 } }, usage: usageTotals })).signals;
-    expect(signals[0]).toMatchObject({ percent: 0, value: '100% remaining', label: '$0 / $0' });
+    expect(signals[0]).toMatchObject({ percent: 0, value: '100%', label: '$0 / $0' });
   });
 
   it('leaves zero consumption off the list while retaining legacy percentages', () => {
-    expect(rowOf(ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15, usage_usd: 0 } } }))).toBe('Ollama Pro | 75% remaining 5h | 60% remaining 7d');
+    expect(rowOf(ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15, usage_usd: 0 } } }))).toBe('Ollama Pro | 75% 5h | 60% 7d');
   });
 
   it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {

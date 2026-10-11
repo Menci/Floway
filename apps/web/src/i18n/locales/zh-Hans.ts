@@ -431,7 +431,7 @@ const zhHansCN = {
         },
         signals: {
           plan: '{{plan}}：',
-          remainingPercent: '剩余{{percent, number}}%',
+          percent: '{{percent, number}}%',
           detailSeparator: '，',
           until: '至 {{date}}',
           remaining: '{{label}}：剩余{{percent, number}}%',

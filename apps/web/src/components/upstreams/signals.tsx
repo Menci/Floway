@@ -97,7 +97,7 @@ const meterDetail = (t: TFunction, label: string, percent: number, resetAt: stri
   ]);
 
 const remainingPercentValue = (t: TFunction, percent: number): string =>
-  t('dashboard.upstreams.signals.remainingPercent', { percent: 100 - Math.round(percent) });
+  t('dashboard.upstreams.signals.percent', { percent: 100 - Math.round(percent) });
 
 // Last on the line: the windows are what an operator reads at a glance, and this
 // says how long the wait still has to run rather than when it ends -- an instant

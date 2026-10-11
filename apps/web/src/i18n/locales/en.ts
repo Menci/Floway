@@ -456,7 +456,7 @@ const en = {
         // the providers whose upstream reports usage contribute any.
         signals: {
           plan: '{{plan}}:',
-          remainingPercent: '{{percent, number}}% remaining',
+          percent: '{{percent, number}}%',
           detailSeparator: ' - ',
           until: 'until {{date}}',
           remaining: '{{label}}: {{percent, number}}% remaining',
