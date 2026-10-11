@@ -13,7 +13,8 @@
     "./openai-embeddings": { "import": "./src/openai-embeddings/index.ts", "types": "./src/openai-embeddings/index.ts" },
     "./openai-images": { "import": "./src/openai-images/index.ts", "types": "./src/openai-images/index.ts" },
     "./openai-audio": { "import": "./src/openai-audio/index.ts", "types": "./src/openai-audio/index.ts" },
-    "./rerank": { "import": "./src/rerank/index.ts", "types": "./src/rerank/index.ts" }
+    "./rerank": { "import": "./src/rerank/index.ts", "types": "./src/rerank/index.ts" },
+    "./browser": { "import": "./src/browser.ts", "types": "./src/browser.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

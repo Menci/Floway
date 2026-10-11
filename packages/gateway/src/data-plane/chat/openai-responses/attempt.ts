@@ -18,9 +18,9 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { captureFromDump, traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
-import { translateOpenAIResponsesViaOpenAIChatCompletions, translateOpenAIResponsesViaAnthropicMessages } from '@floway-dev/translate';
+import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
 // translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
@@ -125,7 +125,7 @@ export const openaiResponsesAttempt = {
   // want the ExecuteResult branch. The compact branch is a contract
   // violation here; an interceptor that pivoted generate→compact would
   // surface as a throw, not a silent shape mismatch.
-  generate: async (args: OpenAIResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+  generate: async (args: OpenAIResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     const result = await openaiResponsesAttempt.invoke({ ...args, action: 'generate' });
     if (result.type === 'result') {
       throw new Error('openaiResponsesAttempt.generate received a compact result; an interceptor pivoted generate→compact unexpectedly');
@@ -137,7 +137,7 @@ export const openaiResponsesAttempt = {
 const dispatchOpenAIResponses = async (
   invocation: OpenAIResponsesInvocation,
   ctx: ChatGatewayCtx,
-): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'openaiResponses': {
@@ -176,7 +176,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => translateOpenAIResponsesViaAnthropicMessages(p, {
+      p => routeOpenAIResponses(p).viaAnthropicMessages({
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
@@ -192,7 +192,7 @@ const dispatchOpenAIResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => translateOpenAIResponsesViaOpenAIChatCompletions(p, { model: candidate.model.id }),
+      p => routeOpenAIResponses(p).viaOpenAIChatCompletions({ model: candidate.model.id }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
@@ -215,7 +215,7 @@ const providerOpenAIResponsesResultToExecuteResult = async (
   candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: ChatGatewayCtx,
-): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   if (providerResult.action === 'generate') {
     return await providerStreamResultToExecuteResult(
       providerResult.ok

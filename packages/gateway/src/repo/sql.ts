@@ -882,7 +882,7 @@ const MODELS_CACHE_EPOCH_SQL = `CASE
   ELSE 0
 END`;
 
-const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
@@ -904,13 +904,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
         RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         upstream.id,
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
         upstream.sortOrder,
         upstream.createdAt,
         upstream.updatedAt,
@@ -962,6 +963,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            provider = ?,
            name = ?,
            enabled = ?,
+           usage_refresh_interval_minutes = ?,
            sort_order = ?,
            updated_at = ?,
            config_version = ?,
@@ -976,6 +978,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND provider = ?
            AND name = ?
            AND enabled = ?
+           AND usage_refresh_interval_minutes = ?
            AND sort_order = ?
            AND updated_at = ?
            AND config_version = ?
@@ -992,6 +995,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
+        upstream.usageRefreshIntervalMinutes,
         upstream.sortOrder,
         upstream.updatedAt,
         configVersion,
@@ -1007,6 +1011,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.kind,
         previous.name,
         previous.enabled ? 1 : 0,
+        previous.usageRefreshIntervalMinutes,
         previous.sortOrder,
         previous.updatedAt,
         previous.configVersion,
@@ -1131,6 +1136,7 @@ interface UpstreamRow {
   provider: string;
   name: string;
   enabled: number;
+  usage_refresh_interval_minutes: number;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -1158,6 +1164,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
     modelsCache: parseModelsCache(row),
     name: row.name,
     enabled: row.enabled !== 0,
+    usageRefreshIntervalMinutes: row.usage_refresh_interval_minutes,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

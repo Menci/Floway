@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { isClaudeCodeShapedRequest, parseMetadataUserID } from '../src/detection.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 const validUserIdLegacy
   = 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -29,7 +29,7 @@ const bodyWithSystem = (systemText: string, userId: string = validUserIdLegacy):
   model: 'claude-sonnet-4-5-20250929',
   max_tokens: 1024,
   messages: [{ role: 'user', content: 'hi' }],
-  system: [{ type: 'text', text: systemText } satisfies AnthropicMessagesTextBlock],
+  system: [{ type: 'text', text: systemText } satisfies AnthropicMessagesTextBlockParam],
   metadata: { user_id: userId },
 });
 

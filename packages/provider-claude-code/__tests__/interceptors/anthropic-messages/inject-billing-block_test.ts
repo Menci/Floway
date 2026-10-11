@@ -3,11 +3,11 @@ import { test } from 'vitest';
 import { CLAUDE_CLI_VERSION } from '../../../src/headers.ts';
 import { injectBillingBlock } from '../../../src/interceptors/anthropic-messages/inject-billing-block.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
@@ -43,7 +43,7 @@ test('overwrites any pre-existing system array (hoist already ran)', async () =>
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: 16,
     messages: [{ role: 'user', content: 'hi' }],
-    system: [{ type: 'text', text: 'stale leftover' } satisfies AnthropicMessagesTextBlock],
+    system: [{ type: 'text', text: 'stale leftover' } satisfies AnthropicMessagesTextBlockParam],
   });
 
   await injectBillingBlock(ctx, {}, okEvents);

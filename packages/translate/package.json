@@ -4,7 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./src/index.ts", "types": "./src/index.ts" }
+    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
+    "./anthropic-messages": { "import": "./src/protocols/anthropic-messages/index.ts", "types": "./src/protocols/anthropic-messages/index.ts" },
+    "./openai-responses": { "import": "./src/protocols/openai-responses/index.ts", "types": "./src/protocols/openai-responses/index.ts" },
+    "./openai-chat-completions": { "import": "./src/protocols/openai-chat-completions/index.ts", "types": "./src/protocols/openai-chat-completions/index.ts" },
+    "./gemini-generate-content": { "import": "./src/protocols/gemini-generate-content/index.ts", "types": "./src/protocols/gemini-generate-content/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

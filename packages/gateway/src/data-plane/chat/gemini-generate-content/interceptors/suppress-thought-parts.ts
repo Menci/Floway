@@ -4,7 +4,7 @@ import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gem
 
 const hasEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
   if ('error' in event) return true;
-  return (event.candidates?.length ?? 0) > 0 || event.usageMetadata !== undefined || event.modelVersion !== undefined || event.responseId !== undefined;
+  return (event.candidates?.length ?? 0) > 0 || event.usageMetadata !== undefined || event.modelVersion !== undefined || event.responseId !== undefined || event.promptFeedback !== undefined || event.modelStatus !== undefined;
 };
 
 const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
@@ -15,6 +15,7 @@ const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<Pr
     }
 
     const candidates = frame.event.candidates?.flatMap(candidate => {
+      if (candidate.content?.parts === undefined) return [candidate];
       const parts = candidate.content.parts.filter(part => part.thought !== true);
       if (!parts.length && candidate.finishReason === undefined) return [];
 

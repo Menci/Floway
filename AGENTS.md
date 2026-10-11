@@ -38,7 +38,7 @@
 | Workspace dependencies | Keep foundation packages runtime-independent and preserve the dependency direction encoded by workspace manifests and ESLint. | Package manifests, ESLint, and typecheck |
 | Cross-package imports | Reach runtime code through declared package exports and keep platform-target apps isolated from one another. | ESLint |
 | Runtime composition | Keep deployment-specific implementations and entrypoints in `apps/platform-*` and portable contracts in `packages/platform`. | Package manifests and typecheck |
-| Browser boundary | Keep `apps/web` runtime imports browser-safe and gateway imports type-only through declared exports. | ESLint and web build |
+| Browser boundary | Reach workspace packages through `/browser` from `apps/web`, keep runtime exports browser-safe, and import `gateway/browser` only as types. | ESLint and web build |
 | Fluent boundary | Import Fluent values through `apps/web/src/fluent.ts`, place generic controls under `components/ui/`, and keep domain imports outside those controls. | ESLint and component tests |
 | WinUI derivation | Ground WinUI values and intentional departures in permalinks at their owning rules. | UI source review |
 | Localization | Route user-visible strings through the typed i18n boundary and keep `en` and `zh-Hans` resources structurally equivalent. | ESLint and locale tests |

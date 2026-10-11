@@ -1,15 +1,15 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItem, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItemEx, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
+  itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
   `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
-const opaqueSlots = (item: OpenAIResponsesOutputItem): Array<{ key: string; value: string }> => {
+const opaqueSlots = (item: OpenAIResponsesOutputItemEx): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
   const record = item as unknown as Record<string, unknown>;
   if (typeof record.encrypted_content === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
@@ -29,9 +29,9 @@ const opaqueSlots = (item: OpenAIResponsesOutputItem): Array<{ key: string; valu
 };
 
 const replaceOpaqueSlots = (
-  item: OpenAIResponsesOutputItem,
+  item: OpenAIResponsesOutputItemEx,
   replacements: ReadonlyMap<string, string>,
-): OpenAIResponsesOutputItem => {
+): OpenAIResponsesOutputItemEx => {
   const topLevel = Object.fromEntries([...replacements].filter(([key]) => !key.startsWith('content.')));
   const content = item.type === 'agent_message'
     ? item.content.map((part, index) => {
@@ -43,16 +43,16 @@ const replaceOpaqueSlots = (
     ...item,
     ...topLevel,
     ...(content !== undefined ? { content } : {}),
-  } as OpenAIResponsesOutputItem;
+  } as OpenAIResponsesOutputItemEx;
 };
 
 const wrapNaturalOpenAIResponsesAffinity = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const wrapped = new Map<string, Promise<string>>();
 
-  const wrapItem = async (item: OpenAIResponsesOutputItem, outputIndex: number): Promise<OpenAIResponsesOutputItem> => {
+  const wrapItem = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<OpenAIResponsesOutputItemEx> => {
     const replacements = new Map<string, string>();
     await Promise.all(opaqueSlots(item).map(async slot => {
       const cacheKey = `${outputIndex}\0${slot.key}\0${slot.value}`;
@@ -66,7 +66,7 @@ const wrapNaturalOpenAIResponsesAffinity = async function* (
     return replacements.size === 0 ? item : replaceOpaqueSlots(item, replacements);
   };
 
-  const wrapResult = async (response: OpenAIResponsesResult): Promise<OpenAIResponsesResult> => ({
+  const wrapResult = async (response: OpenAIResponsesResultEx): Promise<OpenAIResponsesResultEx> => ({
     ...response,
     output: await Promise.all(response.output.map(async (item, index) => await wrapItem(item, index))),
   });
@@ -98,11 +98,11 @@ const wrapNaturalOpenAIResponsesAffinity = async function* (
   }
 };
 
-const canCarryAffinity = (item: OpenAIResponsesOutputItem): boolean =>
+const canCarryAffinity = (item: OpenAIResponsesOutputItemEx): boolean =>
   !isOpenAIResponsesCompactShimItem(item)
   && ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
 
-const addSequenceOffset = <T extends OpenAIResponsesStreamEvent>(event: T, offset: number): T =>
+const addSequenceOffset = <T extends OpenAIResponsesStreamEventEx>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
 
 interface SyntheticPrefix {
@@ -111,9 +111,9 @@ interface SyntheticPrefix {
 }
 
 const wrapOpenAIResponsesFirstCarrier = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const syntheticCarriers = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   let prefix: SyntheticPrefix | undefined;
@@ -122,14 +122,14 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
   const outputIndexOffset = (outputIndex: number): number =>
     prefix !== undefined && outputIndex >= prefix.originalOutputIndex ? 1 : 0;
 
-  const shifted = (event: OpenAIResponsesStreamEvent): OpenAIResponsesStreamEvent => {
+  const shifted = (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     const outputShifted = prefix !== undefined && 'output_index' in event
-      ? { ...event, output_index: event.output_index + outputIndexOffset(event.output_index) } as OpenAIResponsesStreamEvent
+      ? { ...event, output_index: event.output_index + outputIndexOffset(event.output_index) } as OpenAIResponsesStreamEventEx
       : event;
     return addSequenceOffset(outputShifted, sequenceOffset);
   };
 
-  const ensureItemCarrier = async (item: OpenAIResponsesOutputItem, outputIndex: number): Promise<OpenAIResponsesOutputItem> => {
+  const ensureItemCarrier = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<OpenAIResponsesOutputItemEx> => {
     if (opaqueSlots(item).length > 0) return item;
     if (!canCarryAffinity(item)) throw new Error(`OpenAI Responses item type ${item.type} cannot carry affinity`);
 
@@ -161,13 +161,13 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
       encrypted = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
       syntheticCarriers.set(cacheKey, encrypted);
     }
-    return { ...item, encrypted_content: await encrypted } as OpenAIResponsesOutputItem;
+    return { ...item, encrypted_content: await encrypted } as OpenAIResponsesOutputItemEx;
   };
 
   const insertPrefix = async function* (
     originalOutputIndex: number,
     sequenceNumber: number | undefined,
-  ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     if (prefix !== undefined) return;
     const added: OpenAIResponsesOutputReasoning = {
       type: 'reasoning',
@@ -204,7 +204,7 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
     });
   };
 
-  const rewriteResponse = async (response: OpenAIResponsesResult, synthesizeFirst: boolean): Promise<OpenAIResponsesResult> => {
+  const rewriteResponse = async (response: OpenAIResponsesResultEx, synthesizeFirst: boolean): Promise<OpenAIResponsesResultEx> => {
     let output = response.output;
     if (synthesizeFirst && firstItem?.canCarry) {
       const firstOutputIndex = firstItem.outputIndex;
@@ -223,9 +223,9 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
   };
 
   const discoverFirstFromSnapshot = async function* (
-    response: OpenAIResponsesResult,
+    response: OpenAIResponsesResultEx,
     sequenceNumber: number | undefined,
-  ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+  ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     if (firstItem !== undefined || response.output[0] === undefined) return;
     const item = response.output[0];
     firstItem = { outputIndex: 0, canCarry: canCarryAffinity(item) };
@@ -296,7 +296,7 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
 };
 
 export const wrapOpenAIResponsesAffinityEgress = (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> =>
+): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> =>
   wrapOpenAIResponsesFirstCarrier(wrapNaturalOpenAIResponsesAffinity(frames, options), options);

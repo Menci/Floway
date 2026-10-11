@@ -3,7 +3,7 @@ import type { TokenSummary, UsageMetric } from './types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, usdFractionDigits } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
 import { NO_READING } from '../../lib/no-reading';
-import type { DecimalString } from '@floway-dev/protocols/common';
+import type { DecimalString } from '@floway-dev/protocols/browser';
 
 // A compact spelling is three significant figures by construction, so unlike
 // the exact labels it has no precision to keep.

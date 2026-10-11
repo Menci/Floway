@@ -1,7 +1,10 @@
 import { errorMessage } from '../../lib/error-message';
-import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
-import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
-import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
+import {
+  DEFAULT_DIAL_DEADLINE_MS,
+  type ProxyConfig,
+  formatProxyUri,
+  parseProxyUri,
+} from '@floway-dev/proxy/browser';
 
 export type FormKind =
   | 'http' | 'https'

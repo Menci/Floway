@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dateTime, relativeTime, shortDate } from '../../src/lib/format-time';
+import { dateTime, formatDate, formatDateParts, relativeTime, shortDate } from '../../src/lib/format-time';
 import { NO_READING } from '../../src/lib/no-reading';
 
 // A fixed instant, read as both an ISO string and an epoch reading. The
@@ -64,4 +64,25 @@ describe('relative timestamps', () => {
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'en', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1h ago');
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1小时前');
   });
+});
+
+const calendarDay = new Date(2026, 9, 10, 8, 30);
+
+it('spaces Chinese date units across full dates, calendar headings and month cells', () => {
+  expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026 年 10 月 10 日');
+  expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026 年 10 月 10 日 08:30:00');
+  expect(formatDate(calendarDay, 'zh-Hans', { year: 'numeric', month: 'long' })).toBe('2026 年 10 月');
+  expect(formatDate(calendarDay, 'zh-Hans', { month: 'short' })).toBe('10 月');
+  expect(formatDate(calendarDay, 'zh-Hans', { weekday: 'long' })).toBe('星期六');
+  const sunday = new Date(2026, 9, 11);
+  expect(formatDate(sunday, 'zh-Hans', { weekday: 'long' })).toBe('星期日');
+});
+
+it('spaces Chinese range parts and preserves English date punctuation', () => {
+  const formatter = new Intl.DateTimeFormat('zh-Hans', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const label = formatDateParts(formatter.formatRangeToParts(calendarDay, new Date(2026, 9, 10, 9, 30)));
+  expect(label).not.toMatch(/\d[年月日]|[年月日]\d/);
+  expect(label).toContain('08:30');
+  expect(label).toContain('09:30');
+  expect(formatDate(calendarDay, 'en', { year: 'numeric', month: 'short', day: 'numeric' })).toBe('Oct 10, 2026');
 });

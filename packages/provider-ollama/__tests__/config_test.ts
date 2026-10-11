@@ -9,6 +9,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'ollama',
   name: 'Ollama Cloud',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-19T00:00:00.000Z',
   updatedAt: '2026-06-19T00:00:00.000Z',

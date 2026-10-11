@@ -1,21 +1,26 @@
-// The persisted Agent Setup preference: which Floway API key a setup URL serves
-// and how each agent CLI is configured. This schema is the single source of
-// truth for the shape stored in `agent_setup.configuration_json` and for the
-// request bodies that carry it across the control plane.
+// This schema owns the selected API key and agent preferences stored in
+// `agent_setup.configuration_json` and carried by control-plane requests.
+// Null model overrides clear managed selections; null Pi thinking and Pi/OMP
+// retry preferences preserve the existing agent-wide settings.
 //
-// Optional model/effort slots are nullable, never empty strings: `null` means
-// "leave this override unset" (the installer removes the managed key), while ""
-// would ambiguously ask to write an empty value. Per the gateway's
-// protocol-opacity rule the schema rejects only the two characters an opaque
-// value cannot survive as a shell/PowerShell literal — empty and NUL — never a
-// vendor family.
+// Model identifiers and Codex effort strings remain vendor-independent opaque
+// values. Empty model and effort strings cannot stand in for null, and NUL
+// cannot pass through the native shell argument boundary.
 
 import { z } from 'zod';
+
+import { piThinkingLevels } from './pi-thinking.ts';
 
 const opaqueOptionalString = z.string()
   .min(1)
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
+
+export const resolveAgentSetupProvider = (provider: string): string => provider || 'floway';
+
+export const agentSetupProviderSchema = z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/);
+
+const retrySchema = z.object({ enabled: z.boolean().nullable(), maxRetries: z.number().int().nonnegative().nullable() }).strict();
 
 export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
@@ -50,6 +55,8 @@ export const agentSetupConfigurationSchema = z.object({
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
+  pi: z.object({ model: opaqueOptionalString, provider: agentSetupProviderSchema.or(z.literal('')), thinkingLevel: z.enum(piThinkingLevels).nullable(), retry: retrySchema }).strict(),
+  omp: z.object({ model: opaqueOptionalString, provider: agentSetupProviderSchema.or(z.literal('')), retry: retrySchema }).strict(),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
@@ -75,4 +82,6 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
     model: null,
     reasoningEffort: null,
   },
+  pi: { model: null, provider: '', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
+  omp: { model: null, provider: '', retry: { enabled: null, maxRetries: null } },
 });

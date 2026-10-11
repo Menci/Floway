@@ -9,7 +9,7 @@ import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntr
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
-import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
+import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
@@ -20,6 +20,7 @@ import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ProgressRing } from '../ui/progress-ring';
+import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
@@ -203,28 +204,40 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   const observation = probe?.observation ?? null;
   if (observation === null) return [];
 
-  const signals: UpstreamSignal[] = readWindows(observation.data).map(item => {
+  const usage = readOllamaAccountUsage(observation.data);
+  const signals: UpstreamSignal[] = readWindows(usage.included).map(item => {
     const label = windowLengthLabel(item.minutes);
     return {
       key: item.key,
       percent: item.percent,
       value: percentValue(t, item.percent),
       label,
-      // Ollama reports no reset instant for either window.
-      detail: meterDetail(t, label, item.percent, null, observation.fetchedAt, locale),
+      detail: meterDetail(t, label, item.percent, item.resetsAt, observation.fetchedAt, locale),
     };
   });
 
-  const cost = readActivityCost(observation.data);
-  if (cost !== null && !isZeroActivityCost(cost.amount)) {
+  if (usage.included.kind === 'credits') {
+    const included = usage.included;
+    const used = includedCreditsUsed(included);
+    const percent = included.allowanceUsd === 0 ? 0 : 100 * used / included.allowanceUsd;
+    signals.push({
+      key: 'included',
+      percent,
+      value: percentValue(t, percent),
+      label: `${activityCostText(used)} / ${activityCostText(included.allowanceUsd)}`,
+      detail: detailText(t, [includedCreditsHint(included, t, locale), t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
+    });
+    return signals;
+  }
+
+  const cost = usage.activity;
+  if (cost.usageUsd !== null && cost.usageUsd !== 0) {
     signals.push({
       key: 'cost',
       percent: null,
-      value: activityCostText(cost.amount),
+      value: activityCostText(cost.usageUsd),
       label: null,
-      detail: cost.period === 'last_4_weeks'
-        ? t('dashboard.upstreams.signals.costLast4Weeks')
-        : t('dashboard.upstreams.signals.cost'),
+      detail: activityCostHint(cost, t, locale),
     });
   }
   return signals;

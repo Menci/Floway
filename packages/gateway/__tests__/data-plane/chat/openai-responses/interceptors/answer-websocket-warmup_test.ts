@@ -4,7 +4,7 @@ import { answerWebSocketWarmup } from '../../../../../src/data-plane/chat/openai
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -33,7 +33,7 @@ test('answers a generate:false prewarm with an empty completed response and no u
 
   assertEquals(upstreamCalls, 0);
   if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of result.events) frames.push(frame);
   const types = frames.map(frame => frame.type === 'event' ? frame.event.type : frame.type);
   assertEquals(types, ['response.created', 'response.in_progress', 'response.completed', 'done']);

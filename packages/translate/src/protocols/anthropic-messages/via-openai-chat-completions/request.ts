@@ -1,0 +1,335 @@
+import { klona } from 'klona/json';
+
+import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from './reasoning.ts';
+import { TranslatorInputError } from '../../../translator-input-error.ts';
+import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
+import type {
+  AnthropicMessagesAssistantContentBlock,
+  AnthropicMessagesAssistantMessage,
+  AnthropicMessagesClientTool,
+  AnthropicMessagesMessage,
+  AnthropicMessagesPayload,
+  AnthropicMessagesServerToolUseBlockParam,
+  AnthropicMessagesSystemMessage,
+  AnthropicMessagesTextBlockParam,
+  AnthropicMessagesToolResultBlock,
+  AnthropicMessagesToolUseBlockParam,
+  AnthropicMessagesUserContentBlock,
+  AnthropicMessagesUserMessage,
+} from '@floway-dev/protocols/anthropic-messages';
+import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamOptionsEx, OpenAIChatCompletionsTextPart, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
+
+const flattenToolResultContent = (content: AnthropicMessagesToolResultBlock['content']): string => {
+  if (content === undefined) return '';
+  if (typeof content === 'string') return content;
+
+  const textBlocks = content.filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text');
+  if (textBlocks.length === content.length) return textBlocks.map(block => block.text).join('\n\n');
+
+  return JSON.stringify(content);
+};
+
+// OpenAI strict-mode JSON Schema validators reject an object schema without an
+// explicit `properties` field. Preserve the source schema while satisfying that
+// target requirement.
+// https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
+const normalizeToolInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
+  const target = klona(schema);
+  if (target.type !== 'object' || target.properties !== undefined) return target;
+  return { ...target, properties: {} };
+};
+
+// The Chat Completions effort axis combines Anthropic's separate effort and
+// thinking controls; token budgets remain a separate quantity.
+const resolveReasoningEffort = (payload: AnthropicMessagesPayload): string | undefined => {
+  if (payload.output_config?.effort) return payload.output_config.effort;
+  if (payload.thinking?.type === 'disabled') return 'none';
+  if (payload.thinking?.type === 'enabled' || payload.thinking?.type === 'adaptive') return 'medium';
+  return undefined;
+};
+
+const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsUserContentPart[] => {
+  if (typeof content === 'string') return content;
+
+  if (!content.some(block => block.type === 'image')) {
+    return content
+      .filter((block): block is AnthropicMessagesTextBlockParam => block.type === 'text')
+      .map(block => block.text)
+      .join('\n\n');
+  }
+
+  const parts: OpenAIChatCompletionsUserContentPart[] = [];
+
+  for (const block of content) {
+    if (block.type === 'text') {
+      parts.push({ type: 'text', text: block.text });
+      continue;
+    }
+
+    if (block.type === 'image') {
+      if (block.source.type === 'file') throw new TranslatorInputError('Cannot translate file_id-only Anthropic image input to Chat Completions.');
+      parts.push({ type: 'image_url', image_url: { url: block.source.type === 'url' ? block.source.url : `data:${block.source.media_type};base64,${block.source.data}` } });
+    }
+  }
+
+  return parts;
+};
+
+const toOpenAIChatCompletionsFunctionCall = (block: AnthropicMessagesToolUseBlockParam | AnthropicMessagesServerToolUseBlockParam): OpenAIChatCompletionsToolCall => ({
+  id: block.id,
+  type: 'function',
+  function: {
+    name: block.name,
+    arguments: JSON.stringify(block.input),
+  },
+});
+
+type PendingAssistantMessage = {
+  textParts: string[];
+  toolCalls: OpenAIChatCompletionsToolCall[];
+  scalarReasoning: OpenAIChatCompletionsScalarReasoning | null;
+};
+
+const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: AnthropicMessagesAssistantContentBlock): void => {
+  // OpenAI Chat Completions scalar reasoning cannot represent ordered interleaved Anthropic Messages
+  // thinking blocks. Project only the first source-order group so readable text
+  // is never paired with an opaque signature from a later block.
+  pending.scalarReasoning ??= openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock(block);
+};
+
+const flushPendingAssistantMessage = (messages: OpenAIChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
+  if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && !pending.scalarReasoning) {
+    return;
+  }
+
+  const reasoning = pending.scalarReasoning;
+
+  messages.push({
+    role: 'assistant',
+    content: pending.textParts.join('\n\n') || null,
+    ...(pending.toolCalls.length > 0 ? { tool_calls: [...pending.toolCalls] } : {}),
+    ...(reasoning
+      ? {
+          reasoning_text: reasoning.reasoningText,
+          reasoning_opaque: reasoning.reasoningOpaque,
+        }
+      : {}),
+  });
+
+  pending.textParts.length = 0;
+  pending.toolCalls.length = 0;
+  pending.scalarReasoning = null;
+};
+
+const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
+  if (!Array.isArray(message.content)) {
+    return [
+      {
+        role: 'user',
+        content: message.content,
+      },
+    ];
+  }
+
+  const messages: OpenAIChatCompletionsMessage[] = [];
+  const pendingUserBlocks: Exclude<AnthropicMessagesUserContentBlock, AnthropicMessagesToolResultBlock>[] = [];
+
+  const flushPendingUserBlocks = () => {
+    if (pendingUserBlocks.length === 0) return;
+    messages.push({
+      role: 'user',
+      content: toOpenAIChatCompletionsContent(pendingUserBlocks),
+    });
+
+    pendingUserBlocks.length = 0;
+  };
+
+  for (const [blockIdx, block] of message.content.entries()) {
+    if (block.type === 'tool_result') {
+      // Preserving source chronology matters more than keeping one OpenAI Chat Completions message,
+      // so interleaved user content and tool results become alternating messages.
+      flushPendingUserBlocks();
+      messages.push({
+        role: 'tool',
+        tool_call_id: block.tool_use_id,
+        content: flattenToolResultContent(block.content),
+      });
+      continue;
+    }
+
+    if (block.type !== 'text' && block.type !== 'image') {
+      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' content blocks are not supported on this model`);
+    }
+
+    pendingUserBlocks.push(block);
+  }
+
+  flushPendingUserBlocks();
+
+  return messages;
+};
+
+const translateAnthropicMessagesAssistant = (message: AnthropicMessagesAssistantMessage, messageIdx: number): OpenAIChatCompletionsMessage[] => {
+  if (!Array.isArray(message.content)) {
+    return [
+      {
+        role: 'assistant',
+        content: message.content,
+      },
+    ];
+  }
+
+  const messages: OpenAIChatCompletionsMessage[] = [];
+  const pending: PendingAssistantMessage = {
+    textParts: [],
+    toolCalls: [],
+    scalarReasoning: null,
+  };
+
+  for (const [blockIdx, block] of message.content.entries()) {
+    switch (block.type) {
+    case 'text':
+      pending.textParts.push(block.text);
+      break;
+    case 'thinking':
+    case 'redacted_thinking':
+      recordPendingScalarReasoning(pending, block);
+      break;
+    case 'tool_use':
+    case 'server_tool_use':
+      pending.toolCalls.push(toOpenAIChatCompletionsFunctionCall(block));
+      break;
+    case 'web_search_tool_result':
+      flushPendingAssistantMessage(messages, pending);
+      messages.push({
+        role: 'tool',
+        tool_call_id: block.tool_use_id,
+        content: JSON.stringify(block.content),
+      });
+      break;
+    default:
+      throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
+    }
+  }
+
+  flushPendingAssistantMessage(messages, pending);
+  return messages;
+};
+
+// Anthropic Messages system blocks are prompt boundaries; preserve each one
+// as a separate OpenAI Chat Completions text part so a CC→Anthropic Messages→CC round trip
+// does not silently merge them. Falls back to the simple string form when
+// the source is already a single-string field.
+const systemContentFromBlocks = (system: string | AnthropicMessagesTextBlockParam[]): string | OpenAIChatCompletionsTextPart[] =>
+  typeof system === 'string'
+    ? system
+    : system.map(block => ({ type: 'text', text: block.text }));
+
+const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessage): OpenAIChatCompletionsMessage[] => [
+  {
+    role: 'system',
+    content: typeof message.content === 'string' ? message.content : message.content.map(block => {
+      if (block.type !== 'text') throw new TranslatorInputError('Only text is supported in Chat system messages.');
+      return { type: 'text', text: block.text };
+    }),
+  },
+];
+
+const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined): OpenAIChatCompletionsMessage[] => {
+  const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
+  const systemMessages: OpenAIChatCompletionsMessage[] = isEmptySystem
+    ? []
+    : [
+        {
+          role: 'system',
+          content: systemContentFromBlocks(system),
+        },
+      ];
+
+  return [
+    ...systemMessages,
+    ...messages.flatMap((message, messageIdx): OpenAIChatCompletionsMessage[] => {
+      switch (message.role) {
+      case 'user': return translateAnthropicMessagesUser(message, messageIdx);
+      case 'assistant': return translateAnthropicMessagesAssistant(message, messageIdx);
+      case 'system': return translateAnthropicMessagesSystem(message);
+      default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      }
+    }),
+  ];
+};
+
+const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsTool[] | undefined =>
+  // Do not hide target-side function-name constraints by renaming tools here;
+  // the Anthropic Messages source contract has no reverse mapping surface for that.
+  tools?.map(tool => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: normalizeToolInputSchema(tool.input_schema),
+      ...(tool.strict !== undefined ? { strict: tool.strict } : {}),
+    },
+  }));
+
+const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayload['tool_choice'], tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsPayload['tool_choice'] => {
+  if (!toolChoice || !tools || tools.length === 0) return undefined;
+
+  switch (toolChoice.type) {
+  case 'auto':
+    return 'auto';
+  case 'any':
+    return 'required';
+  case 'tool':
+    return toolChoice.name && tools.some(tool => tool.name === toolChoice.name) ? { type: 'function', function: { name: toolChoice.name } } : undefined;
+  case 'none':
+    return 'none';
+  }
+};
+
+export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => {
+  const clientTools = filterAnthropicMessagesClientTools(payload.tools);
+  // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
+  // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
+  const reasoningEffort = resolveReasoningEffort(payload);
+  // Anthropic's structured-output schema is already strict. Supply the name
+  // required by OpenAI and let OpenAI report any schema constraint it rejects.
+  // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+  const format = payload.output_config?.format;
+  const jsonSchema = format?.type === 'json_schema'
+    ? { name: 'messages_response', strict: true as const, schema: klona(format.schema) }
+    : undefined;
+  const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
+
+  // Anthropic `speed: 'fast'` selects OpenAI's priority lane. Without an
+  // explicit speed, preserve Anthropic's service tier as an open string.
+  // https://docs.claude.com/en/build-with-claude/fast-mode
+  // https://platform.openai.com/docs/guides/fast-mode
+  const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
+
+  return {
+    model: payload.model,
+    messages: translateAnthropicMessagesInput(payload.messages, payload.system),
+    ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
+    max_tokens: payload.max_tokens,
+    stop: klona(payload.stop_sequences),
+    stream: true,
+    // Ask the upstream for usage on every streaming chunk, not just the final
+    // one. `include_usage` is the OpenAI-standard flag; `continuous_usage_stats`
+    // is the vLLM/SGLang extension that lets this translation emit the real
+    // `input_tokens` in `message_start` (before any output exists) and
+    // cumulative `output_tokens` on intermediate `message_delta` events, which
+    // is the shape the Anthropic Messages SSE contract promises. Upstreams that
+    // do not implement the extension ignore it, and the translator falls back
+    // to the final usage-only chunk. Ref:
+    // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
+    stream_options: { include_usage: true, continuous_usage_stats: true } as OpenAIChatCompletionsStreamOptionsEx,
+    temperature: payload.temperature,
+    top_p: payload.top_p,
+    tools: translateAnthropicMessagesTools(clientTools),
+    tool_choice: translateAnthropicMessagesToolChoice(payload.tool_choice, clientTools),
+    ...(responseFormat ? { response_format: responseFormat } : {}),
+    ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
+  };
+};

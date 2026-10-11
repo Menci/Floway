@@ -1,7 +1,7 @@
 import { parse, stringify } from 'yaml';
 
 import { errorMessage } from '../../lib/error-message';
-import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider/model-config';
+import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider/browser';
 
 export const serializeModels = (models: UpstreamModelConfig[]): string => stringify(models, {
   indent: 2,

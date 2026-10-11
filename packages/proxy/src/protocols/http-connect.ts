@@ -8,9 +8,10 @@
 //   3. Hand the post-CONNECT byte stream back as the dial result. This
 //      avoids `startTls()` entirely.
 
-import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, formatHostForUri, utf8Bytes } from '../bytes.ts';
+import { concat, copy, findDoubleCrlfFrom, formatHostForUri } from '../bytes.ts';
+import { ProxyDialError } from '../dial-error.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
-import { ProxyDialError } from '../errors.ts';
+import { base64EncodeBytes, utf8Bytes } from '../encoding.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { STATUS_LINE } from '@floway-dev/http';

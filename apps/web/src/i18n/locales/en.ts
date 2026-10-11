@@ -7,6 +7,10 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      calendar: {
+        previousMonth: 'Previous month', nextMonth: 'Next month', previousYear: 'Previous year', nextYear: 'Next year',
+        previousDecade: 'Previous decade', previousCentury: 'Previous century', nextDecade: 'Next decade', nextCentury: 'Next century', chooseDecade: '{0}, choose a decade', chooseYear: '{0}, choose a year', chooseMonth: '{0}, choose a month',
+      },
       bodyViewer: {
         options: 'Body options',
         find: 'Find in body',
@@ -300,7 +304,6 @@ const en = {
         modelCount_one: '{{count, number}} model',
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
-        upstreamDisabled: 'Upstream disabled',
         emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
       },
       apiKeys: {
@@ -406,13 +409,16 @@ const en = {
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
+          pi: 'Pi',
+          omp: 'OMP',
           claudeHint: 'Merge the env block into <path>~/.claude/settings.json</path> or <path>.claude/settings.json</path>.',
           codexConfigHint: 'Merge into <path>~/.codex/config.toml</path>.',
           codexConfigHintWindows: 'Merge into <path>%USERPROFILE%\\.codex\\config.toml</path>.',
           codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', providerName: 'Provider ID', defaultThinkingLevel: 'Default thinking level', defaultThinkingHint: 'Applies to all Pi providers. Select a default model to limit the choices to its supported thinking levels.', unsupportedThinking: 'This model exposes more thinking options than Pi can represent.', keepExisting: 'Keep existing setting', maxRetries: 'Maximum retries', piMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all Pi providers; Pi defaults to 3 retries.', ompMaxRetriesHint: '0 disables retries. Leave blank to keep the current setting. Applies to all OMP providers; OMP defaults to 10 retries.', providerHint: 'Leave blank to use floway. Use a different ID for each Floway connection, such as floway-home or floway-work. IDs use lowercase letters, numbers, dots, hyphens, and underscores.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.', piModelHint: 'Sets Pi’s startup model across all providers. The Floway extension refreshes available models at startup and when the model picker opens. Setup installs or updates Pi when needed.',
+          ompModelHint: 'Sets OMP’s startup model across all providers. OMP loads current Floway models at startup; use /floway-refresh to refresh them. Setup installs or updates OMP when needed.',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -461,8 +467,8 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          cost: 'Charged to this account',
-          costLast4Weeks: 'Charged to this account in the last 4 weeks',
+          costRange: '{{from}} to {{until}}: credits consumed by model requests.',
+          costRangeSelf: '{{from}} to {{until}}: credits this account consumed through model requests, including plan and purchased credits.',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -593,8 +599,12 @@ const en = {
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct TCP connect.',
-          add: 'Add fallback entry',
+          description: 'If you need a proxy, configure proxy routing before starting OAuth or sending upstream requests.',
+          empty: 'No proxy routes configured. TCP connect will be used.',
+          unmatched: 'When no rules match, traffic will fall back to TCP connect.',
+          order: 'All proxy and direct egress rules will be tried from top to bottom.',
+          orderColo: 'All proxy and direct egress rules matching the current colo will be tried from top to bottom.',
+          add: 'Add egress rule',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
           allColos: 'All colos',
@@ -671,6 +681,10 @@ const en = {
               description:
                   'When native context compaction returns an opaque compaction item, Floway sends that item back to the same model with an exact-repeat instruction, then replaces it with a gateway-readable compaction item containing the recovered plaintext.\nThis adds one billed generation request per compaction item and applies only when the context compaction shim is disabled.',
             },
+            'serialize-stream-items': {
+              label: 'Serialize Streamed Content Block Lifecycles',
+              description: 'Buffer item / block lifecycles in Responses / Messages streams into a strictly serial order. For example, Open₀ → Open₁ → Delta₁ → Delta₀ → Close₀ becomes Open₀ → Delta₀ → Close₀ → Open₁ → Delta₁. This handling still applies automatically to clients identified as requiring it when the flag is off.',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
               description:
@@ -710,6 +724,11 @@ const en = {
               label: 'Cached Tokens Reported Outside Input Tokens',
               description:
                   'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
+            },
+            'openai-responses-store-false': {
+              label: 'Request Stateful Upstreams to Use Stateless Mode',
+              description:
+                  'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway does not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
             },
           },
         },
@@ -981,10 +1000,28 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        usageRefresh: {
+          title: 'Background usage refresh',
+          description: '0 or blank disables background refresh. No additional model usage is incurred.',
+          claudeCodeRequirement: 'Requires OAuth sign-in.',
+          ollamaRequirement: 'Requires “Fetch account usage” to be enabled.',
+          interval: 'Refresh interval (minutes)',
+          invalid: 'Enter a nonnegative whole number of minutes.',
+        },
         ollama: {
           cloudUsage: 'Fetch account usage',
-          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',
           usage: {
+            recentUsage_one: 'Last {{count, number}} day usage',
+            recentUsage_other: 'Last {{count, number}} days usage',
+            usedCreditsHint: '{{from}} to {{until}}: plan credits used this period. Team subscriptions share these credits.',
+            allowance: 'Period plan credits {{amount}}',
+            resets: 'Resets {{time}}',
+            balance: { included: 'Included balance', purchased: 'Purchased balance' },
+            balanceHint: {
+              included: 'Remaining plan credits. Reset monthly and used first for model requests.',
+              purchased: 'Remaining purchased credits. Used after plan credits run out.',
+            },
             title: 'Usage',
             load: 'Load',
             refresh: 'Refresh',
@@ -998,7 +1035,6 @@ const en = {
             },
             observed: 'Observed {{time}}',
             empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
-            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
             backgroundFailed: 'The last background refresh failed: {{message}}',
           },
         },
@@ -1110,7 +1146,12 @@ const en = {
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
       },
-      telemetry: { currentUserOnly: 'Only me' },
+      telemetry: {
+        currentUserOnly: 'Only me',
+        range: {
+          oneDay: 'Last Day', sevenDays: '7 Days', thirtyDays: '30 Days', custom: 'Custom', choose: 'Choose date range',
+        },
+      },
       usage: {
         empty: 'No usage records in this range',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output' },
@@ -1128,12 +1169,7 @@ const en = {
           selected_one: '{{count, number}} selected',
           selected_other: '{{count, number}} selected',
         },
-        range: {
-          label: 'Usage range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Usage range' },
         actions: { refresh: 'Refresh usage' },
         charts: {
           search: 'Search Usage',
@@ -1171,12 +1207,7 @@ const en = {
           userId: 'User',
           keyId: 'API Key',
         },
-        range: {
-          label: 'Performance range',
-          today: 'Last Day',
-          sevenDays: '7 Days',
-          thirtyDays: '30 Days',
-        },
+        range: { label: 'Performance range' },
         percentile: { label: 'Percentile' },
         summary: {
           requests: 'Requests',

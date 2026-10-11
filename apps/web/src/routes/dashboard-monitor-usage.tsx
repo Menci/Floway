@@ -7,6 +7,7 @@ import type { Route } from './+types/dashboard-monitor-usage';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
+import { sameDashboardRange } from '../components/charts/dashboard-time';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import {
   TelemetryFilterFields,
@@ -14,14 +15,14 @@ import {
   type TelemetryDimension,
 } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
-import { ChoiceGroup } from '../components/ui/choice-group';
+import { TelemetryTimeRange } from '../components/telemetry/time-range';
+import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { CONTROL_ROW_CLASS, PANEL_STACK_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
-import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
 import { loadUsagePageData } from '../components/usage/data';
@@ -34,7 +35,7 @@ import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { tokenUsageUnattributedUserId, usageUpstreamDimensionValue, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/browser';
 
 const { Button, Tooltip } = fluentComponents;
 
@@ -120,7 +121,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setQuery,
     onQueryCommit,
   );
-  usePollWhileVisible(poll);
+  const [editingRange, setEditingRange] = useState(false);
+  useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<UsageUrlState>(
     () => ({ ...loadedQuery, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch] }),
@@ -131,7 +133,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [rewrite, setSearchParams, urlState]);
   const addressOf = (patch: Partial<UsageUrlState>) => `?${serializeUsageUrlState({ ...urlState, ...patch })}`;
 
-  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
+  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const dimensions = useMemo<Array<TelemetryDimension<UsageGroupBy>> | null>(() => {
     if (!usage) return null;
     const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
@@ -206,7 +208,10 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     }));
   };
   const changeRange = (next: UsageRange) => {
-    if (next === query.range) return;
+    if (sameDashboardRange(next, query.range)) {
+      void refresh();
+      return;
+    }
     setQuery(current => ({ ...current, range: next }));
   };
   const setFilter = (key: UsageGroupBy, values: string[]) => setQuery(current => ({
@@ -240,16 +245,13 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           onGroupByChange={changeGroupBy}
         />}
         <div className="ml-auto flex-none">
-          <ChoiceGroup
+          <TelemetryTimeRange
+            addressOf={range => addressOf({ range })}
             ariaLabel={t('dashboard.usage.range.label')}
-            disabled={refreshing}
-            items={[
-              { value: 'today', label: t('dashboard.usage.range.today'), to: addressOf({ range: 'today' }) },
-              { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },
-              { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-            ]}
-            onChange={value => changeRange(value as UsageRange)}
-            value={loadedQuery.range}
+            loadedAt={loadedAt}
+            onChange={changeRange}
+            onEditingChange={setEditingRange}
+            range={loadedQuery.range}
           />
         </div>
       </div>

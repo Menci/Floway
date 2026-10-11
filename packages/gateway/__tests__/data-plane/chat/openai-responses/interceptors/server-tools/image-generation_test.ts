@@ -23,7 +23,7 @@ import { initRepo } from '../../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
@@ -38,7 +38,7 @@ const paddedPngResponse = (byteLength: number): Response => {
 };
 
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
-const makeCtx = (payload: Partial<OpenAIResponsesPayload>): OpenAIResponsesInvocation => ({
+const makeCtx = (payload: Partial<OpenAIResponsesPayloadEx>): OpenAIResponsesInvocation => ({
   candidate: stubModelCandidate({
     enabledFlags: new Set(['openai-responses-image-generation-shim']),
     model: { id: 'm', endpoints: { openaiResponses: {} } },
@@ -54,14 +54,14 @@ beforeEach(() => {
   initRepo(new InMemoryRepo());
 });
 
-const imageMessage = (mime: string): OpenAIResponsesInputItem => ({
+const imageMessage = (mime: string): CanonicalOpenAIResponsesInputItem => ({
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
 });
 
 const imageInputContainers = {
-  message: (image: OpenAIResponsesInputImage): OpenAIResponsesInputItem => ({ type: 'message', role: 'user', content: [image] }),
-  function_output: (image: OpenAIResponsesInputImage): OpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output: [image] }),
-  custom_output: (image: OpenAIResponsesInputImage): OpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output: [image] }),
+  message: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content: [image] }),
+  function_output: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output: [image] }),
+  custom_output: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output: [image] }),
 };
 
 const unresolvableImages = {
@@ -252,7 +252,7 @@ test('buildImageGenerationFunctionTool exposes only an optional prompt and is no
 // ── inspectImageSources ──
 
 test('inspectImageSources reads input_image blocks and image_generation_call results', () => {
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
         { type: 'input_text', text: 'edit this' },
@@ -278,7 +278,7 @@ test('inspectImageSources normalizes the media type in an image data URL', () =>
 });
 
 test('inspectImageSources preserves valid remote image urls for materialization', () => {
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
         { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' },
@@ -345,7 +345,7 @@ test.each(Object.entries(imageInputContainers))(
 );
 
 test('inspectImageSources reads tool-result images and preserves forward order', () => {
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'custom_tool_call_output', call_id: 'c2', output: [{ type: 'input_image', image_url: `data:image/jpeg;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
@@ -375,7 +375,7 @@ test('resolveImageOperation exposes a malformed replayed result as an invariant 
 
 test('a request inspector reuses decoded bytes after generated results become replay images', () => {
   const inspect = createImageSourceInspector();
-  const generated: OpenAIResponsesInputItem = {
+  const generated: CanonicalOpenAIResponsesInputItem = {
     type: 'image_generation_call',
     id: 'ig_cached',
     status: 'completed',
@@ -450,7 +450,7 @@ test('transformInputItemsForImageGeneration encodes a failed call as ok:false wi
 });
 
 test('transformInputItemsForImageGeneration passes non-image items through untouched', () => {
-  const message: OpenAIResponsesInputItem = { type: 'message', role: 'user', content: 'hi' };
+  const message: CanonicalOpenAIResponsesInputItem = { type: 'message', role: 'user', content: 'hi' };
   const out = transformInputItemsForImageGeneration([message], 'image_generation');
   assertEquals(out.length, 1);
   assertEquals(out[0], message);
@@ -479,7 +479,7 @@ test('imageTerminal on failure emits a failed item and no closing events', () =>
   assertEquals((item as { status?: string }).status, 'failed');
   assertEquals((item as { error?: { code: string } }).error?.code, 'EngineOverloaded');
   assertEquals((item as { error?: { type?: string } }).error?.type, 'image_generation_user_error');
-  assertFalse('result' in item);
+  assertEquals((item as { result?: string | null }).result, null);
   assertEquals(endEvents.length, 0);
 });
 
@@ -642,7 +642,7 @@ test('imageGenerationServerTool fetches repeated remote edit sources once', asyn
     return Promise.resolve(validPngResponse());
   });
   const remote = { type: 'input_image', image_url: 'https://example.com/source.png', detail: 'auto' } as const;
-  const input: OpenAIResponsesInputItem[] = [
+  const input: CanonicalOpenAIResponsesInputItem[] = [
     imageInputContainers.message(remote),
     imageInputContainers.function_output(remote),
   ];

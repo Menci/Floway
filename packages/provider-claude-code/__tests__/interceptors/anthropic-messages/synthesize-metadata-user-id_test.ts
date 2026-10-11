@@ -6,11 +6,11 @@ import { hoistUserSystemToMessages } from '../../../src/interceptors/anthropic-m
 import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY } from '../../../src/interceptors/anthropic-messages/index.ts';
 import { synthesizeMetadataUserId } from '../../../src/interceptors/anthropic-messages/synthesize-metadata-user-id.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload, upstreamId = 'up_test'): AnthropicMessagesBoundaryCtx => ({

@@ -1,6 +1,7 @@
 import { accordionCss } from './controls/accordion.css';
 import { badgeTagCss } from './controls/badge-tag.css';
 import { buttonCss } from './controls/button.css';
+import { calendarRangeCss } from './controls/calendar-range.css';
 import { cardCss } from './controls/card.css';
 import { choiceCss } from './controls/choice.css';
 import { colorPickerCss } from './controls/color-picker.css';
@@ -18,6 +19,7 @@ import { selectCss } from './controls/select.css';
 import { switchCss } from './controls/switch.css';
 import { tableCss } from './controls/table.css';
 import { tabsCss } from './controls/tabs.css';
+import { telemetryRangeCss } from './controls/telemetry-range.css';
 import { textInputCss } from './controls/text-input.css';
 import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
@@ -37,6 +39,7 @@ export const winuiCss = [
   badgeTagCss,
   buttonCss,
   cardCss,
+  calendarRangeCss,
   choiceCss,
   colorPickerCss,
   dialogCss,
@@ -56,6 +59,7 @@ export const winuiCss = [
   textInputCss,
   textCss,
   toastCss,
+  telemetryRangeCss,
   toolbarCss,
   tooltipCss,
 ].join('\n');

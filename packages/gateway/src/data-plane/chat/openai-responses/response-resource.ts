@@ -7,8 +7,8 @@ import type {
   ClientOpenAIResponsesTextField,
   ClientOpenAIResponsesTool,
   ClientOpenAIResponsesUsage,
-  OpenAIResponsesResult,
-  OpenAIResponsesStreamEvent,
+  OpenAIResponsesResultEx,
+  OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
@@ -87,13 +87,13 @@ const completeTool = (tool: OpenAIResponsesTool): ClientOpenAIResponsesTool =>
 
 // `TextField` requires `format`, whose own default is plain text.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2298-L2319
-const completeText = (text: NonNullable<OpenAIResponsesResult['text']>): ClientOpenAIResponsesTextField =>
+const completeText = (text: NonNullable<OpenAIResponsesResultEx['text']>): ClientOpenAIResponsesTextField =>
   ({ ...text, format: text.format ?? { type: 'text' } });
 
 // `Reasoning` requires `effort` and `summary`, both of which are nullable, so
 // an unconfigured reasoning object says so rather than naming a level.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2320-L2359
-const completeReasoning = (reasoning: NonNullable<OpenAIResponsesResult['reasoning']> | null): ClientOpenAIResponsesReasoning | null =>
+const completeReasoning = (reasoning: NonNullable<OpenAIResponsesResultEx['reasoning']> | null): ClientOpenAIResponsesReasoning | null =>
   reasoning === null ? null : { ...reasoning, effort: reasoning.effort ?? null, summary: reasoning.summary ?? null };
 
 // Both breakdowns are required whenever `usage` itself is an object. An absent
@@ -101,13 +101,13 @@ const completeReasoning = (reasoning: NonNullable<OpenAIResponsesResult['reasoni
 // output tokens. Shared with the compaction resource, whose `usage` is the same
 // `Usage` schema.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2384-L2429
-export const completeUsage = (usage: NonNullable<OpenAIResponsesResult['usage']>): ClientOpenAIResponsesUsage => ({
+export const completeUsage = (usage: NonNullable<OpenAIResponsesResultEx['usage']>): ClientOpenAIResponsesUsage => ({
   ...usage,
   input_tokens_details: usage.input_tokens_details ?? { cached_tokens: 0 },
   output_tokens_details: usage.output_tokens_details ?? { reasoning_tokens: 0 },
 });
 
-const completeUsageOrNull = (usage: NonNullable<OpenAIResponsesResult['usage']> | null): ClientOpenAIResponsesUsage | null =>
+const completeUsageOrNull = (usage: NonNullable<OpenAIResponsesResultEx['usage']> | null): ClientOpenAIResponsesUsage | null =>
   usage === null ? null : completeUsage(usage);
 
 export interface ResponseResourceSources {
@@ -154,7 +154,7 @@ export interface ResponseResourceSources {
 // no other source survives to contradict it.
 // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L61500-L61518
 export const completeResponseResource = (
-  upstream: OpenAIResponsesResult,
+  upstream: OpenAIResponsesResultEx,
   sources: ResponseResourceSources,
   terminal: boolean,
 ): ClientResponseResource => {
@@ -179,7 +179,7 @@ export const completeResponseResource = (
     tool_choice: stated([upstream.tool_choice, request.tool_choice], 'auto'),
     truncation: stated([upstream.truncation, request.truncation], 'disabled'),
     parallel_tool_calls: stated([upstream.parallel_tool_calls, request.parallel_tool_calls], true),
-    text: completeText(stated<NonNullable<OpenAIResponsesResult['text']>>([upstream.text, request.text], {})),
+    text: completeText(stated<NonNullable<OpenAIResponsesResultEx['text']>>([upstream.text, request.text], {})),
     top_p: stated([upstream.top_p, request.top_p], 1),
     presence_penalty: stated([upstream.presence_penalty, request.presence_penalty], 0),
     frequency_penalty: stated([upstream.frequency_penalty, request.frequency_penalty], 0),
@@ -187,7 +187,7 @@ export const completeResponseResource = (
     temperature: stated([upstream.temperature, request.temperature], 1),
     background: stated([upstream.background, request.background], false),
     service_tier: stated([upstream.service_tier, request.service_tier], 'default'),
-    metadata: stated<Record<string, unknown>>([upstream.metadata, request.metadata], {}),
+    metadata: stated<Record<string, string>>([upstream.metadata, request.metadata], {}),
 
     previous_response_id: observed([upstream.previous_response_id, request.previous_response_id]),
     instructions: observed([upstream.instructions, request.instructions]),
@@ -195,7 +195,7 @@ export const completeResponseResource = (
     max_tool_calls: observed([upstream.max_tool_calls, request.max_tool_calls]),
     safety_identifier: observed([upstream.safety_identifier, request.safety_identifier]),
     prompt_cache_key: observed([upstream.prompt_cache_key, request.prompt_cache_key]),
-    reasoning: completeReasoning(observed<NonNullable<OpenAIResponsesResult['reasoning']>>([upstream.reasoning, request.reasoning])),
+    reasoning: completeReasoning(observed<NonNullable<OpenAIResponsesResultEx['reasoning']>>([upstream.reasoning, request.reasoning])),
     // The request has no counterpart: token counts are the upstream's alone.
     usage: completeUsageOrNull(observed([upstream.usage])),
   };
@@ -208,7 +208,7 @@ export const completeResponseResource = (
 // inserted between this one and a client-facing exit must preserve it or fail
 // to compile.
 export const wrapResponseResourceCompletion = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   sources: ResponseResourceSources,
 ): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {

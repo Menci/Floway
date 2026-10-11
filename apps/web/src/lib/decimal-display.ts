@@ -4,7 +4,7 @@ import {
   decimalStringIsZero,
   decimalStringToNumber,
   type DecimalString,
-} from '@floway-dev/protocols/common';
+} from '@floway-dev/protocols/browser';
 
 const splitDecimal = (value: DecimalString): [integer: string, fraction: string] => {
   const [integer, fraction = ''] = value.split('.');

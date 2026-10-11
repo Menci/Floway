@@ -5,6 +5,10 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      calendar: {
+        previousMonth: '上个月', nextMonth: '下个月', previousYear: '上一年', nextYear: '下一年',
+        previousDecade: '上一个十年', previousCentury: '上一个世纪', nextDecade: '下一个十年', nextCentury: '下一个世纪', chooseDecade: '{0}，选择十年', chooseYear: '{0}，选择年份', chooseMonth: '{0}，选择月份',
+      },
       bodyViewer: {
         options: '正文选项',
         find: '搜索正文',
@@ -286,7 +290,6 @@ const zhHansCN = {
         models: '模型',
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
-        upstreamDisabled: '上游已停用',
         emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
       },
       apiKeys: {
@@ -388,12 +391,14 @@ const zhHansCN = {
           usingKey: '此处使用 <strong>{{name}}</strong> API 密钥。',
           claudeCode: 'Claude Code',
           codex: 'Codex',
+          pi: 'Pi',
+          omp: 'OMP',
           claudeHint: '将 env 块合并到 <path>~/.claude/settings.json</path> 或 <path>.claude/settings.json</path>。',
           codexConfigHint: '合并到 <path>~/.codex/config.toml</path>。',
           codexConfigHintWindows: '合并到 <path>%USERPROFILE%\\.codex\\config.toml</path>。',
           codexAuthHint: '将 Floway provider token 保存在该配置旁，不影响官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', timedOut: '网关未在规定时间内响应。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', providerName: 'Provider ID', defaultThinkingLevel: '默认思考强度', defaultThinkingHint: '作用于 Pi 的所有 provider。选择默认模型后，可选强度会按模型支持范围筛选。', unsupportedThinking: '此模型的思考选项数量超出 Pi 的支持范围。', keepExisting: '保留已有设置', maxRetries: '最大重试次数', piMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 Pi 的所有 provider，默认重试 3 次。', ompMaxRetriesHint: '0 表示关闭重试。留空会保留已有设置。作用于 OMP 的所有 provider，默认重试 10 次。', providerHint: '留空时使用 floway。每个 Floway 连接使用不同 ID，例如 floway-home 或 floway-work。可使用小写字母、数字、点、连字符和下划线。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count, number}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', disableAutoMemory: '停用自动记忆', disableAutoMemoryHint: '禁止 Claude Code 读写其自动记忆目录。', disableAgentView: '停用 Agent 视图', disableAgentViewHint: '关闭后台 agent 与 agent 视图，包括 `claude agents`、`--bg` 和 `/background`。', piModelHint: '设置 Pi 的启动模型，作用于所有 provider。Floway 扩展会在启动和打开模型选择器时刷新模型，安装脚本会按需安装或更新 Pi。', ompModelHint: '设置 OMP 的启动模型，作用于所有 provider。OMP 启动时会加载 Floway 的当前模型列表，可使用 /floway-refresh 刷新。安装脚本会按需安装或更新 OMP。' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -437,8 +442,8 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          cost: '该账号已产生的费用',
-          costLast4Weeks: '该账号最近 4 周产生的费用',
+          costRange: '{{from}} 至 {{until}}，使用模型消耗的额度。',
+          costRangeSelf: '{{from}} 至 {{until}}，本账号使用模型消耗的额度（含套餐和购买额度）。',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',
@@ -564,8 +569,12 @@ const zhHansCN = {
         proxy: {
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
-          empty: '未配置回退出口时，流量使用直连 TCP connect。',
-          add: '添加回退出口',
+          description: '如果你需要使用代理，请在配置代理路由后发起 OAuth 或发起上游请求。',
+          empty: '没有代理路由，将使用 TCP connect。',
+          unmatched: '无匹配的规则时将会 fallback 到 TCP connect。',
+          order: '将从上到下尝试所有代理或直连出口。',
+          orderColo: '将从上到下尝试所有当前 colo 命中的代理或直连出口。',
+          add: '添加出口规则',
           colo: '当前 Cloudflare colo：{{colo}}',
           colos: 'Colo 白名单',
           allColos: '全部 colo',
@@ -641,6 +650,10 @@ const zhHansCN = {
               description:
                   '当原生上下文压缩返回不透明的 compaction item 时，Floway 会将该 item 与逐字复述指令一并发回同一模型，再用恢复出的明文替换为网关可读取的 compaction item。\n每个 compaction item 会额外产生一次计费生成请求，且仅在上下文压缩兼容层关闭时生效。',
             },
+            'serialize-stream-items': {
+              label: '串行化流内容块生命周期',
+              description: '将 Responses / Messages 流中的 item / block 生命周期缓冲为严格串行化，例如当产生 Open₀ → Open₁ → Delta₁ → Delta₀ → Close₀ 时，会调整为 Open₀ → Delta₀ → Close₀ → Open₁ → Delta₁。在 flag 关闭时，对被识别为已知需要该项兼容性的客户端仍会自动生效。',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',
               description:
@@ -680,6 +693,11 @@ const zhHansCN = {
               label: '缓存 Token 不计入输入 Token',
               description:
                   'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
+            },
+            'openai-responses-store-false': {
+              label: '向有状态的上游请求使用无状态模式',
+              description:
+                  '使用 OpenAI Responses 协议连接上游时，不论下游如何设置 `store` 参数，总是指定 `{"store": false}` 来关闭有状态模式。\nFloway 在上游方向不使用有状态的功能，因此关闭状态或有助于控制数据留存。',
             },
           },
         },
@@ -937,10 +955,28 @@ const zhHansCN = {
             'uuid-mismatch': '所配置的账号不在状态中，请重新导入以恢复',
           },
         },
+        usageRefresh: {
+          title: '后台刷新用量',
+          description: '填 0 或留空禁用后台刷新。不会额外产生模型用量。',
+          claudeCodeRequirement: '需要使用 OAuth 登录。',
+          ollamaRequirement: '需要开启「获取账号用量」功能。',
+          interval: '刷新间隔（分钟）',
+          invalid: '请输入大于或等于 0 的整数分钟数。',
+        },
         ollama: {
           cloudUsage: '获取账号用量',
-          cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
+          cloudUsageHint: '在模型请求后更新账号余额和期间用量。需要配置 Ollama Cloud API Key。',
           usage: {
+            recentUsage_one: '近 {{count, number}} 天用量',
+            recentUsage_other: '近 {{count, number}} 天用量',
+            usedCreditsHint: '{{from}} 至 {{until}}，本期已使用的订阅额度。团队订阅由全队共享。',
+            allowance: '本期订阅额度 {{amount}}',
+            resets: '{{time}} 重置',
+            balance: { included: '订阅余额', purchased: '购买余额' },
+            balanceHint: {
+              included: '套餐剩余额度，每月重置；使用模型时优先扣减。',
+              purchased: '另外购买的剩余额度；套餐额度用完后扣减。',
+            },
             title: '用量',
             load: '加载',
             refresh: '刷新',
@@ -951,7 +987,6 @@ const zhHansCN = {
             },
             observed: '观测于 {{time}}',
             empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
-            unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',
             backgroundFailed: '最近一次后台刷新失败：{{message}}',
           },
         },
@@ -1062,7 +1097,12 @@ const zhHansCN = {
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
       },
-      telemetry: { currentUserOnly: '仅自己' },
+      telemetry: {
+        currentUserOnly: '仅自己',
+        range: {
+          oneDay: '最近一天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义', choose: '选择日期区间',
+        },
+      },
       usage: {
         empty: '此时间范围内没有使用记录',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
@@ -1079,12 +1119,7 @@ const zhHansCN = {
           unknownUser: '未知用户',
           selected_other: '已选择 {{count, number}} 项',
         },
-        range: {
-          label: '使用量范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '使用量范围' },
         actions: { refresh: '刷新使用量' },
         charts: {
           search: '搜索使用量',
@@ -1121,12 +1156,7 @@ const zhHansCN = {
           userId: '用户',
           keyId: 'API 密钥',
         },
-        range: {
-          label: '性能数据范围',
-          today: '最近一天',
-          sevenDays: '7 天',
-          thirtyDays: '30 天',
-        },
+        range: { label: '性能数据范围' },
         percentile: { label: '百分位' },
         summary: {
           requests: '请求数',

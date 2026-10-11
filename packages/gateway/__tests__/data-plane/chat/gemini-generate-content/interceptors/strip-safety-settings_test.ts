@@ -21,6 +21,7 @@ const invocation = (payload: GeminiGenerateContentPayload): GeminiGenerateConten
 
 test('removes safetySettings without inventing missing defaults and preserves siblings', async () => {
   const input = invocation({
+    contents: [],
     cachedContent: 'cachedContents/example',
     safetySettings: [
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
@@ -29,7 +30,7 @@ test('removes safetySettings without inventing missing defaults and preserves si
 
   await stripSafetySettings(input, stubCtx, okEvents);
 
-  assertEquals(input.payload, { cachedContent: 'cachedContents/example' });
+  assertEquals(input.payload, { contents: [], cachedContent: 'cachedContents/example' });
 });
 
 test('is a no-op when safetySettings is absent', async () => {

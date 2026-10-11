@@ -11,5 +11,9 @@ export { createOllamaProvider } from './provider.ts';
 export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
 export { pricingForOllamaModelKey } from './pricing.ts';
 export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
-export { fetchOllamaUsageProbe, isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';
+export { isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';
 export { fetchOllamaAccount, refreshOllamaAccount } from './account-probe.ts';
+
+export { ollamaUsageMetrics, resolveUsageMetricDisplayName } from './usage-metrics.ts';
+
+export { readOllamaAccountUsage, type OllamaAccountUsage, type OllamaUsageData } from './account-usage.ts';

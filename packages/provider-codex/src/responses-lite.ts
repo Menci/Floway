@@ -4,9 +4,9 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputAdditionalToolsItem,
-  OpenAIResponsesInputItem,
-  OpenAIResponsesInputMessage,
-  OpenAIResponsesStreamEvent,
+  CanonicalOpenAIResponsesInputItem,
+  OpenAIResponsesInputMessageEx,
+  OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
@@ -105,7 +105,7 @@ const makeAdditionalToolsItem = (
 const makeBaseInstructionsMessage = (
   instructions: string,
   threadNamespace: string,
-): OpenAIResponsesInputMessage => ({
+): OpenAIResponsesInputMessageEx => ({
   type: 'message',
   role: 'developer',
   content: [{ type: 'input_text', text: instructions }],
@@ -129,7 +129,7 @@ const removeInputImageDetails = <T extends { type: string }>(parts: T[]): T[] =>
     ? parts.map(removeInputImageDetail)
     : parts;
 
-const removeLiteImageDetail = (item: OpenAIResponsesInputItem): OpenAIResponsesInputItem => {
+const removeLiteImageDetail = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpenAIResponsesInputItem => {
   if (item.type === 'message' && Array.isArray(item.content)) {
     const content = removeInputImageDetails(item.content);
     return content === item.content ? item : { ...item, content };
@@ -147,7 +147,7 @@ export const encodeCodexResponsesLiteRequest = (
 ): CodexResponsesLiteRequest => {
   const next: CodexResponsesBody = { ...body };
   const topLevelTools = Array.isArray(body.tools) ? body.tools : [];
-  const input: OpenAIResponsesInputItem[] = [...body.input];
+  const input: CanonicalOpenAIResponsesInputItem[] = [...body.input];
   const threadNamespace = uuidV5(threadId, UUID_NAMESPACE_OID);
 
   // Existing `additional_tools` items are positional Responses input. A new
@@ -188,9 +188,9 @@ export const encodeCodexResponsesLiteRequest = (
 // and all other response fields. Positional Lite callers move no top-level
 // fields and bypass this projection entirely.
 export const projectMovedCodexResponsesFields = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   movedFields: CodexResponsesLiteRequest['movedFields'],
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;

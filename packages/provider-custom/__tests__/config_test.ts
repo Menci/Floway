@@ -9,6 +9,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'custom',
   name: 'Test Custom',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-04-29T00:00:00.000Z',
   updatedAt: '2026-04-29T00:00:00.000Z',

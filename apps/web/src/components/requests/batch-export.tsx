@@ -6,7 +6,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Checkbox } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import type { DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/gateway/browser';
 
 const { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 
