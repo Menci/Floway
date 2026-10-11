@@ -456,10 +456,10 @@ const en = {
         // the providers whose upstream reports usage contribute any.
         signals: {
           plan: '{{plan}}:',
-          percent: '{{percent, number}}%',
+          remainingPercent: '{{percent, number}}% remaining',
           detailSeparator: ' - ',
           until: 'until {{date}}',
-          used: '{{label}}: {{percent, number}}% used',
+          remaining: '{{label}}: {{percent, number}}% remaining',
           resets: 'Resets {{time}}',
           observed: 'Observed {{time}}',
           window: { primary: 'Primary', secondary: 'Secondary' },
@@ -869,13 +869,14 @@ const en = {
           deleteMessage: 'Delete {{name}}? This cannot be undone.',
           deleteConfirm: 'Delete model',
         },
+        quotaRemainingPercent: '{{percent, number}}% remaining',
         copilot: {
           quota: {
             title: 'Quota',
             load: 'Load',
             refresh: 'Refresh',
             used: '{{used, number}} / {{entitlement, number}}',
-            usedPercent: '{{percent, number}}% used',
+            remainingPercent: '{{percent, number}}% remaining',
             unlimited: 'Unlimited',
             unavailable: 'Not included in this plan',
             resets: 'Resets on {{date}}',
@@ -1025,7 +1026,7 @@ const en = {
             title: 'Usage',
             load: 'Load',
             refresh: 'Refresh',
-            usedPercent: '{{percent, number}}% used',
+            remainingPercent: '{{percent, number}}% remaining',
             // Ollama states the session allowance resets every five hours and
             // the other weekly; the endpoint reports neither the length nor a
             // reset time. https://ollama.com/pricing

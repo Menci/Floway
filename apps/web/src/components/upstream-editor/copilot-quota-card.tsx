@@ -70,14 +70,20 @@ export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
                 })}
               </Text>
               <Text size={200} className="text-fui-fg3">
-                {t('dashboard.upstreamEditor.copilot.quota.usedPercent', { percent: bucket.usedPercent })}
+                {t('dashboard.upstreamEditor.copilot.quota.remainingPercent', { percent: 100 - bucket.usedPercent })}
               </Text>
             </div>
           : <Text size={200} className="text-fui-fg3">
               {t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}
             </Text>}
       </div>
-      {bucket.kind === 'metered' && <ProgressBar color={quotaBarColor(bucket.barPercent)} max={100} thickness="large" value={bucket.barPercent ?? undefined} />}
+      {/* This is a remaining-quota bar, like a health bar, not usage progress, so its fill is 100 - used percent. */}
+      {bucket.kind === 'metered' && <ProgressBar
+        color={quotaBarColor(bucket.barPercent)}
+        max={100}
+        thickness="large"
+        value={bucket.barPercent === null ? undefined : 100 - bucket.barPercent}
+      />}
     </div>)}
 
     {/* The reset date leads because a narrow row stacks these two, and alone on

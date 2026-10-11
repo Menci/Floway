@@ -431,10 +431,10 @@ const zhHansCN = {
         },
         signals: {
           plan: '{{plan}}：',
-          percent: '{{percent, number}}%',
+          remainingPercent: '剩余{{percent, number}}%',
           detailSeparator: '，',
           until: '至 {{date}}',
-          used: '{{label}}：已用 {{percent, number}}%',
+          remaining: '{{label}}：剩余{{percent, number}}%',
           resets: '{{time}} 重置',
           observed: '观测于 {{time}}',
           window: { primary: '主窗口', secondary: '次窗口' },
@@ -824,13 +824,14 @@ const zhHansCN = {
           deleteMessage: '删除 {{name}}？此操作无法撤销。',
           deleteConfirm: '删除模型',
         },
+        quotaRemainingPercent: '剩余{{percent, number}}%',
         copilot: {
           'quota': {
             'title': '额度',
             'load': '加载',
             'refresh': '刷新',
             'used': '{{used, number}} / {{entitlement, number}}',
-            'usedPercent': '已用 {{percent, number}}%',
+            'remainingPercent': '剩余{{percent, number}}%',
             'unlimited': '无限制',
             'unavailable': '当前套餐不含此项',
             'resets': '{{date}} 重置',
@@ -980,7 +981,7 @@ const zhHansCN = {
             title: '用量',
             load: '加载',
             refresh: '刷新',
-            usedPercent: '已用 {{percent, number}}%',
+            remainingPercent: '剩余{{percent, number}}%',
             window: {
               session: '5 小时窗口',
               weekly: '每周窗口',

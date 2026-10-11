@@ -84,10 +84,16 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       <div className="flex items-baseline justify-between gap-3">
         <Text size={300}>{t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}</Text>
         <Text size={200} className="text-fui-fg2">
-          {t('dashboard.upstreamEditor.ollama.usage.usedPercent', { percent: usageWindow.percent })}
+          {t('dashboard.upstreamEditor.ollama.usage.remainingPercent', { percent: 100 - usageWindow.percent })}
         </Text>
       </div>
-      <ProgressBar color={quotaBarColor(usageWindow.percent)} max={100} thickness="large" value={clampPercent(usageWindow.percent) ?? undefined} />
+      {/* This is a remaining-quota bar, like a health bar, not usage progress, so its fill is 100 - used percent. */}
+      <ProgressBar
+        color={quotaBarColor(usageWindow.percent)}
+        max={100}
+        thickness="large"
+        value={clampPercent(100 - usageWindow.percent) ?? undefined}
+      />
       <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>
     </div>)}
 

@@ -60,7 +60,7 @@ const useStyles = makeStyles({
 // scanned down the numbers.
 export interface UpstreamSignal {
   key: string;
-  /** A percentage this reading fills a ring with, or null for an amount. */
+  /** Used percentage for the reading and its severity, or null for an amount. */
   percent: number | null;
   value: string;
   label: string | null;
@@ -91,15 +91,13 @@ const detailText = (t: TFunction, parts: (string | null)[]): string =>
 
 const meterDetail = (t: TFunction, label: string, percent: number, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
   detailText(t, [
-    t('dashboard.upstreams.signals.used', { label, percent: Math.round(percent) }),
+    t('dashboard.upstreams.signals.remaining', { label, percent: 100 - Math.round(percent) }),
     resetAt === null ? null : t('dashboard.upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
     observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
   ]);
 
-// As the upstream reported it: an overage-permitted bucket runs past 100, and
-// only the ring beside the number is clamped.
-const percentValue = (t: TFunction, percent: number): string =>
-  t('dashboard.upstreams.signals.percent', { percent: Math.round(percent) });
+const remainingPercentValue = (t: TFunction, percent: number): string =>
+  t('dashboard.upstreams.signals.remainingPercent', { percent: 100 - Math.round(percent) });
 
 // Last on the line: the windows are what an operator reads at a glance, and this
 // says how long the wait still has to run rather than when it ends -- an instant
@@ -129,7 +127,7 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     .map(bucket => ({
       key: bucket.id,
       percent: bucket.usedPercent,
-      value: percentValue(t, bucket.usedPercent),
+      value: remainingPercentValue(t, bucket.usedPercent),
       label: quota.reset_at == null ? null : t('dashboard.upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
       detail: meterDetail(t, bucket.label, bucket.usedPercent, quota.reset_at ?? null, quota.observed_at, locale),
     }));
@@ -147,7 +145,7 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     return {
       key: item.key,
       percent: item.percent,
-      value: percentValue(t, item.percent),
+      value: remainingPercentValue(t, item.percent),
       label,
       detail: meterDetail(t, label, item.percent, item.resetAt, entry.observedAt, locale),
     };
@@ -185,7 +183,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
     return {
       key: row.key,
       percent: row.percent,
-      value: percentValue(t, row.percent),
+      value: remainingPercentValue(t, row.percent),
       label,
       detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
     };
@@ -210,7 +208,7 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
     return {
       key: item.key,
       percent: item.percent,
-      value: percentValue(t, item.percent),
+      value: remainingPercentValue(t, item.percent),
       label,
       detail: meterDetail(t, label, item.percent, item.resetsAt, observation.fetchedAt, locale),
     };
@@ -223,7 +221,7 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
     signals.push({
       key: 'included',
       percent,
-      value: percentValue(t, percent),
+      value: remainingPercentValue(t, percent),
       label: `${activityCostText(used)} / ${activityCostText(included.allowanceUsd)}`,
       detail: detailText(t, [includedCreditsHint(included, t, locale), t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
     });
@@ -293,7 +291,7 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
     <div className="flex items-baseline gap-x-3 min-w-0">
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
         <span className={mergeClasses('winui-focus-rect inline-flex items-baseline gap-1 min-w-0', styles.signal)} tabIndex={0}>
-          {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
+          {signal.percent !== null && <ProgressRing percent={100 - signal.percent} tone={quotaRingTone(signal.percent)} />}
           <Text size={200} className={signal.blocked === true ? styles.blocked : styles.value} weight="medium" wrap={false}>{signal.value}</Text>
           {signal.label !== null && <Text size={200} className={styles.label} truncate wrap={false}>{signal.label}</Text>}
         </span>
