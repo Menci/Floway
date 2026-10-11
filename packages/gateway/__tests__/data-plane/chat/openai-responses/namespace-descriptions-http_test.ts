@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, requestAppWithWarmModels as requestApp, setupAppTest, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 type TargetApi = 'openaiChatCompletions' | 'anthropicMessages';
@@ -30,17 +30,17 @@ const toolCallResponse = (target: TargetApi, name: string): Response => {
   if (target === 'openaiChatCompletions') {
     const base = { id: 'chat_test', object: 'chat.completion.chunk', created: 0, model: 'model' };
     return sseResponse([
-      { data: { ...base, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_read', type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] } },
-      { data: { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } } },
+      { data: { ...base, choices: [{  index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_read', type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] } },
+      { data: { ...base, choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } } },
       { data: '[DONE]' },
     ]);
   }
   return sseResponse([
-    { data: { type: 'message_start', message: { id: 'msg_test', type: 'message', role: 'assistant', model: 'model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } } },
+    { data: { type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_test', type: 'message', role: 'assistant', model: 'model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } } },
     { data: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_read', name, input: {} } } },
     { data: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } } },
     { data: { type: 'content_block_stop', index: 0 } },
-    { data: { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } } },
+    { data: { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } } },
     { data: { type: 'message_stop' } },
   ]);
 };
@@ -64,7 +64,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
           return toolCallResponse(target, 'payments_read');
         }, async () => {
           const response = await requestApp('/v1/responses', { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-          const resource = await response.json() as OpenAIResponsesResult;
+          const resource = await response.json() as OpenAIResponsesResultEx;
           assertEquals(response.status, 200);
           assertEquals(resource.status, 'completed');
           assertEquals(resource.tool_choice, choice);

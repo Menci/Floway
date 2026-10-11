@@ -7,7 +7,7 @@ import {
 } from '../auth/session';
 import { errorMessage } from '../lib/error-message';
 import { errorMessageFromPayload } from '../lib/error-payload';
-import type { AppType } from '@floway-dev/gateway/app-type';
+import type { AppType } from '@floway-dev/gateway/browser';
 
 export interface GlobalError<TRaw = unknown> {
   status: number;

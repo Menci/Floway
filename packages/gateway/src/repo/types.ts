@@ -152,7 +152,7 @@ export interface PerformanceDimensions extends PerformanceTelemetryContext {
   hour: string;              // 'YYYY-MM-DDTHH'
 }
 
-// TPOT is measurable only when at least two output tokens are streamed; the
+// TPOT is measurable only when at least two output tokens are reported; the
 // caller (recordPerformance) enforces that gate before setting `tpotUs`. A
 // TTFT-only sample omits it entirely.
 //

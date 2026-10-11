@@ -3,15 +3,15 @@ import { test } from 'vitest';
 import { stripBillingAttribution } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/strip-billing-attribution.ts';
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 interface InvocationOptions {
   flagOn?: boolean;
@@ -46,17 +46,17 @@ test('strips per-block from an array-form system prompt and filters blocks that 
     max_tokens: 1,
     messages: [],
     system: [
-      { type: 'text', text: 'You are a helpful assistant.' },
-      { type: 'text', text: 'x-anthropic-billing-header: token\ncch=abcdef12345' },
-      { type: 'text', text: 'Keep going. cch=99fffaa1;' },
+      { citations: null, type: 'text', text: 'You are a helpful assistant.' },
+      { citations: null, type: 'text', text: 'x-anthropic-billing-header: token\ncch=abcdef12345' },
+      { citations: null, type: 'text', text: 'Keep going. cch=99fffaa1;' },
     ],
   });
 
   await stripBillingAttribution(input, stubCtx, okEvents);
 
   assertEquals(input.payload.system, [
-    { type: 'text', text: 'You are a helpful assistant.' },
-    { type: 'text', text: 'Keep going.' },
+    { citations: null, type: 'text', text: 'You are a helpful assistant.' },
+    { citations: null, type: 'text', text: 'Keep going.' },
   ]);
 });
 
@@ -66,8 +66,8 @@ test('deletes the system field entirely when every array block becomes empty', a
     max_tokens: 1,
     messages: [],
     system: [
-      { type: 'text', text: 'x-anthropic-billing-header: token' },
-      { type: 'text', text: 'cch=deadbeef1234;' },
+      { citations: null, type: 'text', text: 'x-anthropic-billing-header: token' },
+      { citations: null, type: 'text', text: 'cch=deadbeef1234;' },
     ],
   });
 

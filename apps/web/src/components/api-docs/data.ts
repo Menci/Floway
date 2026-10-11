@@ -1,4 +1,4 @@
-import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/common';
+import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/browser';
 
 export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
 

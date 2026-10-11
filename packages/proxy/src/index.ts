@@ -8,7 +8,8 @@ export { parseProxyUri } from './url.ts';
 
 export type { ProxyConfig } from './proxy-config.ts';
 
-export { ProxyDialError, ProxyUriError } from './errors.ts';
+export { ProxyDialError } from './dial-error.ts';
+export { ProxyUriError } from './uri-error.ts';
 
 export { runDirectConnectRequest, runProxiedRequest } from './dialer.ts';
 export type { RunDirectConnectRequestOptions, RunProxiedRequestOptions } from './dialer.ts';

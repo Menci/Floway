@@ -35,7 +35,7 @@ import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { isOllamaCloudBaseUrl } from '../upstreams/ollama-usage';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const {
   Button,

@@ -1,6 +1,6 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
-import { generateAnthropicId, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
@@ -16,7 +16,7 @@ const anthropicErrorResult = (
   type: string,
   message: string,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> => ({
+): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -38,7 +38,7 @@ const anthropicErrorResult = (
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
+): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
   anthropicErrorResult(400, 'invalid_request_error', error.message, performance);
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
@@ -46,7 +46,7 @@ export const translatorInputErrorResult = (
 export const renderAnthropicMessagesFailure = (
   failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> => {
+): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> => {
   const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';
   switch (failure.kind) {
   case 'routing-unavailable':

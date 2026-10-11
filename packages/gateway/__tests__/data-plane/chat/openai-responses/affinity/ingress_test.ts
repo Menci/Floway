@@ -10,7 +10,7 @@ import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
-const canonicalItemType = (itemType: string): string => itemType === 'compaction_summary' ? 'compaction' : itemType;
+const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
 const carrierDomain = (itemType: string, slot: string): string => `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const candidate = (
@@ -339,10 +339,10 @@ test('replays required compaction state to another model in the same compatibili
   });
 });
 
-test('lets originless context compaction follow candidate order while natural encrypted state forces', async () => {
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
+test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
   const originlessItem = {
-    type: 'context_compaction',
+    type,
     id: 'ctx_client',
     encrypted_content: synthetic,
   } as unknown as CanonicalOpenAIResponsesPayload['input'][number];
@@ -350,7 +350,7 @@ test('lets originless context compaction follow candidate order while natural en
   expect(syntheticPrepared.requiredTargets).toEqual([]);
   expect(syntheticPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
 
-  const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
+  const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
   const naturalPrepared = await analyzeOpenAIResponsesAffinity({
     model: 'model',
     input: [{ ...originlessItem, encrypted_content: natural } as CanonicalOpenAIResponsesPayload['input'][number]],

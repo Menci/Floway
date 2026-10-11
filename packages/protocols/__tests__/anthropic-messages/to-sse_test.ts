@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import type { AnthropicMessagesStreamEvent } from '../../src/anthropic-messages/index.ts';
+import type { AnthropicMessagesStreamEventEx } from '../../src/anthropic-messages/index.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '../../src/anthropic-messages/to-sse.ts';
 import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning termination', () => {
-  const frames = [eventFrame({ type: 'message_stop' } satisfies AnthropicMessagesStreamEvent), eventFrame({ type: 'ping' } satisfies AnthropicMessagesStreamEvent)].map(anthropicMessagesProtocolFrameToSSEFrame);
+  const frames = [eventFrame({ type: 'message_stop' } satisfies AnthropicMessagesStreamEventEx), eventFrame({ type: 'ping' } satisfies AnthropicMessagesStreamEventEx)].map(anthropicMessagesProtocolFrameToSSEFrame);
 
   assertEquals(
     frames.map(frame => frame?.event),
@@ -14,7 +14,7 @@ test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning 
   );
 });
 
-test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url to SSE source', () => {
+test('anthropicMessagesProtocolFrameToSSEFrame preserves search_result_location source', () => {
   const frame = anthropicMessagesProtocolFrameToSSEFrame(
     eventFrame({
       type: 'content_block_delta',
@@ -22,15 +22,16 @@ test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url t
       delta: {
         type: 'citations_delta',
         citation: {
+          cited_text: '',
           type: 'search_result_location',
-          url: 'https://example.com/protocol',
+          source: 'https://example.com/protocol',
           title: 'Protocol Citation',
           search_result_index: 0,
           start_block_index: 0,
           end_block_index: 0,
         },
       },
-    } satisfies AnthropicMessagesStreamEvent),
+    } satisfies AnthropicMessagesStreamEventEx),
   );
 
   const payload = JSON.parse(frame!.data) as {
@@ -38,6 +39,7 @@ test('anthropicMessagesProtocolFrameToSSEFrame maps search_result_location url t
   };
 
   assertEquals(payload.delta.citation, {
+    cited_text: '',
     type: 'search_result_location',
     source: 'https://example.com/protocol',
     title: 'Protocol Citation',

@@ -5,7 +5,7 @@ import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/componen
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
-import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
+import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/browser';
 const target = (id: string, rules: AliasTarget['rules'] = {}): AliasTarget => ({ target_model_id: id, rules });
 
 describe('model alias warnings', () => {

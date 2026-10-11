@@ -60,11 +60,11 @@ export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
 }
 
 /**
- * One pairwise translation trip. The function body owns the trip: it builds
+ * One internal target-specific translation trip. The function body owns the trip: it builds
  * the target payload and returns an events translator closure that maps
  * target-protocol events back into source-protocol events. Trip-scoped state
  * (synthetic ids, custom-tool name sets, etc.) lives as locals captured by
- * the returned closure — the source serve never sees them.
+ * the returned closure — the source route never exposes them.
  *
  * Stateless pairs simply return a function reference for `events`. Stateful
  * pairs let the closure capture whatever locals the trip needs.

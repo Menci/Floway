@@ -7,11 +7,12 @@ export * from './models.ts';
 export * from './media-type.ts';
 export * from './pricing.ts';
 export * from './usage.ts';
+export * from './telemetry-time.ts';
 export * from './openai-stream.ts';
 export * from './opaque-value.ts';
 export * from './sse.ts';
 export * from './parse-sse.ts';
 export * from './parse-events.ts';
 
-export { isJsonObject, type JsonObject } from './json.ts';
+export { isJsonObject, jsonInteger, type JsonObject } from './json.ts';
 export { captureExtras } from './reassemble-extras.ts';

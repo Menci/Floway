@@ -1,24 +1,19 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { TelemetryDimensionControls } from '../../../src/components/telemetry/dimension-controls';
+import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../../../src/components/telemetry/dimension-controls';
 import { renderInApp } from '../../render';
 
 describe('telemetry dimension controls', () => {
   it('labels the grouping composite and omits the active dimension filter', () => {
-    renderInApp(<TelemetryDimensionControls
-      disabled={false}
-      dimensions={[
-        { key: 'model', groupLabel: 'By Model', filterLabel: 'Model', allLabel: 'All models', options: [] },
-        { key: 'upstream', groupLabel: 'By Upstream', filterLabel: 'Upstream', allLabel: 'All upstreams', options: [] },
-      ]}
-      filters={{ model: [], upstream: [] }}
-      groupBy="model"
-      groupByLabel="Group by"
-      onFilterChange={vi.fn()}
-      onGroupByChange={vi.fn()}
-      selectedLabel={count => `${count} selected`}
-    />);
+    const dimensions: TelemetryDimension<'model' | 'upstream'>[] = [
+      { key: 'model', groupLabel: 'By Model', filterLabel: 'Model', allLabel: 'All models', options: [] },
+      { key: 'upstream', groupLabel: 'By Upstream', filterLabel: 'Upstream', allLabel: 'All upstreams', options: [] },
+    ];
+    renderInApp(<>
+      <TelemetryGroupByField disabled={false} dimensions={dimensions} groupBy="model" groupByLabel="Group by" onGroupByChange={vi.fn()} />
+      <TelemetryFilterFields disabled={false} dimensions={dimensions} filters={{ model: [], upstream: [] }} groupBy="model" onFilterChange={vi.fn()} selectedLabel={count => `${count} selected`} />
+    </>);
 
     const group = screen.getByRole('group', { name: 'Group by' });
     expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Group by');

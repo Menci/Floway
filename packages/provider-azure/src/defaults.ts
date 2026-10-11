@@ -11,6 +11,7 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
   'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
@@ -19,4 +20,5 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  'openai-responses-store-false': false,
 };

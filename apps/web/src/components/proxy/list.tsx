@@ -12,7 +12,7 @@ import { TABLE_ACTIONS_WIDTH, TableActions, TableTrailingHeader } from '../ui/ta
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import { kindFromUri } from '@floway-dev/proxy/url-kind';
+import { kindFromUri } from '@floway-dev/proxy/browser';
 
 const {
   Table,

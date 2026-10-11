@@ -10,6 +10,7 @@ import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { PANEL_INSET_CLASS } from '../ui/panel';
 import { ReorderHandle, useReorderList } from '../ui/reorder-list';
@@ -17,8 +18,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { HuePicker } from '../upstreams/hue-picker';
-import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
-import { MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/model-prefix';
+import { type UpstreamModelConfig, MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/browser';
 
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
 
@@ -48,6 +48,12 @@ export function UpstreamConfigSidebar({
 }) {
   const { t } = useTranslation();
   const { control, formState: { errors } } = useFormContext<UpstreamEditorValues>();
+  const [config, state] = useWatch({ control, name: ['config', 'state'] });
+  const usageRefreshDisabled = record.kind === 'claude-code'
+    ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
+    : record.kind === 'ollama' && (config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).cloudUsage !== true;
+  const usageRefreshInfo = [t('dashboard.upstreamEditor.usageRefresh.description'),
+    record.kind === 'claude-code' ? t('dashboard.upstreamEditor.usageRefresh.claudeCodeRequirement') : record.kind === 'ollama' ? t('dashboard.upstreamEditor.usageRefresh.ollamaRequirement') : ''].filter(Boolean).join(' ');
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
@@ -80,15 +86,39 @@ export function UpstreamConfigSidebar({
         >
           <UpstreamHueEditor kind={record.kind} />
         </EditorSection>
+        <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
+          <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
+        </EditorSection>
         <EditorSection
           error={errors.config?.message ? t(errors.config.message) : undefined}
           title={t('dashboard.upstreamEditor.sections.connection')}
         >
           <ProviderConfigSection record={record} onPatch={onPatch} onRefreshModels={onRefreshModels} />
         </EditorSection>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
-          <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
-        </EditorSection>
+        {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+          title={t('dashboard.upstreamEditor.usageRefresh.title')}
+        >
+          <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
+            <Field
+              label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
+              validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
+              validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
+            >
+              <Input
+                type="number"
+                disabled={usageRefreshDisabled}
+                min={0}
+                step={1}
+                placeholder="0"
+                name={field.name}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                value={field.value === 0 ? '' : String(field.value)}
+                onChange={(_, data) => field.onChange(Number(data.value))}
+              />
+            </Field>
+          )} />
+        </EditorSection>}
         {record.kind === 'custom' && (
           <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
             <ApiPathsSection record={record} />
@@ -165,6 +195,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   const { t } = useTranslation();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
+  const entries = useWatch({ control, name: 'proxyFallbackList' });
   const { fields, append, move, remove } = useFieldArray({ control, name: 'proxyFallbackList' });
   const reorder = useReorderList({ length: fields.length, onReorder: move });
   const available = [
@@ -172,12 +203,14 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
     { id: 'direct_fetch', name: t('dashboard.upstreamEditor.proxy.directFetch') },
     ...proxies,
   ];
+  const hasUnmatchedColos = entries.length > 0 && !entries.some(entry => entry.colos === undefined);
+  const hasLocationHint = runtime.kind === 'cloudflare';
   const hint = runtime.kind === 'cloudflare' ? t('dashboard.upstreamEditor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
   return <div
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
     {...reorder.listProps('grid gap-2')}
   >
-    {fields.map((field, index) => <div {...reorder.itemProps(index, `grid gap-2 border-0 border-solid border-fui-divider py-2 ${reorder.position(index) === 0 ? 'pt-0' : 'border-t'}`)} key={field.id}>
+    {fields.map((field, index) => <div {...reorder.itemProps(index, `grid gap-2 ${hasLocationHint ? `border-0 border-solid border-fui-divider py-2 ${reorder.position(index) === 0 ? 'pt-0' : 'border-t'}` : ''}`)} key={field.id}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
@@ -187,8 +220,14 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
       </div>
       {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} value={item.value ?? []} />} />}
     </div>)}
+    <Text size={200} className="text-fui-fg2">{t(entries.length === 0
+      ? 'dashboard.upstreamEditor.proxy.empty'
+      : hasLocationHint ? 'dashboard.upstreamEditor.proxy.orderColo' : 'dashboard.upstreamEditor.proxy.order')}</Text>
     <Button onClick={() => append({ id: 'direct_connect' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
-    {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
+    {(hasLocationHint || hasUnmatchedColos) && <div className="grid">
+      {hasUnmatchedColos && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.proxy.unmatched')}</Text>}
+      {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
+    </div>}
   </div>;
 }
 

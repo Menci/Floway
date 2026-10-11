@@ -82,6 +82,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     kind: 'custom' as const,
     name: 'Node upstream',
     enabled: true,
+    usageRefreshIntervalMinutes: 0,
     sortOrder: 0,
     createdAt: '2026-08-05T00:00:00.000Z',
     updatedAt: '2026-08-05T00:00:00.000Z',

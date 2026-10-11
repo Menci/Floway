@@ -2,33 +2,33 @@ import { expect, test } from 'vitest';
 
 import { restoreCodexResponsesOutput } from '../src/responses-output.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesOutputItem, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const reasoning: OpenAIResponsesOutputItem = { type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: 'reasoning' };
-const message: OpenAIResponsesOutputItem = {
+const reasoning: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: 'reasoning' };
+const message: OpenAIResponsesOutputItemEx = {
   type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
   content: [{ type: 'output_text', text: 'answer', annotations: [] }],
 };
-const compaction: OpenAIResponsesOutputItem = { type: 'compaction', id: 'cmp_2', encrypted_content: 'compaction' };
+const compaction: OpenAIResponsesOutputItemEx = { type: 'compaction', id: 'cmp_2', encrypted_content: 'compaction' };
 
-const response = (output: OpenAIResponsesOutputItem[], status: OpenAIResponsesResult['status'] = 'completed'): OpenAIResponsesResult => ({
+const response = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponsesResultEx['status'] = 'completed'): OpenAIResponsesResultEx => ({
   id: 'resp_1', object: 'response', model: 'test-model', status, output, error: null, incomplete_details: null,
   usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
 });
 
-const restore = async (events: OpenAIResponsesStreamEvent[]): Promise<ProtocolFrame<OpenAIResponsesStreamEvent>[]> => {
+const restore = async (events: OpenAIResponsesStreamEventEx[]): Promise<ProtocolFrame<OpenAIResponsesStreamEventEx>[]> => {
   const source = async function* () {
     for (const event of events) yield eventFrame(event);
     yield doneFrame();
   };
-  const frames: ProtocolFrame<OpenAIResponsesStreamEvent>[] = [];
+  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of restoreCodexResponsesOutput(source())) frames.push(frame);
   return frames;
 };
 
 test('restores an empty Codex terminal in output_index order without changing item events or response metadata', async () => {
   const terminal = response([]);
-  const events: OpenAIResponsesStreamEvent[] = [
+  const events: OpenAIResponsesStreamEventEx[] = [
     { type: 'response.created', response: { ...terminal, status: 'in_progress' } },
     { type: 'response.output_item.done', output_index: 1, item: message },
     { type: 'response.output_item.done', output_index: 0, item: reasoning },
@@ -36,7 +36,7 @@ test('restores an empty Codex terminal in output_index order without changing it
   ];
   const frames = await restore(events);
   expect(frames.slice(0, 3)).toEqual(events.slice(0, 3).map(eventFrame));
-  expect(frames[3]).toEqual(eventFrame({ ...events[3], response: { ...terminal, output: [reasoning, message] } } as OpenAIResponsesStreamEvent));
+  expect(frames[3]).toEqual(eventFrame({ ...events[3], response: { ...terminal, output: [reasoning, message] } } as OpenAIResponsesStreamEventEx));
   expect(terminal.output).toEqual([]);
   expect(frames[4]).toEqual(doneFrame());
 });
@@ -66,9 +66,9 @@ test.each([
   const frames = await restore([
     { type: 'response.output_item.done', output_index: 0, item: reasoning },
     { type: 'response.output_item.added', output_index: 1, item: pending },
-    { type, response: terminal } as OpenAIResponsesStreamEvent,
+    { type, response: terminal } as OpenAIResponsesStreamEventEx,
   ]);
-  expect(frames[2]).toEqual(eventFrame({ type, response: { ...terminal, output: [reasoning, terminalItem] } } as OpenAIResponsesStreamEvent));
+  expect(frames[2]).toEqual(eventFrame({ type, response: { ...terminal, output: [reasoning, terminalItem] } } as OpenAIResponsesStreamEventEx));
 });
 
 test('preserves terminal item fields when another closed item was omitted', async () => {
@@ -131,7 +131,7 @@ test('rejects different item identities at the same output index', async () => {
 });
 
 test('restores an ID-less compaction item when the terminal is empty', async () => {
-  const item: OpenAIResponsesOutputItem = { type: 'compaction', encrypted_content: 'opaque' };
+  const item: OpenAIResponsesOutputItemEx = { type: 'compaction', encrypted_content: 'opaque' };
   const frames = await restore([
     { type: 'response.output_item.done', output_index: 0, item },
     { type: 'response.completed', response: response([]) },
@@ -140,9 +140,9 @@ test('restores an ID-less compaction item when the terminal is empty', async () 
 });
 
 test('leaves error events and terminal snapshots without closed items untouched', async () => {
-  const terminal: OpenAIResponsesStreamEvent = { type: 'response.failed', response: response([message], 'failed') };
+  const terminal: OpenAIResponsesStreamEventEx = { type: 'response.failed', response: response([message], 'failed') };
   const frames = await restore([terminal]);
   expect(frames).toEqual([eventFrame(terminal), doneFrame()]);
-  const error: OpenAIResponsesStreamEvent = { type: 'error', message: 'upstream error' };
+  const error: OpenAIResponsesStreamEventEx = { type: 'error', message: 'upstream error' };
   expect(await restore([error])).toEqual([eventFrame(error), doneFrame()]);
 });

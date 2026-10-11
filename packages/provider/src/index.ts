@@ -9,7 +9,7 @@ export type {
 export { providerModelOf } from './invocation.ts';
 
 export type { InternalDebugError } from './error.ts';
-export { toInternalDebugError } from './error.ts';
+export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
   ApiErrorResult,
@@ -65,6 +65,9 @@ export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
+
+export { runScheduledUsageRefresh } from './scheduled.ts';
+export type { ProviderScheduledOptions } from './scheduled.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';

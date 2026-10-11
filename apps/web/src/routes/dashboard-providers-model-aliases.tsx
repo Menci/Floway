@@ -25,7 +25,7 @@ import { TruncationTooltip } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
-import type { ModelAlias } from '@floway-dev/protocols/common';
+import type { ModelAlias } from '@floway-dev/protocols/browser';
 
 const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 

@@ -56,7 +56,7 @@ test('non-forced tool_choice leaves reasoning_effort untouched', async () => {
       model: 'm',
       messages: [],
       reasoning_effort: 'high',
-      tool_choice,
+      tool_choice: tool_choice as OpenAIChatCompletionsPayload['tool_choice'],
     });
 
     await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);

@@ -11,7 +11,7 @@ import {
   withRate,
   withThresholdCoordinate,
 } from '../../../src/components/upstream-editor/pricing-model';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/browser';
 
 const baseOnly = (rates: Record<string, string>): ModelPricing => ({ entries: [{ rates }] });
 

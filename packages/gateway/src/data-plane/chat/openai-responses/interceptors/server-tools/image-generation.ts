@@ -14,12 +14,12 @@ import {
   createRandomOpenAIResponsesItemId,
   type OpenAIResponsesFunctionCallOutputItem,
   type OpenAIResponsesFunctionTool,
-  type OpenAIResponsesFunctionToolCallItem,
+  type OpenAIResponsesFunctionToolCallItemEx,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
-  type OpenAIResponsesInputItem,
-  type OpenAIResponsesOutputImageGenerationCall,
+  type CanonicalOpenAIResponsesInputItem,
+  type OpenAIResponsesOutputImageGenerationCallEx,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
@@ -505,7 +505,7 @@ interface InputImageEntry {
   path: string;
 }
 
-const inputImagesOf = (item: OpenAIResponsesInputItem, inputIndex: number): InputImageEntry[] => {
+const inputImagesOf = (item: CanonicalOpenAIResponsesInputItem, inputIndex: number): InputImageEntry[] => {
   const content = item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
@@ -702,7 +702,7 @@ interface ImageSourceInspection {
 }
 
 const inspectImageSourcesWithCache = (
-  input: readonly OpenAIResponsesInputItem[],
+  input: readonly CanonicalOpenAIResponsesInputItem[],
   decodedSources: Map<string, ImageSource | null>,
 ): ImageSourceInspection => {
   const sources: ImageSourceReference[] = [];
@@ -787,12 +787,12 @@ const inspectImageSourcesWithCache = (
   return { sources, ...(issue === undefined ? {} : { issue }) };
 };
 
-export const createImageSourceInspector = (): ((input: readonly OpenAIResponsesInputItem[]) => ImageSourceInspection) => {
+export const createImageSourceInspector = (): ((input: readonly CanonicalOpenAIResponsesInputItem[]) => ImageSourceInspection) => {
   const decodedSources = new Map<string, ImageSource | null>();
   return input => inspectImageSourcesWithCache(input, decodedSources);
 };
 
-export const inspectImageSources = (input: readonly OpenAIResponsesInputItem[]): ImageSourceInspection =>
+export const inspectImageSources = (input: readonly CanonicalOpenAIResponsesInputItem[]): ImageSourceInspection =>
   createImageSourceInspector()(input);
 
 type ImageOperation =
@@ -1164,16 +1164,17 @@ export const imageTerminal = (
   outcome: ImageOutcome,
 ): ServerToolTerminal => {
   if (!outcome.ok) {
-    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
+    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
+      result: null,
       revised_prompt: prompt,
       error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
     };
     return { item, endEvents: [] };
   }
 
-  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
+  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,
@@ -1339,10 +1340,10 @@ const streamImageGeneration = (
 // to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
 // type}`), has a public home on the item.
 export const transformInputItemsForImageGeneration = (
-  input: OpenAIResponsesInputItem[],
+  input: CanonicalOpenAIResponsesInputItem[],
   toolName: string,
-): OpenAIResponsesInputItem[] => {
-  const out: OpenAIResponsesInputItem[] = [];
+): CanonicalOpenAIResponsesInputItem[] => {
+  const out: CanonicalOpenAIResponsesInputItem[] = [];
   for (const item of input) {
     if (item.type !== 'image_generation_call') {
       out.push(item);
@@ -1366,7 +1367,7 @@ export const transformInputItemsForImageGeneration = (
           },
         })
       : JSON.stringify({ ok: true, status: 'completed', id });
-    const functionCall: OpenAIResponsesFunctionToolCallItem = {
+    const functionCall: OpenAIResponsesFunctionToolCallItemEx = {
       type: 'function_call',
       call_id: callId,
       name: toolName,

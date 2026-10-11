@@ -15,7 +15,7 @@ import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 const { Tooltip, makeStyles } = fluentComponents;
 

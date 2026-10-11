@@ -7,6 +7,7 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
+import { sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
@@ -25,8 +26,10 @@ import {
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
-import { TelemetryDimensionControls, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { TelemetryTimeRange } from '../components/telemetry/time-range';
+import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
@@ -35,7 +38,6 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
@@ -219,7 +221,8 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     onQueryCommit,
   );
 
-  usePollWhileVisible(poll);
+  const [editingRange, setEditingRange] = useState(false);
+  useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<PerformanceUrlState>(
     () => ({ ...loadedQuery, metric, percentile, hidden: [...hiddenSeries] }),
@@ -246,14 +249,17 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }));
   };
   const changeRange = (next: PerformanceRange) => {
-    if (next === query.range) return;
+    if (sameDashboardRange(next, query.range)) {
+      void refresh();
+      return;
+    }
     setQuery(current => ({ ...current, range: next }));
   };
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setQuery(current => ({
     ...current,
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
-  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt, locale), [loadedAt, loadedQuery.range, locale]);
+  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const labels = useMemo(() => overview && upstreams && performanceLabels(overview, upstreams), [overview, upstreams]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
@@ -303,39 +309,57 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-          <TelemetryDimensionControls
-            disabled={refreshing}
-            dimensions={availableDimensions}
-            filters={loadedQuery.filters}
-            groupBy={loadedQuery.groupBy}
-            groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-              <Button
-                appearance="subtle"
-                aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                className={CONTROL_ROW_CLASS}
-                icon={<InfoRegular />}
+          <div className="flex items-end gap-3 min-w-0 flex-wrap">
+            <TelemetryGroupByField
+              disabled={refreshing}
+              dimensions={availableDimensions}
+              groupBy={loadedQuery.groupBy}
+              groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+                <Button
+                  appearance="subtle"
+                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                  className={CONTROL_ROW_CLASS}
+                  icon={<InfoRegular />}
+                />
+              </Tooltip>}
+              groupByLabel={t('dashboard.performance.groupBy.label')}
+              onGroupByChange={changeGroupBy}
+            />
+            <div className="ml-auto flex-none">
+              <TelemetryTimeRange
+                addressOf={range => addressOf({ range })}
+                ariaLabel={t('dashboard.performance.range.label')}
+                loadedAt={loadedAt}
+                onChange={changeRange}
+                onEditingChange={setEditingRange}
+                range={loadedQuery.range}
               />
-            </Tooltip>}
-            groupByLabel={t('dashboard.performance.groupBy.label')}
-            onFilterChange={setFilter}
-            onGroupByChange={changeGroupBy}
-            selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
-          />
+            </div>
+          </div>
+          <div className="flex items-end gap-3 min-w-0 flex-wrap">
+            <TelemetryFilterFields
+              disabled={refreshing}
+              dimensions={availableDimensions}
+              filters={loadedQuery.filters}
+              groupBy={loadedQuery.groupBy}
+              onFilterChange={setFilter}
+              selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
+            />
+          </div>
           <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
             {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
               <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
               <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
             </div>)}
           </div>
-          <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+          <div className="flex items-end justify-between gap-4 min-w-0 flex-wrap">
             <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
               { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
               { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
             ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-            <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-            <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} disabled={refreshing} items={[
-              { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-            ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
+            <div className="ml-auto flex-none">
+              <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+            </div>
           </div>
         </Panel>
         <Panel className="min-w-0">

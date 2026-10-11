@@ -38,6 +38,7 @@ const baseRecord: UpstreamRecord = {
   kind: 'codex',
   name: 'Codex (pivot tester)',
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-03-15T00:00:00.000Z',
   updatedAt: '2026-03-15T00:00:00.000Z',

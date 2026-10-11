@@ -18,8 +18,7 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // and percent-encoding may vary.
 
-import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
-import { ProxyUriError } from './errors.ts';
+import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './encoding.ts';
 import {
   type HttpProxyConfig,
   type ProxyConfig,
@@ -33,6 +32,7 @@ import {
   type VlessTcpTlsProxyConfig,
   type VlessWsTlsProxyConfig,
 } from './proxy-config.ts';
+import { ProxyUriError } from './uri-error.ts';
 
 const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>([
   'aes-128-gcm',

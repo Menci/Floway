@@ -1,7 +1,7 @@
 import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64BinaryString } from '../../lib/base-encoding';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpBody } from '@floway-dev/gateway/dump-types';
-import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/common';
+import type { DumpBody } from '@floway-dev/gateway/browser';
+import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/browser';
 
 export interface RenderedBody {
   text: string;

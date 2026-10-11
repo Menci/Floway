@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isGatewayPath } from '../../platform-node/src/static-web.ts';
 import { wranglerProxiedPaths } from '../gateway-paths';
-import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/browser';
 
 // Three hosting topologies each restate the set of paths that belong to the
 // gateway, in three syntaxes, and none can consult the others at run time.

@@ -45,6 +45,8 @@ const scriptSources = {
     agents: [
       { name: 'SETUP_BASH_CLAUDE', file: 'installers/bash/claude.sh' },
       { name: 'SETUP_BASH_CODEX', file: 'installers/bash/codex.sh' },
+      { name: 'SETUP_BASH_OMP', file: 'installers/bash/omp.sh' },
+      { name: 'SETUP_BASH_PI', file: 'installers/bash/pi.sh' },
     ],
   },
   powershell: {
@@ -54,27 +56,41 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_JSON_DOCUMENT', file: 'installers/powershell/common/json-document.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', end: '# --- run' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', end: '# Rollback retains' },
-      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Run a fixed package-manager' },
+      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Inherit stdout/stderr' },
       { name: 'SETUP_POWERSHELL_COMMON_PLATFORM', file: 'installers/powershell/common/platform.ps1', start: 'function Get-SetupPlatform', append: '\n' },
       {
         name: 'SETUP_POWERSHELL_COMMON_PROCESS',
         file: 'installers/powershell/common/process.ps1',
-        start: '# Run a fixed package-manager',
-        end: '# Run a child process with captured output',
+        start: '# Inherit stdout/stderr',
+        end: '# Captured commands are noninteractive',
       },
       { name: 'SETUP_POWERSHELL_COMMON_CLI', file: 'installers/powershell/common/cli.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', start: '# Rollback retains', append: '\n' },
-      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Run a child process with captured output' },
+      { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Captured commands are noninteractive' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', start: '# --- run' },
     ],
     agents: [
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
+      { name: 'SETUP_POWERSHELL_OMP', file: 'installers/powershell/omp.ps1' },
+      { name: 'SETUP_POWERSHELL_PI', file: 'installers/powershell/pi.ps1' },
     ],
   },
 } as const satisfies Record<string, PlatformSources>;
 
-const allSections = Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]);
+// These assets are materialized by installers or served as extensions; they are
+// not executed as part of a platform's common body.
+const extraSections: readonly SourceSection[] = [
+  { name: 'SETUP_NODE_JSONC_EDIT', file: 'installers/node/jsonc-edit.mjs' },
+  { name: 'SETUP_NODE_PI_INSTALLATION', file: 'installers/node/pi-installation.mjs' },
+  { name: 'SETUP_NODE_OMP_EXTENSION', file: 'installers/node/omp-extension.js' },
+  { name: 'SETUP_NODE_PI_EXTENSION', file: 'installers/node/pi-extension.js' },
+];
+
+const allSections = [
+  ...Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]),
+  ...extraSections,
+];
 const sourceFiles = new Map<string, string>();
 for (const { name, file } of allSections) {
   const existing = sourceFiles.get(name);

@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import { backfillRequiredFields } from '../../../src/interceptors/anthropic-messages/backfill-required-fields.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
+const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { anthropicMessages: {} } })): AnthropicMessagesBoundaryCtx => ({

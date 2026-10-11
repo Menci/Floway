@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
+import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -349,6 +349,7 @@ const upstreamHueSchema = z.number().int().min(0).max(UPSTREAM_HUE_DEGREES - 1);
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
@@ -388,6 +389,7 @@ export const updateUpstreamBody = z.object({
   kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
@@ -524,6 +526,7 @@ export const previewModelsBody = z.object({
     proxy_fallback_list: proxyFallbackListSchema,
     name: z.string().optional(),
     enabled: z.boolean().optional(),
+    usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
     sort_order: z.number().int().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
@@ -810,7 +813,7 @@ const filterTokenUsageOverviewUserId = z.union([
 const telemetryOverviewQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
-  bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
+  bucket: z.custom<TelemetryBucketGranularity>(isTelemetryBucketGranularity, 'Invalid telemetry bucket granularity').optional(),
   timezone: z.string().optional(),
   timezone_offset_minutes: z.string().optional(),
   // Cross-cutting filters applied to raw records before aggregation. Values

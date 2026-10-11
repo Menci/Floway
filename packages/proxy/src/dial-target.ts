@@ -1,4 +1,4 @@
-import { ProxyDialError } from './errors.ts';
+import { ProxyDialError } from './dial-error.ts';
 import type { DialedSocket, SocketDial, SocketDialOptions } from './types.ts';
 
 /**

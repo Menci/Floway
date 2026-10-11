@@ -31,10 +31,10 @@ export const captureFromDump = (
 };
 
 // Threads a translate trip around an inner attempt. The trip itself is async
-// (the real `@floway-dev/translate` pair functions resolve a `Promise`), so
-// `translate` returns the trip object behind a promise. The pair functions
-// take `(src, ctx)`; this helper's `translate` parameter stays unary so each
-// caller closes over its own `ctx` (`p => translateXViaY(p, ctx)`).
+// (the real `@floway-dev/translate` route methods resolve a `Promise`), so
+// `translate` returns the trip object behind a promise. This helper's
+// `translate` parameter stays unary so each caller closes over its own
+// `ctx` (`p => routeSource(p).viaTarget(ctx)`).
 //
 // On an upstream api-error the trip's optional `apiError` hook is invoked so
 // the pair can rewrite the body into the source protocol's envelope — the

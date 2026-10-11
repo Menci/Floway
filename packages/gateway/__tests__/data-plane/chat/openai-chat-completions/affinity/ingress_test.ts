@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -29,7 +30,7 @@ test('restores owned opaque state only for its exact candidate', async () => {
   const carrier = await codec.wrap('upstream-signature', targetFor(candidateA), 'openai-chat-completions.reasoning_opaque');
   const prepared = await analyzeOpenAIChatCompletionsAffinity({
     model: 'model',
-    messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],
+    messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier } as OpenAIChatCompletionsAssistantMessageEx],
   }, codec);
 
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);

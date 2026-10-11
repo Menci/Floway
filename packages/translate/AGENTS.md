@@ -1,56 +1,46 @@
-# Translation Shared Helpers
+# Translation Protocols and Shared Helpers
 
-`src/shared/` contains translate-internal helpers, and `__tests__/shared/`
-mirrors their test coverage. A helper's production location is an import
-ceiling over the sibling translation-pair directories. Pick the narrowest
-matching category before writing a helper or its tests; do not put flat `.ts`
-files at the top level of either `shared/` tree.
+`src/protocols/<protocol>/` owns translation entrypoints and protocol-specific
+code. `__tests__/protocols/` mirrors production ownership. Package callers
+import the source protocol's subpath and call
+`route<Protocol>(input).via<Target>(context)` to create an independent trip.
 
 ## Categories
 
-1. **Single-pair helper** — keep it in the pair's directory
-   (`anthropic-messages-via-openai-responses/`, etc.). Do not extract it into `shared/`.
-2. **Source-locked, `<X>-via/`** — only `X-via-*` pairs may import the helper.
-   A helper does not need to serve every pair within that ceiling.
-3. **Target-locked, `via-<Y>/`** — only `*-via-Y` pairs may import the helper.
-   A helper does not need to serve every pair within that ceiling.
-4. **One-protocol-bidirectional, `<P>/`** — only pairs with `P` as either source
-   or target may import the helper. No helper currently occupies this ceiling.
-5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
-   `B-via-A` pairs may import the helper. For example,
-   `openai-chat-completions-and-openai-responses/reasoning.ts` runs both directions of the
-   OpenAI Chat Completions ↔ OpenAI Responses reasoning round trip.
+1. **Single-pair helper** — keep it in
+   `protocols/<source>/via-<target>/`, beside its request and event translators.
+2. **Source-only helper** — keep it in `protocols/<protocol>/as-source/`.
+   Only routes whose source is that protocol may import it.
+3. **Target-only helper** — keep it in `protocols/<protocol>/as-target/`.
+   Only routes whose target is that protocol may import it.
+4. **Both directions** — keep it in `protocols/<protocol>/common/`.
+   Routes using that protocol as source or target may import it. Keep another
+   protocol's wire mapping in the matching `via-*` route. Retained files use
+   functional names without another protocol name.
+5. **Protocol-independent utility** — keep it in `shared/`, with tests under
+   `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
 ## Current Production Subdirectories
 
-- `openai-chat-completions-and-openai-responses/` — available only to
-  `openai-chat-completions-via-openai-responses` and `openai-responses-via-openai-chat-completions`.
-- `openai-chat-completions-and-anthropic-messages/` — available only to
-  `openai-chat-completions-via-anthropic-messages` and `anthropic-messages-via-openai-chat-completions`.
-- `anthropic-messages-and-openai-responses/` — available only to `anthropic-messages-via-openai-responses` and
-  `openai-responses-via-anthropic-messages`.
-- `anthropic-messages-via/` — available only to `anthropic-messages-via-*` pairs.
-- `openai-responses-via/` — available only to `openai-responses-via-*` pairs.
-- `gemini-generate-content-via/` — available only to `gemini-generate-content-via-*` pairs.
-- `via-anthropic-messages/` — available only to `*-via-anthropic-messages` pairs.
-- `via-openai-responses/` — available only to `*-via-openai-responses` pairs.
+- `protocols/anthropic-messages/as-source/` — interprets Messages requests.
+- `protocols/anthropic-messages/as-target/` — maps requests and upstream events to Messages.
+- `protocols/gemini-generate-content/as-source/` — interprets GenerateContent parts and schemas.
+- `protocols/openai-chat-completions/common/` — reads scalar reasoning aliases and summary content.
+- `protocols/openai-responses/as-source/` — interprets Responses tools and restores their event identities.
+- `protocols/openai-responses/as-target/` — coordinates Responses output ordering and stream-part keys.
 
 ## Rules
 
+- Inspect helpers by content and consumers. Keep most translation logic in the
+  owning `via-*` route; extract only cohesive logic shared by multiple routes.
+
 - Shallow wrappers that only rename or stringify must be inlined at every call
-  site, not extracted. Delete the wrapper rather than retaining a shim. A
-  one-liner that *defines* a format two or more pairs must agree on is not such
-  a wrapper: `via-openai-responses/openai-responses-stream.ts` owns the composite stream-part
-  key both OpenAI-Responses-target pairs build and compare, and inlining it would let
-  the copies drift apart.
-- Flat `.ts` files at the top level of either `src/shared/` or
-  `__tests__/shared/` are forbidden. Every shared helper and test suite lives
-  in one of the categories above.
-- Tests stay in the same category as the helper or cross-helper behavior they
-  cover. Suite names describe the tested behavior; they do not need a
-  one-to-one production basename.
-- Helpers that fit no category stay in their pair directories. Do not invent a
-  folder pattern without explicit confirmation.
+  site, not extracted. A helper that defines a format two or more routes must
+  agree on is not such a wrapper: the Responses stream-part key lives in
+  `protocols/openai-responses/as-target/part-key.ts`.
+- Tests stay under `__tests__/` in the same category as their production code.
+  Cross-protocol public route contract tests belong under `__tests__/protocols/`.
+- Helpers that fit no shared category stay in their route directory.
 - A helper that is not translation logic, such as defense against a malformed
   upstream stream, belongs to the gateway boundary that owns that policy.
 

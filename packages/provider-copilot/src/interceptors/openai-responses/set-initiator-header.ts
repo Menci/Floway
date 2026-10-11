@@ -1,5 +1,5 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
@@ -27,7 +27,7 @@ export const withInitiatorHeaderSet = async <TResult>(
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const lastItem: OpenAIResponsesInputItem | undefined = ctx.payload.input.at(-1);
+  const lastItem: CanonicalOpenAIResponsesInputItem | undefined = ctx.payload.input.at(-1);
   const role = lastItem === undefined ? undefined : (lastItem as { role?: unknown }).role;
   const initiator: 'user' | 'agent' = lastItem !== undefined
     && (role === undefined || role === null || role === '' || role === 'assistant')

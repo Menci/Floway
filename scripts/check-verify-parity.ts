@@ -48,6 +48,7 @@ const REPAIR_SUFFIX = ':fix';
 const SETUP_COMMANDS = new Set([
   'corepack enable',
   'pnpm install --frozen-lockfile',
+  'npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest',
   '${{ matrix.check.run }}',
 ]);
 
