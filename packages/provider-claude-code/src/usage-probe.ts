@@ -20,7 +20,8 @@
 // a strict parser would reject a perfectly usable new field as malformed.
 
 import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from './constants.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
+import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 export interface ClaudeCodeUsageProbeResult {
   // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
@@ -64,10 +65,27 @@ export const fetchClaudeCodeUsageProbe = async (
       { cause: cause as Error },
     );
   }
-  if (typeof parsed !== 'object' || parsed === null) {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(
       `Claude Code /api/oauth/usage returned a non-object body (${response.status})`,
     );
   }
   return { fetched_at: new Date().toISOString(), body: parsed };
+};
+
+export const mergeClaudeCodeUsageProbe = (state: ClaudeCodeUpstreamState, probe: ClaudeCodeUsageProbeResult): ClaudeCodeUpstreamState => {
+  const fetchedAt = Date.parse(probe.fetched_at);
+  const previous = state.accounts[0].usageProbeSnapshot;
+  if (previous !== null && previous.fetchedAt > fetchedAt) return state;
+  return {
+    ...state,
+    accounts: state.accounts.map((account, index) => index === 0
+      ? { ...account, usageProbeSnapshot: { fetchedAt, data: probe.body } }
+      : account),
+  };
+};
+
+export const persistClaudeCodeUsageProbe = async (upstreamId: string, probe: ClaudeCodeUsageProbeResult): Promise<void> => {
+  await getProviderRepo().upstreams.saveState(upstreamId, current =>
+    mergeClaudeCodeUsageProbe(readClaudeCodeUpstreamState(current), probe));
 };

@@ -2,9 +2,9 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { createTelemetryBucket } from '../shared/telemetry-bucket.ts';
 import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -19,7 +19,7 @@ interface UsageOverviewParams {
   start: string;
   end: string;
   groupBy: UsageOverviewGroupBy;
-  bucket: 'hour' | '4h' | '8h' | 'day' | 'all';
+  bucket: TelemetryBucketGranularity;
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;
@@ -69,6 +69,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
     },
     bucketForHour: createTelemetryBucket({
       bucket,
+      start,
       timeZone: params.value.timeZone,
       timezoneOffsetMinutes,
     }),

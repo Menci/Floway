@@ -46,6 +46,8 @@ export const useChartFrame = makeStyles({
       backgroundColor: 'rgba(var(--winui-acrylic-in-app-fill-default-rgb), 0.86)',
       padding: '6px 9px 8px 9px',
       pointerEvents: 'none',
+      width: 'max-content',
+      maxWidth: 'none',
     },
   },
 });

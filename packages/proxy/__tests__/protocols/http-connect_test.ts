@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ProxyDialError } from '../../src/errors.ts';
+import { ProxyDialError } from '../../src/dial-error.ts';
 import { dialHttpConnect } from '../../src/protocols/http-connect.ts';
 import type { HttpProxyConfig } from '../../src/proxy-config.ts';
 import type { DialOptions, DialTarget } from '../../src/types.ts';

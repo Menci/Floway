@@ -17,7 +17,7 @@ import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderHandle, type ReorderHandleProps } from '../ui/reorder-list';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
+import type { AliasTarget, ModelKind } from '@floway-dev/protocols/browser';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip, mergeClasses } = fluentComponents;
 

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { CLAUDE_AGENT_USER_AGENT } from '../../../src/auth.ts';
 import { withClaudeAgentHeadersSet } from '../../../src/interceptors/anthropic-messages/set-claude-agent-headers.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -11,8 +11,8 @@ import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@fl
 
 const stubRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
   payload,

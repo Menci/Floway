@@ -1,5 +1,5 @@
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
   payload: OpenAIChatCompletionsPayload,
@@ -7,8 +7,10 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
 ): Promise<AffinityRequestAnalysis<OpenAIChatCompletionsPayload>> => {
   const decoded = new Map<number, DecodedAffinityBlob>();
   for (const [index, message] of payload.messages.entries()) {
-    if (message.role !== 'assistant' || typeof message.reasoning_opaque !== 'string') continue;
-    decoded.set(index, await codec.unwrap(message.reasoning_opaque, 'openai-chat-completions.reasoning_opaque'));
+    if (message.role !== 'assistant') continue;
+    const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
+    if (typeof extensions.reasoning_opaque !== 'string') continue;
+    decoded.set(index, await codec.unwrap(extensions.reasoning_opaque, 'openai-chat-completions.reasoning_opaque'));
   }
 
   return defineAffinityRequest([], candidate => {
@@ -20,7 +22,7 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
       materialize: () => {
         const candidatePayload = structuredClone(payload);
         for (const { index, projection } of projections) {
-          const message = candidatePayload.messages[index];
+          const message = candidatePayload.messages[index] as OpenAIChatCompletionsAssistantMessageEx;
           if (projection.kind === 'preserve') message.reasoning_opaque = projection.value;
           else if (projection.kind === 'remove') delete message.reasoning_opaque;
         }

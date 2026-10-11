@@ -7,8 +7,9 @@ import type { RefreshControl } from './use-refresh';
 //
 // A minute is the interval every page that polls has chosen; naming it here
 // keeps the next one from choosing differently by accident.
-export const usePollWhileVisible = (refresh: RefreshControl['poll'], intervalMs = 60_000): void => {
+export const usePollWhileVisible = (refresh: RefreshControl['poll'], intervalMs = 60_000, enabled = true): void => {
   useEffect(() => {
+    if (!enabled) return;
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void refresh({ background: false });
     };
@@ -20,5 +21,5 @@ export const usePollWhileVisible = (refresh: RefreshControl['poll'], intervalMs 
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [intervalMs, refresh]);
+  }, [enabled, intervalMs, refresh]);
 };

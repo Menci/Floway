@@ -42,7 +42,7 @@ import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { MODEL_ERROR_EDITOR_LENGTH, modelErrorExcerpt } from '../upstreams/model-error';
-import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
+import type { UpstreamModelConfig } from '@floway-dev/provider/browser';
 
 const {
   Button,

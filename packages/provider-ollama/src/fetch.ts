@@ -55,6 +55,10 @@ export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: FetchInit, o
 // endpoint's provenance and the shape it returns.
 export const ollamaFetchUsage = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/usage', init, options);
+// Current account balance; rate-limited independently of inference.
+// https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
+export const ollamaFetchBalance = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/api/balance', init, options);
 // The account behind the API key: identity and the plan it is on. POST-only —
 // the endpoint answers 405 to GET. See account-probe.ts for the body's shape.
 export const ollamaFetchMe = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

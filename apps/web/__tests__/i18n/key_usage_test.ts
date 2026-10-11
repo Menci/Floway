@@ -6,9 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { isPlural, leafKeys, pluralBase } from './keys';
 import en from '../../src/i18n/locales/en';
-import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
-import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
+import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/browser';
+import { OPTIONAL_FLAG_IDS, ALL_PROVIDER_KINDS } from '@floway-dev/provider/browser';
 
 const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
 const LOCALES_DIR = join(SOURCE_ROOT, 'i18n', 'locales');

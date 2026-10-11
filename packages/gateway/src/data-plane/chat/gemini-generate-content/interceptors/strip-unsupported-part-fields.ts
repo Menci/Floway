@@ -16,9 +16,9 @@ const stripPartFields = (parts: GeminiGenerateContentPart[]): GeminiGenerateCont
 
 export const stripUnsupportedPartFieldsFromPayload = (payload: GeminiGenerateContentPayload): void => {
   payload.contents?.forEach(content => {
-    content.parts = stripPartFields(content.parts);
+    if (content.parts !== undefined) content.parts = stripPartFields(content.parts);
   });
-  if (payload.systemInstruction) {
+  if (payload.systemInstruction?.parts !== undefined) {
     payload.systemInstruction.parts = stripPartFields(payload.systemInstruction.parts);
   }
 };

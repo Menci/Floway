@@ -20,7 +20,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
   const rows = (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
-  const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
+  const title = formatCalloutTitle(point.x, labelByTime, locale);
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (

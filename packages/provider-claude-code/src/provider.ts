@@ -5,9 +5,10 @@ import { isClaudeCodeShapedRequest } from './detection.ts';
 import { callClaudeCodeAnthropicMessages } from './fetch.ts';
 import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY, type AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
+import { runClaudeCodeScheduledTask } from './scheduled.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import {
   getProviderRepo,
   headersForAnthropicMessagesCall,
@@ -41,6 +42,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runClaudeCodeScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
@@ -79,7 +81,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
         body: ctx.payload,
       });
 
-      const terminal = async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+      const terminal = async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
         // Drop `model` from the payload: callClaudeCodeAnthropicMessages re-attaches the
         // dated upstream id (from `opts.model.providerData.upstreamModelId`) on
         // the wire so Anthropic sees a stable per-revision id rather than the
@@ -97,7 +99,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
       if (looksShaped) return await terminal();
 
-      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>(
+      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEventEx>>(
         ctx,
         {},
         CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY,

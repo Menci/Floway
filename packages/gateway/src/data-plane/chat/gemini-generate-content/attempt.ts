@@ -1,4 +1,4 @@
-import { geminiGenerateContentStatusForHttpStatus } from './errors.ts';
+import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentStatusForHttpStatus } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
@@ -11,8 +11,8 @@ import { captureFromDump, traverseTranslation } from '../shared/translate-traver
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, plainResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
-import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
+import { type ModelCandidate, plainResult, toInternalDebugError, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
+import { routeGeminiGenerateContent } from '@floway-dev/translate/gemini-generate-content';
 
 // Gemini generateContent has no native upstream target in the provider API; prefer OpenAI Chat Completions
 // Completions, then Anthropic Messages, then OpenAI Responses for generate. countTokens has
@@ -53,7 +53,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateGeminiGenerateContentViaAnthropicMessages(p, transCtx),
+          p => routeGeminiGenerateContent(p).viaAnthropicMessages(transCtx),
           translated => anthropicMessagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
           }),
@@ -63,7 +63,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateGeminiGenerateContentViaOpenAIResponses(p, transCtx),
+          p => routeGeminiGenerateContent(p).viaOpenAIResponses(transCtx),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -73,7 +73,7 @@ export const geminiGenerateContentAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),
+          p => routeGeminiGenerateContent(p).viaOpenAIChatCompletions(transCtx),
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -107,7 +107,7 @@ export const geminiGenerateContentAttempt = {
       stripUnsupportedPartFieldsFromPayload(cleaned);
       stripUnsupportedToolsFromPayload(cleaned);
       delete cleaned.safetySettings;
-      const trip = await translateGeminiGenerateContentViaAnthropicMessages(cleaned, transCtx);
+      const trip = await routeGeminiGenerateContent(cleaned).viaAnthropicMessages(transCtx);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
@@ -160,14 +160,5 @@ const geminiGenerateContentErrorPlainResult = (status: number, message: string, 
 const geminiGenerateContentInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
-  new TextEncoder().encode(JSON.stringify({
-    error: {
-      code: status,
-      message: error.message,
-      status: geminiGenerateContentStatusForHttpStatus(status),
-      type: 'internal_error',
-      name: error.name,
-      stack: error.stack,
-    },
-  })),
+  new TextEncoder().encode(JSON.stringify(geminiGenerateContentInternalErrorPayload(status, toInternalDebugError(error)))),
 );

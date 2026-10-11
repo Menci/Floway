@@ -7,10 +7,10 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -90,7 +90,7 @@ const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): 
 const compactPayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload =>
   makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }], ...overrides });
 
-const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => ({
+const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
   id,
   object: 'response',
   model: 'test-model',
@@ -102,7 +102,6 @@ const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResult => (
     status: 'completed',
     content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
-  output_text: 'hi',
   error: null,
   incomplete_details: null,
 });
@@ -117,7 +116,7 @@ const makeCandidate = (overrides: {
   modelId?: string;
   endpoints?: ModelEndpoints;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -147,8 +146,8 @@ const makeCandidate = (overrides: {
   };
 };
 
-const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesStreamEvent[]> => {
-  const out: OpenAIResponsesStreamEvent[] = [];
+const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesStreamEventEx[]> => {
+  const out: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of events) {
     if (frame.type === 'event') out.push(frame.event);
   }
@@ -157,7 +156,7 @@ const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponses
 
 test('generate routes a native OpenAI Responses candidate end to end', async () => {
   installRepo();
-  const completed: OpenAIResponsesStreamEvent = {
+  const completed: OpenAIResponsesStreamEventEx = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeOpenAIResponsesResult(),
@@ -187,10 +186,10 @@ test('generate routes a native OpenAI Responses candidate end to end', async () 
 test('compact returns a result envelope from the wrapped attempt', async () => {
   installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const compactionResult: OpenAIResponsesResult = {
+  const compactionResult: OpenAIResponsesResultEx = {
     ...makeOpenAIResponsesResult(),
     object: 'response.compaction',
-    output: [compactionItem] as unknown as OpenAIResponsesResult['output'],
+    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
     usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
   };
   const observedModelIds: string[] = [];
@@ -237,7 +236,7 @@ test('generate falls through to the next candidate when the first yields an upst
     item.content[0].image_url = 'data:image/webp;base64,COMPRESSED';
     return { action: 'generate', ok: false, response: firstError, modelKey: 'first-key' };
   });
-  const completed: OpenAIResponsesStreamEvent = {
+  const completed: OpenAIResponsesStreamEventEx = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeOpenAIResponsesResult('resp_second'),
@@ -464,12 +463,13 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
 
 test('generate falls through translate-out to messages target', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true,
     events: makeProtocolFrames([
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_translated',
           type: 'message',
           role: 'assistant',
@@ -477,13 +477,13 @@ test('generate falls through translate-out to messages target', async () => {
           model: 'test-model',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 4, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
         },
       },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
       { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
       { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
       { type: 'message_stop' },
     ]),
     modelKey: 'messages-key',
@@ -506,12 +506,13 @@ test('generate falls through translate-out to messages target', async () => {
 
 test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Responses policy failure', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true,
     events: makeProtocolFrames([
       {
         type: 'message_start',
         message: {
+          container: null, diagnostics: null, stop_details: null,
           id: 'msg_bio_refusal',
           type: 'message',
           role: 'assistant',
@@ -519,12 +520,13 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
           model: 'claude-fable-5',
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 4, output_tokens: 0 },
+          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
         },
       },
       {
         type: 'message_delta',
         delta: {
+          container: null,
           stop_reason: 'refusal',
           stop_details: {
             type: 'refusal',
@@ -533,7 +535,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
           },
           stop_sequence: null,
         },
-        usage: { output_tokens: 0 },
+        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 0 },
       },
       { type: 'message_stop' },
     ]),
@@ -547,7 +549,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   const events = await collectEvents(result.events);
-  const failed = events.find((event): event is Extract<OpenAIResponsesStreamEvent, { type: 'response.failed' }> => event.type === 'response.failed');
+  const failed = events.find((event): event is Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }> => event.type === 'response.failed');
 
   assertEquals(failed?.response.status, 'failed');
   assertEquals(failed?.response.error, {
@@ -564,15 +566,15 @@ test('generate falls through translate-out to openai-chat-completions target', a
     events: makeProtocolFrames([
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+        choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       },
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
@@ -599,11 +601,11 @@ test('generate falls through translate-out to openai-chat-completions target', a
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the OpenAI Responses IR', async () => {
   installRepo();
-  const capturedBodies: OpenAIResponsesPayload[] = [];
+  const capturedBodies: OpenAIResponsesPayloadEx[] = [];
   const observedModelIds: string[] = [];
   const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
     observedModelIds.push((model as { id: string }).id);
-    capturedBodies.push(body as OpenAIResponsesPayload);
+    capturedBodies.push(body as OpenAIResponsesPayloadEx);
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callOpenAIResponses });

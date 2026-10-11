@@ -1,7 +1,7 @@
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
+import { ProxyDialError } from './dial-error.ts';
 import { connectOrDialError } from './dial-target.ts';
-import { ProxyDialError } from './errors.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
 import { dialReality } from './protocols/reality.ts';
 import { dialShadowsocks2022 } from './protocols/shadowsocks-2022.ts';

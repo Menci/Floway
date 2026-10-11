@@ -24,6 +24,7 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   kind: 'copilot' as const,
   name: id,
   enabled: true,
+  usageRefreshIntervalMinutes: 0,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00Z',
   updatedAt: '2026-06-01T00:00:00Z',

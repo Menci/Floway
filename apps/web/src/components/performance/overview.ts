@@ -1,5 +1,5 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
-import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
+import { dashboardRangeQuery, parseDashboardRange, serializeDashboardRange, type DashboardRange } from '../charts/dashboard-time';
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
@@ -66,12 +66,9 @@ export const buildPerformanceQuery = (
   filters: PerformanceFilters,
   nowMs: number,
 ): Record<string, string | string[]> => {
-  const utcHours = range === 'today';
   return {
     ...dashboardRangeQuery(range, nowMs),
     group_by: groupBy,
-    timezone: utcHours ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone,
-    timezone_offset_minutes: utcHours ? '0' : String(new Date(nowMs).getTimezoneOffset()),
     filter_model: filters.model,
     filter_upstream: filters.upstream,
     filter_operation: filters.operation,
@@ -133,7 +130,7 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
     metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
     percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
     groupBy,
-    range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
+    range: parseDashboardRange(search),
     filters,
     hidden: parseHiddenSeries(search, 'hide'),
   };
@@ -144,7 +141,7 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.metric !== 'ttft') search.set('m', state.metric);
   if (state.percentile !== 'p95') search.set('pct', state.percentile);
   if (state.groupBy !== 'model') search.set('g', state.groupBy);
-  if (state.range !== 'today') search.set('r', state.range);
+  serializeDashboardRange(search, state.range);
   const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
   for (const [key, values] of filters) for (const value of values) search.append(key, value);
   serializeHiddenSeries(search, 'hide', state.hidden);

@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 interface ChoiceState {
   opaque?: string;
@@ -49,7 +49,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
             state.finished = true;
             return {
               index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
               finish_reason: null,
             } satisfies StreamingChoice;
           }));
@@ -80,11 +80,11 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
       const state = previous === undefined || previous.finished ? { finished: false } : previous;
       choices.set(index, state);
 
-      const { reasoning_opaque: opaque, ...delta } = sourceDelta;
+      const { reasoning_opaque: opaque, ...delta } = sourceDelta as OpenAIChatCompletionsAssistantDeltaEx;
       if (typeof opaque === 'string') state.opaque = opaque;
       const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
-      if (finishReason === null) {
+      if (finishReason == null) {
         if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
         continue;
       }
@@ -101,7 +101,7 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
 
     const wrappedChoices = await Promise.all(finishingChoices.map(async ({ index, state }) => ({
       index,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') },
+      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'openai-chat-completions.reasoning_opaque') } as OpenAIChatCompletionsAssistantDeltaEx,
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));

@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const affinity: AffinityIdentity = {
@@ -13,7 +13,7 @@ const affinity: AffinityIdentity = {
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
-const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEvent>[]) {
+const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;
 };
 
@@ -33,12 +33,12 @@ describe('Anthropic Messages affinity egress', () => {
   test('streams readable thinking and wraps the latest signature snapshot at block stop', async () => {
     const codec = new DelayedCodec();
     const output = wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'first' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'latest' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
-      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),
     ]), { codec, affinity })[Symbol.asyncIterator]();
 
@@ -59,7 +59,7 @@ describe('Anthropic Messages affinity egress', () => {
       delta: { type: 'signature_delta', signature: 'wrapped-latest' },
     }));
     expect((await output.next()).value).toEqual(eventFrame({ type: 'content_block_stop', index: 0 }));
-    expect((await output.next()).value).toMatchObject({ event: { type: 'message_delta' } });
+    expect((await output.next()).value).toMatchObject({ event: { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta' } });
   });
 
   test('retains extension fields from the latest natural signature event', async () => {
@@ -68,10 +68,10 @@ describe('Anthropic Messages affinity egress', () => {
       index: 0,
       delta: { type: 'signature_delta', signature: 'natural', vendor_delta: 'delta-extra' },
       vendor_event: 'event-extra',
-    } as unknown as AnthropicMessagesStreamEvent;
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    } as unknown as AnthropicMessagesStreamEventEx;
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame(signature),
       eventFrame({ type: 'content_block_stop', index: 0 }),
       eventFrame({ type: 'message_stop' }),
@@ -92,11 +92,11 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('wraps redacted data inline and does not inject another carrier', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'redacted_thinking', data: 'opaque' } }),
       eventFrame({ type: 'content_block_stop', index: 2 }),
-      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
@@ -109,12 +109,12 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('prefixes a synthetic redacted block before a first text block and shifts its index', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
-      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
@@ -125,24 +125,24 @@ describe('Anthropic Messages affinity egress', () => {
         content_block: { type: 'redacted_thinking', data: 'wrapped:synthetic' },
       }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
-      eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+      eventFrame({ type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } }),
       eventFrame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } }),
       eventFrame({ type: 'content_block_stop', index: 1 }),
     ]);
   });
 
   test('adds an originless signature to a first thinking block without a natural signature', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
-      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
     expect(output.slice(0, 4)).toEqual([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
       eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'wrapped:synthetic' } }),
       eventFrame({ type: 'content_block_stop', index: 0 }),
@@ -150,9 +150,9 @@ describe('Anthropic Messages affinity egress', () => {
   });
 
   test('emits one prefix for an empty message with both terminal events', async () => {
-    const output: ProtocolFrame<AnthropicMessagesStreamEvent>[] = [];
+    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' } }),
       eventFrame({ type: 'message_stop' }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 

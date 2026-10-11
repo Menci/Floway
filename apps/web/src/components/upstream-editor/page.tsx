@@ -75,6 +75,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
     enabled: z.boolean(),
+    usageRefreshIntervalMinutes: z.number({ error: 'dashboard.upstreamEditor.usageRefresh.invalid' }).int('dashboard.upstreamEditor.usageRefresh.invalid').nonnegative('dashboard.upstreamEditor.usageRefresh.invalid'),
     hue: z.number(),
     proxyFallbackList: z.any(),
     modelPrefix: z.any(),

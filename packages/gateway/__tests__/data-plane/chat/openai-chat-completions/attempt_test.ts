@@ -5,10 +5,10 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayload, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
@@ -26,31 +26,32 @@ const makePayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): Ope
 const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
   },
   {
     id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
   },
 ];
 
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] => [
+const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
   {
     type: 'message_start',
     message: {
+      container: null, diagnostics: null, stop_details: null,
       id: 'msg_cc_via_m', type: 'message', role: 'assistant', content: [],
       model: 'test-model', stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 4, output_tokens: 0 },
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
     },
   },
-  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
   { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
   { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
   { type: 'message_stop' },
 ];
 
@@ -63,7 +64,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
@@ -167,7 +168,7 @@ test('generate native target applies role compatibility flags in target-chain or
 test('generate translates through the Anthropic Messages target when only that endpoint is exposed', async () => {
   installRepo();
   let anthropicBeta: readonly string[] | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     anthropicBeta = opts?.anthropicBeta;
     return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
   });
@@ -192,7 +193,7 @@ test('generate injects the platform external-image loader into OpenAI-Chat-Compl
     return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
   });
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
     return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
   });
@@ -220,13 +221,12 @@ test('generate injects the platform external-image loader into OpenAI-Chat-Compl
 
 test('generate translates through the OpenAI Responses target when only that endpoint is exposed', async () => {
   installRepo();
-  const respResp: OpenAIResponsesResult = {
+  const respResp: OpenAIResponsesResultEx = {
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
     output: [{
       type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'hi', annotations: [] }],
-    }],
-    output_text: 'hi', error: null, incomplete_details: null,
+    }], error: null, incomplete_details: null,
   };
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
     action: 'generate', ok: true,
@@ -249,16 +249,16 @@ test('generate translates through the OpenAI Responses target when only that end
 
 test('generate preserves translated instructions before rewriting inline system messages', async () => {
   installRepo();
-  const observedBodies: Omit<OpenAIResponsesPayload, 'model'>[] = [];
+  const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    observedBodies.push(body as Omit<OpenAIResponsesPayload, 'model'>);
+    observedBodies.push(body as Omit<OpenAIResponsesPayloadEx, 'model'>);
     return {
       action: 'generate',
       ok: true,
       events: makeProtocolFrames([{
         type: 'response.completed', sequence_number: 0, response: {
           id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
-          output: [], output_text: '', error: null, incomplete_details: null,
+          output: [], error: null, incomplete_details: null,
         },
       }]),
       modelKey: 'k',

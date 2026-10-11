@@ -1,3 +1,65 @@
+diff --git a/lib/crypto/webcrypto.js b/lib/crypto/webcrypto.js
+index 249b580e66ce6845e2375fbb68aca7767c4cbcfa..30e48fb6ce021544c09e5aa835efdee5022675f8 100644
+--- a/lib/crypto/webcrypto.js
++++ b/lib/crypto/webcrypto.js
+@@ -246,7 +246,7 @@ export const webcryptoCrypto = {
+             case 'ECDSA-SECP256R1-SHA384':
+             case 'ECDSA-SECP384R1-SHA256':
+             case 'ECDSA-SECP384R1-SHA384':
+-                signature = convertASN1toRS(signature);
++                signature = convertASN1toRS(signature, publicKey.algorithm.namedCurve);
+                 verifyArgs = { name: 'ECDSA', hash: getHashAlgorithm(alg) };
+                 break;
+             default:
+@@ -274,24 +274,35 @@ export const webcryptoCrypto = {
+ function toUint8Array(buffer) {
+     return new Uint8Array(buffer);
+ }
+-// mostly from ChatGPT
+-function convertASN1toRS(signatureBytes) {
++function convertASN1toRS(signatureBytes, namedCurve) {
++    // Web Crypto encodes each ECDSA integer to the curve order's byte width,
++    // independently of the signature hash. DER integers can be shorter.
++    // https://www.w3.org/TR/WebCryptoAPI/#ecdsa-operations
++    const byteLength = { 'P-256': 32, 'P-384': 48 }[namedCurve];
++    if (!byteLength) {
++        throw new Error(`Unsupported ECDSA named curve: ${namedCurve}`);
++    }
+     const data = AsnParser.parse(signatureBytes, ECDSASigValue);
+-    const r = cleanBigNum(new Uint8Array(data.r));
+-    const s = cleanBigNum(new Uint8Array(data.s));
++    const r = encodeEcdsaInteger(new Uint8Array(data.r), byteLength);
++    const s = encodeEcdsaInteger(new Uint8Array(data.s), byteLength);
+     return concatenateUint8Arrays([r, s]);
+ }
+-function cleanBigNum(bn) {
+-    if (bn.length > 32 && bn[0] === 0) {
+-        bn = bn.slice(1);
++function encodeEcdsaInteger(bn, byteLength) {
++    if (bn.length === 0 || (bn[0] & 0x80)) {
++        throw new Error('Invalid ECDSA signature integer');
++    }
++    if (bn[0] === 0) {
++        if (bn.length > 1 && !(bn[1] & 0x80)) {
++            throw new Error('Invalid ECDSA signature integer');
++        }
++        bn = bn.subarray(1);
+     }
+-    else if (bn.length < 32) {
+-        bn = concatenateUint8Arrays([
+-            new Uint8Array(32 - bn.length).fill(0),
+-            bn
+-        ]);
++    if (bn.length > byteLength) {
++        throw new Error('ECDSA signature integer exceeds curve size');
+     }
+-    return bn;
++    const result = new Uint8Array(byteLength);
++    result.set(bn, byteLength - bn.length);
++    return result;
+ }
+ function getHashAlgorithm(sig) {
+     if (sig.endsWith('SHA256')) {
 diff --git a/lib/make-tls-client.js b/lib/make-tls-client.js
 index 6dea9236436c5eb445d7d96a2df926103144d3b3..c2ef0bbf860d307d79764f14d8007145fe37d348 100644
 --- a/lib/make-tls-client.js

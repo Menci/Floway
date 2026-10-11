@@ -127,3 +127,9 @@ export const PAGE_ENTER_MS = 300;
 export const PAGE_ENTER_OFFSET_PX = 140;
 export const PAGE_LEAVE_EASING = 'cubic-bezier(0.7, 0, 1, 0.5)';
 export const PAGE_ENTER_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
+
+// Attached Flyout uses placement-signed PopupThemeTransition offsets, distinct
+// from the unset PopInThemeAnimation offset used by floating toasts.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/FlyoutBase_partial.cpp#L64-L68
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/FlyoutBase_partial.cpp#L2028-L2050
+export const FLYOUT_ENTRANCE_OFFSET_PX = 50;

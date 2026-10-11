@@ -4,11 +4,11 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-deepseek-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-type DeepSeekReasoningDelta = OpenAIChatCompletionsStreamEvent['choices'][number]['delta'] & {
+type DeepSeekReasoningDelta = OpenAIChatCompletionsAssistantDeltaEx & {
   reasoning_content?: string;
 };
 
@@ -34,7 +34,7 @@ const baseRequest = (): OpenAIChatCompletionsPayload => ({
       tool_calls: [
         { id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{}' } },
       ],
-    },
+    } as OpenAIChatCompletionsAssistantMessageEx,
     { role: 'tool', tool_call_id: 'call_1', content: 'result' },
     { role: 'user', content: 'next turn' },
   ],
@@ -47,7 +47,7 @@ const collectFrames = async (result: ExecuteResult<ProtocolFrame<OpenAIChatCompl
   return out;
 };
 
-const usageRecord = (usage: NonNullable<OpenAIChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: OpenAIChatCompletionsUsageEx): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 
@@ -89,7 +89,7 @@ test('synthesizes reasoning_content from reasoning_items when reasoning_text is 
           },
         ],
         tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{}' } }],
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
       { role: 'tool', tool_call_id: 'call_1', content: 'result' },
     ],
   });
@@ -117,7 +117,7 @@ test('strips reasoning_items even when no summaries are available', async () => 
         content: 'answer',
         reasoning_items: [{ type: 'reasoning' }],
         reasoning_opaque: 'opaque-chain',
-      },
+      } as OpenAIChatCompletionsAssistantMessageEx,
     ],
   });
 
@@ -224,6 +224,7 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
     model: 'deepseek-reasoner',
     choices: [
       {
+
         index: 0,
         delta: { reasoning_content: 'thinking...' } as DeepSeekReasoningDelta,
         finish_reason: null,
@@ -250,19 +251,19 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
   const ctx = invocation(baseRequest());
   const id = 'chatcmpl_deepseek_json';
   const model = 'deepseek-reasoner';
-  const chunk = (delta: OpenAIChatCompletionsStreamEvent['choices'][number]['delta'], finish_reason: 'stop' | null = null): OpenAIChatCompletionsStreamEvent => ({
+  const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'stop' | null = null): OpenAIChatCompletionsStreamEvent => ({
     id,
     object: 'chat.completion.chunk',
     created: 1,
     model,
-    choices: [{ index: 0, delta, finish_reason }],
+    choices: [{  index: 0, delta, finish_reason }],
   });
 
   const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () {
         yield eventFrame(chunk({ role: 'assistant' }));
-        yield eventFrame(chunk({ reasoning_content: 'json thinking' } as OpenAIChatCompletionsStreamEvent['choices'][number]['delta']));
+        yield eventFrame(chunk({ reasoning_content: 'json thinking' } as OpenAIChatCompletionsAssistantDeltaEx));
         yield eventFrame(chunk({ content: 'answer' }));
         yield eventFrame(chunk({}, 'stop'));
         yield doneFrame();
@@ -271,8 +272,8 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
     )));
 
   const frames = await collectFrames(result);
-  const reasoningFrame = frames.find(frame => frame.type === 'event' && frame.event.choices[0]?.delta.reasoning_text !== undefined);
-  assertEquals(reasoningFrame?.type === 'event' ? reasoningFrame.event.choices[0]?.delta.reasoning_text : undefined, 'json thinking');
+  const reasoningFrame = frames.find(frame => frame.type === 'event' && (frame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text !== undefined);
+  assertEquals(reasoningFrame?.type === 'event' ? (reasoningFrame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text : undefined, 'json thinking');
 });
 
 // ── Inbound: usage cache-token field rewrite ──

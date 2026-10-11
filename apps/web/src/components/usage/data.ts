@@ -14,7 +14,7 @@ import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
   TokenUsageOverviewResponse,
-} from '@floway-dev/gateway/control-plane/usage-types';
+} from '@floway-dev/gateway/browser';
 
 const userBucketId = (userId: number) => `user-${userId}`;
 
@@ -52,10 +52,7 @@ export const buildUsageOverviewQuery = (
   nowMs: number,
 ): Record<string, string | string[]> => ({
   ...dashboardRangeQuery(range, nowMs),
-  bucket: 'hour',
   group_by: groupBy,
-  timezone: 'UTC',
-  timezone_offset_minutes: '0',
   filter_model: filters.model,
   filter_upstream: filters.upstream,
   filter_user_id: filters.userId,

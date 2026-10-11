@@ -151,7 +151,6 @@ const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): 
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'done',
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         });
       }
@@ -196,7 +195,6 @@ test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and en
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'done',
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         });
       }
@@ -351,7 +349,9 @@ test('OpenAI Responses WebSocket rejects the next turn after its API key is rota
 
 test('OpenAI Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
-  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  const nested = new TypeError('nested persistence'); nested.stack = 'TypeError: nested persistence\n  at database';
+  const failure = new Error('simulated item persistence failure', { cause: nested }); failure.stack = 'Error: simulated item persistence failure\n  at persistence';
+  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(failure);
   try {
     await withMockedFetch(
       async request => {
@@ -376,7 +376,6 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
               status: 'completed',
               content: [{ type: 'output_text', text: 'done', annotations: [] }],
             }],
-            output_text: 'done',
             usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
           });
         }
@@ -399,7 +398,8 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
         const error = messages.find(message => message.type === 'error') as { status?: unknown; error?: { message?: unknown } } | undefined;
         assertExists(error);
         assertEquals(error.status, 500);
-        assertEquals(error.error?.message, 'simulated item persistence failure');
+        assertEquals(error.error, { type: 'internal_error', code: 'internal_error', message: 'simulated item persistence failure', provider_specific_fields: { name: 'Error', stack: failure.stack, cause: { name: 'TypeError', message: 'nested persistence', stack: nested.stack } } });
+        assertEquals((error as Record<string, unknown>).event_id, 'evt_persist_failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(isTerminalResponseEvent));
       }),
@@ -515,9 +515,8 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [reasoning],
-          output_text: 'done',
         };
-        const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
+        const inProgress = { ...response, status: 'in_progress', output: [] };
         enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
         assert(
           await drainFramesUntil(() => messages.length >= 1),
@@ -764,7 +763,6 @@ test('OpenAI Responses WebSocket store:false keeps session snapshots without dur
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_ws_store_false_${turn}`,
             type: 'message',
@@ -875,7 +873,6 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: 'assistant_ws_after_prewarm',
             type: 'message',
@@ -962,7 +959,6 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: `assistant_ws_evict_${responseCalls}`,
             type: 'message',
@@ -1060,7 +1056,6 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
             model: 'gpt-direct-responses',
             status: 'failed',
             output: [],
-            output_text: '',
             error: { code: 'server_error', message: 'the upstream gave up mid-turn' },
             incomplete_details: null,
           };
@@ -1075,7 +1070,6 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'answer',
           output: [{
             id: `assistant_ws_evict_streamed_${responseCalls}`,
             type: 'message',
@@ -1161,7 +1155,6 @@ test('OpenAI Responses WebSocket store:true durable snapshots can chain through 
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_ws_durable_${turn}`,
             type: 'message',
@@ -1236,7 +1229,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
             model: 'gpt-direct-responses',
             status: 'in_progress',
             output: [],
-            output_text: '',
             error: null,
             incomplete_details: null,
           };
@@ -1255,7 +1247,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [],
-          output_text: 'ok',
           error: null,
           incomplete_details: null,
         });
@@ -1328,7 +1319,6 @@ test('OpenAI Responses WebSocket session-level store: second message resolves pr
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `turn ${turn}`,
           output: [{
             id: `assistant_session_${turn}`,
             type: 'message',
@@ -1449,7 +1439,6 @@ test('OpenAI Responses WebSocket aborts the in-flight OpenAI Responses request w
               model: 'gpt-direct-responses',
               status: 'completed',
               output: [],
-              output_text: '',
             }));
           }, { once: true });
         });
@@ -1511,7 +1500,6 @@ test('OpenAI Responses WebSocket holds the session lifetime open until a turn th
                 model: 'gpt-direct-responses',
                 status: 'in_progress',
                 output: [],
-                output_text: '',
               },
               sequence_number: 0,
             })}\n\n`));
@@ -1576,7 +1564,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
       operation: 'chat',
       runtimeLocation: 'TEST',
     };
-    throw new Error('simulated mid-attempt provider throw');
+    const failure = new Error('simulated mid-attempt provider throw'); failure.stack = undefined; throw failure;
   });
 
   try {
@@ -1606,6 +1594,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
         assertEquals(errorMessage.type, 'error');
         assertEquals(errorMessage.status, 500);
         assertEquals(errorMessage.event_id, 'evt_throw');
+        assertEquals(errorMessage.error, { type: 'internal_error', code: 'internal_error', message: 'simulated mid-attempt provider throw', provider_specific_fields: { name: 'Error' } });
       }),
     );
 
@@ -1665,7 +1654,6 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
           object: 'response',
           model: 'gpt-5.4',
           status: 'completed',
-          output_text: `answer ${turn}`,
           output: [{
             id: `assistant_codex_ws_${turn}`,
             type: 'message',
@@ -1775,7 +1763,7 @@ test('OpenAI Responses WebSocket replays Codex Lite input items without rebuildi
         upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
         const turn = upstreamBodies.length;
         return sseOpenAIResponsesResponse({
-          id: `resp_ws_lite_${turn}`, object: 'response', model: 'gpt-5.4', status: 'completed', output_text: `answer ${turn}`,
+          id: `resp_ws_lite_${turn}`, object: 'response', model: 'gpt-5.4', status: 'completed',
           output: [{ id: `msg_ws_lite_output_${turn}`, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }] }],
         });
       }

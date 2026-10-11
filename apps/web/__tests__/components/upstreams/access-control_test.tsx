@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
@@ -21,6 +21,23 @@ const click = async (element: HTMLElement) => {
 };
 
 describe('upstream access selection', () => {
+  it('renders live, cached, and unknown model counts as plain text', async () => {
+    const upstreams: UpstreamOption[] = [
+      ...available,
+      { ...available[0], id: 'up_cached', name: 'Cached', enabled: false, cachedModelCount: 8 },
+      { ...available[0], id: 'up_unknown', name: 'Unknown', enabled: false, cachedModelCount: null },
+    ];
+    renderInApp(<UpstreamAccessControl available={upstreams} disabled={false} ids={['up_a']} models={[]} onChange={() => {}} override />);
+    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
+
+    for (const [name, count] of [['Alpha', '0 models'], ['Cached', '8 models'], ['Unknown', 'Count unavailable']]) {
+      const row = screen.getByRole('checkbox', { name: `Enabled: ${name}` }).closest('tr')!;
+      const cell = within(row).getAllByRole('cell')[2];
+      expect(cell.textContent).toBe(count);
+      expect(cell.querySelector('svg')).toBeNull();
+    }
+  });
+
   it('only lets the upstream list expand while the limit is on', async () => {
     renderInApp(<Control initialIds={[]} initialOverride={false} />);
     const disclosure = screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') });

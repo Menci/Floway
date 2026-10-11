@@ -32,11 +32,11 @@ import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
-import { scheduleOllamaUsageProbe } from './usage-probe.ts';
+import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
@@ -84,21 +84,15 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
   const state = readOllamaUpstreamState(record.state);
 
-  // Ollama Cloud moves the account's session and weekly windows on inference
-  // calls, and exposes them nowhere but its usage endpoint, so each such call
-  // arms a debounced background refresh. The account behind the key is armed by
-  // the same calls behind its own, much longer interval. Token counting never
-  // reaches a model and leaves the windows untouched, so it arms neither.
+  // Cloud inference arms a paired usage/balance refresh. Account identity has
+  // its own longer cadence. Token counting consumes neither, so it arms neither.
   const armProbes = (opts: UpstreamCallOptions): void => {
     scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
     scheduleOllamaAccountProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
   };
 
-  // Arms once the upstream round-trip has produced a response, so the usage
-  // probe reads windows that already account for this call. A rate-limited
-  // response arms it too — that is exactly when an operator wants the windows
-  // on screen. A transport that threw never reached the account and arms
-  // nothing.
+  // Rate-limited responses also trigger a refresh so the balances explaining
+  // the refusal can appear in the dashboard.
   const withProbes = <T>(opts: UpstreamCallOptions, dispatched: Promise<T>): Promise<T> =>
     dispatched.then(result => {
       armProbes(opts);
@@ -169,6 +163,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
+    runScheduledTask: options => runOllamaScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
@@ -196,7 +191,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
       }
       default:

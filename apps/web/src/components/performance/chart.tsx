@@ -66,11 +66,11 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
         data={props}
         details={chart.details.get(props.x instanceof Date ? props.x.getTime() : Number(props.x))}
         entryByLegend={entryByLegend}
-        title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
-      />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
+        title={formatCalloutTitle(props.x, labelByTime, locale)}
+      />, [chart.details, entryByLegend, labelByTime, locale]);
 
   return <ChartHost className={chartStyles.root} emptyText={t('dashboard.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
-    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />}
+    {({ size }) => <LineChart styles={chartRootStyles} customDateTimeFormatter={formatAxisDate} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />}
   </ChartHost>;
 }
 

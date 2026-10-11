@@ -3,7 +3,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Dropdown } from '../ui/fluent-form-controls';
 import { InlineMarkdown } from '../ui/markdown';
-import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/browser';
 
 const { Option, Text } = fluentComponents;
 
@@ -22,6 +22,7 @@ const flagGroupById = {
   'openai-responses-compact-decrypt': 'shims',
   'openai-responses-collaboration-shim': 'shims',
   'openai-responses-agent-message-shim': 'shims',
+  'serialize-stream-items': 'apiCompatibility',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
   'empty-tools-tool-choice-none': 'apiCompatibility',
   'rewrite-mid-conv-system-to-user': 'apiCompatibility',
@@ -30,6 +31,7 @@ const flagGroupById = {
   'usage-exclusive-cached-tokens': 'apiCompatibility',
   'strip-billing-attribution': 'sanitization',
   'strip-prompt-cache-key': 'sanitization',
+  'openai-responses-store-false': 'sanitization',
 } as const satisfies Record<FlagId, FlagGroupId>;
 
 export function FeatureFlagsEditor({

@@ -1,6 +1,6 @@
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
-import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, AnthropicMessagesInvocation } from '@floway-dev/provider';
 
@@ -9,7 +9,7 @@ export type { AnthropicMessagesInvocation };
 export type AnthropicMessagesInterceptor = Interceptor<
   AnthropicMessagesInvocation,
   GatewayCtx,
-  ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>
+  ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>
 >;
 
 // count_tokens is a one-shot, non-streaming HTTP exchange whose terminal

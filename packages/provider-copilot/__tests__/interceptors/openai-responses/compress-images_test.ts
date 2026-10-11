@@ -4,15 +4,15 @@ import { withInlineImagesCompressed } from '../../../src/interceptors/openai-res
 import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {})(), testTelemetryModelIdentity));
 
 const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
@@ -26,19 +26,19 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
 });
 
 const contentContainers = {
-  message: (content: OpenAIResponsesInputContent[]): OpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
-  function_output: (output: OpenAIResponsesToolOutputContent[]): OpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: OpenAIResponsesToolOutputContent[]): OpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
+  message: (content: OpenAIResponsesInputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
+  function_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
+  custom_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
-const imageUrlOf = (item: OpenAIResponsesInputItem): string | null | undefined => {
+const imageUrlOf = (item: CanonicalOpenAIResponsesInputItem): string | null | undefined => {
   const content = item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
   return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
 };
 
-const contentOf = (item: OpenAIResponsesInputItem): string | OpenAIResponsesInputContent[] | undefined =>
+const contentOf = (item: CanonicalOpenAIResponsesInputItem): string | OpenAIResponsesInputContent[] | undefined =>
   item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
@@ -48,7 +48,7 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   const textPart = { type: 'input_text' as const, text: 'look' };
   const imagePart: OpenAIResponsesInputImage = { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' };
   const sourceItem = wrap([textPart, imagePart]);
-  const untouchedItem: OpenAIResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}', status: 'completed' };
+  const untouchedItem: CanonicalOpenAIResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}', status: 'completed' };
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',
     input: [sourceItem, untouchedItem],

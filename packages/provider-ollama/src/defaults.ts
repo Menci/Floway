@@ -11,6 +11,7 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
   'openai-responses-agent-message-shim': false,
+  'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
@@ -19,4 +20,8 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // As of October 2026, Ollama silently ignores `previous_response_id`.
+  // So a subsequent turn would look like a fresh context with no history to models.
+  // There is no point to request stateful mode from Ollama.
+  'openai-responses-store-false': true,
 };
