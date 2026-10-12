@@ -58,10 +58,11 @@ export const openaiResponsesServe = {
     // it). When present serve-prep expands it the same way generate does so
     // stored history is hydrated before candidate dispatch.
     //
-    // For non-openai-responses targets the openai-responses-compact-shim picks up the
-    // request inside the interceptor chain, flips action='compact' to
-    // 'generate', runs a SUMMARIZATION_PROMPT turn through translation, and
-    // re-tags the result as compact on the way out.
+    // For non-openai-responses targets the openai-responses-compact-shim picks
+    // up the request inside the interceptor chain, flips action='compact' to
+    // 'generate', and appends the summarization request after the ordinary
+    // prompt prefix. A textless response warns and retries through the legacy
+    // system-prompt shape before the result is re-tagged as compact.
     const plan = await prepareOpenAIResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
     const result = await iterateCandidates(

@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { SUMMARY_PREFIX, expandShimCompactionItems, isOpenAIResponsesCompactShimItem, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
@@ -119,7 +119,7 @@ test('inbound: foreign compaction blob (valid base64url but wrong shape) round-t
 
 // ── Outbound summarization (withOpenAIResponsesCompactShim) ────────────────────────
 
-test('compact + flag on: pivots to generate, drives upstream summarization, returns compaction envelope', async () => {
+test('compact + flag on: appends one cache-sharing user prompt and returns a compaction envelope', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
     { action: 'compact' },
@@ -141,16 +141,16 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   // envelope-drain on the caller's intent action (captured by value), so
   // leaving invocation.action='generate' does not change the result shape.
   assertEquals(inv.action, 'generate');
-  // Payload pivoted: SUMMARIZATION_PROMPT injected as a role=system input
-  // item at the head of the history (mirroring native compact's system-role
-  // compactor prompt), store:false, the original history retained after it
-  // (compaction_trigger items would be stripped but there are none here).
+  // The ordinary history remains the request prefix and one user-role summary
+  // instruction is appended, allowing the upstream to reuse its prompt cache.
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
   const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.type, 'message');
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'long conversation history' });
+  const summaryRequest = rewrittenInput[1] as { type: string; role: string; content: Array<{ text: string }> };
+  assertEquals(summaryRequest.type, 'message');
+  assertEquals(summaryRequest.role, 'user');
+  assertEquals(summaryRequest.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(summaryRequest.content[0].text.includes('Do not call any tools'), true);
   assertEquals(seenPayload.store, false);
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
@@ -159,20 +159,12 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   assertEquals(compactionItem.type, 'compaction');
 });
 
-test("compact + flag on: caller's `instructions` field flows through untouched (bug-for-bug parity with native compact)", async () => {
-  // Native `/responses/compact` puts SUMMARIZATION_PROMPT into the compactor
-  // context as a role=system message AND forwards the caller's `instructions`
-  // as a developer-role message alongside; both are in scope. Prompt-
-  // injection extraction against the live Copilot upstream confirmed a
-  // caller-supplied `instructions="always mention 'quokka'"` reaches the
-  // compactor as a developer message and shows up inside the produced
-  // summary. The shim must reproduce that shape — do NOT overwrite the
-  // caller's instructions with SUMMARIZATION_PROMPT (it now lives as a
-  // separate role=system input item).
+test("compact + flag on: caller's `instructions` and tools flow through untouched", async () => {
   const inv = makeInvocation(
     {
       input: [{ type: 'message', role: 'user', content: 'history' }],
       instructions: 'You are a helpful assistant. Always mention the word quokka.',
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
     },
     { action: 'compact' },
   );
@@ -184,22 +176,16 @@ test("compact + flag on: caller's `instructions` field flows through untouched (
   });
 
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  // Original instructions preserved verbatim; SUMMARIZATION_PROMPT lives
-  // separately in the role=system input item at index 0.
   assertEquals(seenPayload.instructions, 'You are a helpful assistant. Always mention the word quokka.');
+  assertEquals(seenPayload.tools, [{ type: 'function', name: 'read_file', parameters: null, strict: null }]);
   const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'history' });
+  assertEquals(rewrittenInput[1]?.type, 'message');
+  if (rewrittenInput[1]?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(rewrittenInput[1].role, 'user');
 });
 
-test('compact + flag on: caller with no `instructions` still gets SUMMARIZATION_PROMPT as a role=system input item and instructions stays absent', async () => {
-  // Baseline: when the caller sends no `instructions` field, the shim still
-  // injects SUMMARIZATION_PROMPT via the role=system input item — matching
-  // native compact, which always has its system-role compactor prompt in
-  // scope regardless of whether the caller supplies a developer message.
-  // The `instructions` slot stays unset so a downstream translator does not
-  // synthesize a phantom developer message from thin air.
+test('compact + flag on: caller with no `instructions` keeps the field absent', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'history' }] },
     { action: 'compact' },
@@ -214,10 +200,10 @@ test('compact + flag on: caller with no `instructions` still gets SUMMARIZATION_
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
   assertEquals(seenPayload.instructions, undefined);
   const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(compactorSystem.type, 'message');
-  assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'history' });
+  assertEquals(rewrittenInput[1]?.type, 'message');
+  if (rewrittenInput[1]?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(rewrittenInput[1].role, 'user');
 });
 
 test('compact + flag on: synthesized encrypted_content decodes to a user message containing the summary prefixed with the handoff prompt', async () => {
@@ -356,13 +342,7 @@ test('compact + flag on: compaction_trigger items are stripped before the upstre
   assertEquals(items.every(i => i.type !== 'compaction_trigger'), true);
 });
 
-test('compact + flag on: history ending on an assistant message gets a synthetic terminal user prompt appended', async () => {
-  // Anthropic Messages rejects assistant prefill: a conversation that
-  // ends on an assistant turn returns 400 `This model does not support
-  // assistant message prefill`. The shim normalizes by appending a
-  // synthetic user-role nudge so the summarization call always ends on
-  // a user message — harmless on OpenAI-style upstreams and load-bearing
-  // for translated Anthropic ones.
+test('compact + flag on: history ending on an assistant message gets the cache-sharing user prompt appended', async () => {
   const inv = makeInvocation(
     {
       input: [
@@ -380,13 +360,127 @@ test('compact + flag on: history ending on an assistant message gets a synthetic
   });
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   const items = seenPayload.input as Array<{ type: string; role?: string; content?: Array<{ type: string; text: string }> }>;
-  // [SUMMARIZATION_PROMPT system, user 'hi', assistant 'hello back', synthetic user nudge]
-  assertEquals(items.length, 4);
-  assertEquals(items[0].role, 'system');
+  assertEquals(items.length, 3);
+  assertEquals(items[0].role, 'user');
+  assertEquals(items[1].role, 'assistant');
   const tail = items[items.length - 1];
   assertEquals(tail.type, 'message');
   assertEquals(tail.role, 'user');
   assertEquals(tail.content?.[0].type, 'input_text');
+});
+
+test('compact + flag on: empty cache-sharing output warns, retries the legacy system summarizer, and combines usage', async () => {
+  const inv = makeInvocation(
+    {
+      input: [{ type: 'message', role: 'user', content: 'history' }],
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
+    },
+    { action: 'compact' },
+  );
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const seenInputs: CanonicalOpenAIResponsesInputItem[][] = [];
+  let calls = 0;
+
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, async () => {
+    calls += 1;
+    seenInputs.push(inv.payload.input);
+    const result = await fakeUpstreamRun(calls === 1 ? '   ' : 'LEGACY SUMMARY')();
+    if (result.type !== 'events') return result;
+    return {
+      ...result,
+      finalMetadata: Promise.resolve({
+        modelIdentity: testTelemetryModelIdentity,
+        billableUsage: { input: 10, cacheRead: calls === 1 ? 8 : 0, cacheWrite: 0, cacheWrite1h: 0, output: 20 },
+      }),
+    };
+  });
+
+  assertEquals(calls, 2);
+  assertEquals(warn.mock.calls, [[
+    'Floway: OpenAI Responses compact shim cache-sharing summarization returned no assistant text; retrying with the legacy system-prompt summarizer',
+  ]]);
+  warn.mockRestore();
+
+  assertEquals(seenInputs[0]?.map(item => item.type), ['message', 'message']);
+  assertEquals(seenInputs[1]?.map(item => item.type), ['message', 'message', 'message']);
+  const legacySystem = seenInputs[1]?.[0];
+  if (legacySystem?.type !== 'message') throw new Error('expected legacy system message');
+  assertEquals(legacySystem.role, 'system');
+  assertEquals(seenInputs[1]?.[1], { type: 'message', role: 'user', content: 'history' });
+  const legacyTail = seenInputs[1]?.[2];
+  if (legacyTail?.type !== 'message') throw new Error('expected legacy terminal user message');
+  assertEquals(legacyTail.role, 'user');
+  assertEquals(inv.payload.tools, [{ type: 'function', name: 'read_file', parameters: null, strict: null }]);
+
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60 });
+  assertEquals((await result.finalMetadata)?.billableUsage, {
+    input: 20,
+    cacheRead: 8,
+    cacheWrite: 0,
+    cacheWrite1h: 0,
+    output: 40,
+  });
+});
+
+test('compact + flag on: tool-only cache-sharing output falls back without executing or preserving the tool call', async () => {
+  const inv = makeInvocation(
+    {
+      input: [{ type: 'message', role: 'user', content: 'history' }],
+      tools: [{ type: 'function', name: 'read_file', parameters: null, strict: null }],
+    },
+    { action: 'compact' },
+  );
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  let calls = 0;
+
+  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
+    calls += 1;
+    if (calls === 2) return fakeUpstreamRun('LEGACY SUMMARY')();
+
+    const response: OpenAIResponsesResultEx = {
+      id: 'resp_tool_only',
+      object: 'response',
+      model: 'test-upstream-model',
+      status: 'completed',
+      output: [{
+        type: 'function_call',
+        id: 'fc_1',
+        call_id: 'call_1',
+        name: 'read_file',
+        arguments: '{"path":"secret"}',
+        status: 'completed',
+      } as unknown as never],
+      error: null,
+      incomplete_details: null,
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    };
+    return Promise.resolve(eventResult(
+      (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+        yield doneFrame();
+      })(),
+      testTelemetryModelIdentity,
+    ));
+  });
+
+  assertEquals(calls, 2);
+  assertEquals(warn.mock.calls.length, 1);
+  warn.mockRestore();
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.output.map(item => item.type), ['compaction']);
+  const compaction = collected.output[0] as { encrypted_content: string };
+  const decoded = JSON.parse(
+    new TextDecoder().decode(
+      Uint8Array.from(
+        atob(compaction.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')),
+        character => character.charCodeAt(0),
+      ),
+    ),
+  );
+  assertEquals(decoded[0].content[0].text, `${SUMMARY_PREFIX}\nLEGACY SUMMARY`);
 });
 
 test('compact + flag off: passes through to run() unchanged', async () => {
@@ -739,16 +833,14 @@ test('generate + compaction_trigger + flag off + messages target: shim simulates
     return fakeUpstreamRun('CONDENSED SUMMARY')();
   });
 
-  // The shim should have engaged: the upstream sees the summarization
-  // prompt (as a role=system input item at the head of the history) and a
-  // stripped (no compaction_trigger) history, and the result is the
-  // synthesized `response.compaction` envelope.
+  // The shim should have engaged: the upstream sees the ordinary history as
+  // its prefix, one appended summary request, and no compaction_trigger.
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   const innerItems = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.type, 'message');
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(innerItems[0], { type: 'message', role: 'user', content: 'real history' });
+  const tail = innerItems.at(-1);
+  if (tail?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(tail.role, 'user');
   assertEquals(innerItems.every(i => i.type !== 'compaction_trigger'), true);
 
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
@@ -804,9 +896,10 @@ test('generate + compaction_trigger + flag on + messages target: shim simulates 
 
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   const innerItems = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(innerItems[0], { type: 'message', role: 'user', content: 'real history' });
+  const tail = innerItems.at(-1);
+  if (tail?.type !== 'message') throw new Error('expected summary request message');
+  assertEquals(tail.role, 'user');
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.object, 'response.compaction');
