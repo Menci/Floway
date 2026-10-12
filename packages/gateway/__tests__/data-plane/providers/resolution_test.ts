@@ -4,7 +4,7 @@ import { listModelProviders } from '../../../src/data-plane/providers/registry.t
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
@@ -70,130 +70,6 @@ test('scheduler registration failures propagate rather than looking like an upst
     fetcherForUpstream: () => directFetcher,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
   })).toThrow('scheduler unavailable');
-});
-
-test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
-  const { repo } = await setupAppTest();
-
-  await saveUpstreamForTest(repo.upstreams,
-    buildCustomUpstreamRecord({
-      config: {
-        baseUrl: 'https://custom.example.com',
-        authStyle: 'bearer',
-        ingressHeadersRules: [],
-        apiKey: 'sk-custom',
-        endpoints: { anthropicMessages: {} },
-      },
-    }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-          endpoints: { api: 'https://api.individual.githubcopilot.com' },
-        });
-      }
-      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'claude-opus-4.7', supported_endpoints: ['/v1/messages'] }]));
-      }
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({
-          object: 'list',
-          data: [{ id: 'claude-opus-4-7' }],
-        });
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-20300101', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-
-      // No upstream's catalog literally lists `claude-opus-4-7-20300101`,
-      // so the resolver retries against the stripped `claude-opus-4-7`,
-      // which both upstreams expose. Both candidates end up in the match
-      // list in configured `sort_order`.
-      assertEquals(resolved.candidates.map(m => m.provider.upstreamId).sort(), ['up_copilot', 'up_custom'].sort());
-      assertEquals(resolved.candidates.map(m => m.model.id), ['claude-opus-4-7', 'claude-opus-4-7']);
-    },
-  );
-});
-
-test('enumerateModelCandidates does not retry when the inbound id has no dated suffix', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams,
-    buildCustomUpstreamRecord({
-      config: {
-        baseUrl: 'https://custom.example.com',
-        authStyle: 'bearer',
-        ingressHeadersRules: [],
-        apiKey: 'sk-custom',
-        endpoints: { anthropicMessages: {} },
-      },
-    }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'claude-opus-4-7' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      // Plain typo / unknown id — no dated suffix, no retry.
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-unknown', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolved.candidates.length, 0);
-    },
-  );
-});
-
-test('enumerateModelCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
-  // The dated-suffix retry is a SECOND attempt, gated on the first
-  // attempt finding nothing. When the upstream catalog already lists the
-  // dated id verbatim, the first attempt wins and the stripped form
-  // never enters the candidate list.
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams,
-    buildCustomUpstreamRecord({
-      config: {
-        baseUrl: 'https://custom.example.com',
-        authStyle: 'bearer',
-        ingressHeadersRules: [],
-        apiKey: 'sk-custom',
-        endpoints: { anthropicMessages: {} },
-      },
-    }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({
-          object: 'list',
-          data: [
-            { id: 'claude-sonnet-4-5' },
-            { id: 'claude-sonnet-4-5-20251101' },
-          ],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-sonnet-4-5-20251101', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolved.candidates.length, 1);
-      assertEquals(resolved.candidates[0]?.model.id, 'claude-sonnet-4-5-20251101');
-    },
-  );
 });
 
 test('enumerateRealModelCandidates only loads the selected providers\' catalogs', async () => {
@@ -360,13 +236,45 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
   );
 });
 
-// A wrong-kind match (`sawAnyId=true, candidates=[]`) must short-circuit the
-// dated-suffix retry — the suffix strip cannot turn a wrong-kind id into a
-// right-kind one. The catalog carries the literal dated id as a chat model;
-// requesting it with `kind: 'image'` produces sawAnyId=true on the first
-// attempt, so the resolver returns immediately rather than walking the
-// stripped form.
-test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
+// Resolution is a single catalog exact-match. A client that pins a vendor release
+// date (`claude-opus-4-7-20251231`) addresses an id no upstream publishes, and
+// that must surface as model-missing instead of silently retrying the bare id.
+test('enumerateModelCandidates does not strip a -YYYYMMDD suffix the catalog does not list', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_dated',
+    name: 'Dated',
+    sortOrder: 1,
+    config: { baseUrl: 'https://dated.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { anthropicMessages: {} }, ingressHeadersRules: [] },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'dated.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'claude-opus-4-7' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'claude-opus-4-7-20251231',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+      assertEquals(resolved.candidates, []);
+      assertEquals(resolved.sawModel, false);
+    },
+  );
+});
+
+// A wrong-kind match yields `sawModel=true, candidates=[]`: the id is known to
+// the upstream but under a different kind, which the failure renderer surfaces
+// as "model unsupported" rather than "model missing".
+test('enumerateModelCandidates reports sawModel for a wrong-kind catalog match', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
@@ -394,49 +302,8 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
         runtimeLocation: 'TEST',
       });
       assertEquals(resolved.candidates, []);
-      // `sawModel: true` pins that only the first attempt ran: the resolver
-      // assigns `sawModel: second.sawAnyId` after retry (overwrite, not OR),
-      // so a second walk against the stripped `claude-opus-4-7` (absent from
-      // this fixture's catalog) would flip sawModel to false.
       assertEquals(resolved.sawModel, true);
       assertEquals(resolved.failedUpstreams, []);
-    },
-  );
-});
-
-// failedUpstreams across the two retry attempts must dedupe: a single broken
-// upstream that rejects both walks reports its name once, not twice.
-test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_broken',
-    name: 'Broken',
-    sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-  }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ error: 'upstream went down' }, 502);
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resolved = await enumerateModelCandidates({
-        upstreamIds: null,
-        model: 'claude-opus-4-7-20251231',
-        kind: 'chat',
-        scheduler: testScheduler,
-        runtimeLocation: 'TEST',
-      });
-      assertEquals(resolved.candidates.length, 0);
-      // The same broken upstream appears in both attempts' failedUpstreams;
-      // the outer resolver collapses the duplicate via a Set.
-      assertEquals(resolved.failedUpstreams.length, 1);
-      assertEquals(resolved.failedUpstreams[0], 'Broken');
     },
   );
 });
