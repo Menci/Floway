@@ -14,11 +14,17 @@ interface CandidateAccumulator {
   extras: Record<string, unknown>;
 }
 
-export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
+export interface GeminiGenerateContentEventAccumulator {
+  accept: (event: GeminiGenerateContentStreamEvent) => void;
+  result: () => GeminiGenerateContentResult;
+}
+
+export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateContentEventAccumulator => {
   const candidates = new Map<number, CandidateAccumulator>();
-  const result: GeminiGenerateContentResult = {};
+  const resultFields: GeminiGenerateContentResult = {};
   const resultExtras: Record<string, unknown> = {};
-  for await (const event of events) {
+
+  const accept = (event: GeminiGenerateContentStreamEvent): void => {
     if ('error' in event) throw new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
     for (const incoming of event.candidates ?? []) {
       // Protobuf omits an index whose value is zero; finish-only candidates may have no Content.
@@ -37,9 +43,21 @@ export async function reassembleGeminiGenerateContentEvents(events: AsyncIterabl
       captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, state.extras);
     }
     const { candidates: _candidates, ...fields } = event;
-    Object.assign(result, fields);
+    Object.assign(resultFields, fields);
     captureExtras(event as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, resultExtras);
-  }
-  if (candidates.size > 0) result.candidates = [...candidates.entries()].toSorted(([a], [b]) => a - b).map(([, state]) => Object.assign(state.candidate, state.extras));
-  return Object.assign(result, resultExtras);
+  };
+
+  const result = (): GeminiGenerateContentResult => {
+    const current: GeminiGenerateContentResult = { ...resultFields };
+    if (candidates.size > 0) current.candidates = [...candidates.entries()].toSorted(([a], [b]) => a - b).map(([, state]) => Object.assign(state.candidate, state.extras));
+    return Object.assign(current, resultExtras);
+  };
+
+  return { accept, result };
+};
+
+export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
+  const accumulator = createGeminiGenerateContentEventAccumulator();
+  for await (const event of events) accumulator.accept(event);
+  return accumulator.result();
 }

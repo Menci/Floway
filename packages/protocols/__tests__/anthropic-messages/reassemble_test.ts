@@ -13,7 +13,7 @@ import type {
   AnthropicMessagesWebSearchResultBlock,
   AnthropicMessagesWebSearchToolResultBlock,
 } from '../../src/anthropic-messages/index.ts';
-import { reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
+import { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 function makeEvents<T = AnthropicMessagesStreamEventEx>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
@@ -1117,4 +1117,32 @@ test('collects gateway TTL usage deltas with omitted zero buckets', async () => 
   assertEquals(result.usage.cache_creation, { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 0 });
   assertEquals(result.usage.service_tier, 'priority');
   assertEquals(result.usage.speed, 'fast');
+});
+
+test('result reflects all events accepted before each read', () => {
+  const accumulator = createAnthropicMessagesEventAccumulator();
+  accumulator.accept({
+    type: 'message_start',
+    message: {
+      id: 'incremental', type: 'message', role: 'assistant', model: 'claude', content: [], stop_reason: null, stop_sequence: null, stop_details: null,
+      container: null, diagnostics: null,
+      usage: {
+        input_tokens: 1,
+        output_tokens: 0,
+        cache_creation: null,
+        cache_creation_input_tokens: null,
+        cache_read_input_tokens: null,
+        output_tokens_details: null,
+        server_tool_use: null,
+        inference_geo: null,
+        service_tier: null,
+      },
+    },
+  });
+  accumulator.accept({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'hello', citations: null } });
+
+  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello', citations: null }]);
+  accumulator.accept({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' world' } });
+
+  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello world', citations: null }]);
 });

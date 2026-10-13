@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import type { GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '../../src/gemini-generate-content/index.ts';
-import { reassembleGeminiGenerateContentEvents } from '../../src/gemini-generate-content/reassemble.ts';
+import { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents } from '../../src/gemini-generate-content/reassemble.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const eventsFrom = async function* (events: readonly GeminiGenerateContentStreamEvent[]) {
@@ -53,4 +53,25 @@ test('preserves metadata-bearing text parts and finish-only candidates', async (
     },
     finishReason: 'STOP',
   }]);
+});
+
+test('result reflects all events accepted before each read', () => {
+  const accumulator = createGeminiGenerateContentEventAccumulator();
+  accumulator.accept({
+    candidates: [
+      { index: 0, content: { role: 'model', parts: [{ text: 'zero' }] } },
+      { index: 1, content: { role: 'model', parts: [{ text: 'one' }] } },
+    ],
+  });
+
+  assertEquals(accumulator.result().candidates?.map(candidate => candidate.content), [
+    { role: 'model', parts: [{ text: 'zero' }] },
+    { role: 'model', parts: [{ text: 'one' }] },
+  ]);
+  accumulator.accept({ candidates: [{ index: 1, content: { parts: [{ text: ' continued' }] }, finishReason: 'STOP' }] });
+
+  assertEquals(accumulator.result().candidates?.map(candidate => candidate.content), [
+    { role: 'model', parts: [{ text: 'zero' }] },
+    { role: 'model', parts: [{ text: 'one continued' }] },
+  ]);
 });

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import type { OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsFunctionToolCall, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsAssistantDeltaEx } from '../../src/openai-chat-completions/index.ts';
-import { reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/reassemble.ts';
+import { createOpenAIChatCompletionsEventAccumulator, reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 function makeEvents<T = OpenAIChatCompletionsStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
@@ -187,6 +187,25 @@ test('reassembleOpenAIChatCompletionsEvents concatenates reasoning text and keep
   assertEquals(result.choices[0].message.content, 'reply');
 });
 
+test.each([undefined, 0])('reassembleOpenAIChatCompletionsEvents appends complete reasoning items with index %s', async index => {
+  const items = ['a', 'b'].map(id => ({
+    type: 'reasoning',
+    id,
+    ...(index === undefined ? {} : { index }),
+    summary: [{ type: 'summary_text', text: id }],
+  }));
+  const expected = structuredClone(items);
+  const events = makeEvents(items.map(item => ({
+    data: {
+      id: 'reasoning', object: 'chat.completion.chunk', created: 1, model: 'model',
+      choices: [{ index: 0, delta: { reasoning_items: [item] }, finish_reason: null }],
+    },
+  })));
+
+  const result = await reassembleOpenAIChatCompletionsEvents(events);
+  assertEquals(result.choices[0].message.reasoning_items, expected);
+});
+
 test('reassembleOpenAIChatCompletionsEvents maintains independent state for every choice index', async () => {
   const body = makeEvents([
     {
@@ -216,7 +235,7 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
               reasoning_text: 'think ',
               reasoning_opaque: 'first-old',
               vendor_trace: 'a1',
-              reasoning_items: [{ type: 'reasoning', id: 'rs_a', summary: [] }],
+              vendor_records: [{ type: 'vendor_record', id: 'record_a', segments: [] }],
               tool_calls: [{ index: 1, id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a"' } }],
             } as OpenAIChatCompletionsAssistantDeltaEx,
             finish_reason: null,
@@ -270,7 +289,7 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
   assertEquals(result.choices[0].message.content, 'first answer');
   assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_text, 'think again');
   assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'first-final');
-  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_items, [{ type: 'reasoning', id: 'rs_a', summary: [] }]);
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).vendor_records, [{ type: 'vendor_record', id: 'record_a', segments: [] }]);
   assertEquals(result.choices[0].message.tool_calls, [{ id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a":1}' } }]);
   assertEquals(result.choices[0].message.vendor_trace, 'a1a2');
   assertEquals(result.choices[0].content_filter_results, { sexual: { filtered: false } });
@@ -284,11 +303,11 @@ test('reassembleOpenAIChatCompletionsEvents maintains independent state for ever
   assertEquals(result.usage, { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 });
 });
 
-test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in order', async () => {
+test('reassembleOpenAIChatCompletionsEvents preserves unknown object-array extensions across deltas', async () => {
   const body = makeEvents([
     {
       data: {
-        id: 'cmpl_reasoning_items',
+        id: 'cmpl_vendor_records',
         object: 'chat.completion.chunk',
         created: 3001,
         model: 'gpt-test',
@@ -297,11 +316,11 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
             index: 0,
             delta: {
               role: 'assistant',
-              reasoning_items: [
+              vendor_records: [
                 {
-                  type: 'reasoning',
-                  id: 'rs_1',
-                  summary: [{ type: 'summary_text', text: 'first' }],
+                  type: 'vendor_record',
+                  id: 'record_1',
+                  segments: [{ type: 'vendor_text', text: 'first' }],
                 },
               ],
             } as OpenAIChatCompletionsAssistantDeltaEx,
@@ -312,7 +331,7 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
     },
     {
       data: {
-        id: 'cmpl_reasoning_items',
+        id: 'cmpl_vendor_records',
         object: 'chat.completion.chunk',
         created: 3001,
         model: 'gpt-test',
@@ -320,11 +339,11 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
           {
             index: 0,
             delta: {
-              reasoning_items: [
+              vendor_records: [
                 {
-                  type: 'reasoning',
-                  id: 'rs_2',
-                  summary: [],
+                  type: 'vendor_record',
+                  id: 'record_2',
+                  segments: [],
                 },
               ],
             },
@@ -335,7 +354,7 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
     },
     {
       data: {
-        id: 'cmpl_reasoning_items',
+        id: 'cmpl_vendor_records',
         object: 'chat.completion.chunk',
         created: 3001,
         model: 'gpt-test',
@@ -353,16 +372,16 @@ test('reassembleOpenAIChatCompletionsEvents appends reasoning_items deltas in or
 
   const result = await reassembleOpenAIChatCompletionsEvents(body);
 
-  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_items, [
+  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).vendor_records, [
     {
-      type: 'reasoning',
-      id: 'rs_1',
-      summary: [{ type: 'summary_text', text: 'first' }],
+      type: 'vendor_record',
+      id: 'record_1',
+      segments: [{ type: 'vendor_text', text: 'first' }],
     },
     {
-      type: 'reasoning',
-      id: 'rs_2',
-      summary: [],
+      type: 'vendor_record',
+      id: 'record_2',
+      segments: [],
     },
   ]);
   assertEquals(result.choices[0].message.content, 'reply');
@@ -429,7 +448,7 @@ test('reassembleOpenAIChatCompletionsEvents preserves unknown chunk-level fields
     },
   ]);
 
-  const result = await reassembleOpenAIChatCompletionsEvents(body) as OpenAIChatCompletionsResult & { prompt_filter_results?: unknown };
+  const result = await reassembleOpenAIChatCompletionsEvents(body);
   assertEquals(result.prompt_filter_results, [{ prompt_index: 0, content_filter_results: { hate: { filtered: false } } }]);
 });
 
@@ -451,9 +470,7 @@ test('reassembleOpenAIChatCompletionsEvents preserves unknown choice-level field
     },
   ]);
 
-  const result = await reassembleOpenAIChatCompletionsEvents(body) as OpenAIChatCompletionsResult & {
-    choices: [{ content_filter_results?: unknown }];
-  };
+  const result = await reassembleOpenAIChatCompletionsEvents(body);
   assertEquals(result.choices[0].content_filter_results, { hate: { filtered: false, severity: 'safe' } });
 });
 
@@ -684,4 +701,20 @@ test('collects known tool metadata by dialect without concatenating opaque value
     extra_content: { google: { thought_signature: 'first', other: 2 } },
     provider_specific_fields: { thought_signature: 'sig', first: 1, second: 2 },
   });
+});
+
+test('result reflects all events accepted before each read', () => {
+  const accumulator = createOpenAIChatCompletionsEventAccumulator();
+  const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({
+    id: 'incremental', object: 'chat.completion.chunk', created: 1, model: 'm', choices,
+  });
+  accumulator.accept(chunk([
+    { index: 0, delta: { role: 'assistant', content: 'zero' }, finish_reason: null },
+    { index: 1, delta: { role: 'assistant', content: 'one' }, finish_reason: null },
+  ]));
+
+  assertEquals(accumulator.result().choices.map(choice => choice.message.content), ['zero', 'one']);
+  accumulator.accept(chunk([{ index: 1, delta: { content: ' continued' }, finish_reason: 'stop' }]));
+
+  assertEquals(accumulator.result().choices.map(choice => choice.message.content), ['zero', 'one continued']);
 });

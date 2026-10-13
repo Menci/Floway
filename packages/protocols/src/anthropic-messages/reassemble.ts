@@ -55,7 +55,7 @@ const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEventEx, {
   const block = event.content_block;
   const rawBlock = block as unknown as Record<string, unknown>;
   const knownKeys = KNOWN_BLOCK_KEYS_BY_TYPE[block.type] ?? FALLBACK_BLOCK_KNOWN;
-  const extras: Record<string, unknown> = {};
+  const extras: Record<string, unknown> = Object.create(null);
   captureExtras(rawBlock, knownKeys, extras);
   const withExtras = <T extends AnthropicMessagesBlockAccumulator>(acc: T): T =>
     Object.keys(extras).length > 0 ? Object.assign(acc, { extras }) : acc;
@@ -98,6 +98,8 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
   }
 };
 
+// The native SDK memoizes partial input by its raw buffer, regardless of stop reason.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/2979ed5cef4b2f059b95af23e08728c01e588f86/src/internal/message-stream-utils.ts#L6-L28
 const finalizeToolUseInput = (block: AnthropicMessagesBlockAccumulator | undefined): void => {
   if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || block.inputJson === block.parsedInputJson) return;
 
@@ -127,7 +129,12 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
   }
 };
 
-export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
+export interface AnthropicMessagesEventAccumulator {
+  accept: (event: AnthropicMessagesStreamEventEx) => void;
+  result: () => AnthropicMessagesResult;
+}
+
+export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEventAccumulator => {
   let id = '';
   let model = '';
   let usage: AnthropicMessagesUsage | undefined;
@@ -137,9 +144,9 @@ export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<An
   let stopSequence: string | null = null;
 
   const blocks: Array<AnthropicMessagesBlockAccumulator | undefined> = [];
-  const resultExtras: Record<string, unknown> = {};
+  const resultExtras: Record<string, unknown> = Object.create(null);
 
-  for await (const event of events) {
+  const accept = (event: AnthropicMessagesStreamEventEx): void => {
     switch (event.type) {
     case 'message_start':
       id = event.message.id;
@@ -183,28 +190,40 @@ export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<An
     case 'error':
       throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
     case 'message_stop':
-      for (const block of blocks) finalizeToolUseInput(block);
+      for (const block of blocks) {
+        finalizeToolUseInput(block);
+      }
       break;
     case 'ping':
       break;
     }
-  }
+  };
 
-  if (usage === undefined) throw new Error('Messages stream ended without message_start');
-  const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
+  const result = (): AnthropicMessagesResult => {
+    if (usage === undefined) throw new Error('Messages stream ended without message_start');
+    const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
 
-  return {
-    id,
-    type: 'message',
-    role: 'assistant',
-    content,
-    model,
-    stop_reason: stopReason,
-    stop_details: stopDetails,
-    container: null,
-    diagnostics: null,
-    stop_sequence: stopSequence,
-    usage,
-    ...resultExtras,
-  } as AnthropicMessagesResult;
+    return {
+      id,
+      type: 'message',
+      role: 'assistant',
+      content,
+      model,
+      stop_reason: stopReason,
+      stop_details: stopDetails,
+      container: null,
+      diagnostics: null,
+      stop_sequence: stopSequence,
+      usage,
+      ...resultExtras,
+    } as AnthropicMessagesResult;
+  };
+
+  return { accept, result };
+};
+
+export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
+  const accumulator = createAnthropicMessagesEventAccumulator();
+  for await (const event of events) accumulator.accept(event);
+  return accumulator.result();
 }
