@@ -8,6 +8,7 @@ import type {
   AnthropicMessagesUsageDelta,
 } from './index.ts';
 import { cloneAnthropicMessagesUsageIterations, splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
+import { parsePartialJSONWithRawNumbers } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 const normalizeAnthropicMessagesTextCitations = (value: AnthropicMessagesTextCitation[] | null | undefined): AnthropicMessagesTextCitation[] => value == null ? [] : [...value];
@@ -18,7 +19,7 @@ type AnthropicMessagesTextBlockAccumulator = {
   citations: AnthropicMessagesTextCitation[];
 };
 
-type AnthropicMessagesToolUseBlockAccumulator = Extract<AnthropicMessagesAssistantContentBlock, { type: 'tool_use' | 'server_tool_use' }> & { inputJson: string };
+type AnthropicMessagesToolUseBlockAccumulator = Extract<AnthropicMessagesAssistantContentBlock, { type: 'tool_use' | 'server_tool_use' }> & { inputJson: string; parsedInputJson: string };
 type AnthropicMessagesBlockAccumulator = (AnthropicMessagesTextBlockAccumulator | AnthropicMessagesToolUseBlockAccumulator | Exclude<AnthropicMessagesAssistantContentBlock, { type: 'text' | 'tool_use' | 'server_tool_use' }>) & { extras?: Record<string, unknown> };
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
@@ -60,7 +61,7 @@ const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEventEx, {
     Object.keys(extras).length > 0 ? Object.assign(acc, { extras }) : acc;
 
   if (block.type === 'text') return withExtras({ type: 'text', text: block.text, citations: normalizeAnthropicMessagesTextCitations(block.citations) });
-  if (block.type === 'tool_use' || block.type === 'server_tool_use') return withExtras({ ...block, inputJson: '' });
+  if (block.type === 'tool_use' || block.type === 'server_tool_use') return withExtras({ ...block, inputJson: '', parsedInputJson: '' });
   return withExtras({ ...block });
 };
 
@@ -98,9 +99,10 @@ const applyBlockDelta = (block: AnthropicMessagesBlockAccumulator | undefined, e
 };
 
 const finalizeToolUseInput = (block: AnthropicMessagesBlockAccumulator | undefined): void => {
-  if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || !block.inputJson) return;
+  if ((block?.type !== 'tool_use' && block?.type !== 'server_tool_use') || block.inputJson === block.parsedInputJson) return;
 
-  block.input = JSON.parse(block.inputJson);
+  block.input = parsePartialJSONWithRawNumbers(block.inputJson);
+  block.parsedInputJson = block.inputJson;
 };
 
 const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): AnthropicMessagesAssistantContentBlock => {
@@ -115,7 +117,7 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
   }
   case 'tool_use':
   case 'server_tool_use': {
-    const { inputJson: _inputJson, extras: _extras, ...toolUseBlock } = block;
+    const { inputJson: _inputJson, parsedInputJson: _parsedInputJson, extras: _extras, ...toolUseBlock } = block;
     return withExtras(toolUseBlock as AnthropicMessagesAssistantContentBlock);
   }
   default: {
@@ -181,6 +183,8 @@ export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<An
     case 'error':
       throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
     case 'message_stop':
+      for (const block of blocks) finalizeToolUseInput(block);
+      break;
     case 'ping':
       break;
     }
