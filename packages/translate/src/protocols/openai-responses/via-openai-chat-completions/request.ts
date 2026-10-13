@@ -1,29 +1,27 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from './content.ts';
-import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from './reasoning.ts';
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
+import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
+import { inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsResponseFormat, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, CanonicalOpenAIResponsesText, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 interface AssistantAccumulator {
   message: OpenAIChatCompletionsAssistantMessage;
-  reasoning: OpenAIChatCompletionsReasoningProjection;
+  reasoningText?: string;
 }
 
 const ensureAssistant = (assistant: AssistantAccumulator | null): AssistantAccumulator =>
   assistant ?? {
     message: { role: 'assistant', content: null },
-    reasoning: createOpenAIChatCompletionsReasoningProjection(),
   };
 
 const appendAssistantText = (assistant: AssistantAccumulator | null, text: string): AssistantAccumulator | null => {
@@ -192,8 +190,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     for (const item of flattenInput(items)) {
       rejectProgramCaller(item);
       if (item.type === 'reasoning') {
+        if (isOpenAIResponsesEncryptedReasoning(item)) { warnDroppedForeignAssistantReasoning('openaiResponses', 'openaiChatCompletions'); continue; }
         assistant = ensureAssistant(assistant);
-        addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection(assistant.reasoning, item);
+        const text = item.summary.map(part => part.text).join('');
+        if (text) assistant.reasoningText = (assistant.reasoningText ?? '') + text;
       } else if (item.type === 'function_call') assistant = appendAssistantToolCall(assistant, item);
       else if (item.type === 'custom_tool_call') assistant = appendAssistantToolCall(assistant, { call_id: item.call_id, name: item.name, arguments: JSON.stringify({ input: item.input }) });
       else if (item.type === 'message' && item.role === 'assistant') {
@@ -204,7 +204,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
         assistant = appendAssistantText(assistant, openaiResponsesContentToText(item.content));
       } else throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
     }
-    return assistant === null ? [] : [{ ...assistant.message, ...openaiChatCompletionsReasoningProjectionFields(assistant.reasoning) }];
+    return assistant === null ? [] : [{ ...assistant.message, ...(assistant.reasoningText === undefined ? {} : { reasoning_text: assistant.reasoningText }) }];
   };
 
   const translateNonAssistantInput = (items: CanonicalOpenAIResponsesInputItem[]): OpenAIChatCompletionsMessage[] => {

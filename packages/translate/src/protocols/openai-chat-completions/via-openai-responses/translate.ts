@@ -12,6 +12,6 @@ export const translate: TranslateTrip<
   const streamOptions = { ...src.stream_options };
   return {
     target: await buildTargetRequest(src, codec),
-    events: frames => translateToSourceEvents(frames, streamOptions),
+    events: frames => translateToSourceEvents(frames, streamOptions, codec),
   };
 };

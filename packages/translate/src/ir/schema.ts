@@ -65,11 +65,9 @@ const contentPart = union('type', {
 const item = union('type', {
   message: object({ content: array(contentPart) }),
   reasoning: object({
-    id: string,
     summary: array(appendString),
     content: array(appendString),
-    encrypted_content: nullable(string),
-  }, { optional: ['id', 'summary', 'content', 'encrypted_content'] }),
+  }, { optional: ['summary', 'content'] }),
   function_call: object({ call_id: callId, name: string, arguments: appendString }, { optional: ['call_id'] }),
   custom_tool_call: object({ call_id: callId, name: string, input: appendString }, { optional: ['call_id'] }),
 }, 'item');

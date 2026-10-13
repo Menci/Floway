@@ -31,6 +31,9 @@ const utf16Bytes = (text: string): Uint8Array<ArrayBuffer> => {
 export const hashRoundTripContent = async (text: string): Promise<Uint8Array> =>
   new Uint8Array(await crypto.subtle.digest('SHA-256', utf16Bytes(text)), 0, 8);
 
+export const computeRoundTripReplayCheck = async (version: number, material: IRJSONValue): Promise<RoundTripReplayCheck> =>
+  ({ version, digest: await hashRoundTripContent(stringifyReplayMaterial(material)) });
+
 export const verifyRoundTripReplayCheck = async (material: IRJSONValue, replayCheck: RoundTripReplayCheck): Promise<boolean> => {
   const digest = await hashRoundTripContent(stringifyReplayMaterial(material));
   return digest.length === replayCheck.digest.length && digest.every((byte, index) => byte === replayCheck.digest[index]);

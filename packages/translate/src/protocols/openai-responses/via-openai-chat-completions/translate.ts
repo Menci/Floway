@@ -14,7 +14,7 @@ export const translate: TranslateTrip<
   return {
     target,
     events: frames => restoreNamespaceEvents(
-      translateToSourceEvents(frames, customToolNames, target.n ?? 1),
+      translateToSourceEvents(frames, customToolNames, codec, namespaceToolNames, target.n ?? 1),
       namespaceToolNames,
     ),
   };

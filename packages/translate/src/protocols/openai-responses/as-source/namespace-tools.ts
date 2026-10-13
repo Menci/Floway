@@ -25,6 +25,24 @@ const isNamedToolChoice = (value: Record<string, unknown>): value is Record<stri
   && typeof value.name === 'string'
   && (value.namespace === undefined || typeof value.namespace === 'string');
 
+export const restoreNamespaceOutputItem = (
+  item: OpenAIResponsesOutputItemEx,
+  names: Pick<NamespaceToolNames, 'targetToSource'>,
+  status: 'in_progress' | 'completed',
+): OpenAIResponsesOutputItemEx => {
+  if ((item.type !== 'function_call' && item.type !== 'custom_tool_call') || item.namespace !== undefined) return item;
+  const identity = names.targetToSource.get(item.name);
+  if (identity === undefined) return item;
+  if (item.type === 'function_call') {
+    if (identity.type === 'function_call') return { ...item, name: identity.name, namespace: identity.namespace };
+    const { type: _type, arguments: input, ...rest } = item;
+    return { ...rest, type: 'custom_tool_call', name: identity.name, namespace: identity.namespace, input };
+  }
+  if (identity.type === 'custom_tool_call') return { ...item, name: identity.name, namespace: identity.namespace };
+  const { type: _type, input: arguments_, ...rest } = item;
+  return { ...rest, type: 'function_call', name: identity.name, namespace: identity.namespace, arguments: arguments_, status: item.status ?? status };
+};
+
 // Both translated targets require flat callable names. Reserve names from the
 // full inventory and raw history before projecting declarations so an excluded
 // historical call cannot acquire a different identity on a later turn.
@@ -163,29 +181,14 @@ export const restoreNamespaceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   names: NamespaceToolNames,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  const { targetToSource: identities, sourceTools, sourceToolChoice, toolsChanged, toolChoiceChanged } = names;
-  const restoreItem = (item: OpenAIResponsesOutputItemEx, status: 'in_progress' | 'completed'): OpenAIResponsesOutputItemEx => {
-    if ((item.type !== 'function_call' && item.type !== 'custom_tool_call') || item.namespace !== undefined) return item;
-    const identity = identities.get(item.name);
-    if (identity === undefined) return item;
-    const restored = { ...item, name: identity.name, namespace: identity.namespace, type: identity.type } as Record<string, unknown>;
-    if (identity.type === 'function_call' && item.type === 'custom_tool_call') {
-      restored.arguments = item.input;
-      delete restored.input;
-      restored.status ??= status;
-    } else if (identity.type === 'custom_tool_call' && item.type === 'function_call') {
-      restored.input = item.arguments;
-      delete restored.arguments;
-    }
-    return restored as unknown as OpenAIResponsesOutputItemEx;
-  };
+  const { sourceTools, sourceToolChoice, toolsChanged, toolChoiceChanged } = names;
   const items = new Map<string, Pick<CallableIdentity, 'name' | 'type'>>();
   for await (const frame of frames) {
     if (frame.type !== 'event') { yield frame; continue; }
     const event = frame.event;
     const identity = 'item_id' in event ? items.get(event.item_id) : undefined;
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-      const item = restoreItem(event.item, event.type === 'response.output_item.added' ? 'in_progress' : 'completed');
+      const item = restoreNamespaceOutputItem(event.item, names, event.type === 'response.output_item.added' ? 'in_progress' : 'completed');
       if ((item.type === 'function_call' || item.type === 'custom_tool_call') && typeof item.id === 'string') items.set(item.id, { name: item.name, type: item.type });
       yield item === event.item ? frame : { ...frame, event: { ...event, item } };
     } else if (event.type === 'response.function_call_arguments.delta' && identity?.type === 'custom_tool_call') {
@@ -195,18 +198,23 @@ export const restoreNamespaceEvents = async function* (
       // input.done has neither field; changing families must not leak a wire name.
       // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts
       if (identity.type === 'function_call') {
-        yield 'name' in event && event.name === identity.name ? frame : { ...frame, event: { ...event, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
+        if ('name' in event && event.name === identity.name) yield frame;
+        else {
+          const restoredEvent: OpenAIResponsesStreamEventEx = { ...event, name: identity.name };
+          yield { ...frame, event: restoredEvent };
+        }
       } else {
-        const { arguments: input, name: _name, ...rest } = event as typeof event & { name?: string };
+        const { arguments: input, name: _name, ...rest } = event;
         yield { ...frame, event: { ...rest, type: 'response.custom_tool_call_input.done', input } };
       }
     } else if (event.type === 'response.custom_tool_call_input.delta' && identity?.type === 'function_call') {
       yield { ...frame, event: { ...event, type: 'response.function_call_arguments.delta' } };
     } else if (event.type === 'response.custom_tool_call_input.done' && identity?.type === 'function_call') {
       const { input: args, ...rest } = event;
-      yield { ...frame, event: { ...rest, type: 'response.function_call_arguments.done', arguments: args, name: identity.name } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
+      const restoredEvent: OpenAIResponsesStreamEventEx = { ...rest, type: 'response.function_call_arguments.done', arguments: args, name: identity.name };
+      yield { ...frame, event: restoredEvent };
     } else if ('response' in event && Array.isArray(event.response?.output)) {
-      const output = event.response.output.map(item => restoreItem(item, isOpenAIResponsesTerminalEvent(event) ? 'completed' : 'in_progress'));
+      const output = event.response.output.map(item => restoreNamespaceOutputItem(item, names, isOpenAIResponsesTerminalEvent(event) ? 'completed' : 'in_progress'));
       const outputChanged = output.some((item, index) => item !== event.response.output[index]);
       const restoreTools = toolsChanged && event.response.tools !== undefined && event.response.tools !== sourceTools;
       const restoreChoice = toolChoiceChanged && event.response.tool_choice !== undefined && event.response.tool_choice !== sourceToolChoice;
@@ -225,7 +233,8 @@ export const restoreNamespaceEvents = async function* (
         if (sourceTools == null) delete response.tools;
         else response.tools = sourceTools;
       }
-      yield { ...frame, event: { ...event, response } } as ProtocolFrame<OpenAIResponsesStreamEventEx>;
+      const restoredEvent: OpenAIResponsesStreamEventEx = { ...event, response };
+      yield { ...frame, event: restoredEvent };
     } else yield frame;
   }
 };

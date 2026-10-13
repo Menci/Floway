@@ -1,16 +1,9 @@
 import { expect, test, vi } from 'vitest';
 
-import { collect, collectIR, events, iterate } from './helpers.ts';
+import { anthropicMessagesFromIR, collect, collectIR, geminiGenerateContentFromIR, irFromAnthropicMessages, irFromOpenAIChatCompletions, irFromOpenAIResponses, iterate, openaiChatCompletionsFromIR, openaiResponsesFromIR } from './helpers.ts';
 import { nativeResult } from './translation-cases.ts';
 import type { IRRecord } from '../../src/ir/stream.ts';
 import { IRNone } from '../../src/ir/types.ts';
-import { anthropicMessagesFromIR } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
-import { irFromAnthropicMessages } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
-import { geminiGenerateContentFromIR } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
-import { openaiChatCompletionsFromIR } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
-import { irFromOpenAIChatCompletions } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
-import { openaiResponsesFromIR } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const chat = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_lifecycle', model: 'served', created: 1, choices: [{ index: 0, delta, finish_reason }] } as any);
@@ -32,13 +25,12 @@ const gated = async <T>(prefix: T[], suffix: T[], convert: (source: AsyncIterabl
   return frames;
 };
 
-test('ChatCompletions emits scalar reasoning before the next upstream frame and ignores carriers', async () => {
-  const frames = await gated([chat({ reasoning_text: 'live' })], [chat({ content: 'body' }), chat({ reasoning_items: [{ id: 'poison', summary: [{ text: 'POISON' }] }] }), chat({}, 'stop'), doneFrame()], irFromOpenAIChatCompletions, output => {
+test('ChatCompletions emits scalar reasoning before the next upstream frame', async () => {
+  const frames = await gated([chat({ reasoning_text: 'live' })], [chat({ content: 'body' }), chat({}, 'stop'), doneFrame()], irFromOpenAIChatCompletions, output => {
     expect(output).toContainEqual(expect.objectContaining({ type: 'operation', operation: 'append', value: 'live' }));
   });
   const ir = await collectIR(iterate(frames));
   expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['live'] }, { type: 'message', content: [{ type: 'text', text: 'body' }] }]);
-  expect(JSON.stringify(ir)).not.toContain('poison');
 });
 
 test('ChatCompletions locks the first reasoning field independently for each choice', async () => {
@@ -215,17 +207,12 @@ test.each([['ChatCompletions', openaiChatCompletionsFromIR], ['Responses', opena
     expect(frames.some(frame => frame.event?.choices?.[0]?.finish_reason === 'length')).toBe(true);
     expect(frames.flatMap(frame => frame.event?.choices?.[0]?.delta.tool_calls ?? []).map(tool => tool.function.arguments ?? '').join('')).toBe('{"x":');
   } else if (name === 'Responses') {
-    expect(frames.at(-1).event).toMatchObject({ type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' }, output: [{ arguments: '{"x":', status: 'incomplete' }] } });
+    expect(frames.at(-1).event).toMatchObject({ type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' } } });
+    expect(frames.at(-1).event.response.output[0]).toMatchObject({ arguments: '{"x":', status: 'incomplete' });
   } else {
-    expect(frames.flatMap(frame => frame.event.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? [])).toEqual([]);
+    expect(frames.flatMap(frame => frame.event.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []).filter((part: any) => part.thoughtSignature === undefined)).toEqual([]);
     expect(frames.flatMap(frame => frame.event.candidates ?? []).filter(candidate => candidate.finishReason !== undefined)).toEqual([{ index: 0, finishReason: 'MAX_TOKENS' }]);
   }
-});
-
-test('ChatCompletions opaque selects the first reasoning group final signature even if another closes first', async () => {
-  const source = [messageStart, eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } } as any), eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'first' } } as any), eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'SECOND' } } as any), eventFrame({ type: 'content_block_stop', index: 1 } as any), eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'FIRST' } } as any), eventFrame({ type: 'content_block_stop', index: 0 } as any), ...messageEnd('end_turn')];
-  const output = await collect(events(openaiChatCompletionsFromIR(irFromAnthropicMessages(iterate(source)))));
-  expect(output.flatMap(chunk => chunk.choices?.flatMap(choice => (choice.delta as any).reasoning_opaque === undefined ? [] : [(choice.delta as any).reasoning_opaque]) ?? [])).toEqual(['FIRST']);
 });
 
 test('empty ChatCompletions scalar deltas do not interrupt reasoning', async () => {
@@ -233,7 +220,7 @@ test('empty ChatCompletions scalar deltas do not interrupt reasoning', async () 
   expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['r1r2'] }]);
 });
 
-test('Responses closes only the addressed part while another part remains open', async () => {
+test('Responses closes only the addressed text part while a refusal remains open', async () => {
   const prefix: IRRecord[] = [
     { type: 'operation', operation: 'initialize', path: ['choices', 0], value: { items: [] } },
     { type: 'operation', operation: 'assign', path: ['model'], value: 'served' },
@@ -241,16 +228,16 @@ test('Responses closes only the addressed part while another part remains open',
     { type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } },
     { type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } },
     { type: 'operation', operation: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'A' },
-    { type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0, 'content', 1], value: { type: 'text', text: '' } },
-    { type: 'operation', operation: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'text'], value: 'B' },
+    { type: 'operation', operation: 'initialize', path: ['choices', 0, 'items', 0, 'content', 1], value: { type: 'refusal', refusal: '' } },
+    { type: 'operation', operation: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'refusal'], value: 'B' },
     { type: 'part_end', choice: 0, item: 0, part: 0 },
   ];
-  const suffix: IRRecord[] = [{ type: 'operation', operation: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'text'], value: 'C' }, { type: 'part_end', choice: 0, item: 0, part: 1 }, { type: 'item_end', choice: 0, item: 0 }, { type: 'choice_end', choice: 0, finish_reason: 'stop' }, { type: 'finish', status: 'completed' }];
+  const suffix: IRRecord[] = [{ type: 'operation', operation: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'refusal'], value: 'C' }, { type: 'part_end', choice: 0, item: 0, part: 1 }, { type: 'item_end', choice: 0, item: 0 }, { type: 'choice_end', choice: 0, finish_reason: 'stop' }, { type: 'finish', status: 'completed' }];
   const frames = await gated(prefix, suffix, openaiResponsesFromIR, output => {
     expect(output.filter(frame => frame.event.type === 'response.content_part.done').map(frame => frame.event.content_index)).toEqual([0]);
   });
   const result: any = await nativeResult('openai-responses', frames);
-  expect(result.output[0].content.map((part: any) => part.text)).toEqual(['A', 'BC']);
+  expect(result.output[0].content).toEqual([{ type: 'output_text', text: 'A', annotations: [], logprobs: [] }, { type: 'refusal', refusal: 'BC' }]);
 });
 
 test('GenerateContent retains reasoning arrival order while it waits for a prior tool', async () => {
@@ -276,21 +263,6 @@ test.each([false, true])('GenerateContent keeps parallel text arrival order with
   const parts = frames.flatMap(frame => (frame.event as any).candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []);
   expect(parts.map((part: any) => part.text ?? '').join('')).toBe('abc');
   if (buffered) expect(parts[0].functionCall).toMatchObject({ id: 'call', args: { x: 1 } });
-});
-
-test('ChatCompletions emits each Responses reasoning carrier before the next upstream pull and the finish reason', async () => {
-  const first = { type: 'reasoning', id: 'rs_first', summary: [{ type: 'summary_text', text: 'visible' }] };
-  const empty = { type: 'reasoning', id: 'rs_empty', summary: [] };
-  const source = [responseStart, add(0, first), eventFrame({ type: 'response.output_item.done', output_index: 0, item: first } as any), add(1, empty), eventFrame({ type: 'response.output_item.done', output_index: 1, item: empty } as any)];
-  const carriers = (frames: any[]) => frames.flatMap(frame => frame.event?.choices?.[0]?.delta.reasoning_items ?? []);
-  const output = await gated(source, [eventFrame({ type: 'response.completed', response: response([first, empty]) } as any)], frames => openaiChatCompletionsFromIR(irFromOpenAIResponses(frames)), prefix => {
-    expect(carriers(prefix)).toEqual([first, empty]);
-    expect(prefix.some(frame => frame.event?.choices?.[0]?.finish_reason != null)).toBe(false);
-  });
-  expect(carriers(output)).toEqual([first, empty]);
-  const finish = output.findIndex(frame => frame.event?.choices?.[0]?.finish_reason != null);
-  const lastCarrier = output.findLastIndex(frame => frame.event?.choices?.[0]?.delta.reasoning_items !== undefined);
-  expect(lastCarrier).toBeLessThan(finish);
 });
 
 test('Messages publishes cumulative usage progress before pulling the rest of the generation', async () => {

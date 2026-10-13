@@ -17,16 +17,23 @@ import the source protocol's subpath and call
    Routes using that protocol as source or target may import it. Keep another
    protocol's wire mapping in the matching `via-*` route. Retained files use
    functional names without another protocol name.
-5. **Output IR** — keep private types, stream operations, validation, accumulation,
-   and native ordinal mapping under `ir/`. Native SSE adapters belong to
-   their protocol: `as-target/sse-from.ts` consumes upstream SSE and
-   `as-source/sse-to.ts` emits client SSE. IR stays internal to translate.
-6. **Cross-route utility** — keep it in `shared/`, with tests under
+5. **Output IR** — keep private types, its path schema, stream operations,
+   validation, accumulation, operation paths, and native ordinal mapping under
+   `ir/`. Native SSE adapters
+   belong to their protocol: `as-target/sse-from.ts` consumes upstream SSE and
+   `as-source/sse-to.ts` emits client SSE with its sidecar. The return path is
+   upstream SSE → IR SSE → client SSE with sidecar. IR stays internal to translate.
+6. **Assistant-turn round trips** — keep authenticated sidecar codecs, replay
+   validation, and native stream coordination under `round-trip/`. Source replay
+   inspection and carriers belong in `as-source/round-trip.ts`; native assistant-turn
+   shapes and output-to-input converters belong in `as-target/assistant-turn.ts`.
+7. **Protocol-independent utility** — keep it in `shared/`, with tests under
    `__tests__/shared/`. Protocol behavior belongs in its owning protocol directory.
 
 ## Current Production Subdirectories
 
 - `ir/` — output model, its path schema, and protocol-independent streaming state.
+- `round-trip/` — authenticated assistant-turn sidecars, replay validation, and native stream coordination.
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.
 - `protocols/gemini-generate-content/as-source/` — interprets GenerateContent parts and schemas and emits GenerateContent SSE.

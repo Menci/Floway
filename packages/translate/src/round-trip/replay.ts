@@ -11,6 +11,11 @@ export interface RoundTripAssistantTurn<Target extends keyof AssistantTurnByProt
   turn: AssistantTurnFor<Target>;
 }
 
+export const warnDroppedForeignAssistantReasoning = (
+  source: keyof AssistantTurnByProtocol,
+  target: keyof AssistantTurnByProtocol,
+): void => { console.warn('Dropping reasoning from an unidentifiable foreign assistant turn', { source, target }); };
+
 export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnByProtocol, Target extends keyof AssistantTurnByProtocol, SourceTurn>(
   source: Source,
   target: Target,

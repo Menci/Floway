@@ -1,15 +1,13 @@
 import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
-import { scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from './reasoning.ts';
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
+import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
-import { inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
-import { openAIChatCompletionsScalarReasoningText } from '../common/reasoning.ts';
-import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { hasOpenAIChatCompletionsReasoning, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
+import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIResponsesTool[] =>
   tools?.length
@@ -61,7 +59,10 @@ const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessag
   return content;
 };
 
-export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
+export const buildTargetRequest = async (
+  payload: OpenAIChatCompletionsPayload,
+  codec: AssistantTurnSidecarCodec,
+): Promise<CanonicalOpenAIResponsesPayload> => {
   const instructions: string[] = [];
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
@@ -69,13 +70,10 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
 
   const translateAssistantMessage = (message: OpenAIChatCompletionsAssistantMessage): void => {
     hoistSystemPrefix = false;
-
+    if (hasOpenAIChatCompletionsReasoning(message)) {
+      warnDroppedForeignAssistantReasoning('openaiChatCompletions', 'openaiResponses');
+    }
     const assistantContent = translateAssistantContent(message);
-    const extensions = message as OpenAIChatCompletionsAssistantMessageEx;
-    const reasoningItems = translateOpenAIChatCompletionsReasoningItems<OpenAIResponsesInputReasoning>(extensions.reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
-    const scalarReasoning = scalarToOpenAIResponsesReasoningItem<OpenAIResponsesInputReasoning>(openAIChatCompletionsScalarReasoningText(extensions));
-    if (reasoningItems) input.push(...reasoningItems);
-    else if (scalarReasoning) input.push(scalarReasoning);
     if (message.tool_calls?.length) {
       if (assistantContent.length > 0) {
         input.push({

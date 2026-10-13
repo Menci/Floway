@@ -2,7 +2,7 @@ import { klona } from 'klona/json';
 
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
+import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { RemoteImageLoader } from '../../../types.ts';
@@ -14,7 +14,7 @@ import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
-import { inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
+import { inspectOpenAIResponsesAssistantTurn, isOpenAIResponsesEncryptedReasoning, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
@@ -284,7 +284,11 @@ const translateToolChoice = (
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${toolChoice.type}' to Anthropic Messages.`);
 };
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: AssistantTurnSidecarCodec, options: BuildTargetRequestOptions): Promise<TargetRequestResult> => {
+export const buildTargetRequest = async (
+  source: OpenAIResponsesRequestPayloadEx,
+  codec: AssistantTurnSidecarCodec,
+  options: BuildTargetRequestOptions,
+): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
@@ -316,7 +320,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
         appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } });
         break;
       case 'reasoning': {
-
+        if (isOpenAIResponsesEncryptedReasoning(item)) {
+          warnDroppedForeignAssistantReasoning('openaiResponses', 'anthropicMessages');
+          break;
+        }
         const block = openaiResponsesReasoningToAnthropicMessagesUpstreamBlock(item);
         if (block) appendAssistantBlock(messages, block);
         break;

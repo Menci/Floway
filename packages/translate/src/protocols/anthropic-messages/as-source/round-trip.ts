@@ -1,8 +1,12 @@
+
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
-import { replayMaterialsByType, verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
-import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesRedactedThinkingBlock } from '@floway-dev/protocols/anthropic-messages';
+
+export const ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION = 1;
 
 export type AnthropicMessagesAssistantTurn = (AnthropicMessagesAssistantMessage | { role: 'assistant'; content: AnthropicMessagesAssistantContentBlock[] })[];
 
@@ -45,6 +49,9 @@ export const inspectAnthropicMessagesAssistantTurn = (turn: AnthropicMessagesAss
   };
 };
 
+export const computeAnthropicMessagesReplayCheck = (turn: AnthropicMessagesAssistantTurn): Promise<RoundTripReplayCheck> =>
+  computeRoundTripReplayCheck(ANTHROPIC_MESSAGES_REPLAY_CHECK_VERSION, messagesReplayCheckMaterialV1(turn));
+
 export const verifyAnthropicMessagesReplayCheck = (
   turn: AnthropicMessagesAssistantTurn,
   replayCheck: RoundTripReplayCheck,
@@ -54,3 +61,5 @@ export const verifyAnthropicMessagesReplayCheck = (
   default: return Promise.resolve(false);
   }
 };
+
+export const createAnthropicMessagesSidecarCarrier = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });

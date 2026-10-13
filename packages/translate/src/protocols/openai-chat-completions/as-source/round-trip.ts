@@ -1,10 +1,16 @@
+
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
-import { verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
 import type { OpenAIChatCompletionsAssistantExtensions, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantOutputMessage, OpenAIChatCompletionsToolCallEx } from '@floway-dev/protocols/openai-chat-completions';
 
+export const OPENAI_CHAT_COMPLETIONS_REPLAY_CHECK_VERSION = 1;
+
 export type OpenAIChatCompletionsAssistantTurn = (OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsAssistantOutputMessage)
   & Pick<OpenAIChatCompletionsAssistantExtensions, 'reasoning' | 'reasoning_text' | 'reasoning_content' | 'reasoning_details'>;
+
+export type OpenAIChatCompletionsReasoningDetailsCarrier = { type: 'reasoning.encrypted'; data: string; format: 'unknown'; index: 1 };
 
 const reasoningFields = ['reasoning', 'reasoning_text', 'reasoning_content'] as const;
 
@@ -46,6 +52,9 @@ const reasoningTextMaterial = (turn: OpenAIChatCompletionsAssistantTurn): IRJSON
   return materials;
 };
 
+export const hasOpenAIChatCompletionsReasoning = (turn: OpenAIChatCompletionsAssistantTurn): boolean =>
+  reasoningFields.some(field => turn[field] != null) || reasoningDetails(turn).length > 0;
+
 const chatReplayCheckMaterialV1 = (turn: OpenAIChatCompletionsAssistantTurn): IRJSONObject => ({
   ...(Object.hasOwn(turn, 'content') && turn.content !== undefined ? { content: messageContentMaterial(turn) } : {}),
   ...(Object.hasOwn(turn, 'refusal') && turn.refusal !== undefined ? { refusal: turn.refusal } : {}),
@@ -70,6 +79,9 @@ export const inspectOpenAIChatCompletionsAssistantTurn = (turn: OpenAIChatComple
   };
 };
 
+export const computeOpenAIChatCompletionsReplayCheck = (turn: OpenAIChatCompletionsAssistantTurn): Promise<RoundTripReplayCheck> =>
+  computeRoundTripReplayCheck(OPENAI_CHAT_COMPLETIONS_REPLAY_CHECK_VERSION, chatReplayCheckMaterialV1(turn));
+
 export const verifyOpenAIChatCompletionsReplayCheck = (
   turn: OpenAIChatCompletionsAssistantTurn,
   replayCheck: RoundTripReplayCheck,
@@ -79,3 +91,8 @@ export const verifyOpenAIChatCompletionsReplayCheck = (
   default: return Promise.resolve(false);
   }
 };
+
+// Our carrier uses indexed OpenRouter reasoning_details.
+// https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details-api-shape
+export const createOpenAIChatCompletionsSidecarCarrier = (data: string): OpenAIChatCompletionsReasoningDetailsCarrier[] =>
+  [{ type: 'reasoning.encrypted', data, format: 'unknown', index: 1 }];

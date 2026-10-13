@@ -1,72 +1,87 @@
 import { test } from 'vitest';
 
-import { buildTargetRequest } from '../../../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
+import { buildTargetRequest as buildTargetRequestWithSidecar } from '../../../../src/protocols/anthropic-messages/via-openai-chat-completions/request.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
+const buildWithTestSidecar = (payload: Parameters<typeof buildTargetRequestWithSidecar>[0]) =>
+  buildTargetRequestWithSidecar(payload, createTestSidecarCodec());
+
 test('buildTargetRequest maps thinking.disabled to reasoning_effort none', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     thinking: { type: 'disabled' },
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.reasoning_effort, 'none');
 });
+
 test('buildTargetRequest prefers output_config.effort over thinking.disabled', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: 'high' },
     thinking: { type: 'disabled' },
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.reasoning_effort, 'high');
 });
+
 test('buildTargetRequest forwards empty output_config.effort verbatim', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: '' },
     thinking: { type: 'disabled' },
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.reasoning_effort, '');
 });
+
 test('buildTargetRequest maps thinking.enabled to reasoning_effort medium regardless of budget_tokens', async () => {
   for (const budget of [1024, 16384]) {
-    const result = await buildTargetRequest({
+    const result = await buildWithTestSidecar({
       model: 'gpt-test',
       max_tokens: 4096,
       thinking: { type: 'enabled', budget_tokens: budget },
       messages: [{ role: 'user', content: 'hi' }],
-    }, createTestSidecarCodec());
+    });
+
     assertEquals(result.reasoning_effort, 'medium');
   }
 });
+
 test('buildTargetRequest maps thinking.adaptive to reasoning_effort medium', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 4096,
     thinking: { type: 'adaptive' },
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.reasoning_effort, 'medium');
 });
+
 test('buildTargetRequest prefers output_config.effort over thinking.enabled', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 4096,
     output_config: { effort: 'high' },
     thinking: { type: 'enabled', budget_tokens: 1024 },
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.reasoning_effort, 'high');
 });
+
 test('buildTargetRequest keeps tool_result and user text as separate chat messages', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -78,26 +93,33 @@ test('buildTargetRequest keeps tool_result and user text as separate chat messag
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages, [
     { role: 'tool', tool_call_id: 'toolu_1', content: 'result' },
     { role: 'user', content: 'Please continue.' },
   ]);
 });
+
 test.each([
   { tools: undefined, name: 'lookup' },
   { tools: [{ name: 'other', input_schema: { type: 'object' as const } }], name: 'lookup' },
 ])('buildTargetRequest rejects named tool_choice for an undeclared tool', async ({ tools, name }) => {
-  await assertRejects(async () => await buildTargetRequest({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hello' }],
-    tools,
-    tool_choice: { type: 'tool', name },
-  }, createTestSidecarCodec()), Error, `Anthropic Messages tool_choice names an undeclared tool: ${name}`);
+  await assertRejects(
+    () => buildWithTestSidecar({
+      model: 'gpt-test',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools,
+      tool_choice: { type: 'tool', name },
+    }),
+    Error,
+    `Anthropic Messages tool_choice names an undeclared tool: ${name}`,
+  );
 });
+
 test('buildTargetRequest drops filtered-native tool_choice and rewrites assistant native web-search history as tool-call history', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     tool_choice: { type: 'any' },
@@ -128,7 +150,8 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.tools, undefined);
   assertEquals(result.tool_choice, undefined);
   assertEquals(result.messages, [
@@ -153,8 +176,9 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
     },
   ]);
 });
+
 test('buildTargetRequest flattens text-block tool_result content but serializes search-result arrays', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -181,7 +205,8 @@ test('buildTargetRequest flattens text-block tool_result content but serializes 
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages, [
     { role: 'tool', tool_call_id: 'toolu_text', content: 'hello' },
     {
@@ -191,8 +216,9 @@ test('buildTargetRequest flattens text-block tool_result content but serializes 
     },
   ]);
 });
+
 test('buildTargetRequest preserves mixed user/tool_result chronology', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -206,7 +232,8 @@ test('buildTargetRequest preserves mixed user/tool_result chronology', async () 
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages, [
     { role: 'user', content: 'First question.' },
     { role: 'tool', tool_call_id: 'toolu_1', content: 'first' },
@@ -214,28 +241,9 @@ test('buildTargetRequest preserves mixed user/tool_result chronology', async () 
     { role: 'tool', tool_call_id: 'toolu_2', content: 'second' },
   ]);
 });
-test('buildTargetRequest preserves redacted_thinking as reasoning_opaque', async () => {
-  const result = await buildTargetRequest({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'assistant',
-        content: [{ type: 'redacted_thinking', data: 'opaque_sig' }],
-      },
-    ],
-  }, createTestSidecarCodec());
-  assertEquals(result.messages, [
-    {
-      role: 'assistant',
-      content: null,
-      reasoning_text: null,
-      reasoning_opaque: 'opaque_sig',
-    } as OpenAIChatCompletionsAssistantMessageEx,
-  ]);
-});
-test('buildTargetRequest projects only the first scalar reasoning group', async () => {
-  const result = await buildTargetRequest({
+
+test('buildTargetRequest concatenates readable thinking groups and drops signatures', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -248,16 +256,17 @@ test('buildTargetRequest projects only the first scalar reasoning group', async 
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages[0], {
     role: 'assistant',
     content: 'answer',
-    reasoning_text: 'first',
-    reasoning_opaque: 'sig_1',
+    reasoning_text: 'firstsecond',
   } as OpenAIChatCompletionsAssistantMessageEx);
 });
-test('buildTargetRequest does not pair readable thinking with later redacted opaque data', async () => {
-  const result = await buildTargetRequest({
+
+test('buildTargetRequest drops redacted opaque blocks while keeping readable thinking', async () => {
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -269,14 +278,15 @@ test('buildTargetRequest does not pair readable thinking with later redacted opa
         ],
       },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages[0], {
     role: 'assistant',
     content: null,
     reasoning_text: 'first',
-    reasoning_opaque: null,
   } as OpenAIChatCompletionsAssistantMessageEx);
 });
+
 // OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
 // `properties` field. Anthropic accepts that shape, so the input_schema must
 // be normalized before forwarding. The reverse direction at
@@ -284,12 +294,13 @@ test('buildTargetRequest does not pair readable thinking with later redacted opa
 // defaults `parameters` to {type: 'object', properties: {}}. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
 test('buildTargetRequest defaults missing input_schema.properties to {} for object tools', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [{ name: 'no_args', input_schema: { type: 'object' } }],
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.tools, [
     {
       type: 'function',
@@ -301,8 +312,9 @@ test('buildTargetRequest defaults missing input_schema.properties to {} for obje
     },
   ]);
 });
+
 test('buildTargetRequest preserves declared input_schema.properties verbatim', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [
@@ -316,22 +328,26 @@ test('buildTargetRequest preserves declared input_schema.properties verbatim', a
       },
     ],
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals((result.tools?.[0] as OpenAIChatCompletionsFunctionTool).function.parameters, {
     type: 'object',
     properties: { q: { type: 'string' } },
     required: ['q'],
   });
 });
+
 test('buildTargetRequest does not inject properties for non-object input_schema', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [{ name: 'scalar', input_schema: { type: 'string' } }] as unknown as AnthropicMessagesPayload['tools'],
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals((result.tools?.[0] as OpenAIChatCompletionsFunctionTool).function.parameters, { type: 'string' });
 });
+
 test('buildTargetRequest wraps output_config.format json_schema as response_format with nested json_schema and strict', async () => {
   const schema = {
     type: 'object',
@@ -339,42 +355,58 @@ test('buildTargetRequest wraps output_config.format json_schema as response_form
     required: ['test'],
     additionalProperties: false,
   };
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
     output_config: { format: { type: 'json_schema', schema } },
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.response_format, {
     type: 'json_schema',
     json_schema: { name: 'messages_response', strict: true, schema },
   });
 });
+
 test('buildTargetRequest omits response_format when output_config has no format', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
     output_config: { effort: 'high' },
-  }, createTestSidecarCodec());
+  });
+
   assertFalse('response_format' in result);
 });
+
 test('buildTargetRequest rejects an unknown assistant content block type', async () => {
-  await assertRejects(async () => await buildTargetRequest({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as AnthropicMessagesAssistantContentBlock] }],
-  }, createTestSidecarCodec()), Error, "messages.0.content.0.type: 'audio' assistant content blocks are not supported");
+  await assertRejects(
+    () =>
+      buildWithTestSidecar({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as AnthropicMessagesAssistantContentBlock] }],
+      }),
+    Error,
+    "messages.0.content.0.type: 'audio' assistant content blocks are not supported",
+  );
 });
+
 test('buildTargetRequest rejects an unknown user content block type', async () => {
-  await assertRejects(async () => await buildTargetRequest({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as AnthropicMessagesUserContentBlock] }],
-  }, createTestSidecarCodec()), Error, "messages.0.content.0.type: 'audio' content blocks are not supported");
+  await assertRejects(
+    () =>
+      buildWithTestSidecar({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as AnthropicMessagesUserContentBlock] }],
+      }),
+    Error,
+    "messages.0.content.0.type: 'audio' content blocks are not supported",
+  );
 });
+
 test('buildTargetRequest emits in-array role:"system" inline as a CC system message', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -382,14 +414,16 @@ test('buildTargetRequest emits in-array role:"system" inline as a CC system mess
       { role: 'system', content: 'be terse' },
       { role: 'user', content: 'who are you' },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages.length, 3);
   assertEquals(result.messages[0].role, 'user');
   assertEquals(result.messages[1], { role: 'system', content: 'be terse' });
   assertEquals(result.messages[2].role, 'user');
 });
+
 test('buildTargetRequest preserves in-array system text blocks as separate content parts', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -402,7 +436,8 @@ test('buildTargetRequest preserves in-array system text blocks as separate conte
       },
       { role: 'user', content: 'hi' },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages[0], {
     role: 'system',
     content: [
@@ -411,8 +446,9 @@ test('buildTargetRequest preserves in-array system text blocks as separate conte
     ],
   });
 });
+
 test('buildTargetRequest preserves top-level system text blocks as separate content parts', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     system: [
@@ -422,7 +458,8 @@ test('buildTargetRequest preserves top-level system text blocks as separate cont
     messages: [
       { role: 'user', content: 'hi' },
     ],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages[0], {
     role: 'system',
     content: [
@@ -431,18 +468,21 @@ test('buildTargetRequest preserves top-level system text blocks as separate cont
     ],
   });
 });
+
 test('buildTargetRequest skips system message when top-level system is empty array', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     system: [],
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.messages.length, 1);
   assertEquals(result.messages[0].role, 'user');
 });
+
 test('buildTargetRequest preserves chronology of multiple in-array system messages', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     system: 'top-level prompt',
@@ -453,9 +493,10 @@ test('buildTargetRequest preserves chronology of multiple in-array system messag
       { role: 'system', content: 'mid-array B' },
       { role: 'user', content: 'q2' },
     ],
-  }, createTestSidecarCodec());
-    // The top-level system comes first (canonical placement), then the
-    // in-array sequence is preserved verbatim.
+  });
+
+  // The top-level system comes first (canonical placement), then the
+  // in-array sequence is preserved verbatim.
   assertEquals(result.messages[0], { role: 'system', content: 'top-level prompt' });
   assertEquals(result.messages[1], { role: 'system', content: 'mid-array A' });
   assertEquals(result.messages[2].role, 'user');
@@ -463,80 +504,98 @@ test('buildTargetRequest preserves chronology of multiple in-array system messag
   assertEquals(result.messages[4], { role: 'system', content: 'mid-array B' });
   assertEquals(result.messages[5].role, 'user');
 });
+
 test('buildTargetRequest rejects an unknown message role', async () => {
-  await assertRejects(async () => await buildTargetRequest({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'tool', content: 'oops' } as unknown as {
-      role: 'user';
-      content: string;
-    }],
-  }, createTestSidecarCodec()), Error, "messages.0.role: role 'tool' is not supported");
+  await assertRejects(
+    () =>
+      buildWithTestSidecar({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
+      }),
+    Error,
+    "messages.0.role: role 'tool' is not supported",
+  );
 });
+
 test('buildTargetRequest drops Anthropic-only knobs that have no OpenAI-Chat-Completions slot', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
     thinking: { type: 'enabled', budget_tokens: 4096, display: 'summarized' },
-  }, createTestSidecarCodec());
-    // Only the OpenAI-canonical effort axis survives; budget_tokens and display
-    // have no OpenAI-Chat-Completions equivalent and translate emits nothing for
-    // them. `speed` has its own bridge test below and is intentionally
-    // excluded here.
+  });
+
+  // Only the OpenAI-canonical effort axis survives; budget_tokens and display
+  // have no OpenAI-Chat-Completions equivalent and translate emits nothing for
+  // them. `speed` has its own bridge test below and is intentionally
+  // excluded here.
   assertEquals(result.reasoning_effort, 'medium');
 });
+
 // ── speed ↔ service_tier bridge ──
+
 test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound OpenAI Chat Completions payload', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'fast',
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.service_tier, 'priority');
 });
+
 test('buildTargetRequest omits service_tier when speed is absent', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertFalse('service_tier' in result);
 });
+
 test('buildTargetRequest drops speed values other than fast without emitting service_tier', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'standard',
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertFalse('service_tier' in result);
 });
+
 test('buildTargetRequest forwards Anthropic service_tier to OpenAI Chat Completions when speed is absent', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'auto',
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.service_tier, 'auto');
 });
+
 test('buildTargetRequest forwards service_tier:standard_only to OpenAI Chat Completions when speed is absent', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'standard_only',
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.service_tier, 'standard_only');
 });
+
 test('buildTargetRequest asks upstream for continuous streaming usage stats', async () => {
-  const result = await buildTargetRequest({
+  const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
-  }, createTestSidecarCodec());
+  });
+
   assertEquals(result.stream, true);
   assertEquals(result.stream_options, { include_usage: true, continuous_usage_stats: true });
 });

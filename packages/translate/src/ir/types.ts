@@ -74,10 +74,8 @@ interface IRRefusalPart {
 // All
 export interface IRReasoningItem {
   readonly type: 'reasoning'; // All
-  readonly id?: string; // ChatCompletions, Responses, Messages
   readonly summary?: readonly string[]; // All
   readonly content?: readonly string[]; // All
-  readonly encrypted_content?: string | null; // All
 }
 
 // All

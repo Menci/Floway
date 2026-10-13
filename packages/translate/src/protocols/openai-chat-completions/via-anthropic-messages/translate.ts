@@ -16,6 +16,6 @@ export const translate: TranslateTrip<
       fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
       loadRemoteImage: ctx.loadRemoteImage,
     }),
-    events: frames => translateToSourceEvents(frames, streamOptions),
+    events: frames => translateToSourceEvents(frames, streamOptions, codec),
   };
 };

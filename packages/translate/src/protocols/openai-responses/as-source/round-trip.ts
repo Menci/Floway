@@ -1,10 +1,16 @@
+
 import type { IRJSONObject, IRJSONValue } from '../../../ir/types.ts';
-import { replayMaterialsByType, verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import { computeRoundTripReplayCheck, replayMaterialsByType, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
-import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesOutputContentBlock, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning  } from '@floway-dev/protocols/openai-responses';
+
+export const OPENAI_RESPONSES_REPLAY_CHECK_VERSION = 1;
 
 export type OpenAIResponsesAssistantTurnItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
 export type OpenAIResponsesAssistantTurn = OpenAIResponsesAssistantTurnItem[];
+
+export type OpenAIResponsesSidecarCarrier = OpenAIResponsesOutputReasoning & { summary: []; encrypted_content: string };
 
 type TypedReplayMaterial = IRJSONObject & { type: string };
 
@@ -72,6 +78,9 @@ export const inspectOpenAIResponsesAssistantTurn = (turn: OpenAIResponsesAssista
   };
 };
 
+export const computeOpenAIResponsesReplayCheck = (turn: OpenAIResponsesAssistantTurn): Promise<RoundTripReplayCheck> =>
+  computeRoundTripReplayCheck(OPENAI_RESPONSES_REPLAY_CHECK_VERSION, responsesReplayCheckMaterialV1(turn));
+
 export const verifyOpenAIResponsesReplayCheck = (
   turn: OpenAIResponsesAssistantTurn,
   replayCheck: RoundTripReplayCheck,
@@ -81,3 +90,10 @@ export const verifyOpenAIResponsesReplayCheck = (
   default: return Promise.resolve(false);
   }
 };
+
+export const createOpenAIResponsesSidecarCarrier = (id: string, data: string): OpenAIResponsesSidecarCarrier => ({
+  type: 'reasoning',
+  id,
+  summary: [],
+  encrypted_content: data,
+});

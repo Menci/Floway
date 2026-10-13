@@ -12,7 +12,7 @@ export const translate: TranslateTrip<
   const codec = createAssistantTurnSidecarCodec(ctx.serverSecret);
   return {
     target: await buildTargetRequest(src, codec),
-    events: frames => translateToSourceEvents(frames),
+    events: frames => translateToSourceEvents(frames, codec),
     apiError: rewriteContextExceededToPromptTooLong,
   };
 };

@@ -1,6 +1,8 @@
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
+import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { requireJSONObject } from '../../../shared/json/object.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -8,6 +10,7 @@ import type {
   AnthropicMessagesTextCitation,
   AnthropicMessagesUsageDeltaEx,
 } from '@floway-dev/protocols/anthropic-messages';
+import { createAnthropicMessagesEventAccumulator } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IRSourceCitation | undefined => {
@@ -31,6 +34,7 @@ const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IRSource
 
 // Blocks that open no IR item; their content is not translated.
 const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
+  'redacted_thinking',
   'server_tool_use',
   'web_search_tool_result',
   'web_fetch_tool_result',
@@ -51,10 +55,11 @@ interface MessagesBlockState {
 
 export const irFromAnthropicMessages = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
-  options: { customToolNames?: ReadonlySet<string> } = {},
+  options: { customToolNames?: ReadonlySet<string>; roundTrip: RoundTripReader<'anthropicMessages'> },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const blocks = new Map<number, MessagesBlockState>();
+  const nativeAccumulator = createAnthropicMessagesEventAccumulator();
   let started = false;
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
   let finished = false;
@@ -84,14 +89,8 @@ export const irFromAnthropicMessages = async function* (
       annotationCount = Array.isArray(annotations) ? annotations.length : undefined;
       if (block.text !== '') part.append('text', block.text);
     } else if (block.type === 'thinking') {
-      item = ir.item(0, {
-        type: 'reasoning',
-        summary: [''],
-        ...(block.signature === '' || block.signature === undefined ? {} : { encrypted_content: block.signature }),
-      });
+      item = ir.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') item.append(['summary', 0], block.thinking);
-    } else if (block.type === 'redacted_thinking') {
-      item = ir.item(0, { type: 'reasoning', encrypted_content: block.data });
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
       item = ir.item(0, custom
@@ -106,6 +105,7 @@ export const irFromAnthropicMessages = async function* (
   for await (const frame of frames) {
     if (frame.type === 'done') throw new Error('Messages done arrived without message_stop');
     const e = frame.event;
+    if (e.type !== 'error') nativeAccumulator.accept(e);
     switch (e.type) {
     case 'message_start':
       if (started) throw new Error('Duplicate Messages message_start');
@@ -136,9 +136,7 @@ export const irFromAnthropicMessages = async function* (
       case 'thinking_delta':
         if (d.thinking !== '') block.item.append(['summary', 0], d.thinking);
         break;
-      case 'signature_delta':
-        block.item.assign('encrypted_content', d.signature);
-        break;
+      case 'signature_delta': break;
       case 'input_json_delta':
         if (block.custom) block.wrappedInput += d.partial_json;
         else if (d.partial_json !== '') block.item.append('arguments', d.partial_json);
@@ -190,13 +188,17 @@ export const irFromAnthropicMessages = async function* (
             : stopReason === 'refusal' ? 'content_filter' : 'stop';
       }
       break;
-    case 'message_stop':
+    case 'message_stop': {
       if (!started) throw new Error('Messages message_stop arrived before message_start');
       if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
+      const nativeResult = nativeAccumulator.result();
+      const content = nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block);
+      options.roundTrip.onAssistantTurn(0, { role: 'assistant', content });
       ir.choice(0).end(finishReason);
       ir.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' });
       finished = true;
       break;
+    }
     case 'error':
       ir.event({ type: 'error', error: e.error });
       yield* ir.drain();

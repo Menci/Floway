@@ -12,6 +12,6 @@ export const translate: TranslateTrip<
   const codec = createAssistantTurnSidecarCodec(ctx.serverSecret);
   return {
     target: await buildTargetRequest(src, ctx.model, codec, { fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens }),
-    events: frames => translateToSourceEvents(frames),
+    events: frames => translateToSourceEvents(frames, codec),
   };
 };

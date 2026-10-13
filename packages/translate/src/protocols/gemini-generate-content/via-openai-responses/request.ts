@@ -1,10 +1,11 @@
+
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
+import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
-import { inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
+import { hasGeminiGenerateContentThoughtSignature, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -79,14 +80,18 @@ const buildUserInputItems = (content: GeminiGenerateContentContent, turnIndex: n
 };
 
 const buildAssistantInputItems = (content: GeminiGenerateContentContent, turnIndex: number, unmatchedToolCallIds: GeminiGenerateContentToolCallIds): CanonicalOpenAIResponsesInputItem[] => {
+  if (hasGeminiGenerateContentThoughtSignature(content)) {
+    warnDroppedForeignAssistantReasoning('geminiGenerateContent', 'openaiResponses');
+  }
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const pendingContent: OpenAIResponsesInputContent[] = [];
-
-  (content.parts ?? []).forEach((part, partIndex) => {
+  const parts = (content.parts ?? []).flatMap(part => {
     const kind = geminiGenerateContentPartKind(part);
+    return kind === null ? [] : [{ kind, part }];
+  });
+
+  parts.forEach(({ kind, part }, partIndex) => {
     switch (kind) {
-    case null:
-      return;
     case 'function_call': {
       const { call, id } = geminiGenerateContentFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
       flushPendingContent(input, pendingContent, 'assistant');
@@ -171,7 +176,11 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = async (payload: GeminiGenerateContentPayload, model: string, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
+export const buildTargetRequest = async (
+  payload: GeminiGenerateContentPayload,
+  model: string,
+  codec: AssistantTurnSidecarCodec,
+): Promise<CanonicalOpenAIResponsesPayload> => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const request: CanonicalOpenAIResponsesPayload = {
     model,

@@ -1,10 +1,18 @@
+
 import type { IRJSONObject } from '../../../ir/types.ts';
-import { verifyRoundTripReplayCheck, type RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import { computeRoundTripReplayCheck, verifyRoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
+import type { RoundTripReplayCheck } from '../../../round-trip/replay-check.ts';
 import type { RoundTripAssistantTurnInspection } from '../../../round-trip/replay.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
-import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentContent, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
+
+export const GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION = 1;
 
 export type GeminiGenerateContentAssistantTurn = GeminiGenerateContentContent[];
+export type GeminiGenerateContentSidecarCarrier = GeminiGenerateContentPart & { thoughtSignature: string };
+
+export const hasGeminiGenerateContentThoughtSignature = (content: GeminiGenerateContentContent): boolean =>
+  content.parts?.some(part => part.thoughtSignature !== undefined) ?? false;
 
 const geminiReplayCheckMaterialV1 = (turn: GeminiGenerateContentAssistantTurn): IRJSONObject => {
   const text: string[] = [];
@@ -46,6 +54,9 @@ export const inspectGeminiGenerateContentAssistantTurn = (turn: GeminiGenerateCo
   };
 };
 
+export const computeGeminiGenerateContentReplayCheck = (turn: GeminiGenerateContentAssistantTurn): Promise<RoundTripReplayCheck> =>
+  computeRoundTripReplayCheck(GEMINI_GENERATE_CONTENT_REPLAY_CHECK_VERSION, geminiReplayCheckMaterialV1(turn));
+
 export const verifyGeminiGenerateContentReplayCheck = (
   turn: GeminiGenerateContentAssistantTurn,
   replayCheck: RoundTripReplayCheck,
@@ -55,3 +66,7 @@ export const verifyGeminiGenerateContentReplayCheck = (
   default: return Promise.resolve(false);
   }
 };
+
+// Gemini returns model-side thought signatures as Part metadata.
+// https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
+export const createGeminiGenerateContentSidecarCarrier = (data: string): GeminiGenerateContentSidecarCarrier => ({ thoughtSignature: data });

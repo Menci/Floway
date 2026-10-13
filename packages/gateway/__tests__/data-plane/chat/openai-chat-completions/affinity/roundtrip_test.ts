@@ -116,3 +116,40 @@ test('a synthetic carrier issued for a choice without reasoning decodes on the n
   expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
   expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });
+
+test('encrypted reasoning detail data follows affinity without changing the opaque state machine', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const message = await assistantMessage(wrapOpenAIChatCompletionsAffinityEgress(frames([
+    eventFrame(chunk([{
+      index: 0,
+      delta: {
+        content: 'answer',
+        reasoning_details: [
+          { type: 'reasoning.summary', summary: 'visible' },
+          { type: 'reasoning.encrypted', data: 'upstream-encrypted', vendor: 'kept' },
+        ],
+      },
+      finish_reason: 'stop',
+    }])),
+    doneFrame(),
+  ]), { codec, affinity: targetFor(candidateA) }));
+
+  const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionA.materialize().messages[0]).toMatchObject({
+    reasoning_details: [
+      { type: 'reasoning.summary', summary: 'visible' },
+      { type: 'reasoning.encrypted', data: 'upstream-encrypted', vendor: 'kept' },
+    ],
+  });
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionB.materialize().messages[0]).toMatchObject({
+    reasoning_details: [{ type: 'reasoning.summary', summary: 'visible' }],
+  });
+  expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+});

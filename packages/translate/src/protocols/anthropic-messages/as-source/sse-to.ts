@@ -1,4 +1,4 @@
-import { packReasoningSignature } from './reasoning.ts';
+import { computeAnthropicMessagesReplayCheck, createAnthropicMessagesSidecarCarrier, type AnthropicMessagesAssistantTurn } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
@@ -6,10 +6,12 @@ import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream.ts';
 import { IRNone, type IR, type IRErrorPayload, type IRJSONObject } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
+import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { parseJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import {
   generateAnthropicId,
+  createAnthropicMessagesEventAccumulator,
   PROMPT_TOO_LONG_MESSAGE,
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesContentBlockDeltaEvent,
@@ -60,14 +62,17 @@ const unitKind = (value: unknown): MessagesUnit['kind'] | 'custom_tool_call' | u
 const isPartKind = (kind: MessagesUnit['kind']): boolean =>
   kind === 'text' || kind === 'refusal' || kind === 'audio' || kind === 'image';
 
-interface AnthropicMessagesSSEOutputOptions {
-  id?: string;
+// Translated thinking has no upstream Messages signature. Clients and the affinity layer
+// expect a non-empty base64 value, so we emit the shortest canonical one.
+const TRANSLATED_THINKING_SIGNATURE = 'AA==';
+
+interface AnthropicMessagesSSEOutputOptions extends RoundTripOutputOptions {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
 export const anthropicMessagesFromIR = async function* (
   records: AsyncIterable<IRRecord>,
-  options: AnthropicMessagesSSEOutputOptions = {},
+  options: AnthropicMessagesSSEOutputOptions,
 ): AsyncGenerator<EventFrame<AnthropicMessagesStreamEventEx>> {
   let metadata = { id: '', model: '' };
   let started = false;
@@ -75,7 +80,12 @@ export const anthropicMessagesFromIR = async function* (
   const units = createIRUnitRegistry<MessagesUnit>();
   const pending = createIRUnitQueue<MessagesUnit>();
   const ordinals = createIROrdinalMapper();
-  const emit = (event: AnthropicMessagesStreamEventEx): EventFrame<AnthropicMessagesStreamEventEx> => eventFrame(event);
+  const nativeAccumulator = createAnthropicMessagesEventAccumulator();
+  let nextBlockIndex = 0;
+  const emit = (event: AnthropicMessagesStreamEventEx): EventFrame<AnthropicMessagesStreamEventEx> => {
+    if (event.type !== 'error') nativeAccumulator.accept(event);
+    return eventFrame(event);
+  };
 
   const blockDelta = (index: number, delta: AnthropicMessagesContentBlockDeltaEvent['delta']): EventFrame<AnthropicMessagesStreamEventEx> =>
     emit({ type: 'content_block_delta', index, delta });
@@ -136,10 +146,7 @@ export const anthropicMessagesFromIR = async function* (
         }
       } else if (item.type === 'reasoning') {
         const hasTextShape = item.summary !== undefined || item.content !== undefined;
-        const cipher = item.encrypted_content;
-        const signature = item.id === undefined ? cipher : cipher === undefined ? undefined : packReasoningSignature(item.id, cipher ?? '');
         if (hasTextShape) block = { type: 'thinking', thinking: '', signature: '' };
-        else if (closed && signature != null) block = { type: 'redacted_thinking', data: signature };
         else wait = !closed;
       } else if (item.type === 'function_call') {
         if (item.name === '') throw new TypeError('Completed tool calls require a name');
@@ -152,6 +159,7 @@ export const anthropicMessagesFromIR = async function* (
       if (block === undefined) { units.delete(unit.path); continue; }
       unit.opened = true;
       const index = ordinals.open(unit.path);
+      nextBlockIndex = Math.max(nextBlockIndex, index + 1);
       pendingEvents.push({ type: 'content_block_start', index, content_block: block });
       const delta = (value: AnthropicMessagesContentBlockDeltaEvent['delta']): void => {
         pendingEvents.push({ type: 'content_block_delta', index, delta: value });
@@ -231,16 +239,7 @@ export const anthropicMessagesFromIR = async function* (
     if ((record.type === 'item_end' || record.type === 'part_end') && unit !== undefined) {
       if (unit.opened) {
         const index = ordinals.get(unit.path);
-        if (unit.kind === 'reasoning') {
-          // Signature emission requires the complete terminal reasoning snapshot.
-          const item = state.choices[0].items[unit.path[3] as number];
-          if (item.type !== 'reasoning') throw new TypeError('Messages reasoning unit requires a reasoning item');
-          const cipher = item.encrypted_content;
-          const signature = item.id === undefined ? cipher : cipher === undefined ? undefined : packReasoningSignature(item.id, cipher ?? '');
-          if (signature != null && (item.summary !== undefined || item.content !== undefined)) {
-            yield blockDelta(index, { type: 'signature_delta', signature });
-          }
-        } else if (unit.kind === 'function_call') {
+        if (unit.kind === 'function_call') {
           // Tool validation and optional repair run on the complete terminal arguments.
           const item = state.choices[0].items[unit.path[3] as number];
           if (item.type !== 'function_call') throw new TypeError('Messages function unit requires a function item');
@@ -250,6 +249,7 @@ export const anthropicMessagesFromIR = async function* (
             if (serialized !== '') yield blockDelta(index, { type: 'input_json_delta', partial_json: serialized });
           } else parseJSONObjectAtCompletion(item.arguments, record.type === 'item_end' && record.status === 'incomplete' ? 'truncated' : 'complete');
         }
+        if (unit.kind === 'reasoning') yield blockDelta(index, { type: 'signature_delta', signature: TRANSLATED_THINKING_SIGNATURE });
         yield emit({ type: 'content_block_stop', index });
         ordinals.close(unit.path);
       }
@@ -260,6 +260,13 @@ export const anthropicMessagesFromIR = async function* (
       yield emit({ type: 'message_delta', delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null }, usage: usage(state) });
     }
     if (record.type === 'finish') {
+      const nativeResult = nativeAccumulator.result();
+      const assistantTurn: AnthropicMessagesAssistantTurn = [{ role: 'assistant', content: nativeResult.content }];
+      const replayCheck = await computeAnthropicMessagesReplayCheck(assistantTurn);
+      const data = await options.roundTrip.prepareSidecar(0, replayCheck);
+      const carrier = createAnthropicMessagesSidecarCarrier(data);
+      yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
+      yield emit({ type: 'content_block_stop', index: nextBlockIndex });
       const refusal = state.choices[0]?.refusal;
       yield emit({
         type: 'message_delta',

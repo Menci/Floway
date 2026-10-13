@@ -1,3 +1,4 @@
+import { toOpenAIChatCompletionsInputAssistantTurn } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import {
   createIRBuilder,
@@ -6,9 +7,11 @@ import {
   type IRPartHandle,
 } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
+import type { RoundTripReader } from '../../../round-trip/stream.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { createOpenAIChatCompletionsEventAccumulator } from '@floway-dev/protocols/openai-chat-completions';
 import type {
   OpenAIChatCompletionsAnnotation,
   OpenAIChatCompletionsAssistantDeltaEx,
@@ -70,7 +73,6 @@ const hasDeltaContent = (delta: ChatDelta): boolean => {
   const calls = delta.tool_calls;
   const reasoningField = chatReasoningField(delta);
   return reasoningField !== undefined && delta[reasoningField] !== ''
-    || delta.reasoning_opaque != null
     || typeof delta.content === 'string' && delta.content !== ''
     || typeof delta.refusal === 'string' && delta.refusal !== ''
     || delta.audio != null
@@ -102,10 +104,19 @@ interface ChatChoiceState {
 
 export const irFromOpenAIChatCompletions = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-  options: { customToolNames?: ReadonlySet<string>; maxChoices?: number } = {},
+  options: { customToolNames?: ReadonlySet<string>; maxChoices?: number; roundTrip: RoundTripReader<'openaiChatCompletions'> },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder(options.maxChoices ?? 1);
   const choices = new Map<number, ChatChoiceState>();
+  const nativeAccumulators = new Map<number, ReturnType<typeof createOpenAIChatCompletionsEventAccumulator>>();
+  const nativeAccumulator = (choice: number): ReturnType<typeof createOpenAIChatCompletionsEventAccumulator> => {
+    let accumulator = nativeAccumulators.get(choice);
+    if (accumulator === undefined) {
+      accumulator = createOpenAIChatCompletionsEventAccumulator();
+      nativeAccumulators.set(choice, accumulator);
+    }
+    return accumulator;
+  };
   let started = false;
   let hasModel = false;
 
@@ -252,10 +263,6 @@ export const irFromOpenAIChatCompletions = async function* (
       else choice.reasoning.ensure('summary', ['']);
       choice.reasoning.append(['summary', 0], text);
     }
-    if (delta.reasoning_opaque != null) {
-      choice.reasoning ??= createItem(index, choice, { type: 'reasoning' });
-      choice.reasoning.assign('encrypted_content', delta.reasoning_opaque);
-    }
   };
 
   const readMessage = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
@@ -371,6 +378,9 @@ export const irFromOpenAIChatCompletions = async function* (
     closeMessage(choice, status);
     for (const tool of choice.tools.values()) closeTool(tool, status);
     for (const item of choice.items) item.end(status);
+    const nativeChoice = nativeAccumulator(index).result().choices.find(resultChoice => resultChoice.index === index);
+    if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${index} at choice_end`);
+    options.roundTrip.onAssistantTurn(index, toOpenAIChatCompletionsInputAssistantTurn(nativeChoice.message));
     ir.choice(index).end(finishReason === 'function_call'
       ? 'tool_calls'
       : finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter');
@@ -389,6 +399,7 @@ export const irFromOpenAIChatCompletions = async function* (
       return;
     }
     if (nativeDelta != null && !deltaIsObject) throw new TypeError('ChatCompletions choice delta must be an object');
+    nativeAccumulator(index).accept({ ...chunk, choices: [{ ...entry, delta }] });
 
     const choice = choiceState(index);
     // Scalar reasoning fields are aliases; keep the first observed field for the choice.

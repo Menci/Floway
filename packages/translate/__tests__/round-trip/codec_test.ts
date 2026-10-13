@@ -1,8 +1,7 @@
 import { decode, encode, Tag } from 'cbor-x';
 import { describe, expect, test } from 'vitest';
 
-import { createTestSidecarCodec as createAssistantTurnSidecarCodec, type RoundTripSidecarPayload } from './sidecar-codec.ts';
-import type { RoundTripSidecarEnvelope } from '../../src/round-trip/codec.ts';
+import { createAssistantTurnSidecarCodec, encodeSidecarValue, type RoundTripSidecarEnvelope, type RoundTripSidecarPayload } from '../../src/round-trip/codec.ts';
 import { decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
 const source = 'openaiResponses';
@@ -54,7 +53,24 @@ const hmac = async (data: Uint8Array, value: string): Promise<Uint8Array> => {
 };
 
 describe('assistant turn sidecar codec', () => {
-  test('decodes an independently signed CBOR envelope', async () => {
+  test('encodes byte strings and plain maps without typed-array or record tags', () => {
+    const bytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect([...encodeSidecarValue(bytes)]).toEqual([0x48, ...bytes]);
+    expect([...encodeSidecarValue([{ x: 'a' }, { x: 'b' }])]).toEqual([
+      0x82, 0xb9, 0, 1, 0x61, 0x78, 0x61, 0x61,
+      0xb9, 0, 1, 0x61, 0x78, 0x61, 0x62,
+    ]);
+  });
+
+  test('preserves Base64, raw-number, and lone-surrogate tags with native byte strings', () => {
+    const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
+    expect([...encodeSidecarValue(encodeBase64(bytes))]).toEqual([0xd6, 0x50, ...bytes]);
+    expect([...encodeSidecarValue(encodeBase64url(bytes))]).toEqual([0xd5, 0x50, ...bytes]);
+    expect([...encodeSidecarValue(rawJSON.rawJSON('1e400'))]).toEqual([0xda, 0, 1, 0, 3, 0x65, 0x31, 0x65, 0x34, 0x30, 0x30]);
+    expect([...encodeSidecarValue('\ud800')]).toEqual([0xd9, 1, 0x11, 0x43, 0xed, 0xa0, 0x80]);
+  });
+
+  test('prefixes the CBOR payload with its HMAC-SHA256 signature', async () => {
     const sidecar = {
       target: 'openaiChatCompletions' as const,
       assistantTurn: { role: 'assistant' as const, content: 'answer', reasoning_opaque: 'opaque' },
@@ -65,13 +81,21 @@ describe('assistant turn sidecar codec', () => {
     const combined = decodeForgivingBase64(carrier);
     const signature = combined.subarray(0, 32);
     const encodedPayload = combined.subarray(32);
-    const expectedPayload = Uint8Array.from(encode({ ...sidecar, source }));
+    const expectedPayload = Uint8Array.from([
+      0xb9, 0, 4, ...encode('target'), ...encode(sidecar.target),
+      ...encode('assistantTurn'), ...encode(sidecar.assistantTurn),
+      ...encode('replayCheck'), 0xb9, 0, 2,
+      ...encode('version'), 1, ...encode('digest'), 0x43, 4, 5, 6,
+      ...encode('source'), ...encode(source),
+    ]);
 
     expect(signature).toHaveLength(32);
     expect(encodedPayload).toEqual(expectedPayload);
     expect(signature).toEqual(await hmac(expectedPayload, secret));
     expect(carrier).toBe(encodeBase64(combined));
     expect(await codec.decode(source, carrier)).toEqual({ ...sidecar, source });
+    const independentlySigned = new Uint8Array([...await hmac(expectedPayload, secret), ...expectedPayload]);
+    expect(await codec.decode(source, encodeBase64(independentlySigned))).toEqual({ ...sidecar, source });
   });
 
   test('restores branded raw numeric tokens without reinterpreting ordinary objects', async () => {
@@ -136,7 +160,7 @@ describe('assistant turn sidecar codec', () => {
     expect(decodedFields[mixed]).toBe(mixed);
   });
 
-  test('decodes canonical Base64 and Base64URL strings from CBOR tags 22 and 21', async () => {
+  test('packs canonical Base64 and Base64URL strings as CBOR tags 22 and 21', async () => {
     const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
     const base64 = encodeBase64(bytes);
     const base64url = encodeBase64url(bytes);

@@ -23,6 +23,6 @@ export const translate: TranslateTrip<
 
   return {
     target,
-    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, customToolNames), namespaceToolNames),
+    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, responseId, customToolNames, codec, namespaceToolNames), namespaceToolNames),
   };
 };

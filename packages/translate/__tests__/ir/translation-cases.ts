@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { collect, iterate } from './helpers.ts';
+import type { RoundTripProtocol } from '../../src/round-trip/codec.ts';
+import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
@@ -9,6 +11,12 @@ import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesResultToEv
 
 type Wire = Record<string, any>;
 export type IRTestProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
+const protocolKeys: Record<IRTestProtocol, RoundTripProtocol> = {
+  'openai-chat-completions': 'openaiChatCompletions',
+  'openai-responses': 'openaiResponses',
+  'anthropic-messages': 'anthropicMessages',
+  'gemini-generate-content': 'geminiGenerateContent',
+};
 interface Fixture { text?: string[]; refusal?: string; thinking?: string[]; signature?: string; tools?: { name: string; id: string; args: Wire }[]; stop?: string; usage?: Wire; tier?: string }
 
 export const fixtureFrames = (protocol: IRTestProtocol, fixture: Fixture): ProtocolFrame<any>[] => {
@@ -84,8 +92,11 @@ const toolCalls = (protocol: IRTestProtocol, result: Wire): Wire[] => {
   return result.candidates[0]?.content?.parts.flatMap((p: Wire) => p.functionCall === undefined ? [] : [p.functionCall]) ?? [];
 };
 
-export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProtocol, translate: (frames: AsyncIterable<ProtocolFrame<any>>) => AsyncIterable<ProtocolFrame<any>>): void => {
-  const run = async (fixture: Fixture) => await nativeResult(target, await collect(translate(iterate(fixtureFrames(source, fixture)))));
+export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProtocol, translate: (frames: AsyncIterable<ProtocolFrame<any>>, codec: ReturnType<typeof createTestSidecarCodec>) => AsyncIterable<ProtocolFrame<any>>): void => {
+  const run = async (fixture: Fixture) => {
+    const codec = createTestSidecarCodec();
+    return await nativeResult(target, await collect(translate(iterate(fixtureFrames(source, fixture)), codec)));
+  };
   test.each(['hello', '', 'A😀中B', '\ud800', 'line\nnext', '"quoted"', '\u0000'])('preserves generated text %j through the native return stream', async text => {
     expect(bodyText(target, await run({ text: [text] }))).toBe(text);
   });
@@ -99,11 +110,19 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
     const result = await run({ thinking: ['first', 'second'], text: ['answer'] });
     expect(reasoningText(target, result)).toBe('firstsecond'); expect(bodyText(target, result)).toBe('answer');
   });
-  test('retains opaque reasoning independently of visible text', async () => {
-    const result = await run({ thinking: ['reason'], signature: 'opaque', text: ['answer'] });
-    expect(reasoningText(target, result)).toBe('reason'); expect(bodyText(target, result)).toBe('answer');
-    if (target === 'gemini-generate-content') expect(result.candidates[0].content.parts).toContainEqual({ thoughtSignature: 'opaque' });
-    if (target === 'anthropic-messages') expect(result.content.find((p: Wire) => p.type === 'thinking').signature).toBe(source === 'openai-responses' ? 'opaque@rs_source' : 'opaque');
+  test('stores native opaque reasoning in the sidecar while emitting readable semantics', async () => {
+    const codec = createTestSidecarCodec();
+    const result = await nativeResult(target, await collect(translate(iterate(fixtureFrames(source, { thinking: ['reason'], signature: 'opaque', text: ['answer'] })), codec)));
+    expect(reasoningText(target, result)).toBe('reason');
+    expect(bodyText(target, result)).toBe('answer');
+    const sourceName = protocolKeys[target];
+    const carrier = target === 'openai-chat-completions' ? result.choices[0].message.reasoning_details.find((item: Wire) => item.type === 'reasoning.encrypted').data
+      : target === 'openai-responses' ? result.output.at(-1).encrypted_content
+        : target === 'anthropic-messages' ? result.content.at(-1).data
+          : result.candidates[0].content.parts.at(-1).thoughtSignature;
+    const sidecar = await codec.decode(sourceName, carrier);
+    expect(JSON.stringify(sidecar)).toContain('opaque');
+    if (target === 'anthropic-messages') expect(result.content.find((part: Wire) => part.type === 'thinking').signature).toBe('AA==');
   });
   test('retains opaque-only reasoning without manufacturing prose', async () => {
     const result = await run({ signature: 'opaque', text: ['answer'] });
@@ -135,12 +154,12 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
   test('stops pulling the upstream after its native terminal', async () => {
     let pulled = false;
     const upstream = async function* () { yield* fixtureFrames(source, { text: ['answer'] }); pulled = true; throw new Error('Trailing frame was pulled'); };
-    await collect(translate(upstream())); expect(pulled).toBe(false);
+    await collect(translate(upstream(), createTestSidecarCodec())); expect(pulled).toBe(false);
   });
   test('rejects a truncated upstream lifecycle', async () => {
     const input = fixtureFrames(source, { text: ['partial'] });
     const truncated = source === 'openai-chat-completions' ? input.slice(0, -2) : source === 'openai-responses' ? input.filter(frame => frame.type === 'event' && !['response.completed', 'response.incomplete'].includes(frame.event.type)) : input.slice(0, -1);
-    await expect(collect(translate(iterate(truncated)))).rejects.toThrow();
+    await expect(collect(translate(iterate(truncated), createTestSidecarCodec()))).rejects.toThrow();
   });
   test('preserves successful final output through the native collector', async () => { expect(bodyText(target, await run({ text: ['answer'] }))).toBe('answer'); });
 };

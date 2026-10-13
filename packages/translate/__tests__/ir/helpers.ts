@@ -1,16 +1,50 @@
 import { consumeIRRecords, createIRBuilder, type IRRecord } from '../../src/ir/stream.ts';
 import type { IR, IRItem } from '../../src/ir/types.ts';
+import { anthropicMessagesFromIR as anthropicMessagesFromIRProduction } from '../../src/protocols/anthropic-messages/as-source/sse-to.ts';
+import { irFromAnthropicMessages as irFromAnthropicMessagesProduction } from '../../src/protocols/anthropic-messages/as-target/sse-from.ts';
+import { geminiGenerateContentFromIR as geminiGenerateContentFromIRProduction } from '../../src/protocols/gemini-generate-content/as-source/sse-to.ts';
+import { openaiChatCompletionsFromIR as openaiChatCompletionsFromIRProduction } from '../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
+import { irFromOpenAIChatCompletions as irFromOpenAIChatCompletionsProduction } from '../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
+import { flattenNamespaceTools } from '../../src/protocols/openai-responses/as-source/namespace-tools.ts';
+import { openaiResponsesFromIR as openaiResponsesFromIRProduction } from '../../src/protocols/openai-responses/as-source/sse-to.ts';
+import { irFromOpenAIResponses as irFromOpenAIResponsesProduction } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import type { RoundTripReader, RoundTripWriter } from '../../src/round-trip/stream.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export const iterate = async function* <T>(values: readonly T[]): AsyncGenerator<T> { yield* values; };
 export const collect = async <T>(values: AsyncIterable<T>): Promise<T[]> => { const result: T[] = []; for await (const value of values) result.push(value); return result; };
 export const events = async function* <T>(frames: AsyncIterable<ProtocolFrame<T>>): AsyncGenerator<T> { for await (const frame of frames) if (frame.type === 'event') yield frame.event; };
-export const completeIR = (value: unknown): IRRecord[] => {
+
+const reader = <Protocol extends 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses'>(): RoundTripReader<Protocol> => ({
+  onAssistantTurn: () => {},
+});
+const writer = (): RoundTripWriter => ({
+  prepareSidecar: async () => 'test-sidecar',
+});
+const namespaceToolNames = flattenNamespaceTools({ model: 'test', input: [], tools: [] }).names;
+
+export const irFromAnthropicMessages = (frames: Parameters<typeof irFromAnthropicMessagesProduction>[0], options: Omit<Parameters<typeof irFromAnthropicMessagesProduction>[1], 'roundTrip'> = {}) =>
+  irFromAnthropicMessagesProduction(frames, { ...options, roundTrip: reader<'anthropicMessages'>() });
+export const irFromOpenAIChatCompletions = (frames: Parameters<typeof irFromOpenAIChatCompletionsProduction>[0], options: Omit<Parameters<typeof irFromOpenAIChatCompletionsProduction>[1], 'roundTrip'> = {}) =>
+  irFromOpenAIChatCompletionsProduction(frames, { ...options, roundTrip: reader<'openaiChatCompletions'>() });
+export const irFromOpenAIResponses = (
+  frames: Parameters<typeof irFromOpenAIResponsesProduction>[0],
+  roundTrip: RoundTripReader<'openaiResponses'> = reader<'openaiResponses'>(),
+) => irFromOpenAIResponsesProduction(frames, { roundTrip });
+export const anthropicMessagesFromIR = (records: Parameters<typeof anthropicMessagesFromIRProduction>[0], options: Omit<Parameters<typeof anthropicMessagesFromIRProduction>[1], 'roundTrip'> = {}) =>
+  anthropicMessagesFromIRProduction(records, { ...options, roundTrip: writer() });
+export const openaiChatCompletionsFromIR = (records: Parameters<typeof openaiChatCompletionsFromIRProduction>[0], options: Omit<Parameters<typeof openaiChatCompletionsFromIRProduction>[1], 'roundTrip'> = {}) =>
+  openaiChatCompletionsFromIRProduction(records, { ...options, roundTrip: writer() });
+export const openaiResponsesFromIR = (records: Parameters<typeof openaiResponsesFromIRProduction>[0], options: Omit<Parameters<typeof openaiResponsesFromIRProduction>[1], 'roundTrip' | 'namespaceToolNames'> = {}) =>
+  openaiResponsesFromIRProduction(records, { ...options, roundTrip: writer(), namespaceToolNames });
+export const geminiGenerateContentFromIR = (records: Parameters<typeof geminiGenerateContentFromIRProduction>[0], options: Omit<Parameters<typeof geminiGenerateContentFromIRProduction>[1], 'roundTrip'> = {}) =>
+  geminiGenerateContentFromIRProduction(records, { ...options, roundTrip: writer() });
+export const completeIR = (value: readonly IRItem[]): IRRecord[] => {
   const b = createIRBuilder();
   b.choice(0);
   b.assign(['model'], 'model');
   b.event({ type: 'start', id: 'source' });
-  for (const item of value as readonly IRItem[]) {
+  for (const item of value) {
     const index = b.state.choices[0].items.length;
     const path = ['choices', 0, 'items', index] as const;
     if (item.type === 'message') {
@@ -27,14 +61,16 @@ export const completeIR = (value: unknown): IRRecord[] => {
         else {
           b.initialize(partPath, { type: 'audio', audio: { ...(part.audio.mime_type === undefined ? {} : { mime_type: part.audio.mime_type }) } });
           for (const field of ['data', 'transcript'] as const) if (part.audio[field] !== undefined) {
+            const value = part.audio[field];
+            if (value === undefined) continue;
             b.initialize([...partPath, 'audio', field], '');
-            b.append([...partPath, 'audio', field], part.audio[field]!);
+            b.append([...partPath, 'audio', field], value);
           }
         }
         b.event({ type: 'part_end', choice: 0, item: index, part: partIndex });
       });
     } else if (item.type === 'reasoning') {
-      b.initialize(path, { type: 'reasoning', ...(item.id === undefined ? {} : { id: item.id }), ...(item.summary === undefined ? {} : { summary: item.summary.map(() => '') }), ...(item.content === undefined ? {} : { content: item.content.map(() => '') }), ...(item.encrypted_content === undefined ? {} : { encrypted_content: item.encrypted_content }) });
+      b.initialize(path, { type: 'reasoning', ...(item.summary === undefined ? {} : { summary: item.summary.map(() => '') }), ...(item.content === undefined ? {} : { content: item.content.map(() => '') }) });
       item.summary?.forEach((text, part) => b.append([...path, 'summary', part], text));
       item.content?.forEach((text, part) => b.append([...path, 'content', part], text));
     } else if (item.type === 'function_call') {

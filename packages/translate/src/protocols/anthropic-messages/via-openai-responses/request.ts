@@ -1,25 +1,26 @@
+
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
 import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
-import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
+import { roundTripAssistantTurn, warnDroppedForeignAssistantReasoning } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
-import type {
-  AnthropicMessagesAssistantMessage,
-  AnthropicMessagesClientTool,
-  AnthropicMessagesPayload,
-  AnthropicMessagesMetadataEx,
-  AnthropicMessagesServerToolUseBlockParam,
-  AnthropicMessagesSystemMessage,
-  AnthropicMessagesTextBlockParam,
-  AnthropicMessagesToolResultBlock,
-  AnthropicMessagesToolUseBlockParam,
-  AnthropicMessagesUserContentBlock,
-  AnthropicMessagesUserMessage,
-  AnthropicMessagesWebSearchToolResultBlockParam,
+import {
+  type AnthropicMessagesAssistantMessage,
+  type AnthropicMessagesClientTool,
+  type AnthropicMessagesPayload,
+  type AnthropicMessagesMetadataEx,
+  type AnthropicMessagesServerToolUseBlockParam,
+  type AnthropicMessagesSystemMessage,
+  type AnthropicMessagesTextBlockParam,
+  type AnthropicMessagesToolResultBlock,
+  type AnthropicMessagesToolUseBlockParam,
+  type AnthropicMessagesUserContentBlock,
+  type AnthropicMessagesUserMessage,
+  type AnthropicMessagesWebSearchToolResultBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -143,9 +144,15 @@ const translateAssistantMessage = (message: AnthropicMessagesAssistantMessage, m
       continue;
     }
 
-    if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+    if (block.type === 'redacted_thinking') {
+      warnDroppedForeignAssistantReasoning('anthropicMessages', 'openaiResponses');
+      continue;
+    }
+
+    if (block.type === 'thinking') {
       flushPendingContent(pendingContent, input, 'assistant');
-      input.push(anthropicMessagesReasoningBlockToOpenAIResponsesReasoning(block));
+      const reasoning = anthropicMessagesReasoningBlockToOpenAIResponsesReasoning(block);
+      if (reasoning !== null) input.push(reasoning);
       continue;
     }
 
@@ -254,7 +261,10 @@ const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string
   return [[key, value]];
 }));
 
-export const buildTargetRequest = async (payload: AnthropicMessagesPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
+export const buildTargetRequest = async (
+  payload: AnthropicMessagesPayload,
+  codec: AssistantTurnSidecarCodec,
+): Promise<CanonicalOpenAIResponsesPayload> => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.

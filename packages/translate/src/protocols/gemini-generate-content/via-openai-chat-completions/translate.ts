@@ -10,5 +10,5 @@ export const translate: TranslateTrip<
 > = async (src, ctx) => {
   const codec = createAssistantTurnSidecarCodec(ctx.serverSecret);
   const target = await buildTargetRequest(src, ctx.model, codec);
-  return { target, events: frames => translateToSourceEvents(frames, target.n ?? 1) };
+  return { target, events: frames => translateToSourceEvents(frames, codec, target.n ?? 1) };
 };

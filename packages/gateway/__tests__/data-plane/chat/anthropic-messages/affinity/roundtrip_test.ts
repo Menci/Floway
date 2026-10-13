@@ -96,3 +96,28 @@ test('a synthetic carrier issued for a turn without thinking decodes on the next
   expect(projectionA.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
   expect(projectionB.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
 });
+
+test('translated thinking carrying the minimal base64 signature survives the next turn on the issuing candidate', async () => {
+  const candidateA = candidate('upstream-a');
+  const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames([
+    eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
+    eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
+    eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'AA==' } }),
+    eventFrame({ type: 'content_block_stop', index: 0 }),
+    eventFrame({ type: 'content_block_start', index: 1, content_block: { citations: null, type: 'text', text: '' } }),
+    eventFrame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } }),
+    eventFrame({ type: 'content_block_stop', index: 1 }),
+    eventFrame({ type: 'message_stop' }),
+  ]), { codec, affinity: targetFor(candidateA) }));
+
+  const prepared = await analyzeAnthropicMessagesAffinity({
+    model: 'model',
+    max_tokens: 100,
+    messages: [{ role: 'assistant', content }],
+  }, codec);
+
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().messages[0].content).toEqual([
+    { type: 'thinking', thinking: 'visible', signature: 'AA==' },
+    { citations: null, type: 'text', text: 'answer' },
+  ]);
+});

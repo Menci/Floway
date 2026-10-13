@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { collectIR, iterate } from './helpers.ts';
-import { irFromOpenAIResponses } from '../../src/protocols/openai-responses/as-target/sse-from.ts';
+import { collectIR, irFromOpenAIResponses, iterate } from './helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const response = (output: any[] = []) => ({ id: 'resp', model: 'served', created_at: 1, status: 'completed', output, usage: null, error: null, incomplete_details: null });

@@ -1,9 +1,9 @@
-import { decode as decodeCBOR, Tag } from 'cbor-x';
+import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
 import { rawJSON } from '../shared/json/raw-json.ts';
-import { decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
+import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
 export type RoundTripProtocol = keyof AssistantTurnByProtocol;
 
@@ -17,15 +17,22 @@ export type RoundTripSidecar<Target extends RoundTripProtocol> = {
 export type RoundTripSidecarByTarget = { [Target in RoundTripProtocol]: RoundTripSidecar<Target> };
 export type RoundTripSidecarEnvelope = RoundTripSidecarByTarget[RoundTripProtocol];
 export type RoundTripSidecarForTarget<Target extends RoundTripProtocol> = RoundTripSidecarByTarget[Target];
+export type RoundTripSidecarPayload<Target extends RoundTripProtocol = RoundTripProtocol> = {
+  target: Target;
+  assistantTurn: AssistantTurnFor<Target>;
+  replayCheck: RoundTripReplayCheck;
+};
 
 export interface AssistantTurnSidecarCodec {
+  encode: <Target extends RoundTripProtocol>(source: RoundTripProtocol, sidecar: RoundTripSidecarPayload<Target>) => Promise<string>;
   decode: (source: RoundTripProtocol, data: string) => Promise<RoundTripSidecarEnvelope | undefined>;
 }
 
 const SIGNATURE_LENGTH = 32;
 const RAW_JSON_TAG = 65_539;
-const key = async (secret: string) => await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-
+const encoder = new Encoder({ useRecords: false, tagUint8Array: false });
+const key = async (secret: string) => await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+const sign = async (data: Uint8Array, cryptoKey: CryptoKey): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, Uint8Array.from(data)));
 const verify = async (data: Uint8Array, signature: Uint8Array, cryptoKey: CryptoKey): Promise<boolean> => await crypto.subtle.verify('HMAC', cryptoKey, Uint8Array.from(signature), Uint8Array.from(data));
 
 const mapSidecarValue = (value: unknown, transform: (value: unknown) => unknown): unknown => {
@@ -38,6 +45,16 @@ const mapSidecarValue = (value: unknown, transform: (value: unknown) => unknown)
   return mapped;
 };
 
+export const encodeSidecarValue = (obj: unknown): Uint8Array => encoder.encode(mapSidecarValue(obj, value => {
+  if (rawJSON.isRawJSON(value)) return new Tag(value.rawJSON, RAW_JSON_TAG);
+  if (typeof value === 'string' && value.length >= 22) {
+    const decodedBase64 = decodeCanonicalBase64(value);
+    if (decodedBase64) return new Tag(decodedBase64, 22);
+    const decodedBase64url = decodeCanonicalBase64url(value);
+    if (decodedBase64url) return new Tag(decodedBase64url, 21);
+  }
+  return value;
+}));
 const deserialize = (buffer: Uint8Array): unknown => mapSidecarValue(decodeCBOR(buffer), value => {
   if (value instanceof Tag && value.tag === RAW_JSON_TAG) {
     if (typeof value.value !== 'string') throw new TypeError('Raw JSON sidecar tag requires a string');
@@ -53,6 +70,15 @@ const deserialize = (buffer: Uint8Array): unknown => mapSidecarValue(decodeCBOR(
   }
   return value;
 });
+
+const encodeSidecar = async <Target extends RoundTripProtocol>(source: RoundTripProtocol, sidecar: RoundTripSidecarPayload<Target>, cryptoKey: CryptoKey): Promise<string> => {
+  const data = encodeSidecarValue({ ...sidecar, source });
+  const signature = await sign(data, cryptoKey);
+  const combined = new Uint8Array(signature.length + data.length);
+  combined.set(signature, 0);
+  combined.set(data, signature.length);
+  return encodeBase64(combined);
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -100,6 +126,7 @@ export const hasRoundTripTarget = <Target extends RoundTripProtocol>(sidecar: Ro
 export const createAssistantTurnSidecarCodec = (serverSecret: string): AssistantTurnSidecarCodec => {
   const cryptoKey = key(serverSecret);
   return {
+    encode: async (source, value) => await encodeSidecar(source, value, await cryptoKey),
     decode: async (source, data) => await decodeSidecar(source, data, await cryptoKey),
   };
 };

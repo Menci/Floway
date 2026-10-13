@@ -13,7 +13,7 @@ export const translate: TranslateTrip<
   const target = await buildTargetRequest(src, codec);
   return {
     target,
-    events: frames => translateToSourceEvents(frames, target.n ?? 1),
+    events: frames => translateToSourceEvents(frames, codec, target.n ?? 1),
     apiError: rewriteContextExceededToPromptTooLong,
   };
 };
