@@ -1,12 +1,16 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
-const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
-
+const stubRemoteImageLoader = (result: {
+  mediaType: string | null;
+  data: Uint8Array;
+} | null) => () => Promise.resolve(result);
+const defaultRequestOptions = { loadRemoteImage: stubRemoteImageLoader(null), fallbackMaxOutputTokens: undefined };
 const minimalPayload = {
   model: 'claude-test',
   input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
@@ -21,7 +25,6 @@ const minimalPayload = {
   store: false,
   parallel_tool_calls: true,
 };
-
 test('buildTargetRequest preserves OpenAI Responses assistant refusal history as Anthropic Messages text', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
@@ -30,20 +33,17 @@ test('buildTargetRequest preserves OpenAI Responses assistant refusal history as
       role: 'assistant',
       content: [{ type: 'refusal', refusal: 'Cannot help.' }],
     }],
-  });
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const message = result.target.messages[0];
-
   assertEquals(message.role, 'assistant');
   assert(Array.isArray(message.content));
   assertEquals(message.content[0], { type: 'text', text: 'Cannot help.', cache_control: { type: 'ephemeral' } });
 });
-
 test('buildTargetRequest accepts an implicit message discriminator', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ role: 'user', content: 'hello' }],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.messages, [
     {
       role: 'user',
@@ -51,23 +51,17 @@ test('buildTargetRequest accepts an implicit message discriminator', async () =>
     },
   ]);
 });
-
 test('buildTargetRequest rejects an agent_message that no interceptor lowered', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{
-        type: 'agent_message',
-        author: '/root/reviewer',
-        recipient: '/root',
-        content: [{ type: 'input_text', text: 'done' }],
-      }],
-    }),
-    Error,
-    'agent_message',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{
+      type: 'agent_message',
+      author: '/root/reviewer',
+      recipient: '/root',
+      content: [{ type: 'input_text', text: 'done' }],
+    }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'agent_message');
 });
-
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
@@ -76,156 +70,95 @@ test.each([
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
-  await assertRejects(
-    () => buildTargetRequest({ ...minimalPayload, input: [...input] }),
-    Error,
-    name,
-  );
+  await assertRejects(async () => await buildTargetRequest({ ...minimalPayload, input: [...input] }, createTestSidecarCodec(), defaultRequestOptions), Error, name);
 });
-
 test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
-    }),
-    Error,
-    'program caller',
-  );
-  await assertRejects(
-    () => buildTargetRequest({ ...minimalPayload, tools: [{ type: 'programmatic_tool_calling' }] }),
-    Error,
-    'Programmatic',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'program caller');
+  await assertRejects(async () => await buildTargetRequest({ ...minimalPayload, tools: [{ type: 'programmatic_tool_calling' }] }, createTestSidecarCodec(), defaultRequestOptions), Error, 'Programmatic');
 });
-
 test('buildTargetRequest accepts null tool_choice', async () => {
-  const result = await buildTargetRequest({ ...minimalPayload, tool_choice: null });
+  const result = await buildTargetRequest({ ...minimalPayload, tool_choice: null }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.tool_choice, undefined);
 });
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects input_file in %s', async type => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file tool output',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'input_file tool output');
 });
-
 test('buildTargetRequest rejects file message content', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file message content',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'input_file message content');
 });
-
 test('buildTargetRequest rejects file assistant content', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file assistant content',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'input_file assistant content');
 });
-
 test('buildTargetRequest preserves assistant input_text', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'prior reply' }] }],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.messages, [
     { role: 'assistant', content: [{ type: 'text', text: 'prior reply', cache_control: { type: 'ephemeral' } }] },
   ]);
 });
-
 test('buildTargetRequest rejects assistant images', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
-    }),
-    Error,
-    'input_image assistant content',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'input_image assistant content');
 });
-
 test('buildTargetRequest rejects file_id-only images', async () => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image content',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'file_id-only image content');
 });
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects file_id-only images in %s', async type => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image tool output',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type, call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'file_id-only image tool output');
 });
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects unavailable images in %s', async type => {
-  await assertRejects(
-    () => buildTargetRequest({
-      ...minimalPayload,
-      input: [{
-        type,
-        call_id: 'call_1',
-        output: [{ type: 'input_image', image_url: 'https://example.com/unavailable.png' }],
-      }],
-    }, { loadRemoteImage: stubRemoteImageLoader(null) }),
-    Error,
-    'unavailable or unsupported image tool output',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    ...minimalPayload,
+    input: [{
+      type,
+      call_id: 'call_1',
+      output: [{ type: 'input_image', image_url: 'https://example.com/unavailable.png' }],
+    }],
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } }), Error, 'unavailable or unsupported image tool output');
 });
-
 // ── service_tier → speed mapping ──
-
 test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
-  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'fast' });
-
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'fast' }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.speed, 'fast');
   assertFalse('service_tier' in result.target);
 });
-
 test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
-  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'priority' });
-
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'priority' }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.speed, 'fast');
   assertFalse('service_tier' in result.target);
 });
-
 test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
-  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'auto' });
-
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'auto' }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.service_tier, 'auto');
   assertFalse('speed' in result.target);
 });
-
 test('buildTargetRequest omits both speed and service_tier when service_tier is absent', async () => {
-  const result = await buildTargetRequest(minimalPayload);
-
+  const result = await buildTargetRequest(minimalPayload, createTestSidecarCodec(), defaultRequestOptions);
   assertFalse('speed' in result.target);
   assertFalse('service_tier' in result.target);
 });
-
 test('buildTargetRequest maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -241,12 +174,10 @@ test('buildTargetRequest maps reasoning.effort none to thinking.disabled (summar
     store: false,
     parallel_tool_calls: true,
     reasoning: { effort: 'none', summary: 'detailed' },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.thinking, { type: 'disabled' });
   assertFalse('output_config' in result.target);
 });
-
 test('buildTargetRequest maps reasoning.effort directly to output_config.effort', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -262,22 +193,18 @@ test('buildTargetRequest maps reasoning.effort directly to output_config.effort'
     store: false,
     parallel_tool_calls: true,
     reasoning: { effort: 'minimal' },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.output_config, { effort: 'minimal' });
   assertFalse('thinking' in result.target);
 });
-
 test('buildTargetRequest forwards empty reasoning.effort verbatim', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     reasoning: { effort: '' },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.output_config, { effort: '' });
   assertFalse('thinking' in result.target);
 });
-
 test('buildTargetRequest defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -292,33 +219,26 @@ test('buildTargetRequest defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
 });
-
 test('buildTargetRequest uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [{ type: 'message', role: 'user', content: 'hi' }],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: null,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    { fallbackMaxOutputTokens: 4096 },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: null,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ fallbackMaxOutputTokens: 4096 } });
   assertEquals(result.target.max_tokens, 4096);
 });
-
 test('buildTargetRequest sends the genuine encrypted_content as the upstream signature, with no gateway envelope', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -340,20 +260,17 @@ test('buildTargetRequest sends the genuine encrypted_content as the upstream sig
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const assistant = result.target.messages[0];
   if (assistant.role !== 'assistant' || !Array.isArray(assistant.content)) {
     throw new Error('expected assistant message with content blocks');
   }
-
   assertEquals(assistant.content[0], {
     type: 'thinking',
     thinking: 'trace',
     signature: 'opaque-upstream-blob',
   });
 });
-
 test('buildTargetRequest omits the signature for a reasoning with no encrypted_content', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -374,16 +291,13 @@ test('buildTargetRequest omits the signature for a reasoning with no encrypted_c
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const assistant = result.target.messages[0];
   if (assistant.role !== 'assistant' || !Array.isArray(assistant.content)) {
     throw new Error('expected assistant message with content blocks');
   }
-
   assertEquals(assistant.content[0], { signature: '', type: 'thinking', thinking: 'trace' });
 });
-
 test('buildTargetRequest omits generic metadata instead of coercing it to metadata.user_id', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -398,52 +312,46 @@ test('buildTargetRequest omits generic metadata instead of coercing it to metada
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertFalse('metadata' in result.target);
 });
-
 test('buildTargetRequest resolves remote input images through the shared loader', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [
-        {
-          type: 'message',
-          role: 'user',
-          content: [
-            {
-              type: 'input_image',
-              image_url: 'https://example.com/image.png',
-              detail: 'auto',
-            },
-          ],
-        },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    {
-      loadRemoteImage: stubRemoteImageLoader({
-        mediaType: 'IMAGE/PNG; charset=binary',
-        data: new Uint8Array([1, 2, 3]),
-      }),
-    },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      {
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            type: 'input_image',
+            image_url: 'https://example.com/image.png',
+            detail: 'auto',
+          },
+        ],
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), {
+    ...defaultRequestOptions,
+    loadRemoteImage: stubRemoteImageLoader({
+      mediaType: 'IMAGE/PNG; charset=binary',
+      data: new Uint8Array([1, 2, 3]),
+    }),
+  });
   const message = result.target.messages[0];
   if (message.role !== 'user' || !Array.isArray(message.content)) {
     throw new Error('expected user message with content blocks');
   }
-
   assertEquals(message.content, [
     {
       type: 'image',
@@ -456,7 +364,6 @@ test('buildTargetRequest resolves remote input images through the shared loader'
     },
   ]);
 });
-
 test('buildTargetRequest drops reasoning input without readable summary', async () => {
   const result = await buildTargetRequest({
     model: 'gpt-test',
@@ -479,17 +386,12 @@ test('buildTargetRequest drops reasoning input without readable summary', async 
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
-  assertEquals(
-    result.target.messages.map(m => ({ role: m.role, content: m.content })),
-    [
-      { role: 'user', content: 'hi' },
-      { role: 'user', content: [{ type: 'text', text: 'follow up', cache_control: { type: 'ephemeral' } }] },
-    ],
-  );
+  }, createTestSidecarCodec(), defaultRequestOptions);
+  assertEquals(result.target.messages.map(m => ({ role: m.role, content: m.content })), [
+    { role: 'user', content: 'hi' },
+    { role: 'user', content: [{ type: 'text', text: 'follow up', cache_control: { type: 'ephemeral' } }] },
+  ]);
 });
-
 test('buildTargetRequest wraps custom tools as single-string function tools and records their names', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -511,8 +413,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
     {
@@ -536,31 +437,15 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
   ]);
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
 });
-
 test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported tool type %s', async type => {
-  await assertRejects(
-    () => buildTargetRequest({ ...minimalPayload, tools: [{ type } as unknown as OpenAIResponsesTool] }),
-    Error,
-    `Cannot translate OpenAI Responses tool type '${type}' to Anthropic Messages.`,
-  );
+  await assertRejects(async () => await buildTargetRequest({ ...minimalPayload, tools: [{ type } as unknown as OpenAIResponsesTool] }, createTestSidecarCodec(), defaultRequestOptions), Error, `Cannot translate OpenAI Responses tool type '${type}' to Anthropic Messages.`);
 });
-
 test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported string tool choice %s', async toolChoice => {
-  await assertRejects(
-    () => buildTargetRequest({ ...minimalPayload, tool_choice: toolChoice as unknown as typeof minimalPayload.tool_choice }),
-    Error,
-    `Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`,
-  );
+  await assertRejects(async () => await buildTargetRequest({ ...minimalPayload, tool_choice: toolChoice as unknown as typeof minimalPayload.tool_choice }, createTestSidecarCodec(), defaultRequestOptions), Error, `Cannot translate OpenAI Responses tool choice '${toolChoice}' to Anthropic Messages.`);
 });
-
 test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported object tool choice type %s', async type => {
-  await assertRejects(
-    () => buildTargetRequest({ ...minimalPayload, tool_choice: { type } as unknown as typeof minimalPayload.tool_choice }),
-    Error,
-    `Cannot translate OpenAI Responses tool choice type '${type}' to Anthropic Messages.`,
-  );
+  await assertRejects(async () => await buildTargetRequest({ ...minimalPayload, tool_choice: { type } as unknown as typeof minimalPayload.tool_choice }, createTestSidecarCodec(), defaultRequestOptions), Error, `Cannot translate OpenAI Responses tool choice type '${type}' to Anthropic Messages.`);
 });
-
 test.each([
   { name: 'string', output: 'ok', expected: 'ok' },
   { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }] },
@@ -592,8 +477,7 @@ test.each([
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.messages[1], {
     role: 'assistant',
     content: [
@@ -619,7 +503,6 @@ test.each([
     ],
   });
 });
-
 test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', async () => {
   const namespaceTool: OpenAIResponsesTool = {
     type: 'namespace',
@@ -644,8 +527,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
       namespaceTool,
     ],
     tool_choice: { type: 'function', name: 'web.run' },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
   assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', type: 'function_call' }]]));
   assertEquals(result.target.tools, [
@@ -675,13 +557,11 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   });
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
-
 test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     tools: [{ type: 'function', name: 'ping' }],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.tools, [
     {
       name: 'ping',
@@ -690,7 +570,6 @@ test('buildTargetRequest gives a schema-less function tool the empty object sche
     },
   ]);
 });
-
 test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -708,8 +587,7 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const userMessage = result.target.messages[1];
   assert(userMessage.role === 'user');
   assert(Array.isArray(userMessage.content));
@@ -717,13 +595,11 @@ test('buildTargetRequest keeps plain-text function_call_output as string content
   assert(toolResult.type === 'tool_result');
   assertEquals(toolResult.content, 'plain text body');
 });
-
 test('buildTargetRequest preserves out-of-range numeric tool arguments as raw JSON', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '{"value":1e400}', status: 'completed' }],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const assistantMessage = result.target.messages[0];
   assert(assistantMessage.role === 'assistant');
   assert(Array.isArray(assistantMessage.content));
@@ -731,13 +607,11 @@ test('buildTargetRequest preserves out-of-range numeric tool arguments as raw JS
   assert(toolUse.type === 'tool_use');
   assertEquals(JSON.stringify(toolUse.input), '{"value":1e400}');
 });
-
 test.each(['not json', '[1,2,3]'])('buildTargetRequest keeps raw_arguments fallback for invalid or non-object tool arguments', async argumentsJson => {
   const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ type: 'function_call', call_id: 'call_1', name: 'tool', arguments: argumentsJson, status: 'completed' }],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const assistantMessage = result.target.messages[0];
   assert(assistantMessage.role === 'assistant');
   assert(Array.isArray(assistantMessage.content));
@@ -745,7 +619,6 @@ test.each(['not json', '[1,2,3]'])('buildTargetRequest keeps raw_arguments fallb
   assert(toolUse.type === 'tool_use');
   assertEquals(toolUse.input, { raw_arguments: argumentsJson });
 });
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest maps multimodal %s into tool_result image and text blocks', async type => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -772,8 +645,7 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   const userMessage = result.target.messages[1];
   assert(userMessage.role === 'user');
   assert(Array.isArray(userMessage.content));
@@ -784,7 +656,6 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
     { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
   ]);
 });
-
 test('buildTargetRequest maps incomplete function output to an Anthropic tool error', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,
@@ -792,8 +663,7 @@ test('buildTargetRequest maps incomplete function output to an Anthropic tool er
       { type: 'function_call', call_id: 'call_exec', name: 'exec', arguments: '{}', status: 'completed' },
       { type: 'function_call_output', call_id: 'call_exec', status: 'incomplete', output: 'failed' },
     ],
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.messages[1], {
     role: 'user',
     content: [{
@@ -802,7 +672,6 @@ test('buildTargetRequest maps incomplete function output to an Anthropic tool er
     }],
   });
 });
-
 test('buildTargetRequest loads custom tool result images without interpreting its open status', async () => {
   const loaded: string[] = [];
   const result = await buildTargetRequest({
@@ -818,13 +687,13 @@ test('buildTargetRequest loads custom tool result images without interpreting it
         ],
       },
     ],
-  }, {
+  }, createTestSidecarCodec(), {
+    ...defaultRequestOptions,
     loadRemoteImage: url => {
       loaded.push(url);
       return Promise.resolve({ mediaType: 'image/png', data: new Uint8Array([1, 2, 3]) });
     },
   });
-
   assertEquals(loaded, ['https://example.com/capture.png']);
   assertEquals(result.target.messages[1], {
     role: 'user',
@@ -839,97 +708,81 @@ test('buildTargetRequest loads custom tool result images without interpreting it
     }],
   });
 });
-
 test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
   // The OpenAI Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
   // translator runs. Reaching the translator with a raw web_search_call
   // means the shim regressed; the translator surfaces a loud error so the
   // bug is caught rather than silently dropping search context.
-  await assertRejects(
-    () => buildTargetRequest({
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        {
-          type: 'web_search_call',
-          id: 'ws_x',
-          status: 'completed',
-          action: { type: 'search', queries: ['q'] },
-        },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    "Invalid input item type 'web_search_call'",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      {
+        type: 'web_search_call',
+        id: 'ws_x',
+        status: 'completed',
+        action: { type: 'search', queries: ['q'] },
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, "Invalid input item type 'web_search_call'");
 });
-
 test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
   // The compact-shim is structurally required on non-openai-responses targets and
   // strips compaction_trigger items before reaching this translator.
   // Reaching here with one in input means the shim disengaged; the
   // translator's exhaustive default surfaces the regression.
-  await assertRejects(
-    () => buildTargetRequest({
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        { type: 'compaction_trigger' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    'Invalid input item:',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'compaction_trigger' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'Invalid input item:');
 });
-
 test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
   // The compact-shim expands its own shim-encoded compaction items inline
   // before reaching this translator and round-trips foreign compactions
   // back to the upstream as raw items. Either way the translator should
   // never see one.
-  await assertRejects(
-    () => buildTargetRequest({
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        { type: 'compaction', id: 'cmp_x', encrypted_content: 'opaque', created_by: 'compaction_session' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    'Invalid input item:',
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'compaction', id: 'cmp_x', encrypted_content: 'opaque', created_by: 'compaction_session' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), defaultRequestOptions), Error, 'Invalid input item:');
 });
-
 test('buildTargetRequest attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -951,20 +804,16 @@ test('buildTargetRequest attaches ephemeral cache breakpoints to system, last fu
     stream: null,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
-
   const tools = result.target.tools as AnthropicMessagesClientTool[];
   assertEquals(tools[0].cache_control, undefined);
   assertEquals(tools[1].cache_control, { type: 'ephemeral' });
-
   const lastMessage = result.target.messages[result.target.messages.length - 1];
   const lastBlock = (lastMessage.content as AnthropicMessagesUserContentBlock[]).at(-1) as AnthropicMessagesToolResultBlock;
   assertEquals(lastBlock.type, 'tool_result');
   assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
 });
-
 test('buildTargetRequest extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
   const result = await buildTargetRequest({
@@ -981,11 +830,9 @@ test('buildTargetRequest extracts flat text.format json_schema into output_confi
     store: false,
     parallel_tool_calls: true,
     text: { format: { type: 'json_schema', name: 'whatever', strict: true, schema } },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.output_config, { format: { type: 'json_schema', schema } });
 });
-
 test('buildTargetRequest merges reasoning.effort with structured-output format on a single output_config', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
   const result = await buildTargetRequest({
@@ -1003,11 +850,9 @@ test('buildTargetRequest merges reasoning.effort with structured-output format o
     parallel_tool_calls: true,
     reasoning: { effort: 'high', summary: 'detailed' },
     text: { format: { type: 'json_schema', name: 'result', schema } },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertEquals(result.target.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
 });
-
 test('buildTargetRequest drops text.format json_object (no Anthropic equivalent)', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
@@ -1023,119 +868,98 @@ test('buildTargetRequest drops text.format json_object (no Anthropic equivalent)
     store: false,
     parallel_tool_calls: true,
     text: { format: { type: 'json_object' } },
-  });
-
+  }, createTestSidecarCodec(), defaultRequestOptions);
   assertFalse('output_config' in result.target);
 });
-
 test('buildTargetRequest hoists leading role:"system" to top-level system field', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'system', content: 'be terse' },
-        { type: 'message', role: 'user', content: 'q1' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'system', content: 'be terse' },
+      { type: 'message', role: 'user', content: 'q1' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } });
   assertEquals(result.target.system, [{ type: 'text', text: 'be terse', cache_control: { type: 'ephemeral' } }]);
   assertEquals(result.target.messages.length, 1);
   assertEquals(result.target.messages[0].role, 'user');
 });
-
 test('buildTargetRequest keeps non-leading role:"system" inline', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'user', content: 'q1' },
-        { type: 'message', role: 'system', content: 'be terse' },
-        { type: 'message', role: 'user', content: 'q2' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'q1' },
+      { type: 'message', role: 'system', content: 'be terse' },
+      { type: 'message', role: 'user', content: 'q2' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } });
   assertEquals(result.target.messages.length, 3);
   assertEquals(result.target.messages[0].role, 'user');
   assertEquals(result.target.messages[1], { role: 'system', content: [{ type: 'text', text: 'be terse' }] });
   assertEquals(result.target.messages[2].role, 'user');
   assertFalse('system' in result.target);
 });
-
 test('buildTargetRequest hoists leading role:"developer" to top-level system field', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'developer', content: 'dev rule' },
-        { type: 'message', role: 'user', content: 'hi' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'developer', content: 'dev rule' },
+      { type: 'message', role: 'user', content: 'hi' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } });
   assertEquals(result.target.messages.length, 1);
   assertEquals(result.target.messages[0].role, 'user');
   assertEquals(result.target.system, [{ type: 'text', text: 'dev rule', cache_control: { type: 'ephemeral' } }]);
 });
-
 test('buildTargetRequest preserves payload.instructions and leading system as separate blocks; non-leading stays inline', async () => {
-  const result = await buildTargetRequest(
-    {
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'system', content: 'leading note' },
-        { type: 'message', role: 'user', content: 'hi' },
-        { type: 'message', role: 'system', content: 'mid-array note' },
-        { type: 'message', role: 'user', content: 'bye' },
-      ],
-      instructions: 'canonical top-level instructions',
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-    { loadRemoteImage: stubRemoteImageLoader(null) },
-  );
-
+  const result = await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'system', content: 'leading note' },
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'message', role: 'system', content: 'mid-array note' },
+      { type: 'message', role: 'user', content: 'bye' },
+    ],
+    instructions: 'canonical top-level instructions',
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } });
   assertEquals(result.target.system, [
     { type: 'text', text: 'canonical top-level instructions' },
     { type: 'text', text: 'leading note', cache_control: { type: 'ephemeral' } },
@@ -1145,77 +969,55 @@ test('buildTargetRequest preserves payload.instructions and leading system as se
   assertEquals(result.target.messages[1], { role: 'system', content: [{ type: 'text', text: 'mid-array note' }] });
   assertEquals(result.target.messages[2].role, 'user');
 });
-
 test('buildTargetRequest throws when a system input message contains an image part', async () => {
-  await assertRejects(
-    () =>
-      buildTargetRequest(
-        {
-          model: 'claude-test',
-          input: [
-            {
-              type: 'message',
-              role: 'system',
-              content: [
-                { type: 'input_text', text: 'You are helpful.' },
-                { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgo=', detail: 'auto' },
-              ],
-            },
-            { type: 'message', role: 'user', content: 'hi' },
-          ],
-          instructions: null,
-          temperature: null,
-          top_p: null,
-          max_output_tokens: 256,
-          tools: null,
-          tool_choice: 'auto',
-          metadata: null,
-          stream: null,
-          store: false,
-          parallel_tool_calls: true,
-        },
-        { loadRemoteImage: stubRemoteImageLoader(null) },
-      ),
-    Error,
-    "Invalid 'input_image' content part in system message",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: [
+          { type: 'input_text', text: 'You are helpful.' },
+          { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgo=', detail: 'auto' },
+        ],
+      },
+      { type: 'message', role: 'user', content: 'hi' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } }), Error, "Invalid 'input_image' content part in system message");
 });
-
 test('buildTargetRequest throws when a non-leading developer input message contains an image part', async () => {
-  await assertRejects(
-    () =>
-      buildTargetRequest(
-        {
-          model: 'claude-test',
-          input: [
-            { type: 'message', role: 'user', content: 'hi' },
-            {
-              type: 'message',
-              role: 'developer',
-              content: [
-                { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgo=', detail: 'auto' },
-              ],
-            },
-            { type: 'message', role: 'user', content: 'bye' },
-          ],
-          instructions: null,
-          temperature: null,
-          top_p: null,
-          max_output_tokens: 256,
-          tools: null,
-          tool_choice: 'auto',
-          metadata: null,
-          stream: null,
-          store: false,
-          parallel_tool_calls: true,
-        },
-        { loadRemoteImage: stubRemoteImageLoader(null) },
-      ),
-    Error,
-    "Invalid 'input_image' content part in developer message",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      {
+        type: 'message',
+        role: 'developer',
+        content: [
+          { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgo=', detail: 'auto' },
+        ],
+      },
+      { type: 'message', role: 'user', content: 'bye' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec(), { ...defaultRequestOptions, ...{ loadRemoteImage: stubRemoteImageLoader(null) } }), Error, "Invalid 'input_image' content part in developer message");
 });
-
-// (Native native↔native only — OpenAI Responses no longer carries thinking-mode
-// extension fields; alias overlays land on the Anthropic Messages target payload at the wire
-// call via `applyRulesToUpstreamAnthropicMessages`.)

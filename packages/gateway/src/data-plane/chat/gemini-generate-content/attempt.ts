@@ -48,6 +48,7 @@ export const geminiGenerateContentAttempt = {
       // interceptor chain and rewrite.
       const transCtx = {
         model: candidate.model.id,
+        serverSecret: ctx.serverSecret,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       if (targetApi === 'anthropicMessages') {
@@ -101,6 +102,7 @@ export const geminiGenerateContentAttempt = {
       // attempt-owned payload clone keeps the caller's source intact.
       const transCtx = {
         model: candidate.model.id,
+        serverSecret: ctx.serverSecret,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       const cleaned = invocation.payload;

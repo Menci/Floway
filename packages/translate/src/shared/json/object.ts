@@ -1,4 +1,5 @@
 import { rawJSON } from './raw-json.ts';
+import type { IRJSONObject } from '../../ir/types.ts';
 import { isJsonObject } from '@floway-dev/protocols/common';
 
 const parseJSON = (text: string): unknown => JSON.parse(text, (_key: string, value: unknown, context?: { source: string }) => {
@@ -6,9 +7,14 @@ const parseJSON = (text: string): unknown => JSON.parse(text, (_key: string, val
   return value;
 });
 
-const isPlainJSONObject = (value: unknown): value is Record<string, any> => isJsonObject(value) && !rawJSON.isRawJSON(value);
+const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
 
-export const parseJSONObject = (text: string, parser: (text: string) => unknown = parseJSON): Record<string, any> => {
+export const requireJSONObject = (value: unknown): IRJSONObject => {
+  if (!isPlainJSONObject(value)) throw new TypeError('Expected a JSON object');
+  return value;
+};
+
+export const parseJSONObject = (text: string, parser: (text: string) => unknown = parseJSON): IRJSONObject => {
   const value = parser(text);
   if (!isPlainJSONObject(value)) throw new TypeError('Tool arguments require a JSON object');
   return value;

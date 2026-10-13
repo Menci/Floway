@@ -5,7 +5,7 @@ import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-pl
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type OpenAIChatCompletionsAssistantDeltaEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsAssistantMessageEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -46,6 +46,32 @@ const assistantMessage = async (source: AsyncIterable<ProtocolFrame<OpenAIChatCo
   };
   return (await reassembleOpenAIChatCompletionsEvents(events())).choices[0].message;
 };
+
+test('unwraps encrypted reasoning details for matching affinity while preserving other details', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const detail = { type: 'reasoning.encrypted', data: 'upstream-encrypted-data', format: 'native-format' };
+  const wrappedDetail = {
+    ...detail,
+    data: await codec.wrap(detail.data, targetFor(candidateA), 'openai-chat-completions.reasoning_details.reasoning.encrypted.data'),
+  };
+  const textDetail = { type: 'reasoning.text', text: 'thinking' };
+  const message: OpenAIChatCompletionsAssistantMessageEx = {
+    role: 'assistant', content: 'answer', reasoning_details: [textDetail, wrappedDetail],
+  };
+  const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
+
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  expect(projectionA.preferred).toBe(true);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionA.materialize().messages[0]).toEqual({ ...message, reasoning_details: [textDetail, detail] });
+
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionB.preferred).toBe(false);
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionB.materialize().messages[0]).toEqual({ ...message, reasoning_details: [textDetail] });
+  expect(message.reasoning_details).toEqual([textDetail, wrappedDetail]);
+});
 
 test('a carrier a real codec emits on reasoning_opaque decodes on the next turn', async () => {
   const candidateA = candidate('upstream-a');

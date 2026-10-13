@@ -1,7 +1,10 @@
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
+import { inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -168,7 +171,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): CanonicalOpenAIResponsesPayload => {
+export const buildTargetRequest = async (payload: GeminiGenerateContentPayload, model: string, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const request: CanonicalOpenAIResponsesPayload = {
     model,
@@ -182,15 +185,25 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
 
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    if (turn.role === 'assistant') {
-      for (const [index, content] of turn.items.entries()) {
-        if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'assistant', content: '' }); continue; }
-        input.push(...buildAssistantInputItems(content, contentIndex + index, unmatchedToolCallIds));
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiResponses', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') {
+        for (const [index, content] of turn.items.entries()) {
+          if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'assistant', content: '' }); continue; }
+          input.push(...buildAssistantInputItems(content, contentIndex + index, unmatchedToolCallIds));
+        }
+      } else for (const [index, content] of turn.items.entries()) {
+        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'user', content: '' }); continue; }
+        input.push(...buildUserInputItems(content, contentIndex + index, unmatchedToolCallIds));
       }
-    } else for (const [index, content] of turn.items.entries()) {
-      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-      if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'user', content: '' }); continue; }
-      input.push(...buildUserInputItems(content, contentIndex + index, unmatchedToolCallIds));
+    } else {
+      input.push(...roundTrip.turn);
+      for (const item of roundTrip.turn) {
+        if (item.type !== 'function_call' && item.type !== 'custom_tool_call') continue;
+        unmatchedToolCallIds[item.name] ??= [];
+        unmatchedToolCallIds[item.name].push(item.call_id);
+      }
     }
     contentIndex += turn.items.length;
   }

@@ -7,30 +7,31 @@ import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/opena
 
 const protocols = ['anthropic-messages', 'openai-responses'] as const;
 const flags = [undefined, false, true];
-
 test.each(protocols)('ChatCompletions via %s captures continuous usage preferences for the trip', async protocol => {
-  for (const include_usage of flags) for (const continuous_usage_stats of flags) {
-    const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
-    const trip = protocol === 'anthropic-messages'
-      ? await routeOpenAIChatCompletions(src).viaAnthropicMessages({ model: 'model', fallbackMaxOutputTokens: 100, loadRemoteImage: async () => { throw new Error('Unexpected image'); } })
-      : await routeOpenAIChatCompletions(src).viaOpenAIResponses({ model: 'model' });
-    src.stream_options!.include_usage = include_usage !== true;
-    src.stream_options!.continuous_usage_stats = continuous_usage_stats !== true;
-    const usage = protocol === 'anthropic-messages' ? { input_tokens: 10, output_tokens: 4 } : { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
-    const frames = await collect(trip.events(iterate(fixtureFrames(protocol, { text: ['answer'], thinking: ['reason'], tools: [{ id: 'call', name: 'tool', args: { value: 1 } }], usage }))));
-    const chunks = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
-    const body = chunks.filter(chunk => chunk.choices.length > 0);
-    expect(body.length).toBeGreaterThan(3);
-    for (const chunk of body) {
-      if (include_usage === true && continuous_usage_stats === true) expect(chunk.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 });
-      else expect(chunk).not.toHaveProperty('usage');
+  for (const include_usage of flags)
+    for (const continuous_usage_stats of flags) {
+      const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
+      const trip = protocol === 'anthropic-messages'
+        ? await routeOpenAIChatCompletions(src).viaAnthropicMessages({ model: 'model', fallbackMaxOutputTokens: 100, loadRemoteImage: async () => { throw new Error('Unexpected image'); }, serverSecret: 'test-server-secret' })
+        : await routeOpenAIChatCompletions(src).viaOpenAIResponses({ model: 'model', serverSecret: 'test-server-secret' });
+      src.stream_options!.include_usage = include_usage !== true;
+      src.stream_options!.continuous_usage_stats = continuous_usage_stats !== true;
+      const usage = protocol === 'anthropic-messages' ? { input_tokens: 10, output_tokens: 4 } : { input_tokens: 10, output_tokens: 4, total_tokens: 14 };
+      const frames = await collect(trip.events(iterate(fixtureFrames(protocol, { text: ['answer'], thinking: ['reason'], tools: [{ id: 'call', name: 'tool', args: { value: 1 } }], usage }))));
+      const chunks = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+      const body = chunks.filter(chunk => chunk.choices.length > 0);
+      expect(body.length).toBeGreaterThan(3);
+      for (const chunk of body) {
+        if (include_usage === true && continuous_usage_stats === true)
+          expect(chunk.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 });
+        else
+          expect(chunk).not.toHaveProperty('usage');
+      }
+      expect(chunks.filter(chunk => chunk.choices.length === 0)).toHaveLength(1);
     }
-    expect(chunks.filter(chunk => chunk.choices.length === 0)).toHaveLength(1);
-  }
 });
-
 test('ChatCompletions continuous usage reflects reported Responses counters without extra progress chunks', async () => {
-  const trip = await routeOpenAIChatCompletions({ model: 'model', messages: [], stream_options: { include_usage: true, continuous_usage_stats: true } }).viaOpenAIResponses({ model: 'model' });
+  const trip = await routeOpenAIChatCompletions({ model: 'model', messages: [], stream_options: { include_usage: true, continuous_usage_stats: true } }).viaOpenAIResponses({ model: 'model', serverSecret: 'test-server-secret' });
   const response = { id: 'resp', model: 'model', created_at: 1, status: 'in_progress', output: [], usage: null };
   const frames = [
     { type: 'response.created', response },

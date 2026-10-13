@@ -1,17 +1,20 @@
 import { klona } from 'klona/json';
 
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from './reasoning.ts';
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { parseJSONObject } from '../../../shared/json/object.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
-import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../../anthropic-messages/as-target/remote-images.ts';
+import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
 import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
+import { inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck } from '../as-source/round-trip.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
 import { buildCustomToolInputSchema } from '../common/custom-tool-wrap.ts';
 import {
@@ -41,14 +44,14 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 
 interface BuildTargetRequestOptions {
-  loadRemoteImage?: RemoteImageLoader;
+  loadRemoteImage: RemoteImageLoader;
   /**
    * Preferred cap used when the source payload omits `max_output_tokens`.
    * Callers in the data plane forward the model's advertised `/models` output
    * cap so the translated Anthropic Messages request reflects the upstream-known limit
    * rather than being silently capped by a target-side default later.
    */
-  fallbackMaxOutputTokens?: number;
+  fallbackMaxOutputTokens: number | undefined;
 }
 
 const parseToolArgumentsObject = (argumentsJson: string): Record<string, unknown> => {
@@ -281,7 +284,7 @@ const translateToolChoice = (
   throw new TranslatorInputError(`Cannot translate OpenAI Responses tool choice type '${toolChoice.type}' to Anthropic Messages.`);
 };
 
-export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
+export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, codec: AssistantTurnSidecarCodec, options: BuildTargetRequestOptions): Promise<TargetRequestResult> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
@@ -296,7 +299,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     hoistedSystemBlocks.push(...openaiResponsesSystemBlocks(item));
     hoistedItems.add(item);
   }
-
+  const bareMessages = new Set<AnthropicMessagesMessage>();
   const translateAssistantTurn = (input: CanonicalOpenAIResponsesInputItem[]): AnthropicMessagesMessage[] => {
     const messages: AnthropicMessagesMessage[] = [];
     for (const item of flattenInput(input)) {
@@ -313,6 +316,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
         appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } });
         break;
       case 'reasoning': {
+
         const block = openaiResponsesReasoningToAnthropicMessagesUpstreamBlock(item);
         if (block) appendAssistantBlock(messages, block);
         break;
@@ -325,7 +329,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
         throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
       }
     }
-
+    for (const message of messages) bareMessages.add(message);
     return messages;
   };
 
@@ -362,7 +366,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
         throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
       }
     }
-
+    for (const message of messages) bareMessages.add(message);
     return messages;
   };
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
@@ -423,10 +427,10 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   };
 
   for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
-    if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage ?? unavailableRemoteImageLoader)); continue; }
-
-    target.messages.push(...translateAssistantTurn(turn.items));
+    if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage)); continue; }
+    const roundTrip = await roundTripAssistantTurn('openaiResponses', 'anthropicMessages', turn.items, codec, inspectOpenAIResponsesAssistantTurn, verifyOpenAIResponsesReplayCheck);
+    target.messages.push(...(roundTrip ? [roundTrip.turn] : translateAssistantTurn(turn.items)));
   }
-  applyLastMessageCacheBreakpoint(target.messages);
+  applyLastMessageCacheBreakpoint(target.messages.filter(message => bareMessages.has(message)));
   return { target, customToolNames, namespaceToolNames };
 };

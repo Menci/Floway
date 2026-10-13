@@ -22,7 +22,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   ...overrides,
 });
 
-// Chat-protocol counterpart: adds the affinity membrane and the OpenAI Responses item
+// Chat-protocol counterpart: adds affinity and the OpenAI Responses item
 // store. Tests that exercise durable OpenAI Responses behavior override `.store`
 // explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: OpenAIResponsesStatefulStore } => {
@@ -32,6 +32,7 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
+    serverSecret: overrides.serverSecret ?? '00'.repeat(32),
     store: overrides.store ?? createOpenAIResponsesHttpStore({ id: base.apiKeyId, openaiResponsesRetentionSeconds: 0 }, base.requestStartedAt, false),
   };
 };

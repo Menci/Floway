@@ -1,39 +1,33 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-test('buildTargetRequest accepts an implicit message discriminator', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest accepts an implicit message discriminator', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ role: 'system', content: 'rules' }],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages, [
     { role: 'system', content: 'rules' },
   ]);
 });
-
-test('buildTargetRequest rejects an agent_message that no interceptor lowered', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{
-        type: 'agent_message',
-        author: '/root/reviewer',
-        recipient: '/root',
-        content: [{ type: 'input_text', text: 'done' }],
-      }],
-    }),
-    Error,
-    "Invalid input item type 'agent_message'.",
-  );
+test('buildTargetRequest rejects an agent_message that no interceptor lowered', async () => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'agent_message',
+      author: '/root/reviewer',
+      recipient: '/root',
+      content: [{ type: 'input_text', text: 'done' }],
+    }],
+  }, createTestSidecarCodec()), Error, "Invalid input item type 'agent_message'.");
 });
-
-test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'user', content: 'Hi' },
@@ -81,8 +75,7 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
     prompt_cache_key: 'cache-key',
     safety_identifier: 'safe-id',
     reasoning: { effort: 'medium' },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.model, 'gpt-test');
   assertEquals(result.target.max_tokens, 256);
   assertEquals(result.target.metadata, { trace_id: 'trace_123' });
@@ -131,9 +124,8 @@ test('buildTargetRequest merges adjacent assistant reasoning text and tool calls
     },
   ]);
 });
-
-test('buildTargetRequest preserves all reasoning items and projects only the first scalar group', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest preserves all reasoning items and projects only the first scalar group', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       {
@@ -157,8 +149,7 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
     stream: null,
     store: null,
     parallel_tool_calls: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages, [
     {
       role: 'assistant',
@@ -179,48 +170,41 @@ test('buildTargetRequest preserves all reasoning items and projects only the fir
     } as OpenAIChatCompletionsAssistantMessageEx,
   ]);
 });
-
-test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest preserves explicit null prompt cache and safety fields', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'hello',
     prompt_cache_key: null,
     safety_identifier: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals('prompt_cache_key' in result.target, true);
   assertEquals(result.target.prompt_cache_key, null);
   assertEquals('safety_identifier' in result.target, true);
   assertEquals(result.target.safety_identifier, null);
 });
-
-test('buildTargetRequest omits response_format when OpenAI Responses text.format is absent', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits response_format when OpenAI Responses text.format is absent', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {},
-  });
-
+  }, createTestSidecarCodec());
   assertEquals('response_format' in result.target, false);
 });
-
-test('buildTargetRequest omits a null text format from the Chat response-format field', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits a null text format from the Chat response-format field', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.response_format, undefined);
 });
-
-test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat Completions shape', () => {
+test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat Completions shape', async () => {
   const schema = {
     type: 'object',
     properties: { ok: { type: 'boolean' } },
     required: ['ok'],
   };
-  const result = buildTargetRequest({
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {
@@ -231,8 +215,7 @@ test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat 
         schema,
       },
     },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.response_format, {
     type: 'json_schema',
     json_schema: {
@@ -242,19 +225,16 @@ test('buildTargetRequest reshapes flat json_schema text format into OpenAI Chat 
     },
   });
 });
-
-test('buildTargetRequest passes through plain text format without wrapping', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest passes through plain text format without wrapping', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: { format: { type: 'text' } },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.response_format, { type: 'text' });
 });
-
-test('buildTargetRequest does not double-wrap an already-wrapped json_schema', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest does not double-wrap an already-wrapped json_schema', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {
@@ -263,56 +243,37 @@ test('buildTargetRequest does not double-wrap an already-wrapped json_schema', (
         json_schema: { name: 'already', strict: false, schema: {} },
       } as unknown as NonNullable<NonNullable<OpenAIResponsesRequestPayloadEx['text']>['format']>,
     },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.response_format, {
     type: 'json_schema',
     json_schema: { name: 'already', strict: false, schema: {} },
   });
 });
-
-test.each(['web_search_preview', 'file_search', 'image_generation', 'local_shell'])('buildTargetRequest rejects unsupported tool type %s', type => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: 'Hi',
-      tools: [{ type } as unknown as OpenAIResponsesTool],
-    }),
-    Error,
-    `Cannot translate OpenAI Responses tool type '${type}' to OpenAI Chat Completions.`,
-  );
+test.each(['web_search_preview', 'file_search', 'image_generation', 'local_shell'])('buildTargetRequest rejects unsupported tool type %s', async type => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: 'Hi',
+    tools: [{ type } as unknown as OpenAIResponsesTool],
+  }, createTestSidecarCodec()), Error, `Cannot translate OpenAI Responses tool type '${type}' to OpenAI Chat Completions.`);
 });
-
-test('buildTargetRequest omits parameters and strict for a schema-less function tool', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits parameters and strict for a schema-less function tool', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     tools: [{ type: 'function', name: 'ping' }],
-  });
-
-  // `toEqual` treats an undefined-valued key as absent, so the keys are
-  // compared directly: emitting `parameters: undefined` is the regression.
+  }, createTestSidecarCodec());
+    // `toEqual` treats an undefined-valued key as absent, so the keys are
+    // compared directly: emitting `parameters: undefined` is the regression.
   assertEquals(Object.keys((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function), ['name']);
 });
-
-test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported string tool choice %s', toolChoice => {
-  assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: 'Hi', tool_choice: toolChoice as OpenAIResponsesToolChoice }),
-    Error,
-    `Cannot translate OpenAI Responses tool choice '${toolChoice}' to OpenAI Chat Completions.`,
-  );
+test.each(['web_search', 'file_search'])('buildTargetRequest rejects unsupported string tool choice %s', async toolChoice => {
+  await assertRejects(async () => await buildTargetRequest({ model: 'gpt-test', input: 'Hi', tool_choice: toolChoice as OpenAIResponsesToolChoice }, createTestSidecarCodec()), Error, `Cannot translate OpenAI Responses tool choice '${toolChoice}' to OpenAI Chat Completions.`);
 });
-
-test.each(['web_search_preview', 'file_search'])('buildTargetRequest rejects unsupported object tool choice type %s', type => {
-  assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: 'Hi', tool_choice: { type } as unknown as OpenAIResponsesToolChoice }),
-    Error,
-    `Cannot translate OpenAI Responses tool choice type '${type}' to OpenAI Chat Completions.`,
-  );
+test.each(['web_search_preview', 'file_search'])('buildTargetRequest rejects unsupported object tool choice type %s', async type => {
+  await assertRejects(async () => await buildTargetRequest({ model: 'gpt-test', input: 'Hi', tool_choice: { type } as unknown as OpenAIResponsesToolChoice }, createTestSidecarCodec()), Error, `Cannot translate OpenAI Responses tool choice type '${type}' to OpenAI Chat Completions.`);
 });
-
-test('buildTargetRequest keeps function tool_choice', () => {
-  const resultWithFunctionChoice = buildTargetRequest({
+test('buildTargetRequest keeps function tool_choice', async () => {
+  const resultWithFunctionChoice = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -329,16 +290,14 @@ test('buildTargetRequest keeps function tool_choice', () => {
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(resultWithFunctionChoice.target.tool_choice, {
     type: 'function',
     function: { name: 'get_weather' },
   });
 });
-
-test.each(['auto', 'required', 'none'] as const)('buildTargetRequest keeps supported string tool choice %s', toolChoice => {
-  const result = buildTargetRequest({
+test.each(['auto', 'required', 'none'] as const)('buildTargetRequest keeps supported string tool choice %s', async toolChoice => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -352,13 +311,11 @@ test.each(['auto', 'required', 'none'] as const)('buildTargetRequest keeps suppo
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.tool_choice, toolChoice);
 });
-
-test('buildTargetRequest wraps custom tools as single-string function tools and records their names', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest wraps custom tools as single-string function tools and records their names', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: 'hi',
     instructions: null,
@@ -379,8 +336,7 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.customToolNames.has('apply_patch'), true);
   assertEquals(result.target.tools, [
     {
@@ -405,13 +361,12 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
   ]);
   assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'apply_patch' } });
 });
-
 test.each([
   { name: 'string', output: 'ok', expected: 'ok' },
   { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: 'first\nsecond' },
   { name: 'empty array', output: [], expected: '' },
-])('buildTargetRequest projects custom_tool_call history with $name output into wrapped tool_calls shape', ({ output, expected }) => {
-  const result = buildTargetRequest({
+])('buildTargetRequest projects custom_tool_call history with $name output into wrapped tool_calls shape', async ({ output, expected }) => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'user', content: 'apply this patch' },
@@ -438,10 +393,10 @@ test.each([
     store: null,
     parallel_tool_calls: null,
     text: null,
-  });
-
+  }, createTestSidecarCodec());
   const assistant = result.target.messages.find(m => m.role === 'assistant');
-  if (!assistant) throw new Error('expected assistant message');
+  if (!assistant)
+    throw new Error('expected assistant message');
   assertEquals(assistant.tool_calls?.[0], {
     id: 'call_1',
     type: 'function',
@@ -450,7 +405,6 @@ test.each([
       arguments: JSON.stringify({ input: '*** Begin Patch\n*** End Patch' }),
     },
   });
-
   const tool = result.target.messages.find(m => m.role === 'tool');
   assertEquals(tool, {
     role: 'tool',
@@ -458,7 +412,6 @@ test.each([
     content: expected,
   });
 });
-
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
@@ -466,81 +419,46 @@ test.each([
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as OpenAIResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
-] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', ({ name, input }) => {
-  assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: [...input] }),
-    Error,
-    `Invalid input item type '${name}'`,
-  );
+] as const)('buildTargetRequest rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
+  await assertRejects(async () => await buildTargetRequest({ model: 'gpt-test', input: [...input] }, createTestSidecarCodec()), Error, `Invalid input item type '${name}'`);
 });
-
-test('buildTargetRequest wires OpenAI Responses tooling guards', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
-    }),
-    Error,
-    'program caller',
-  );
-  assertThrows(
-    () => buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }),
-    Error,
-    'Programmatic',
-  );
+test('buildTargetRequest wires OpenAI Responses tooling guards', async () => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
+  }, createTestSidecarCodec()), Error, 'program caller');
+  await assertRejects(async () => await buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }, createTestSidecarCodec()), Error, 'Programmatic');
 });
-
-test('buildTargetRequest accepts null tool_choice', () => {
-  const result = buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null });
+test('buildTargetRequest accepts null tool_choice', async () => {
+  const result = await buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null }, createTestSidecarCodec());
   assertEquals(result.target.tool_choice, undefined);
 });
-
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects input_file in %s', type => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file tool output',
-  );
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest rejects input_file in %s', async type => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+  }, createTestSidecarCodec()), Error, 'input_file tool output');
 });
-
-test('buildTargetRequest rejects file assistant content', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file assistant content',
-  );
+test('buildTargetRequest rejects file assistant content', async () => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+  }, createTestSidecarCodec()), Error, 'input_file assistant content');
 });
-
-test('buildTargetRequest rejects image assistant content', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
-    }),
-    Error,
-    'input_image assistant content',
-  );
+test('buildTargetRequest rejects image assistant content', async () => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
+  }, createTestSidecarCodec()), Error, 'input_image assistant content');
 });
-
-test('buildTargetRequest rejects file_id-only images', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image content',
-  );
+test('buildTargetRequest rejects file_id-only images', async () => {
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+  }, createTestSidecarCodec()), Error, 'file_id-only image content');
 });
-
-test('buildTargetRequest forwards image details OpenAI Chat Completions does not publish', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest forwards image details OpenAI Chat Completions does not publish', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{
       type: 'message',
@@ -550,36 +468,30 @@ test('buildTargetRequest forwards image details OpenAI Chat Completions does not
         { type: 'input_image', image_url: 'https://example.com/b.png', detail: 'ultra' },
       ],
     }],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages[0].content, [
     { type: 'image_url', image_url: { url: 'https://example.com/a.png', detail: 'original' } },
     { type: 'image_url', image_url: { url: 'https://example.com/b.png', detail: 'ultra' } },
   ]);
 });
-
-test('buildTargetRequest omits image detail when the client sends none', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits image detail when the client sends none', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages, [
     { role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }] },
   ]);
 });
-
-test('buildTargetRequest omits image detail when the client sends null', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest omits image detail when the client sends null', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: null }] }],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages[0].content, [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }]);
 });
-
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest omits image detail on lifted %s images', type => {
-  const result = buildTargetRequest({
+test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetRequest omits image detail on lifted %s images', async type => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       type === 'function_call_output'
@@ -591,106 +503,89 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
         output: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }],
       },
     ],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages.at(-1)?.content, [
     { type: 'text', text: 'Image output from tool call call_1:' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
   ]);
 });
-
-test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', () => {
+test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
   // The OpenAI Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
   // translator runs. Reaching the translator with a raw web_search_call
   // means the shim regressed; the translator surfaces a loud error so the
   // bug is caught rather than silently dropping search context.
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        {
-          type: 'web_search_call',
-          id: 'ws_x',
-          status: 'completed',
-          action: { type: 'search', queries: ['q'] },
-        },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    "Invalid input item type 'web_search_call'",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      {
+        type: 'web_search_call',
+        id: 'ws_x',
+        status: 'completed',
+        action: { type: 'search', queries: ['q'] },
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec()), Error, "Invalid input item type 'web_search_call'");
 });
-
-test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', () => {
+test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
   // The compact-shim is structurally required on non-openai-responses targets and
   // strips compaction_trigger items before reaching this translator.
   // Reaching here with one in input means the shim disengaged; the
   // translator's catch-all guard surfaces the regression.
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        { type: 'compaction_trigger' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    "Invalid input item type 'compaction_trigger'",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'compaction_trigger' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec()), Error, "Invalid input item type 'compaction_trigger'");
 });
-
-test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', () => {
+test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
   // The compact-shim expands its own shim-encoded compaction items inline
   // before reaching this translator and round-trips foreign compactions
   // back to the upstream as raw items. Either way the translator should
   // never see one.
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        { type: 'compaction', id: 'cmp_x', encrypted_content: 'opaque', created_by: 'compaction_session' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    "Invalid input item type 'compaction'",
-  );
+  await assertRejects(async () => await buildTargetRequest({
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'compaction', id: 'cmp_x', encrypted_content: 'opaque', created_by: 'compaction_session' },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  }, createTestSidecarCodec()), Error, "Invalid input item type 'compaction'");
 });
-
-test('buildTargetRequest lifts tool-output images into a following user message', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest lifts tool-output images into a following user message', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
@@ -713,8 +608,7 @@ test('buildTargetRequest lifts tool-output images into a following user message'
     stream: false,
     store: false,
     parallel_tool_calls: true,
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages, [
     {
       role: 'assistant',
@@ -735,9 +629,8 @@ test('buildTargetRequest lifts tool-output images into a following user message'
     },
   ]);
 });
-
-test('buildTargetRequest keeps grouped tool results contiguous before lifted images', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest keeps grouped tool results contiguous before lifted images', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'function_call', call_id: 'call_a', name: 'capture_a', arguments: '{}', status: 'completed' },
@@ -768,8 +661,7 @@ test('buildTargetRequest keeps grouped tool results contiguous before lifted ima
         ],
       },
     ],
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'tool', 'tool', 'user']);
   assertEquals(result.target.messages.slice(1, 4).map(message => (message as OpenAIChatCompletionsToolMessage).tool_call_id), ['call_a', 'call_b', 'call_c']);
   assertEquals(result.target.messages[1].content, 'Image output is attached in the following user message.');
@@ -785,13 +677,12 @@ test('buildTargetRequest keeps grouped tool results contiguous before lifted ima
     { type: 'image_url', image_url: { url: 'https://example.com/inspection.png', detail: 'original' } },
   ]);
 });
-
-test('buildTargetRequest places lifted images before a later source message', () => {
+test('buildTargetRequest places lifted images before a later source message', async () => {
   for (const trailing of [
     { type: 'message' as const, role: 'user' as const, content: 'new user turn' },
     { type: 'message' as const, role: 'system' as const, content: 'new system turn' },
   ]) {
-    const result = buildTargetRequest({
+    const result = await buildTargetRequest({
       model: 'gpt-test',
       input: [
         { type: 'function_call', call_id: 'call_1', name: 'capture', arguments: '{}', status: 'completed' },
@@ -802,59 +693,48 @@ test('buildTargetRequest places lifted images before a later source message', ()
         },
         trailing,
       ],
-    });
-
+    }, createTestSidecarCodec());
     assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
     assertEquals(result.target.messages.at(-1)?.content, trailing.content);
   }
 });
-
 // ── Native field forwarding ──
-
-test('buildTargetRequest maps text.verbosity onto verbosity', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest maps text.verbosity onto verbosity', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     text: { verbosity: 'low' },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.verbosity, 'low');
 });
-
-test('buildTargetRequest co-emits reasoning.effort onto reasoning_effort and service_tier verbatim', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest co-emits reasoning.effort onto reasoning_effort and service_tier verbatim', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'xhigh' },
     service_tier: 'priority',
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.reasoning_effort, 'xhigh');
   assertEquals(result.target.service_tier, 'priority');
 });
-
-test('buildTargetRequest forwards empty reasoning.effort verbatim', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest forwards empty reasoning.effort verbatim', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: '' },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.reasoning_effort, '');
 });
-
-test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no slot)', () => {
-  const result = buildTargetRequest({
+test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no slot)', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'medium', summary: 'concise' },
-  });
-
+  }, createTestSidecarCodec());
   assertEquals(result.target.reasoning_effort, 'medium');
   assertEquals('reasoning_summary' in result.target, false);
 });
-
-test.each(['system', 'developer'] as const)('preserves %s text part boundaries', role => {
-  const result = buildTargetRequest({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
+test.each(['system', 'developer'] as const)('preserves %s text part boundaries', async role => {
+  const result = await buildTargetRequest({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] }, createTestSidecarCodec());
   assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
 });

@@ -1,9 +1,12 @@
 import { klona } from 'klona/json';
 
 import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from './reasoning.ts';
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
+import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
@@ -270,7 +273,7 @@ const translateAnthropicMessagesToolChoice = (toolChoice?: AnthropicMessagesPayl
   }
 };
 
-export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAIChatCompletionsPayload => {
+export const buildTargetRequest = async (payload: AnthropicMessagesPayload, codec: AssistantTurnSidecarCodec): Promise<OpenAIChatCompletionsPayload> => {
   const clientTools = filterAnthropicMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
@@ -295,7 +298,8 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
-      messages.push(...turn.items.flatMap((message, index) => translateAnthropicMessagesAssistant(message, messageIndex + index)));
+      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiChatCompletions', turn.items, codec, inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck);
+      messages.push(...(roundTrip ? [roundTrip.turn] : turn.items.flatMap((message, index) => translateAnthropicMessagesAssistant(message, messageIndex + index))));
     } else for (const [index, message] of turn.items.entries()) {
       switch (message.role) {
       case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index)); break;

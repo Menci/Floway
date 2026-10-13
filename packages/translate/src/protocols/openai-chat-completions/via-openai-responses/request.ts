@@ -2,8 +2,11 @@ import { klona } from 'klona/json';
 
 import { openaiChatCompletionsContentToOpenAIResponsesInputContent, openaiChatCompletionsContentToText } from './content.ts';
 import { scalarToOpenAIResponsesReasoningItem, translateOpenAIChatCompletionsReasoningItems } from './reasoning.ts';
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
+import { inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
 import { openAIChatCompletionsScalarReasoningText } from '../common/reasoning.ts';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsPayload, OpenAIChatCompletionsTool, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputReasoning, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -58,7 +61,7 @@ const translateAssistantContent = (message: OpenAIChatCompletionsAssistantMessag
   return content;
 };
 
-export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): CanonicalOpenAIResponsesPayload => {
+export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
   const instructions: string[] = [];
   const input: CanonicalOpenAIResponsesInputItem[] = [];
   const customToolCallIds = new Set<string>();
@@ -155,8 +158,15 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
   };
 
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages)) {
-    if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
-    else translateNonAssistantMessages(turn.items);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'openaiResponses', turn.items[0], codec, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') translateAssistantMessage(turn.items[0]);
+      else translateNonAssistantMessages(turn.items);
+      continue;
+    }
+    hoistSystemPrefix = false;
+    input.push(...roundTrip.turn);
+    for (const item of roundTrip.turn) if (item.type === 'custom_tool_call') customToolCallIds.add(item.call_id);
   }
 
   const format = klona(payload.response_format);

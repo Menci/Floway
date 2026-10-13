@@ -1,10 +1,13 @@
 import { klona } from 'klona/json';
 
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
+import { inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
@@ -212,11 +215,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): AnthropicMessagesToo
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (
-  payload: GeminiGenerateContentPayload,
-  model: string,
-  options: { fallbackMaxOutputTokens?: number },
-): AnthropicMessagesPayload => {
+export const buildTargetRequest = async (payload: GeminiGenerateContentPayload, model: string, codec: AssistantTurnSidecarCodec, options: { fallbackMaxOutputTokens: number | undefined }): Promise<AnthropicMessagesPayload> => {
   // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
   // fall back to the gateway policy default shared with the other
@@ -237,17 +236,29 @@ export const buildTargetRequest = (
     request.system = systemBlocks;
   }
 
+  const restoredMessages = new Set<AnthropicMessagesPayload['messages'][number]>();
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    if (turn.role === 'assistant') {
-      for (const [index, content] of turn.items.entries()) {
-        const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'anthropicMessages', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') {
+        for (const [index, content] of turn.items.entries()) {
+          const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
+          if (message) request.messages.push(message);
+        }
+      } else for (const [index, content] of turn.items.entries()) {
+        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        const message = buildUserMessage(content, contentIndex + index, unmatchedToolCallIds);
         if (message) request.messages.push(message);
       }
-    } else for (const [index, content] of turn.items.entries()) {
-      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-      const message = buildUserMessage(content, contentIndex + index, unmatchedToolCallIds);
-      if (message) request.messages.push(message);
+    } else {
+      request.messages.push(roundTrip.turn);
+      restoredMessages.add(roundTrip.turn);
+      if (Array.isArray(roundTrip.turn.content)) for (const block of roundTrip.turn.content) {
+        if (block.type !== 'tool_use' && block.type !== 'server_tool_use') continue;
+        unmatchedToolCallIds[block.name] ??= [];
+        unmatchedToolCallIds[block.name].push(block.id);
+      }
     }
     contentIndex += turn.items.length;
   }
@@ -269,7 +280,7 @@ export const buildTargetRequest = (
   const tools = buildTools(payload);
   if (tools) request.tools = tools;
   applyLastToolCacheBreakpoint(request.tools);
-  applyLastMessageCacheBreakpoint(request.messages);
+  applyLastMessageCacheBreakpoint(request.messages.filter(message => !restoredMessages.has(message)));
 
   const intent = geminiGenerateContentFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {

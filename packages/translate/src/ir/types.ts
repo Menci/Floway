@@ -2,7 +2,7 @@
 type IRValueOf<Extra> = Extra | null | boolean | number | string | readonly IRValueOf<Extra>[] | { readonly [key: string]: IRValueOf<Extra> };
 
 // All
-type IRJSONValue = IRValueOf<never>;
+export type IRJSONValue = IRValueOf<never>;
 
 // All
 export type IRJSONObject = { readonly [key: string]: IRJSONValue };

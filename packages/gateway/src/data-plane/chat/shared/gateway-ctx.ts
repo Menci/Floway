@@ -4,7 +4,7 @@ import type { ApiKey } from '../../../repo/types.ts';
 import { createGatewayCtxFromHono, type CreateGatewayCtxOptions, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/store.ts';
 
-// Chat-protocol ctx adds the affinity membrane and the OpenAI Responses item store.
+// Chat-protocol ctx adds affinity and the OpenAI Responses item store.
 // The store is present on every chat ctx: native OpenAI Responses entries supply a
 // persisting factory, non-OpenAI-Responses sources a no-backing scratchpad store, so
 // the server-tool shim's request-private state always has a home. Every chat
@@ -14,6 +14,7 @@ import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/sto
 // Completions) have no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
+  readonly serverSecret: string;
   readonly store: OpenAIResponsesStatefulStore;
 }
 
@@ -27,9 +28,11 @@ export const createChatGatewayCtxFromHono = (
   storeFactory: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
+  const apiKey = apiKeyFromContext(c);
   return {
     ...base,
-    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(apiKeyFromContext(c), base.requestStartedAt),
+    affinity: new AffinityRequestContext(apiKey.serverSecret),
+    serverSecret: apiKey.serverSecret,
+    store: storeFactory(apiKey, base.requestStartedAt),
   };
 };

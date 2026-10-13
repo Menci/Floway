@@ -71,7 +71,7 @@ export const anthropicMessagesAttempt = {
       if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
-          p => routeAnthropicMessages(p).viaOpenAIResponses({ model: candidate.model.id }),
+          p => routeAnthropicMessages(p).viaOpenAIResponses({ model: candidate.model.id, serverSecret: ctx.serverSecret }),
           translated => openaiResponsesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),
@@ -81,7 +81,7 @@ export const anthropicMessagesAttempt = {
       if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
-          p => routeAnthropicMessages(p).viaOpenAIChatCompletions({ model: candidate.model.id }),
+          p => routeAnthropicMessages(p).viaOpenAIChatCompletions({ model: candidate.model.id, serverSecret: ctx.serverSecret }),
           translated => openaiChatCompletionsAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
           }),

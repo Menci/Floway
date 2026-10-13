@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { buildTargetRequest as buildMessages } from '../../../../src/protocols/openai-responses/via-anthropic-messages/request.ts';
 import { buildTargetRequest as buildChat } from '../../../../src/protocols/openai-responses/via-openai-chat-completions/request.ts';
 import { TranslatorInputError } from '../../../../src/translator-input-error.ts';
+import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -15,22 +16,29 @@ const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestP
   ],
   tool_choice,
 });
-
+const messagesRequestOptions = { loadRemoteImage: async () => null, fallbackMaxOutputTokens: undefined };
 for (const target of ['chat', 'messages'] as const) {
-  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? buildChat(payload) : await buildMessages(payload);
+  const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat' ? await buildChat(payload, createTestSidecarCodec()) : await buildMessages(payload, createTestSidecarCodec(), messagesRequestOptions);
   for (const mode of ['auto', 'required'] as const) {
     test(`${target} request serializes only the allowed function/custom subset and ${mode} mode`, async () => {
       const payload = source({ type: 'allowed_tools', mode, tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
       const original = structuredClone(payload);
       const result = await build(payload);
-      const wire = JSON.parse(JSON.stringify(result.target)) as { tools: Array<{ name?: string; function?: { name: string } }>; tool_choice: unknown };
+      const wire = JSON.parse(JSON.stringify(result.target)) as {
+        tools: Array<{
+          name?: string;
+          function?: {
+            name: string;
+          };
+        }>;
+        tool_choice: unknown;
+      };
       assertEquals(wire.tools.map(tool => tool.function?.name ?? tool.name), ['read', 'edit']);
       assertEquals(wire.tool_choice, target === 'chat' ? mode : { type: mode === 'required' ? 'any' : 'auto' });
       assertEquals(result.customToolNames, new Set(['edit']));
       assertEquals(payload, original);
     });
   }
-
   test(`${target} request preserves callable kind when selecting an identically named custom tool`, async () => {
     const payload = source({ type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'read' }] });
     payload.tools!.push({ type: 'custom', name: 'read' });
@@ -38,7 +46,6 @@ for (const target of ['chat', 'messages'] as const) {
     assertEquals(result.target.tools?.length, 1);
     assertEquals(result.customToolNames, new Set(['read']));
   });
-
   for (const history of ['additional_tools', 'tool_search_output'] as const) {
     test(`${target} request rejects flat function/custom collisions from ${history} before converting calls`, async () => {
       const custom: OpenAIResponsesTool = { type: 'custom', name: 'web_search' };
@@ -53,19 +60,16 @@ for (const target of ['chat', 'messages'] as const) {
       await assertRejects(() => build(payload), TranslatorInputError, "distinct callable kinds sharing 'web_search'");
     });
   }
-
   test(`${target} request represents an empty auto subset as no tools`, async () => {
     const result = await build(source({ type: 'allowed_tools', mode: 'auto', tools: [] }));
     assertEquals(result.target.tools, undefined);
     assertEquals(result.target.tool_choice, target === 'chat' ? 'none' : { type: 'none' });
   });
-
   test(`${target} request rejects a flat selector that would erase a declaration namespace`, async () => {
     const payload = source({ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] });
     payload.tools![0] = { ...payload.tools![0], namespace: 'files' } as unknown as OpenAIResponsesTool;
     await assertRejects(() => build(payload), TranslatorInputError, 'allowed_tools');
   });
-
   for (const [label, choice] of [
     ['empty required subset', { type: 'allowed_tools', mode: 'required', tools: [] }],
     ['unknown callable', { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'absent' }] }],

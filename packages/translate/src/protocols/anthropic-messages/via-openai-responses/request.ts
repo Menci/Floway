@@ -1,9 +1,12 @@
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
 import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
+import { inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck } from '../as-source/round-trip.ts';
 import type {
   AnthropicMessagesAssistantMessage,
   AnthropicMessagesClientTool,
@@ -251,7 +254,7 @@ const translateMetadata = (metadata: AnthropicMessagesMetadataEx): Record<string
   return [[key, value]];
 }));
 
-export const buildTargetRequest = (payload: AnthropicMessagesPayload): CanonicalOpenAIResponsesPayload => {
+export const buildTargetRequest = async (payload: AnthropicMessagesPayload, codec: AssistantTurnSidecarCodec): Promise<CanonicalOpenAIResponsesPayload> => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // OpenAI Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
@@ -278,7 +281,8 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   let messageIndex = 0;
   for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
     if (turn.role === 'assistant') {
-      input.push(...turn.items.flatMap((message, index) => translateAssistantMessage(message, messageIndex + index)));
+      const roundTrip = await roundTripAssistantTurn('anthropicMessages', 'openaiResponses', turn.items, codec, inspectAnthropicMessagesAssistantTurn, verifyAnthropicMessagesReplayCheck);
+      input.push(...(roundTrip ? roundTrip.turn : turn.items.flatMap((message, index) => translateAssistantMessage(message, messageIndex + index))));
     } else for (const [index, message] of turn.items.entries()) {
       switch (message.role) {
       case 'user': input.push(...translateUserMessage(message, messageIndex + index)); break;

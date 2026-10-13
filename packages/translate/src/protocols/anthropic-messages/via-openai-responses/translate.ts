@@ -1,5 +1,6 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
+import { createAssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import type { TranslateTrip } from '../../../types.ts';
 import { rewriteContextExceededToPromptTooLong } from '../as-source/context-window-error.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -7,8 +8,11 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } fr
 
 export const translate: TranslateTrip<
   AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx
-> = async src => ({
-  target: buildTargetRequest(src),
-  events: translateToSourceEvents,
-  apiError: rewriteContextExceededToPromptTooLong,
-});
+> = async (src, ctx) => {
+  const codec = createAssistantTurnSidecarCodec(ctx.serverSecret);
+  return {
+    target: await buildTargetRequest(src, codec),
+    events: frames => translateToSourceEvents(frames),
+    apiError: rewriteContextExceededToPromptTooLong,
+  };
+};

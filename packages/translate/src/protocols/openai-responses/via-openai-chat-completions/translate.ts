@@ -1,5 +1,6 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
+import { createAssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
 import type { TranslateTrip } from '../../../types.ts';
 import { restoreNamespaceEvents } from '../as-source/namespace-tools.ts';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
@@ -7,14 +8,14 @@ import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } fr
 
 export const translate: TranslateTrip<
   OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent
-> = async src => {
-  // customToolNames is produced inside the request translator (it sees the
-  // tools first) and read by the events translator so wrapped function calls
-  // can be projected back into `custom_tool_call` outputs.
-  const { target, customToolNames, namespaceToolNames } = buildTargetRequest(src);
-
+> = async (src, ctx) => {
+  const codec = createAssistantTurnSidecarCodec(ctx.serverSecret);
+  const { target, customToolNames, namespaceToolNames } = await buildTargetRequest(src, codec);
   return {
     target,
-    events: frames => restoreNamespaceEvents(translateToSourceEvents(frames, customToolNames, target.n ?? 1), namespaceToolNames),
+    events: frames => restoreNamespaceEvents(
+      translateToSourceEvents(frames, customToolNames, target.n ?? 1),
+      namespaceToolNames,
+    ),
   };
 };

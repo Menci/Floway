@@ -1,27 +1,30 @@
 import { klona } from 'klona/json';
 
 import { anthropicMessagesThinkingBlockFromOpenAIChatCompletionsScalarReasoning } from './reasoning.ts';
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import type { RemoteImageLoader } from '../../../types.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
-import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../../anthropic-messages/as-target/remote-images.ts';
+import { resolveImageUrlToAnthropicMessagesImage } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
+import { inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck } from '../as-source/round-trip.ts';
 import { openAIChatCompletionsScalarReasoningText } from '../common/reasoning.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool } from '@floway-dev/protocols/openai-chat-completions';
 
 interface BuildTargetRequestOptions {
-  loadRemoteImage?: RemoteImageLoader;
+  loadRemoteImage: RemoteImageLoader;
   /**
    * Preferred cap used when the source payload omits `max_tokens`. Callers in
    * the data plane forward the model's advertised `/models` output cap so the
    * translated Anthropic Messages request reflects the upstream-known limit rather than
    * being silently capped by a target-side default later.
    */
-  fallbackMaxOutputTokens?: number;
+  fallbackMaxOutputTokens: number | undefined;
 }
 
 const parseToolArgumentsObject = (argumentsJson: string): Record<string, unknown> => {
@@ -210,7 +213,7 @@ const CHAT_TOOL_CHOICES = {
   required: { type: 'any' },
 } satisfies Record<Extract<OpenAIChatCompletionsPayload['tool_choice'], string>, AnthropicMessagesPayload['tool_choice']>;
 
-export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, options: BuildTargetRequestOptions = {}): Promise<AnthropicMessagesPayload> => {
+export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, codec: AssistantTurnSidecarCodec, options: BuildTargetRequestOptions): Promise<AnthropicMessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to
   // AnthropicMessagesPayload.system, preserving each ContentPart text as its own
   // AnthropicMessagesTextBlockParam so part boundaries survive the hoist. Non-leading
@@ -225,13 +228,19 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
   }
 
   const messages: AnthropicMessagesMessage[] = [];
-
+  const restoredMessages = new Set<AnthropicMessagesMessage>();
   for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages.slice(prefixEnd))) {
-    if (turn.role === 'assistant') {
-      const message = turn.items[0];
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('openaiChatCompletions', 'anthropicMessages', turn.items[0], codec, inspectOpenAIChatCompletionsAssistantTurn, verifyOpenAIChatCompletionsReplayCheck);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') {
+        const message = turn.items[0];
 
-      messages.push({ role: 'assistant', content: buildAssistantBlocks(message) });
-    } else await translateNonAssistantMessages(turn.items, options.loadRemoteImage ?? unavailableRemoteImageLoader, messages);
+        messages.push({ role: 'assistant', content: buildAssistantBlocks(message) });
+      } else await translateNonAssistantMessages(turn.items, options.loadRemoteImage, messages);
+      continue;
+    }
+    messages.push(roundTrip.turn);
+    restoredMessages.add(roundTrip.turn);
   }
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
@@ -245,7 +254,7 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
   const tools = selectedTools?.length ? translateOpenAIChatCompletionsTools(selectedTools) : undefined;
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
+  applyLastMessageCacheBreakpoint(messages.filter(message => !restoredMessages.has(message)));
 
   // Merge OpenAI Chat Completions `reasoning_effort` + `response_format` into a single Anthropic Messages
   // `output_config` so a chat-source structured-output request survives

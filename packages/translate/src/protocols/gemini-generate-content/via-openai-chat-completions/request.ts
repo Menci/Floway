@@ -1,9 +1,12 @@
 import { klona } from 'klona/json';
 
+import type { AssistantTurnSidecarCodec } from '../../../round-trip/codec.ts';
+import { roundTripAssistantTurn } from '../../../round-trip/replay.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
 import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
+import { inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck } from '../as-source/round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentGenerationConfig, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
@@ -218,7 +221,7 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIChatCompletion
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): OpenAIChatCompletionsPayload => {
+export const buildTargetRequest = async (payload: GeminiGenerateContentPayload, model: string, codec: AssistantTurnSidecarCodec): Promise<OpenAIChatCompletionsPayload> => {
   const request: OpenAIChatCompletionsPayload = {
     model,
     stream: true,
@@ -233,16 +236,26 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
 
   let contentIndex = 0;
   for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
-    if (turn.role === 'assistant') {
-      for (const [index, content] of turn.items.entries()) {
-        if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'assistant', content: '' }); continue; }
-        const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
-        if (message) request.messages.push(message);
+    const roundTrip = turn.role === 'assistant' && await roundTripAssistantTurn('geminiGenerateContent', 'openaiChatCompletions', turn.items, codec, inspectGeminiGenerateContentAssistantTurn, verifyGeminiGenerateContentReplayCheck);
+    if (!roundTrip) {
+      if (turn.role === 'assistant') {
+        for (const [index, content] of turn.items.entries()) {
+          if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'assistant', content: '' }); continue; }
+          const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
+          if (message) request.messages.push(message);
+        }
+      } else for (const [index, content] of turn.items.entries()) {
+        if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+        if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'user', content: '' }); continue; }
+        request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds));
       }
-    } else for (const [index, content] of turn.items.entries()) {
-      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-      if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'user', content: '' }); continue; }
-      request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds));
+    } else {
+      request.messages.push(roundTrip.turn);
+      for (const call of roundTrip.turn.tool_calls ?? []) {
+        const name = call.type === 'function' ? call.function.name : call.custom.name;
+        unmatchedToolCallIds[name] ??= [];
+        unmatchedToolCallIds[name].push(call.id);
+      }
     }
     contentIndex += turn.items.length;
   }

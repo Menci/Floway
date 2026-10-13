@@ -14,7 +14,6 @@ import { routeOpenAIResponses } from '@floway-dev/translate/openai-responses';
 
 const schema = { type: 'object' as const, properties: { x: { type: 'string' } } };
 const formatSchema = { type: 'object', properties: { y: { type: 'string' } } };
-
 const responses: CanonicalOpenAIResponsesPayload = {
   model: 'm',
   input: [
@@ -53,35 +52,37 @@ const gemini: GeminiGenerateContentPayload = {
   tools: [{ functionDeclarations: [{ name: 'f', parameters: schema }] }],
   generationConfig: { responseSchema: formatSchema, stopSequences: ['END'], maxOutputTokens: 16 },
 };
-
 const objectsIn = (value: unknown): Set<object> => {
   const objects = new Set<object>();
   const visit = (current: unknown): void => {
-    if (typeof current !== 'object' || current === null || objects.has(current)) return;
+    if (typeof current !== 'object' || current === null || objects.has(current))
+      return;
     objects.add(current);
-    for (const child of Object.values(current)) visit(child);
+    for (const child of Object.values(current))
+      visit(child);
   };
   visit(value);
   return objects;
 };
-
 const responsesRoute = routeOpenAIResponses(responses);
 const chatRoute = routeOpenAIChatCompletions(chat);
 const anthropicRoute = routeAnthropicMessages(anthropic);
 const geminiRoute = routeGeminiGenerateContent(gemini);
-
-const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
-  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await responsesRoute.viaOpenAIChatCompletions({ model: 'm' })).target },
-  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await responsesRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
-  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await chatRoute.viaOpenAIResponses({ model: 'm' })).target },
-  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await chatRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); } })).target },
-  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await anthropicRoute.viaOpenAIResponses({ model: 'm' })).target },
-  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await anthropicRoute.viaOpenAIChatCompletions({ model: 'm' })).target },
-  { name: 'Gemini to Responses', source: gemini, translate: async () => (await geminiRoute.viaOpenAIResponses({ model: 'm' })).target },
-  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await geminiRoute.viaOpenAIChatCompletions({ model: 'm' })).target },
-  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await geminiRoute.viaAnthropicMessages({ model: 'm', fallbackMaxOutputTokens: 16 })).target },
+const translations: Array<{
+  name: string;
+  source: unknown;
+  translate: () => Promise<unknown>;
+}> = [
+  { name: 'Responses to Chat Completions', source: responses, translate: async () => (await responsesRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (await responsesRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); }, serverSecret: 'test-server-secret' })).target },
+  { name: 'Chat Completions to Responses', source: chat, translate: async () => (await chatRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (await chatRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => { throw new Error('Unexpected remote image'); }, serverSecret: 'test-server-secret' })).target },
+  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (await anthropicRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (await anthropicRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Gemini to Responses', source: gemini, translate: async () => (await geminiRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (await geminiRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' })).target },
+  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (await geminiRoute.viaAnthropicMessages({ model: 'm', fallbackMaxOutputTokens: 16, serverSecret: 'test-server-secret' })).target },
 ];
-
 test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
   const original = structuredClone(source);
   const first = await translate();
@@ -89,27 +90,25 @@ test.each(translations)('$name owns its target payload without retaining source 
   const sourceObjects = objectsIn(source);
   const firstObjects = objectsIn(first);
   const secondObjects = objectsIn(second);
-
   assertEquals(source, original);
-  for (const object of firstObjects) assertEquals(sourceObjects.has(object), false);
+  for (const object of firstObjects)
+    assertEquals(sourceObjects.has(object), false);
   for (const object of secondObjects) {
     assertEquals(sourceObjects.has(object), false);
     assertEquals(firstObjects.has(object), false);
   }
 });
-
 const returnedTrips = [
-  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => responsesRoute.viaOpenAIChatCompletions({ model: 'm' }) },
-  { a: 'openai-responses', b: 'anthropic-messages', trip: () => responsesRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null }) },
-  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => chatRoute.viaOpenAIResponses({ model: 'm' }) },
-  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => chatRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null }) },
-  { a: 'anthropic-messages', b: 'openai-responses', trip: () => anthropicRoute.viaOpenAIResponses({ model: 'm' }) },
-  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => anthropicRoute.viaOpenAIChatCompletions({ model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => geminiRoute.viaOpenAIResponses({ model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => geminiRoute.viaOpenAIChatCompletions({ model: 'm' }) },
-  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => geminiRoute.viaAnthropicMessages({ model: 'm', fallbackMaxOutputTokens: 16 }) },
+  { a: 'openai-responses', b: 'openai-chat-completions', trip: () => responsesRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'openai-responses', b: 'anthropic-messages', trip: () => responsesRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null, serverSecret: 'test-server-secret' }) },
+  { a: 'openai-chat-completions', b: 'openai-responses', trip: () => chatRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'openai-chat-completions', b: 'anthropic-messages', trip: () => chatRoute.viaAnthropicMessages({ model: 'm', loadRemoteImage: async () => null, serverSecret: 'test-server-secret' }) },
+  { a: 'anthropic-messages', b: 'openai-responses', trip: () => anthropicRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'anthropic-messages', b: 'openai-chat-completions', trip: () => anthropicRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'gemini-generate-content', b: 'openai-responses', trip: () => geminiRoute.viaOpenAIResponses({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'gemini-generate-content', b: 'openai-chat-completions', trip: () => geminiRoute.viaOpenAIChatCompletions({ model: 'm', serverSecret: 'test-server-secret' }) },
+  { a: 'gemini-generate-content', b: 'anthropic-messages', trip: () => geminiRoute.viaAnthropicMessages({ model: 'm', fallbackMaxOutputTokens: 16, serverSecret: 'test-server-secret' }) },
 ] as const;
-
 test.each(returnedTrips)('$a via $b returns generated content through its public TranslateTrip', async ({ a, b, trip }) => {
   const translation = await trip();
   const frames = await collect<any>(translation.events(iterate(fixtureFrames(b, { text: ['return path'] }))));
