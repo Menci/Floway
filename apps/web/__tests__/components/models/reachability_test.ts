@@ -19,6 +19,14 @@ describe('model reachability', () => {
     expect(isModelReachable(alias, catalog, ['u2'])).toBe(false);
   });
 
+  it('resolves a same-id alias against the unaliased target catalog', () => {
+    const target = catalogModel('gpt-6-luna', { upstreams: ['upstream-a', 'upstream-b'] });
+    const alias = aliasModel('gpt-6-luna', ['gpt-6-luna']);
+
+    expect(reachableModels([alias], ['upstream-b'], undefined, [target])).toEqual([alias]);
+    expect(reachableModels([alias], ['upstream-c'], undefined, [target])).toEqual([]);
+  });
+
   it('keeps only the catalog entries an alias or an upstream binding can reach', () => {
     const catalog = [
       catalogModel('allowed', { upstreams: ['u1'] }),
