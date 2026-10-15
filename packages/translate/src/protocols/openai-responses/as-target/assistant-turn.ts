@@ -1,4 +1,21 @@
+import type { ThinValue, TextRule } from '../../../round-trip/thin/assistant-turn.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
+
+type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
+  ? { content: TextRule | [{ text: TextRule; refusal: TextRule }] }
+  : T extends { type: 'reasoning' }
+    ? { summary: [{ text: TextRule }]; content: [{ text: TextRule }] }
+    : T extends { type: 'function_call' }
+      ? { arguments: TextRule }
+      : T extends { type: 'custom_tool_call' }
+        ? { input: TextRule }
+        : never;
+
+export type OpenAIResponsesThinItem<T, Reference> = T extends unknown
+  ? OpenAIResponsesItemRule<T> extends never ? T : ThinValue<T, OpenAIResponsesItemRule<T>, Reference>
+  : never;
+
+export type OpenAIResponsesThinAssistantTurn<Reference> = OpenAIResponsesThinItem<CanonicalOpenAIResponsesInputItem, Reference>[];
 
 const stripCreatedBy = (item: OpenAIResponsesOutputItemEx): OpenAIResponsesOutputItemEx => {
   if (!('created_by' in item)) return item;

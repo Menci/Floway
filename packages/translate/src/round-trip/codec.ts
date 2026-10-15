@@ -1,7 +1,8 @@
 import { decode as decodeCBOR, Encoder, Tag } from 'cbor-x';
 
-import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
+import type { AssistantTurnByProtocol } from './assistant-turn.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import type { ThinAssistantTurnFor, ThinReference } from './thin/assistant-turn.ts';
 import { rawJSON } from '../shared/json/raw-json.ts';
 import { decodeCanonicalBase64, decodeCanonicalBase64url, decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
@@ -10,7 +11,8 @@ export type RoundTripProtocol = keyof AssistantTurnByProtocol;
 export type RoundTripSidecar<Target extends RoundTripProtocol> = {
   source: RoundTripProtocol;
   target: Target;
-  assistantTurn: AssistantTurnFor<Target>;
+  assistantTurn: ThinAssistantTurnFor<Target, ThinReference>;
+  referencedContents?: Uint8Array[];
   replayCheck: RoundTripReplayCheck;
 };
 
@@ -19,7 +21,8 @@ export type RoundTripSidecarEnvelope = RoundTripSidecarByTarget[RoundTripProtoco
 export type RoundTripSidecarForTarget<Target extends RoundTripProtocol> = RoundTripSidecarByTarget[Target];
 export type RoundTripSidecarPayload<Target extends RoundTripProtocol = RoundTripProtocol> = {
   target: Target;
-  assistantTurn: AssistantTurnFor<Target>;
+  assistantTurn: ThinAssistantTurnFor<Target, ThinReference>;
+  referencedContents?: Uint8Array[];
   replayCheck: RoundTripReplayCheck;
 };
 
@@ -101,6 +104,10 @@ function assertSidecarEnvelope(value: Record<string, unknown>): asserts value is
   if (!isRoundTripProtocol(value.source)) throw new TypeError('Assistant-turn sidecar source is invalid');
   if (!isRoundTripProtocol(value.target)) throw new TypeError('Assistant-turn sidecar target is invalid');
   assertAssistantTurn(value.target, value.assistantTurn);
+  if (value.referencedContents !== undefined
+    && (!Array.isArray(value.referencedContents) || value.referencedContents.some(hash => !(hash instanceof Uint8Array)))) {
+    throw new TypeError('Assistant-turn sidecar referenced contents are invalid');
+  }
   if (!isRecord(value.replayCheck) || !Number.isInteger(value.replayCheck.version) || !(value.replayCheck.digest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar replay check is invalid');
 }
 

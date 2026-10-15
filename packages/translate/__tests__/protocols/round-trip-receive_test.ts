@@ -1,9 +1,11 @@
+import { Tag } from 'cbor-x';
 import { expect, test } from 'vitest';
 
 import type { IRJSONObject, IRJSONValue } from '../../src/ir/types.ts';
 import type { AssistantTurnFor } from '../../src/round-trip/assistant-turn.ts';
 import type { RoundTripProtocol } from '../../src/round-trip/codec.ts';
 import { hashRoundTripContent, replayMaterialsByType } from '../../src/round-trip/replay-check.ts';
+import { THIN_TAGS, type JSONReference, type TextReference, type ThinAssistantTurnFor, type ThinReference } from '../../src/round-trip/thin/assistant-turn.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
@@ -39,11 +41,11 @@ const replayCheck = async (source: RoundTripProtocol) => {
 };
 
 type NativeProtocol = 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses';
-const nativeTurn = (target: NativeProtocol): AssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
-  ? { role: 'assistant', content: 'restored' }
+const nativeTurn = (target: NativeProtocol, text = 'restored'): AssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
+  ? { role: 'assistant', content: text }
   : target === 'anthropicMessages'
-    ? { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] }
-    : [{ type: 'message', role: 'assistant', content: 'restored' }];
+    ? { role: 'assistant', content: [{ type: 'text', text, citations: [] }] }
+    : [{ type: 'message', role: 'assistant', content: text }];
 
 const cases = [
   { source: 'openaiChatCompletions', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIChatCompletions(chat(carrier)).viaAnthropicMessages(context) },
@@ -64,6 +66,45 @@ test.each(cases)('receives authenticated $source history via $target', async ({ 
   expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
 });
 
+test.each(cases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
+  const reference = new Tag([[0, 0, 3]], THIN_TAGS.text) as TextReference;
+  const assistantTurn: ThinAssistantTurnFor<NativeProtocol, ThinReference> = target === 'openaiChatCompletions'
+    ? { role: 'assistant', content: reference }
+    : target === 'anthropicMessages'
+      ? { role: 'assistant', content: [{ type: 'text', text: reference, citations: [] }] }
+      : [{ type: 'message', role: 'assistant', content: reference }];
+  const carrier = await createTestSidecarCodec().encode(source, {
+    target, assistantTurn, referencedContents: [await hashRoundTripContent('answer')], replayCheck: await replayCheck(source),
+  });
+  const trip = await run(carrier);
+  const native = nativeTurn(target, 'ans');
+  expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
+});
+
+test('hydrates a native JSON field from a replayed GenerateContent argument candidate', async () => {
+  const args = { x: 1 };
+  const reference = new Tag([0], THIN_TAGS.json) as JSONReference;
+  const assistantTurn: ThinAssistantTurnFor<'anthropicMessages', ThinReference> = { role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: reference }] };
+  const checkMaterial = { text: [], inlineData: [], functionCall: [{ name: 'lookup', args }] };
+  const carrier = await createTestSidecarCodec().encode('geminiGenerateContent', {
+    target: 'anthropicMessages', assistantTurn,
+    referencedContents: [await hashRoundTripContent(JSON.stringify(args))],
+    replayCheck: { version: 1, digest: await hashRoundTripContent(JSON.stringify(checkMaterial)) },
+  });
+  const trip = await routeGeminiGenerateContent({ contents: [{ role: 'model', parts: [{ functionCall: { name: 'lookup', args }, thoughtSignature: carrier }] }] }).viaAnthropicMessages(context);
+  expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'tool_use', id: 'native-call', name: 'native-tool', input: args }] }]);
+});
+
+test('exposes an authenticated missing reference as an internal error after replay verification', async () => {
+  const carrier = await createTestSidecarCodec().encode('openaiChatCompletions', {
+    target: 'anthropicMessages',
+    assistantTurn: { role: 'assistant', content: [{ type: 'text', text: new Tag([0], THIN_TAGS.text) as TextReference, citations: [] }] },
+    referencedContents: [await hashRoundTripContent('missing')],
+    replayCheck: await replayCheck('openaiChatCompletions'),
+  });
+  await expect(cases[0].run(carrier)).rejects.toThrow('Authenticated assistant-turn sidecar hydration failed: missing-reference');
+});
+
 test.each(['wrong secret', 'tampered signature', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {
   const codec = createTestSidecarCodec(failure === 'wrong secret' ? 'other-secret' : context.serverSecret);
   const native: AssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
@@ -72,6 +113,37 @@ test.each(['wrong secret', 'tampered signature', 'changed replay'] as const)('us
   const text = failure === 'changed replay' ? 'edited' : 'answer';
   const trip = await routeOpenAIChatCompletions(chat(carrier, text)).viaAnthropicMessages(context);
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]);
+});
+
+test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordinary Messages tool input $input', async ({ input }) => {
+  const payload: AnthropicMessagesPayload = {
+    model: 'source', max_tokens: 16,
+    messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }] }],
+  };
+  const chatTrip = await routeAnthropicMessages(payload).viaOpenAIChatCompletions(context);
+  expect(chatTrip.target.messages).toMatchObject([
+    { role: 'assistant', tool_calls: [{ id: 'call', function: { name: 'echo', arguments: JSON.stringify(input) } }] },
+  ]);
+  const responsesTrip = await routeAnthropicMessages(payload).viaOpenAIResponses(context);
+  expect(responsesTrip.target.input).toMatchObject([
+    { type: 'function_call', call_id: 'call', name: 'echo', arguments: JSON.stringify(input) },
+  ]);
+});
+
+test('preserves ordinary GenerateContent null-argument handling', async () => {
+  const payload: GeminiGenerateContentPayload = JSON.parse('{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":null}}]}]}');
+  const chatTrip = await routeGeminiGenerateContent(payload).viaOpenAIChatCompletions(context);
+  expect(chatTrip.target.messages).toMatchObject([
+    { role: 'assistant', tool_calls: [{ function: { name: 'lookup', arguments: 'null' } }] },
+  ]);
+  const responsesTrip = await routeGeminiGenerateContent(payload).viaOpenAIResponses(context);
+  expect(responsesTrip.target.input).toMatchObject([
+    { type: 'function_call', name: 'lookup', arguments: 'null' },
+  ]);
+  const messagesTrip = await routeGeminiGenerateContent(payload).viaAnthropicMessages(context);
+  expect(messagesTrip.target.messages).toMatchObject([
+    { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
+  ]);
 });
 
 test('exposes an authenticated malformed assistant envelope as an internal error', async () => {

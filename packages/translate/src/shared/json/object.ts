@@ -7,7 +7,7 @@ const parseJSON = (text: string): unknown => JSON.parse(text, (_key: string, val
   return value;
 });
 
-const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
+export const isPlainJSONObject = (value: unknown): value is IRJSONObject => isJsonObject(value) && !rawJSON.isRawJSON(value);
 
 export const requireJSONObject = (value: unknown): IRJSONObject => {
   if (!isPlainJSONObject(value)) throw new TypeError('Expected a JSON object');

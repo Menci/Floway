@@ -1,10 +1,13 @@
 import type { AssistantTurnByProtocol, AssistantTurnFor } from './assistant-turn.ts';
 import { hasRoundTripTarget, type AssistantTurnSidecarCodec } from './codec.ts';
 import type { RoundTripReplayCheck } from './replay-check.ts';
+import type { ReplayCandidate } from './thin/assistant-turn.ts';
+import { hydrateAssistantTurn } from './thin/hydrate.ts';
 
 export interface RoundTripAssistantTurnInspection<Turn> {
   sidecars: string[];
   turn: Turn;
+  candidates: ReplayCandidate[];
 }
 
 export interface RoundTripAssistantTurn<Target extends keyof AssistantTurnByProtocol> {
@@ -32,5 +35,12 @@ export const roundTripAssistantTurn = async <Source extends keyof AssistantTurnB
 
   if (!hasRoundTripTarget(decoded, target) || !(await verify(inspection.turn, decoded.replayCheck))) return undefined;
 
-  return { turn: decoded.assistantTurn };
+  const hydrated = await hydrateAssistantTurn(
+    target,
+    inspection.candidates,
+    decoded.assistantTurn,
+    decoded.referencedContents,
+  );
+  if (!hydrated.ok) throw new Error(`Authenticated assistant-turn sidecar hydration failed: ${hydrated.reason}`);
+  return { turn: hydrated.turn };
 };

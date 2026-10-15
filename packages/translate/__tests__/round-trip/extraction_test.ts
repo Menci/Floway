@@ -12,7 +12,7 @@ test('Chat extraction preserves ordinary reasoning details', () => {
   };
   const before = structuredClone(turn);
   expect(inspectOpenAIChatCompletionsAssistantTurn(turn)).toEqual({
-    sidecars: ['opaque'], turn: { ...turn, reasoning_details: [{ type: 'reasoning.summary', summary: 'summary' }] },
+    sidecars: ['opaque'], turn: { ...turn, reasoning_details: [{ type: 'reasoning.summary', summary: 'summary' }] }, candidates: ['answer', 'thought', 'summary'],
   });
   expect(turn).toEqual(before);
 });
@@ -26,7 +26,7 @@ test('Messages extraction preserves ordinary thinking', () => {
   }];
   const before = structuredClone(turn);
   expect(inspectAnthropicMessagesAssistantTurn(turn)).toEqual({
-    sidecars: ['opaque'], turn: [{
+    sidecars: ['opaque'], candidates: ['answer', 'thought'], turn: [{
       role: 'assistant', content: [
         { type: 'text', text: 'answer' }, { type: 'thinking', thinking: 'thought', signature: 'native' },
       ],
@@ -42,7 +42,7 @@ test('Responses extraction preserves readable reasoning and status while removin
   ];
   const before = structuredClone(turn);
   expect(inspectOpenAIResponsesAssistantTurn(turn)).toEqual({
-    sidecars: ['attached', 'standalone'], turn: [
+    sidecars: ['attached', 'standalone'], candidates: ['summary', 'thought'], turn: [
       { type: 'reasoning', id: 'native', status: 'incomplete', summary: [{ type: 'summary_text', text: 'summary' }], content: [{ type: 'reasoning_text', text: 'thought' }] },
     ],
   });
@@ -60,6 +60,7 @@ test('GenerateContent extraction preserves attached text and tool data', () => {
   const before = structuredClone(turn);
   expect(inspectGeminiGenerateContentAssistantTurn(turn)).toEqual({
     sidecars: ['on-text', 'on-call', 'standalone-part', 'standalone-content'],
+    candidates: ['answer', {}],
     turn: [{ role: 'model', parts: [{ text: 'answer' }, { functionCall: { name: 'lookup', args: {} } }] }],
   });
   expect(turn).toEqual(before);

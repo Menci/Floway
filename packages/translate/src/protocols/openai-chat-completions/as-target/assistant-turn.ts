@@ -1,4 +1,17 @@
+import type { ThinValue, TextRule } from '../../../round-trip/thin/assistant-turn.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantOutputMessageEx } from '@floway-dev/protocols/openai-chat-completions';
+
+type OpenAIChatCompletionsAssistantRule = {
+  content: TextRule | [{ text: TextRule; refusal: TextRule }];
+  refusal: TextRule;
+  reasoning: TextRule;
+  reasoning_text: TextRule;
+  reasoning_content: TextRule;
+  function_call: { arguments: TextRule };
+  tool_calls: [{ function: { arguments: TextRule }; custom: { input: TextRule } }];
+};
+
+export type OpenAIChatCompletionsThinAssistantTurn<Reference> = ThinValue<OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantRule, Reference>;
 
 export type OpenAIChatCompletionsInputAssistantTurn = OpenAIChatCompletionsAssistantMessageEx;
 export type OpenAIChatCompletionsOutputAssistantTurn = OpenAIChatCompletionsAssistantOutputMessageEx;

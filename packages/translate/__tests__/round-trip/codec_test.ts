@@ -93,9 +93,12 @@ describe('assistant turn sidecar codec', () => {
     expect(encodedPayload).toEqual(expectedPayload);
     expect(signature).toEqual(await hmac(expectedPayload, secret));
     expect(carrier).toBe(encodeBase64(combined));
-    expect(await codec.decode(source, carrier)).toEqual({ ...sidecar, source });
     const independentlySigned = new Uint8Array([...await hmac(expectedPayload, secret), ...expectedPayload]);
     expect(await codec.decode(source, encodeBase64(independentlySigned))).toEqual({ ...sidecar, source });
+    const decoded = await codec.decode(source, carrier);
+    expect(decoded).toEqual({ ...sidecar, source });
+    if (decoded === undefined) throw new Error('Expected an authenticated sidecar');
+    expect(Object.hasOwn(decoded, 'referencedContents')).toBe(false);
   });
 
   test('restores branded raw numeric tokens without reinterpreting ordinary objects', async () => {

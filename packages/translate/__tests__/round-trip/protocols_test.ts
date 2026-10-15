@@ -90,7 +90,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = { ...ordinary, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarCarrier('opaque')] };
     const before = structuredClone(turn);
     const inspection = inspectOpenAIChatCompletionsAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary, candidates: ['answer', 'thought', 'summary'] });
     expect(turn).toEqual(before);
     const check = await computeOpenAIChatCompletionsReplayCheck(ordinary);
     expect(await verifyOpenAIChatCompletionsReplayCheck(inspection.turn, check)).toBe(true);
@@ -105,7 +105,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarCarrier('opaque')] }];
     const before = structuredClone(turn);
     const inspection = inspectAnthropicMessagesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary, candidates: ['answer', 'thought'] });
     expect(turn).toEqual(before);
     const check = await computeAnthropicMessagesReplayCheck(ordinary);
     expect(await verifyAnthropicMessagesReplayCheck(inspection.turn, check)).toBe(true);
@@ -123,7 +123,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = [...ordinary, carrier];
     const before = structuredClone(turn);
     const inspection = inspectOpenAIResponsesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary });
+    expect(inspection).toEqual({ sidecars: ['opaque'], turn: ordinary, candidates: ['answer', 'summary', 'thought'] });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesReplayCheck(ordinary);
     expect(await verifyOpenAIResponsesReplayCheck(inspection.turn, check)).toBe(true);
@@ -140,7 +140,7 @@ describe('assistant-turn sidecar protocols', () => {
     const turn = [attached];
     const before = structuredClone(turn);
     const inspection = inspectOpenAIResponsesAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['opaque'], turn: [reasoning] });
+    expect(inspection).toEqual({ sidecars: ['opaque'], turn: [reasoning], candidates: ['summary', 'thought'] });
     expect(turn).toEqual(before);
     const check = await computeOpenAIResponsesReplayCheck([reasoning]);
     expect(await verifyOpenAIResponsesReplayCheck(inspection.turn, check)).toBe(true);
@@ -159,7 +159,7 @@ describe('assistant-turn sidecar protocols', () => {
     ];
     const before = structuredClone(turn);
     const inspection = inspectGeminiGenerateContentAssistantTurn(turn);
-    expect(inspection).toEqual({ sidecars: ['on-text', 'on-call', 'standalone-part', 'standalone-content'], turn: ordinary });
+    expect(inspection).toEqual({ sidecars: ['on-text', 'on-call', 'standalone-part', 'standalone-content'], turn: ordinary, candidates: ['answer', { q: 'a' }] });
     expect(turn).toEqual(before);
     const check = await computeGeminiGenerateContentReplayCheck(ordinary);
     expect(await verifyGeminiGenerateContentReplayCheck(inspection.turn, check)).toBe(true);
