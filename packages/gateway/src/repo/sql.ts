@@ -487,6 +487,11 @@ class SqlGroupsRepo implements GroupsRepo {
     }
   }
 
+  async deleteMembershipsByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId).run();
+    return result.meta.changes ?? 0;
+  }
+
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM group_members').run();
     await this.db.prepare('DELETE FROM groups').run();
@@ -521,9 +526,24 @@ const parseAccessRecord = (row: AccessRecordRow): AccessRecord => {
 class SqlAccessRecordsRepo implements AccessRecordsRepo {
   constructor(private db: SqlDatabase) {}
 
+  private async assertOrderAvailable(input: AccessRecordInput, excludingId?: number): Promise<void> {
+    const existing = await this.listByPrincipal(input.principal);
+    const duplicateOrder = existing.find(record =>
+      record.id !== excludingId
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+  }
+
   async list(): Promise<AccessRecord[]> {
     const { results } = await this.db.prepare(`SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records ORDER BY principal_type, principal_id, sort_order, id`).all<AccessRecordRow>();
     return results.map(parseAccessRecord);
+  }
+
+  async getById(id: number): Promise<AccessRecord | null> {
+    const row = await this.db.prepare(`SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records WHERE id = ?`).bind(id).first<AccessRecordRow>();
+    return row ? parseAccessRecord(row) : null;
   }
 
   listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
@@ -546,15 +566,8 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
 
   async save(input: AccessRecordInput): Promise<AccessRecord> {
     validateAccessRecordInput(input);
-    const existing = await this.listByPrincipal(input.principal);
-    const duplicateOrder = existing.find(record =>
-      JSON.stringify(record.scope) !== JSON.stringify(input.scope)
-      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
-      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
-      && record.sortOrder === input.sortOrder);
-    if (duplicateOrder) {
-      throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
-    }
+    const current = (await this.listByPrincipal(input.principal)).find(record => JSON.stringify(record.scope) === JSON.stringify(input.scope));
+    await this.assertOrderAvailable(input, current?.id);
     const now = new Date().toISOString();
     const scopeJson = JSON.stringify(input.scope);
     const row = await this.db.prepare(
@@ -569,6 +582,27 @@ class SqlAccessRecordsRepo implements AccessRecordsRepo {
       .first<AccessRecordRow>();
     if (!row) throw new Error('accessRecords.save: write returned no rows');
     return parseAccessRecord(row);
+  }
+
+  async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
+    validateAccessRecordInput(input);
+    if (await this.getById(id) === null) return null;
+    await this.assertOrderAvailable(input, id);
+    const row = await this.db.prepare(
+      `UPDATE access_records SET
+         principal_type = ?, principal_id = ?, scope_json = ?, sort_order = ?, values_json = ?, updated_at = ?
+       WHERE id = ?
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(
+      input.principal.kind,
+      input.principal.id,
+      JSON.stringify(input.scope),
+      input.sortOrder,
+      JSON.stringify(input.values),
+      new Date().toISOString(),
+      id,
+    ).first<AccessRecordRow>();
+    return row ? parseAccessRecord(row) : null;
   }
 
   async delete(id: number): Promise<boolean> {

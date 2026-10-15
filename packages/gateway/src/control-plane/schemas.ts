@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 
+import { accessRecordInputSchema, accessTargetSchema } from '../access-control/schemas.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
@@ -257,6 +258,26 @@ export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
+});
+
+const groupMemberIdsSchema = z.array(z.number().int().positive())
+  .refine(ids => new Set(ids).size === ids.length, { message: 'memberIds contains duplicates' });
+
+export const createGroupBody = z.object({
+  name: z.string().min(1).max(64),
+  memberIds: groupMemberIdsSchema.optional(),
+});
+
+export const updateGroupBody = z.object({
+  name: z.string().min(1).max(64).optional(),
+  memberIds: groupMemberIdsSchema.optional(),
+}).refine(body => body.name !== undefined || body.memberIds !== undefined, { message: 'Provide a name or memberIds to update.' });
+
+export const accessRecordBody = accessRecordInputSchema;
+
+export const resolveAccessBody = z.object({
+  userId: z.number().int().positive(),
+  target: accessTargetSchema,
 });
 
 export const changeOwnPasswordBody = z.object({

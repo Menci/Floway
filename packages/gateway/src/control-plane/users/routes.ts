@@ -16,8 +16,18 @@ const parseUserId = (raw: string): number | null => {
 };
 
 export const listUsers = async (c: AuthedContext) => {
-  const users = await getRepo().users.list();
-  return c.json(users.map(userToAdminWire));
+  const repo = getRepo();
+  const users = await repo.users.list();
+  const [records, groupIdsByUser] = await Promise.all([
+    repo.accessRecords.listByPrincipals(users.map(user => ({ kind: 'user' as const, id: user.id }))),
+    repo.groups.listIdsByUserIds(users.map(user => user.id)),
+  ]);
+  const recordCounts = Map.groupBy(records, record => record.principal.id);
+  return c.json(users.map(user => ({
+    ...userToAdminWire(user),
+    groupIds: groupIdsByUser.get(user.id) ?? [],
+    accessRecordCount: recordCounts.get(user.id)?.length ?? 0,
+  })));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -118,6 +128,7 @@ export const deleteUser = async (c: AuthedContext) => {
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  await repo.groups.deleteMembershipsByUserId(id);
   await repo.accessRecords.deleteByPrincipal({ kind: 'user', id });
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);

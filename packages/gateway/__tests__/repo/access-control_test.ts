@@ -42,6 +42,28 @@ describe.each(backends)('access-control repos (%s)', (_label, makeRepo) => {
     expect((await repo.accessRecords.listByPrincipal(principal)).map(record => record.values)).toEqual([{ 'Model.Use': false }]);
   });
 
+  test('access records can replace principal and scope by id', async () => {
+    const repo = await makeRepo();
+    const record = await repo.accessRecords.save({
+      principal: { kind: 'user', id: 2 },
+      scope: { kind: 'upstream', upstreamId: 'up_a' },
+      sortOrder: 0,
+      values: { 'Model.Use': true },
+    });
+    const replaced = await repo.accessRecords.replace(record.id, {
+      principal: { kind: 'group', id: 3 },
+      scope: { kind: 'user', userId: 4 },
+      sortOrder: 0,
+      values: { 'User.Audit': true },
+    });
+    expect(replaced).toMatchObject({
+      id: record.id,
+      principal: { kind: 'group', id: 3 },
+      scope: { kind: 'user', userId: 4 },
+      values: { 'User.Audit': true },
+    });
+  });
+
   test('duplicate sort orders at the same hierarchy level are rejected', async () => {
     const repo = await makeRepo();
     const principal = { kind: 'user' as const, id: 2 };

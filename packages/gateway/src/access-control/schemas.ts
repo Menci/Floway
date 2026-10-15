@@ -43,6 +43,19 @@ export const accessRecordInputSchema = z.object({
   }
 });
 
+export const accessTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('upstream'), upstreamId: z.string().min(1) }),
+  z.object({ kind: z.literal('upstreamModel'), upstreamId: z.string().min(1), modelId: z.string().min(1) }),
+  z.object({ kind: z.literal('user'), userId: positiveInteger }),
+]);
+
+export const accessRequirementSchema = z.discriminatedUnion('permission', [
+  z.object({ permission: z.literal('Model.Use') }),
+  z.object({ permission: z.literal('Upstream.Audit') }),
+  z.object({ permission: z.literal('User.Audit') }),
+  z.object({ permission: z.literal('Upstream.Edit'), level: z.enum(['models', 'full']) }),
+]);
+
 export const groupTransferSchema = z.object({
   id: positiveInteger,
   name: z.string().min(1).max(64),

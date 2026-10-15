@@ -1,6 +1,5 @@
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
-import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import {
   accessScopeDepth,
   accessScopeOrderGroup,
@@ -10,6 +9,7 @@ import {
   type Group,
   validateAccessRecordInput,
 } from '../../src/access-control/types.ts';
+import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
@@ -232,6 +232,14 @@ class MemoryGroupsRepo implements GroupsRepo {
     return Promise.resolve();
   }
 
+  deleteMembershipsByUserId(userId: number): Promise<number> {
+    let changes = 0;
+    for (const members of this.members.values()) {
+      if (members.delete(userId)) changes++;
+    }
+    return Promise.resolve(changes);
+  }
+
   deleteAll(): Promise<void> {
     this.groups = [];
     this.members.clear();
@@ -247,6 +255,11 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
 
   list(): Promise<AccessRecord[]> {
     return Promise.resolve(this.records.map(record => structuredClone(record)));
+  }
+
+  getById(id: number): Promise<AccessRecord | null> {
+    const record = this.records.find(candidate => candidate.id === id);
+    return Promise.resolve(record ? structuredClone(record) : null);
   }
 
   listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
@@ -278,6 +291,27 @@ class MemoryAccessRecordsRepo implements AccessRecordsRepo {
     if (index < 0) this.records.push(record);
     else this.records[index] = record;
     return structuredClone(record);
+  }
+
+  async replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null> {
+    validateAccessRecordInput(input);
+    const index = this.records.findIndex(record => record.id === id);
+    if (index < 0) return null;
+    const duplicateScope = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && JSON.stringify(record.scope) === JSON.stringify(input.scope));
+    if (duplicateScope) throw new Error('Access record already exists for this principal and scope');
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    const next = { ...this.records[index], ...structuredClone(input), updatedAt: new Date().toISOString() };
+    this.records[index] = next;
+    return structuredClone(next);
   }
 
   delete(id: number): Promise<boolean> {

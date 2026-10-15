@@ -291,14 +291,17 @@ export interface GroupsRepo {
   listIdsByUserId(userId: number): Promise<number[]>;
   listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>>;
   replaceMembers(groupId: number, userIds: readonly number[]): Promise<void>;
+  deleteMembershipsByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
 export interface AccessRecordsRepo {
   list(): Promise<AccessRecord[]>;
+  getById(id: number): Promise<AccessRecord | null>;
   listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]>;
   listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]>;
   save(input: AccessRecordInput): Promise<AccessRecord>;
+  replace(id: number, input: AccessRecordInput): Promise<AccessRecord | null>;
   delete(id: number): Promise<boolean>;
   deleteByPrincipal(principal: AccessPrincipal): Promise<number>;
   deleteAll(): Promise<void>;
