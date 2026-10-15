@@ -18,7 +18,7 @@
 import type { Hono } from 'hono';
 import { z } from 'zod';
 
-import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -96,6 +96,7 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   if (webSearchConfig.passthroughOpenAiSearch.enabled) {
     const dispatcher = await resolveAlphaSearchDispatcher({
       config: webSearchConfig.passthroughOpenAiSearch,
+      subject: userFromContext(c),
       upstreamIds: effectiveUpstreamIdsFromContext(c),
       scheduler: backgroundSchedulerFromContext(c),
       runtimeLocation: getRuntimeLocation(c.req.raw),

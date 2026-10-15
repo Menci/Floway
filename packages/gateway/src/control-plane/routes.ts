@@ -59,9 +59,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
   // Minimal upstream picker exposed to non-admin users so they can scope a key
   // to specific upstreams. Returns id/name/provider/enabled only — no config,
-  // no flag overrides, no model lists. Server-side validation (api-keys'
-  // `upstream_ids ⊆ user.upstreamIds` check) is the real authorization gate;
-  // this endpoint just feeds the picker UI.
+  // no flag overrides, no model lists. Model.Use remains the authorization
+  // gate at catalog and dispatch time; this endpoint only feeds picker labels.
   .get('/api/upstream-options', listUpstreamOptions)
   .route('/api/dump', dumpRoutes)
   // Per-user Agent Setup lease control routes (POST / PUT / heartbeat). Not

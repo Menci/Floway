@@ -750,6 +750,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     let dispatcher: ReturnType<typeof resolveAlphaSearchDispatcher> | undefined;
     const getDispatcher = () => dispatcher ??= resolveAlphaSearchDispatcher({
       config: webSearchConfig.passthroughOpenAiSearch,
+      subject: gatewayCtx.user,
       upstreamIds: gatewayCtx.upstreamIds,
       scheduler: gatewayCtx.backgroundScheduler,
       runtimeLocation: gatewayCtx.runtimeLocation,

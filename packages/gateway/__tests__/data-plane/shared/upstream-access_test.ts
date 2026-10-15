@@ -7,19 +7,19 @@ import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseOpenAIChatCompl
 import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
-const cases: Array<{ name: string; userCap: string[] | null; keyCap: string[] | null; models: string[] }> = [
-  { name: 'unrestricted user and key', userCap: null, keyCap: null, models: ['model_a', 'model_b'] },
-  { name: 'empty key restriction', userCap: null, keyCap: [], models: [] },
-  { name: 'empty key under a restricted user', userCap: ['up_a'], keyCap: [], models: [] },
-  { name: 'empty user restriction with an inheriting key', userCap: [], keyCap: null, models: [] },
-  { name: 'empty user and key restrictions', userCap: [], keyCap: [], models: [] },
-  { name: 'user restriction narrowed to empty after a key grant', userCap: [], keyCap: ['up_a'], models: [] },
-  { name: 'restricted user with an inheriting key', userCap: ['up_a'], keyCap: null, models: ['model_a'] },
-  { name: 'disjoint user and key restrictions', userCap: ['up_b'], keyCap: ['up_a'], models: [] },
+const cases: Array<{ name: string; access: 'all' | 'none' | 'up_a' | 'up_b'; keyCap: string[] | null; models: string[] }> = [
+  { name: 'all Model.Use grants and an inheriting key', access: 'all', keyCap: null, models: ['model_a', 'model_b'] },
+  { name: 'an empty key restriction', access: 'all', keyCap: [], models: [] },
+  { name: 'an empty key under a single-upstream grant', access: 'up_a', keyCap: [], models: [] },
+  { name: 'no Model.Use grants with an inheriting key', access: 'none', keyCap: null, models: [] },
+  { name: 'no Model.Use grants and an empty key', access: 'none', keyCap: [], models: [] },
+  { name: 'a key cannot add an upstream absent from Model.Use', access: 'none', keyCap: ['up_a'], models: [] },
+  { name: 'a single-upstream grant with an inheriting key', access: 'up_a', keyCap: null, models: ['model_a'] },
+  { name: 'disjoint Model.Use and key restrictions', access: 'up_b', keyCap: ['up_a'], models: [] },
 ];
 
-test.each(cases)('$name controls model visibility and upstream dispatch', async ({ userCap, keyCap, models }) => {
-  const { repo, apiKey, adminSession } = await setupAppTest();
+test.each(cases)('$name controls model visibility and upstream dispatch', async ({ access, keyCap, models }) => {
+  const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   for (const suffix of ['a', 'b']) {
     const upstream = buildCustomUpstreamRecord({
@@ -51,12 +51,17 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
     body: JSON.stringify({ upstream_ids: keyCap }),
   });
   assertEquals(keyUpdate.status, 200);
-  const userUpdate = await requestApp(`/api/users/${apiKey.userId}`, {
-    method: 'PATCH',
-    headers: { 'x-floway-session': adminSession, 'content-type': 'application/json' },
-    body: JSON.stringify({ upstreamIds: userCap }),
-  });
-  assertEquals(userUpdate.status, 200);
+  if (access !== 'all') {
+    await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
+    if (access !== 'none') {
+      await repo.accessRecords.save({
+        principal: { kind: 'user', id: apiKey.userId },
+        scope: { kind: 'upstream', upstreamId: access },
+        sortOrder: 0,
+        values: { 'Model.Use': true },
+      });
+    }
+  }
 
   const dispatchedModels: string[] = [];
   await withMockedFetch(async request => {
@@ -70,22 +75,15 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       choices: [{ message: { refusal: null, role: 'assistant', content: 'Available' }, finish_reason: 'stop' }],
     });
   }, async () => {
-    const listingStatus = models.length > 0 ? 200 : 502;
     const listed = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(listed.status, listingStatus);
+    assertEquals(listed.status, 200);
     const catalog = await listed.json();
 
     const geminiListed = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(geminiListed.status, listingStatus);
+    assertEquals(geminiListed.status, 200);
     const geminiCatalog = await geminiListed.json();
-    if (models.length > 0) {
-      assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);
-      assertEquals(geminiCatalog.models.map((model: { baseModelId: string }) => model.baseModelId).sort(), models);
-    } else {
-      const message = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
-      assertEquals(catalog, { error: { message, type: 'api_error' } });
-      assertEquals(geminiCatalog, { error: { code: 502, message, status: 'UNAVAILABLE' } });
-    }
+    assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);
+    assertEquals(geminiCatalog.models.map((model: { baseModelId: string }) => model.baseModelId).sort(), models);
 
     for (const model of ['model_a', 'model_b']) {
       const response = await requestApp('/v1/chat/completions', {

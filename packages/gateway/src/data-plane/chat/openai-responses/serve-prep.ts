@@ -84,6 +84,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   const store = ctx.store;
   const prepared = await expandPreviousResponseId(payload, store);
   const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    subject: ctx.user,
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
     kind: 'chat',

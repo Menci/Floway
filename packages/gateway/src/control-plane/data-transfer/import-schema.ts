@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { accessRecordInputSchema, groupTransferSchema } from '../../access-control/schemas.ts';
+import type { AccessRecordInput, Group } from '../../access-control/types.ts';
 import { parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
@@ -33,6 +35,8 @@ export interface SerializedProxy {
 
 export interface ParsedImportData {
   users: User[];
+  groups: Array<Group & { memberIds: number[] }>;
+  accessRecords: AccessRecordInput[];
   apiKeys: ApiKey[];
   upstreams: UpstreamRecord[];
   proxies: SerializedProxy[];
@@ -246,12 +250,6 @@ const userSchema = z.object({
     z.null(),
   ], { error: `passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$` }),
   isAdmin: z.boolean({ error: 'isAdmin must be a boolean' }),
-  upstreamIds: parsedBy(value => {
-    if (value === undefined) throw new Error('upstreamIds must be present (null or array)');
-    const result = parseUpstreamIdsValue(value);
-    if (!result.ok) throw new Error(result.error);
-    return result.value;
-  }),
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
 });
@@ -491,6 +489,38 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
   }
   const userIds = new Set(users.records.map(user => user.id));
+  const groups = parseCollection('groups', groupTransferSchema, value.groups, {
+    arrayError: 'groups must be an array',
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const id = parseValue(positiveIntegerSchema('id'), wire.id);
+        return prior.some(candidate => candidate.id === id) ? `duplicate group id ${id}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (groups.type === 'invalid') return groups;
+  for (let groupIndex = 0; groupIndex < groups.records.length; groupIndex++) {
+    for (const userId of groups.records[groupIndex].memberIds) {
+      if (!userIds.has(userId)) {
+        return { type: 'invalid', error: `invalid groups at index ${groupIndex}: member user ${userId} does not match any user in the payload` };
+      }
+    }
+  }
+  const groupIds = new Set(groups.records.map(group => group.id));
+  const accessRecords = parseCollection('accessRecords', accessRecordInputSchema, value.accessRecords, {
+    arrayError: 'accessRecords must be an array',
+  });
+  if (accessRecords.type === 'invalid') return accessRecords;
+  for (let index = 0; index < accessRecords.records.length; index++) {
+    const principal = accessRecords.records[index].principal;
+    const exists = principal.kind === 'user' ? userIds.has(principal.id) : groupIds.has(principal.id);
+    if (!exists) {
+      return { type: 'invalid', error: `invalid accessRecords at index ${index}: principal ${principal.kind} ${principal.id} does not match the payload` };
+    }
+  }
   for (let index = 0; index < apiKeys.records.length; index++) {
     if (!userIds.has(apiKeys.records[index].userId)) {
       return { type: 'invalid', error: `invalid apiKeys at index ${index}: user_id ${apiKeys.records[index].userId} does not match any user in the payload` };
@@ -551,6 +581,8 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     type: 'ok',
     data: {
       users: users.records,
+      groups: groups.records,
+      accessRecords: accessRecords.records,
       apiKeys: apiKeys.records,
       upstreams: upstreams.records,
       proxies: proxies.records,

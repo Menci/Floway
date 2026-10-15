@@ -1,6 +1,15 @@
 import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
+import {
+  accessScopeDepth,
+  accessScopeOrderGroup,
+  type AccessPrincipal,
+  type AccessRecord,
+  type AccessRecordInput,
+  type Group,
+  validateAccessRecordInput,
+} from '../../src/access-control/types.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
@@ -20,6 +29,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  AccessRecordsRepo,
   ExpirationDomain,
   ExpirationSweepCompletion,
   ExpirationSweepClaim,
@@ -29,6 +39,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  GroupsRepo,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
@@ -80,7 +91,6 @@ const SEED_ADMIN_USER: User = {
   username: 'admin',
   passwordHash: null,
   isAdmin: true,
-  upstreamIds: null,
   createdAt: new Date(0).toISOString(),
   deletedAt: null,
 };
@@ -141,6 +151,151 @@ class MemoryUsersRepo implements UsersRepo {
 
   deleteAll(): Promise<void> {
     this.users = [];
+    return Promise.resolve();
+  }
+}
+
+class MemoryGroupsRepo implements GroupsRepo {
+  private groups: Group[] = [];
+  private members = new Map<number, Set<number>>();
+
+  list(): Promise<Group[]> {
+    return Promise.resolve(this.groups.filter(group => group.deletedAt === null).map(group => ({ ...group })));
+  }
+
+  listIncludingDeleted(): Promise<Group[]> {
+    return Promise.resolve(this.groups.map(group => ({ ...group })));
+  }
+
+  getById(id: number): Promise<Group | null> {
+    const group = this.groups.find(candidate => candidate.id === id && candidate.deletedAt === null);
+    return Promise.resolve(group ? { ...group } : null);
+  }
+
+  findByName(name: string): Promise<Group | null> {
+    const group = this.groups.find(candidate => usernamesMatch(candidate.name, name) && candidate.deletedAt === null);
+    return Promise.resolve(group ? { ...group } : null);
+  }
+
+  create(name: string): Promise<Group> {
+    if (this.groups.some(group => usernamesMatch(group.name, name) && group.deletedAt === null)) {
+      throw new Error(`group name taken: ${name}`);
+    }
+    const group: Group = {
+      id: this.groups.reduce((maximum, candidate) => Math.max(maximum, candidate.id), 0) + 1,
+      name,
+      createdAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    this.groups.push(group);
+    return Promise.resolve({ ...group });
+  }
+
+  save(group: Group): Promise<void> {
+    const collision = this.groups.find(candidate => usernamesMatch(candidate.name, group.name) && candidate.deletedAt === null && candidate.id !== group.id);
+    if (collision && group.deletedAt === null) throw new Error(`group name taken: ${group.name}`);
+    const index = this.groups.findIndex(candidate => candidate.id === group.id);
+    if (index < 0) this.groups.push({ ...group });
+    else this.groups[index] = { ...group };
+    return Promise.resolve();
+  }
+
+  softDelete(id: number): Promise<boolean> {
+    const index = this.groups.findIndex(group => group.id === id && group.deletedAt === null);
+    if (index < 0) return Promise.resolve(false);
+    this.groups[index] = { ...this.groups[index], deletedAt: new Date().toISOString() };
+    return Promise.resolve(true);
+  }
+
+  listMemberIds(groupId: number): Promise<number[]> {
+    return Promise.resolve([...(this.members.get(groupId) ?? [])].toSorted((a, b) => a - b));
+  }
+
+  listIdsByUserId(userId: number): Promise<number[]> {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return Promise.resolve([...this.members.entries()]
+      .filter(([groupId, userIds]) => active.has(groupId) && userIds.has(userId))
+      .map(([groupId]) => groupId)
+      .toSorted((a, b) => a - b));
+  }
+
+  async listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>> {
+    const active = new Set(this.groups.filter(group => group.deletedAt === null).map(group => group.id));
+    return new Map(userIds.map(userId => [userId, [...this.members.entries()]
+      .filter(([groupId, members]) => active.has(groupId) && members.has(userId))
+      .map(([groupId]) => groupId)
+      .toSorted((a, b) => a - b)]));
+  }
+
+  replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
+    this.members.set(groupId, new Set(userIds));
+    return Promise.resolve();
+  }
+
+  deleteAll(): Promise<void> {
+    this.groups = [];
+    this.members.clear();
+    return Promise.resolve();
+  }
+}
+
+const principalKey = (principal: AccessPrincipal): string => `${principal.kind}:${principal.id}`;
+
+class MemoryAccessRecordsRepo implements AccessRecordsRepo {
+  private nextId = 1;
+  private records: AccessRecord[] = [];
+
+  list(): Promise<AccessRecord[]> {
+    return Promise.resolve(this.records.map(record => structuredClone(record)));
+  }
+
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
+    return this.listByPrincipals([principal]);
+  }
+
+  listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
+    const keys = new Set(principals.map(principalKey));
+    return Promise.resolve(this.records
+      .filter(record => keys.has(principalKey(record.principal)))
+      .map(record => structuredClone(record)));
+  }
+
+  async save(input: AccessRecordInput): Promise<AccessRecord> {
+    validateAccessRecordInput(input);
+    const now = new Date().toISOString();
+    const scope = JSON.stringify(input.scope);
+    const index = this.records.findIndex(record => principalKey(record.principal) === principalKey(input.principal) && JSON.stringify(record.scope) === scope);
+    const duplicateOrder = this.records.find((record, recordIndex) =>
+      recordIndex !== index
+      && principalKey(record.principal) === principalKey(input.principal)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    const record: AccessRecord = index < 0
+      ? { id: this.nextId++, ...structuredClone(input), createdAt: now, updatedAt: now }
+      : { ...this.records[index], ...structuredClone(input), updatedAt: now };
+    if (index < 0) this.records.push(record);
+    else this.records[index] = record;
+    return structuredClone(record);
+  }
+
+  delete(id: number): Promise<boolean> {
+    const length = this.records.length;
+    this.records = this.records.filter(record => record.id !== id);
+    return Promise.resolve(this.records.length < length);
+  }
+
+  deleteByPrincipal(principal: AccessPrincipal): Promise<number> {
+    const length = this.records.length;
+    const key = principalKey(principal);
+    this.records = this.records.filter(record => principalKey(record.principal) !== key);
+    return Promise.resolve(length - this.records.length);
+  }
+
+  deleteAll(): Promise<void> {
+    this.records = [];
+    this.nextId = 1;
     return Promise.resolve();
   }
 }
@@ -1511,6 +1666,8 @@ export class InMemoryRepo implements Repo {
   };
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
+  groups: GroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
@@ -1529,6 +1686,8 @@ export class InMemoryRepo implements Repo {
 
   constructor() {
     this.users = new MemoryUsersRepo();
+    this.groups = new MemoryGroupsRepo();
+    this.accessRecords = new MemoryAccessRecordsRepo();
     this.sessions = new MemorySessionsRepo();
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();

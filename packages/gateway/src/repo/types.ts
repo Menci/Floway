@@ -1,3 +1,4 @@
+import type { AccessPrincipal, AccessRecord, AccessRecordInput, Group } from '../access-control/types.ts';
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
@@ -17,9 +18,8 @@ export interface ApiKey {
   serverSecret: string;
   createdAt: string;
   lastUsedAt?: string;
-  // null = inherit the user-level cap; array = whitelist in priority order.
-  // When both levels carry a list the effective list is their intersection
-  // taken in this order, so a key that sets one also decides the priority.
+  // null = do not narrow the user's Model.Use grants; an array limits them to
+  // these upstreams in this priority order.
   upstreamIds: string[] | null;
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
@@ -37,11 +37,6 @@ export interface User {
   // dev-only passwordless shortcut when ADMIN_KEY is unset).
   passwordHash: string | null;
   isAdmin: boolean;
-  // null = unrestricted at the user level; an array intersects with the
-  // per-key whitelist when both are present. Membership only — the key's
-  // order carries the intersection, so this order applies only to requests
-  // whose key sets no list of its own.
-  upstreamIds: string[] | null;
   createdAt: string;
   deletedAt: string | null;
 }
@@ -281,6 +276,31 @@ export interface UsersRepo {
   // duplicate-username races surface instead of silently overwriting state.
   save(user: User): Promise<void>;
   softDelete(id: number): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
+export interface GroupsRepo {
+  list(): Promise<Group[]>;
+  listIncludingDeleted(): Promise<Group[]>;
+  getById(id: number): Promise<Group | null>;
+  findByName(name: string): Promise<Group | null>;
+  create(name: string): Promise<Group>;
+  save(group: Group): Promise<void>;
+  softDelete(id: number): Promise<boolean>;
+  listMemberIds(groupId: number): Promise<number[]>;
+  listIdsByUserId(userId: number): Promise<number[]>;
+  listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>>;
+  replaceMembers(groupId: number, userIds: readonly number[]): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
+export interface AccessRecordsRepo {
+  list(): Promise<AccessRecord[]>;
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]>;
+  listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]>;
+  save(input: AccessRecordInput): Promise<AccessRecord>;
+  delete(id: number): Promise<boolean>;
+  deleteByPrincipal(principal: AccessPrincipal): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -581,6 +601,8 @@ export interface Repo {
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
+  groups: GroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;

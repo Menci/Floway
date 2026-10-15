@@ -20,6 +20,7 @@ export const openaiChatCompletionsServe = {
   generate: async (args: OpenAIChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> => {
     const { payload, ctx, headers } = args;
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',

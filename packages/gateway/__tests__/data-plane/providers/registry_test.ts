@@ -68,8 +68,8 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
 });
 
 test('listModelProviders silently drops disabled upstreams from a whitelist', async () => {
-  // A per-user cap legitimately references an upstream the operator just
-  // disabled; the cap survives that transition without surfacing an error.
+  // A key whitelist can reference an upstream the operator just disabled;
+  // the stored preference survives that transition without surfacing an error.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { chatTargetPicker } from '../../../../src/data-plane/chat/shared/target-picker.ts';
 import { enumerateModelCandidates } from '../../../../src/data-plane/providers/resolution.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
-import { setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
+import { setupAppTest, testAdminUser, warmModelsForTest } from '../../../test-utils/app.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -81,6 +81,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
+      subject: testAdminUser,
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -104,6 +105,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     await warmModelsForTest();
 
     const { candidates } = await enumerateModelCandidates({
+      subject: testAdminUser,
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',

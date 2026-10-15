@@ -108,6 +108,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // whatever rules a target carries are inert here — the alias flow only
     // changes which id the gateway addresses upstream.
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+      subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       model,
       kind,

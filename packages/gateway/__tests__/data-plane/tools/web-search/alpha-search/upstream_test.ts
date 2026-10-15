@@ -36,6 +36,7 @@ const dispatcherFor = async (kind: 'codex' | 'custom', inboundHeaderAllowlist: r
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchDispatcher({
     config: { upstreamId: provider.upstreamId, model: 'search-model' },
+    subject: { id: 1, username: 'admin', passwordHash: null, isAdmin: true, createdAt: '', deletedAt: null },
     upstreamIds: null,
     scheduler: promise => { void promise; },
     runtimeLocation: 'TEST',

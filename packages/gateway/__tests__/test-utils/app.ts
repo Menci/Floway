@@ -3,7 +3,7 @@ import { app } from '../../src/app.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
 import { getRepo, initRepo } from '../../src/repo/index.ts';
-import type { ApiKey } from '../../src/repo/types.ts';
+import type { ApiKey, User } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
@@ -51,6 +51,15 @@ interface SSEChunk {
 const processFetch = globalThis.fetch;
 
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
+
+export const testAdminUser: User = {
+  id: 1,
+  username: 'admin',
+  passwordHash: null,
+  isAdmin: true,
+  createdAt: '1970-01-01T00:00:00.000Z',
+  deletedAt: null,
+};
 
 // The gateway's default egress is direct_connect, whose seam is a SocketDial.
 // These suites dispatch every upstream call through a mocked `globalThis.fetch`,
@@ -200,9 +209,20 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     username: 'tester',
     passwordHash: null,
     isAdmin: false,
-    upstreamIds: null,
     createdAt: '2026-03-15T00:00:00.000Z',
     deletedAt: null,
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: 2 },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: 2 },
+    scope: { kind: 'user', userId: 2 },
+    sortOrder: 0,
+    values: { 'User.Audit': true },
   });
 
   const apiKey = options.apiKey ?? {

@@ -247,23 +247,16 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
-// null leaves this level unrestricted; an empty list grants no upstreams.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
-  .nullable();
-
 export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
 });
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
 });
 
 export const changeOwnPasswordBody = z.object({
@@ -298,7 +291,7 @@ const keySourceShape = {
 
 export const createKeyBody = z.object({
   name: z.string().min(1),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
@@ -308,7 +301,7 @@ export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
-  upstream_ids: upstreamIdsValueSchema.optional(),
+  upstream_ids: z.array(z.string().min(1)).refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' }).nullable().optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
   responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
@@ -741,7 +734,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(21, { error: 'version must be 21 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

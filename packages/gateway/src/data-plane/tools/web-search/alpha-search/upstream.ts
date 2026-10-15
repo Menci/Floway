@@ -1,3 +1,4 @@
+import type { User } from '../../../../repo/types.ts';
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
@@ -8,11 +9,13 @@ export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: Abor
 
 export const resolveAlphaSearchDispatcher = async ({
   config,
+  subject,
   upstreamIds,
   scheduler,
   runtimeLocation,
 }: {
   config: Pick<WebSearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
+  subject: User;
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
@@ -21,6 +24,7 @@ export const resolveAlphaSearchDispatcher = async ({
     throw new Error('Selected OpenAI search upstream is outside this API key scope');
   }
   const { candidates } = await enumerateModelCandidates({
+    subject,
     upstreamIds: [config.upstreamId],
     model: config.model,
     kind: 'chat',

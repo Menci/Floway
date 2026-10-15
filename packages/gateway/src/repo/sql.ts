@@ -12,6 +12,7 @@ import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
+  AccessRecordsRepo,
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
@@ -21,6 +22,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  GroupsRepo,
   ModelsRefreshFailureInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
@@ -70,6 +72,17 @@ import { SqlUpstreamMetricsRepo } from './upstream-metrics-sql.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
+import {
+  accessScopeDepth,
+  accessScopeOrderGroup,
+  type AccessPrincipal,
+  type AccessRecord,
+  type AccessRecordInput,
+  type AccessScope,
+  type AccessValues,
+  type Group,
+  validateAccessRecordInput,
+} from '../access-control/types.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
@@ -268,19 +281,17 @@ interface UserRow {
   username: string;
   password_hash: string | null;
   is_admin: number;
-  upstream_ids: string | null;
   created_at: string;
   deleted_at: string | null;
 }
 
-const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at';
+const USER_COLUMNS = 'id, username, password_hash, is_admin, created_at, deleted_at';
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
   username: row.username,
   passwordHash: row.password_hash,
   isAdmin: row.is_admin === 1,
-  upstreamIds: parseUpstreamIds(row.upstream_ids, `users.id=${row.id}`),
   createdAt: row.created_at,
   deletedAt: row.deleted_at,
 });
@@ -324,15 +335,14 @@ class SqlUsersRepo implements UsersRepo {
     // pick distinct ids.
     const row = await this.db
       .prepare(
-        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
-         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ? FROM users
+        `INSERT INTO users (id, username, password_hash, is_admin, created_at, deleted_at)
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ? FROM users
          RETURNING id`,
       )
       .bind(
         template.username,
         template.passwordHash,
         template.isAdmin ? 1 : 0,
-        serializeUpstreamIds(template.upstreamIds),
         template.createdAt,
         template.deletedAt,
       )
@@ -344,12 +354,11 @@ class SqlUsersRepo implements UsersRepo {
   async save(user: User): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            username = excluded.username,
            password_hash = excluded.password_hash,
            is_admin = excluded.is_admin,
-           upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at`,
       )
       .bind(
@@ -357,7 +366,6 @@ class SqlUsersRepo implements UsersRepo {
         user.username,
         user.passwordHash,
         user.isAdmin ? 1 : 0,
-        serializeUpstreamIds(user.upstreamIds),
         user.createdAt,
         user.deletedAt,
       )
@@ -374,6 +382,208 @@ class SqlUsersRepo implements UsersRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM users').run();
+  }
+}
+
+interface GroupRow {
+  id: number;
+  name: string;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+const GROUP_COLUMNS = 'id, name, created_at, deleted_at';
+const toGroup = (row: GroupRow): Group => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+class SqlGroupsRepo implements GroupsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE deleted_at IS NULL ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async listIncludingDeleted(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async getById(id: number): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE id = ? AND deleted_at IS NULL`).bind(id).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async findByName(name: string): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE name = ? AND deleted_at IS NULL`).bind(name).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async create(name: string): Promise<Group> {
+    const now = new Date().toISOString();
+    const row = await this.db.prepare(
+      `INSERT INTO groups (id, name, created_at, deleted_at)
+       SELECT COALESCE(MAX(id), 0) + 1, ?, ?, NULL FROM groups
+       RETURNING ${GROUP_COLUMNS}`,
+    ).bind(name, now).first<GroupRow>();
+    if (!row) throw new Error('groups.create: insert returned no rows');
+    return toGroup(row);
+  }
+
+  async save(group: Group): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name, deleted_at = excluded.deleted_at`,
+    ).bind(group.id, group.name, group.createdAt, group.deletedAt).run();
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    const result = await this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async listMemberIds(groupId: number): Promise<number[]> {
+    const { results } = await this.db.prepare('SELECT user_id FROM group_members WHERE group_id = ? ORDER BY user_id')
+      .bind(groupId).all<{ user_id: number }>();
+    return results.map(row => row.user_id);
+  }
+
+  async listIdsByUserId(userId: number): Promise<number[]> {
+    const { results } = await this.db.prepare(
+      `SELECT group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id = ? AND groups.deleted_at IS NULL
+       ORDER BY group_members.group_id`,
+    )
+      .bind(userId).all<{ group_id: number }>();
+    return results.map(row => row.group_id);
+  }
+
+  async listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>> {
+    const result = new Map<number, number[]>(userIds.map(id => [id, []]));
+    if (userIds.length === 0) return result;
+    const { results } = await this.db.prepare(
+      `SELECT group_members.user_id, group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+         AND groups.deleted_at IS NULL
+       ORDER BY group_members.user_id, group_members.group_id`,
+    ).bind(JSON.stringify([...new Set(userIds)])).all<{ user_id: number; group_id: number }>();
+    for (const row of results) result.get(row.user_id)?.push(row.group_id);
+    return result;
+  }
+
+  async replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
+    await this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId).run();
+    const createdAt = new Date().toISOString();
+    for (const userId of [...new Set(userIds)].toSorted((a, b) => a - b)) {
+      await this.db.prepare('INSERT INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)')
+        .bind(groupId, userId, createdAt).run();
+    }
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM group_members').run();
+    await this.db.prepare('DELETE FROM groups').run();
+  }
+}
+
+interface AccessRecordRow {
+  id: number;
+  principal_type: string;
+  principal_id: number;
+  scope_json: string;
+  sort_order: number;
+  values_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const ACCESS_RECORD_COLUMNS = 'id, principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at';
+
+const parseAccessRecord = (row: AccessRecordRow): AccessRecord => {
+  if (row.principal_type !== 'user' && row.principal_type !== 'group') throw new Error(`Unknown access principal type ${row.principal_type}`);
+  const input: AccessRecordInput = {
+    principal: { kind: row.principal_type, id: row.principal_id },
+    scope: JSON.parse(row.scope_json) as AccessScope,
+    sortOrder: row.sort_order,
+    values: JSON.parse(row.values_json) as AccessValues,
+  };
+  validateAccessRecordInput(input);
+  return { id: row.id, ...input, createdAt: row.created_at, updatedAt: row.updated_at };
+};
+
+class SqlAccessRecordsRepo implements AccessRecordsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<AccessRecord[]> {
+    const { results } = await this.db.prepare(`SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records ORDER BY principal_type, principal_id, sort_order, id`).all<AccessRecordRow>();
+    return results.map(parseAccessRecord);
+  }
+
+  listByPrincipal(principal: AccessPrincipal): Promise<AccessRecord[]> {
+    return this.listByPrincipals([principal]);
+  }
+
+  async listByPrincipals(principals: readonly AccessPrincipal[]): Promise<AccessRecord[]> {
+    if (principals.length === 0) return [];
+    const { results } = await this.db.prepare(
+      `SELECT ${ACCESS_RECORD_COLUMNS} FROM access_records
+       WHERE EXISTS (
+         SELECT 1 FROM json_each(?) AS principal
+         WHERE json_extract(principal.value, '$.kind') = principal_type
+           AND CAST(json_extract(principal.value, '$.id') AS INTEGER) = principal_id
+       )
+       ORDER BY principal_type, principal_id, sort_order, id`,
+    ).bind(JSON.stringify(principals)).all<AccessRecordRow>();
+    return results.map(parseAccessRecord);
+  }
+
+  async save(input: AccessRecordInput): Promise<AccessRecord> {
+    validateAccessRecordInput(input);
+    const existing = await this.listByPrincipal(input.principal);
+    const duplicateOrder = existing.find(record =>
+      JSON.stringify(record.scope) !== JSON.stringify(input.scope)
+      && accessScopeDepth(record.scope) === accessScopeDepth(input.scope)
+      && accessScopeOrderGroup(record.scope) === accessScopeOrderGroup(input.scope)
+      && record.sortOrder === input.sortOrder);
+    if (duplicateOrder) {
+      throw new Error(`Access record sortOrder ${input.sortOrder} is already used at this scope level`);
+    }
+    const now = new Date().toISOString();
+    const scopeJson = JSON.stringify(input.scope);
+    const row = await this.db.prepare(
+      `INSERT INTO access_records (principal_type, principal_id, scope_json, sort_order, values_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (principal_type, principal_id, scope_json) DO UPDATE SET
+         sort_order = excluded.sort_order,
+         values_json = excluded.values_json,
+         updated_at = excluded.updated_at
+       RETURNING ${ACCESS_RECORD_COLUMNS}`,
+    ).bind(input.principal.kind, input.principal.id, scopeJson, input.sortOrder, JSON.stringify(input.values), now, now)
+      .first<AccessRecordRow>();
+    if (!row) throw new Error('accessRecords.save: write returned no rows');
+    return parseAccessRecord(row);
+  }
+
+  async delete(id: number): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM access_records WHERE id = ?').bind(id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteByPrincipal(principal: AccessPrincipal): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM access_records WHERE principal_type = ? AND principal_id = ?')
+      .bind(principal.kind, principal.id).run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM access_records').run();
   }
 }
 
@@ -1694,6 +1904,8 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 export class SqlRepo implements Repo {
   upstreamMetrics: SqlUpstreamMetricsRepo;
   users: UsersRepo;
+  groups: GroupsRepo;
+  accessRecords: AccessRecordsRepo;
   sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -1714,6 +1926,8 @@ export class SqlRepo implements Repo {
   constructor(db: SqlDatabase) {
     this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);
+    this.groups = new SqlGroupsRepo(db);
+    this.accessRecords = new SqlAccessRecordsRepo(db);
     this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
