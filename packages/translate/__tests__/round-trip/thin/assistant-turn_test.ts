@@ -3,7 +3,7 @@ import { expectTypeOf, test } from 'vitest';
 import type { JSONRule, TextRule, ThinState, ThinValue } from '../../../src/round-trip/thin/assistant-turn.ts';
 import { createFieldState, type FieldState, type FieldStates } from '../../../src/round-trip/thin/reference-builder.ts';
 
-test('derives selected text and JSON reference fields from one nested rule', () => {
+test('derives selected text, JSON, and sparse state leaves from one nested rule', () => {
   type Source = {
     text: string;
     items: { text: string; type: 'summary_text' }[];
@@ -24,10 +24,12 @@ test('derives selected text and JSON reference fields from one nested rule', () 
     encrypted_content: string;
   }>();
   expectTypeOf<ThinState<Source, Rule, FieldStates>>().toEqualTypeOf<{
-    text?: FieldState;
-    items?: Array<{ text?: FieldState } | undefined>;
+    text?: FieldState<'text'>;
+    items?: Array<{ text?: FieldState<'text'> } | undefined>;
+    input?: FieldState<'json'>;
   }>();
-  // @ts-expect-error JSON producer leaves are not enabled by the text builder.
-  const invalid: ThinState<Source, Rule, FieldStates> = { input: createFieldState() };
+  const jsonState = createFieldState('json');
+  // @ts-expect-error A JSON field state cannot occupy a text rule leaf.
+  const invalid: ThinState<Source, Rule, FieldStates> = { text: jsonState };
   expectTypeOf(invalid).toMatchTypeOf<ThinState<Source, Rule, FieldStates>>();
 });

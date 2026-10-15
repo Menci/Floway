@@ -49,7 +49,7 @@ test('prepares each Chat choice independently while another choice has partial a
 
 test.each([false, true])('resolves delayed transcript provenance at actual projection (audio data: %s)', async hasAudioData => {
   const references = createReferenceBuilder();
-  const transcript = createFieldState();
+  const transcript = createFieldState('text');
   const first = appendField(references, transcript, 'late ');
   const second = appendField(references, transcript, 'text');
   const source = createIRBuilder();

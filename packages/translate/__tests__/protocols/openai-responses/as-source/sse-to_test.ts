@@ -18,7 +18,7 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
 
   const references = createReferenceBuilder();
   const field = (parts: readonly string[]) => {
-    const state = createFieldState();
+    const state = createFieldState('text');
     const partIds = parts.map(part => appendField(references, state, part));
     return { state, partIds, original: parts.join('') };
   };
@@ -90,15 +90,14 @@ test('collects sparse namespace-restored Responses state from emitted IR atoms',
     { type: 'function_call', namespace: 'tools', name: 'lookup', arguments: '{"q":1}' },
     { type: 'image_generation_call', result: 'literal' },
   ]);
-  expect(0 in state).toBe(false);
+  expect(state[0]).toMatchObject({ input: {} });
   expect(state[1]).toMatchObject({ content: [{ text: {} }, { refusal: {} }] });
   expect(state[2]).toMatchObject({ summary: [{ text: {} }], content: [{ text: {} }] });
-  expect(3 in state).toBe(false);
+  expect(state[3]).toMatchObject({ arguments: {} });
   expect(4 in state).toBe(false);
 
   const finalizer = await createReferenceFinalizer(references, collectContentViews(turn, state));
-  for (const source of [functionArguments, customInput]) expect(await finalizer.finalizeField(source.original, source.state)).toBe(source.original);
-  for (const source of [messageText, refusal, reasoningSummary, reasoningContent]) {
+  for (const source of [functionArguments, messageText, refusal, reasoningSummary, reasoningContent, customInput]) {
     expect(await finalizer.finalizeField(source.original, source.state)).not.toBe(source.original);
   }
 });

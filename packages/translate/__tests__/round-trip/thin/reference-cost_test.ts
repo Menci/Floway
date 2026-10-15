@@ -13,8 +13,8 @@ const finalizeTexts = async (texts: readonly string[]) => {
   const contentState: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
   const views = new Map<number, string>();
   for (const text of texts) {
-    const field = createFieldState();
-    const content = createContentState(builder);
+    const field = createFieldState('text');
+    const content = createContentState(builder, 'text');
     const part = appendField(builder, field, text);
     appendContent(builder, content, text, [part]);
     contentState.push({ text: field });
@@ -33,8 +33,8 @@ describe('thin reference byte costs', () => {
 
   it('skips hashing a large A field when its B reference cannot beat the literal', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState();
-    const content = createContentState(builder);
+    const field = createFieldState('text');
+    const content = createContentState(builder, 'text');
     const prefix = 'Large A content. '.repeat(100);
     appendContent(builder, content, prefix);
     appendContent(builder, content, 'hello', [appendField(builder, field, 'hello')]);
@@ -99,9 +99,9 @@ describe('thin reference byte costs', () => {
 
   it('selects the hashes of one atomic mixed reference together after merging adjacent ranges', async () => {
     const builder = createReferenceBuilder();
-    const field = createFieldState();
-    const first = createContentState(builder);
-    const second = createContentState(builder);
+    const field = createFieldState('text');
+    const first = createContentState(builder, 'text');
+    const second = createContentState(builder, 'text');
     const text = 'One long native string. '.repeat(5);
     const middle = Math.floor(text.length / 2);
     const left = appendField(builder, field, text.slice(0, middle));

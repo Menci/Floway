@@ -10,7 +10,7 @@ import {
 } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
-import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
+import { appendField, createFieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -25,6 +25,8 @@ import type {
 
 type ReasoningFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, FieldStates>;
 type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, FieldStates>;
+type FunctionFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }>, FieldStates>;
+type CustomFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }>, FieldStates>;
 type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
 
 interface ResponsesItemStateBase {
@@ -41,7 +43,9 @@ interface ResponsesItemStateBase {
 type ResponsesItemState = ResponsesItemStateBase & (
       | { readonly type: 'message'; fieldState?: MessageFieldState }
       | { readonly type: 'reasoning'; fieldState?: ReasoningFieldState }
-      | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning'>; fieldState?: never }
+      | { readonly type: 'function_call'; fieldState?: FunctionFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: 'custom_tool_call'; fieldState?: CustomFieldState; toolText?: ResponsesTextTarget }
+      | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning' | 'function_call' | 'custom_tool_call'>; fieldState?: never }
     );
 
 interface ResponsesTextPartState extends ResponsesTextTarget {
@@ -55,8 +59,8 @@ interface ResponsesTextPartState extends ResponsesTextTarget {
 interface ResponsesImagePartState { readonly type: 'image'; readonly handle: IRPartHandle }
 type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
 interface ResponsesTextTarget extends WriteTarget {
-  fieldState?: FieldState | null;
-  fieldStateNode?: TextFieldStateNode;
+  fieldState?: FieldStates['text'] | null;
+  fieldStateNode?: TextFieldStateNode | FunctionFieldState | CustomFieldState;
 }
 
 interface WriteTarget {
@@ -178,8 +182,10 @@ export const irFromOpenAIResponses = async function* (
     };
     const state: ResponsesItemState = item.type === 'message' ? { ...base, type: item.type, fieldState: { content: [] } }
       : item.type === 'reasoning' ? { ...base, type: item.type, fieldState: { summary: [] } }
-        : { ...base, type: item.type };
-    if (state.type === 'message' || state.type === 'reasoning') outputState[outputIndex] = state.fieldState;
+        : item.type === 'function_call' ? { ...base, type: item.type, fieldState: {} }
+          : item.type === 'custom_tool_call' ? { ...base, type: item.type, fieldState: {} }
+            : { ...base, type: item.type };
+    if (state.type === 'message' || state.type === 'reasoning' || state.type === 'function_call' || state.type === 'custom_tool_call') outputState[outputIndex] = state.fieldState;
     if (item.type === 'function_call' || item.type === 'custom_tool_call') hasTools = true;
     items.set(outputIndex, state);
     return state;
@@ -197,6 +203,23 @@ export const irFromOpenAIResponses = async function* (
     if (item.type !== state.type) throw new TypeError(`Responses output item type changed from ${state.type} to ${item.type}`);
     const id = itemId(item);
     if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
+  };
+
+  const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {
+    if (state.item === undefined || (state.type !== 'function_call' && state.type !== 'custom_tool_call')) throw new TypeError('Responses tool text requires a tool item');
+    if (state.toolText !== undefined) return state.toolText;
+    const fieldState = createFieldState('text');
+    if (state.type === 'function_call') {
+      const node = state.fieldState ??= {};
+      node.arguments = fieldState;
+      state.toolText = { handle: state.item, path: 'arguments', fieldState, fieldStateNode: node };
+    } else {
+      const node = state.fieldState ??= {};
+      node.input = fieldState;
+      state.toolText = { handle: state.item, path: 'input', fieldState, fieldStateNode: node };
+    }
+    outputState[state.outputIndex] = state.fieldState;
+    return state.toolText;
   };
 
   const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
@@ -257,7 +280,7 @@ export const irFromOpenAIResponses = async function* (
     if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
-      const fieldState = createFieldState();
+      const fieldState = createFieldState('text');
       const fieldStateNode = { text: fieldState };
       const nativeState = state.fieldState ??= {};
       const parts = nativeState[field] ??= [];
@@ -278,7 +301,7 @@ export const irFromOpenAIResponses = async function* (
     if (contentIndex === state.parts.size) {
       let partState: ResponsesTextPartState;
       if (part.type === 'output_text') {
-        const fieldState = createFieldState();
+        const fieldState = createFieldState('text');
         const fieldStateNode = { text: fieldState };
         const nativeState = state.fieldState ??= { content: [] };
         const content = nativeState.content ??= [];
@@ -292,7 +315,7 @@ export const irFromOpenAIResponses = async function* (
           annotationsInitialized: part.annotations !== undefined,
         };
       } else if (part.type === 'refusal') {
-        const fieldState = createFieldState();
+        const fieldState = createFieldState('text');
         const fieldStateNode = { refusal: fieldState };
         const nativeState = state.fieldState ??= {};
         const content = nativeState.content ??= [];
@@ -397,11 +420,11 @@ export const irFromOpenAIResponses = async function* (
     } else if (item.type === 'function_call') {
       reconcileAssign({ handle: state.item, path: 'call_id' }, item.call_id);
       reconcileAssign({ handle: state.item, path: 'name' }, item.name);
-      reconcileAppend({ handle: state.item, path: 'arguments' }, item.arguments);
+      reconcileAppend(ensureToolText(state), item.arguments);
     } else if (item.type === 'custom_tool_call') {
       reconcileAssign({ handle: state.item, path: 'call_id' }, item.call_id);
       reconcileAssign({ handle: state.item, path: 'name' }, item.name);
-      reconcileAppend({ handle: state.item, path: 'input' }, item.input);
+      reconcileAppend(ensureToolText(state), item.input);
     } else if (item.type === 'image_generation_call' && item.result != null) {
       if (state.parts.size === 0) {
         const handle = state.item.part({
@@ -562,12 +585,15 @@ export const irFromOpenAIResponses = async function* (
             }
           }
         } else if (e.type === 'response.function_call_arguments.delta' || e.type === 'response.custom_tool_call_input.delta') {
-          if (state.item === undefined) throw new TypeError('Responses tool delta requires a tool item');
-          if (e.delta !== '') state.item.append(e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input', e.delta);
+          const target = ensureToolText(state);
+          const field = e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input';
+          if (target.path !== field) throw new TypeError('Responses tool delta does not match its native item');
+          if (e.delta !== '') appendTextAtom(target, e.delta);
         } else if (e.type === 'response.function_call_arguments.done' || e.type === 'response.custom_tool_call_input.done') {
-          if (state.item === undefined) throw new TypeError('Responses tool completion requires a tool item');
+          const target = ensureToolText(state);
           const field = e.type === 'response.function_call_arguments.done' ? 'arguments' : 'input';
-          reconcileAppend({ handle: state.item, path: field }, e.type === 'response.function_call_arguments.done' ? e.arguments : e.input);
+          if (target.path !== field) throw new TypeError('Responses tool completion does not match its native item');
+          reconcileAppend(target, e.type === 'response.function_call_arguments.done' ? e.arguments : e.input);
         } else if (e.type === 'response.reasoning_summary_text.delta' || e.type === 'response.reasoning_text.delta' || e.type === 'response.reasoning.delta') {
           const summary = e.type === 'response.reasoning_summary_text.delta';
           const index = e.type === 'response.reasoning_summary_text.delta' ? e.summary_index : e.content_index;

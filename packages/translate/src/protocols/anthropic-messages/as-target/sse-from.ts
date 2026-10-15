@@ -54,7 +54,8 @@ interface MessagesBlockState {
   readonly part?: IRPartHandle;
   readonly custom: boolean;
   annotationCount?: number;
-  textField?: FieldState;
+  textField?: FieldState<'text'>;
+  jsonField?: FieldState<'json'>;
   fieldState?: MessagesBlockFieldState;
   wrappedInput: string;
 }
@@ -84,7 +85,7 @@ export const irFromAnthropicMessages = async function* (
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
     let custom = false;
-    let textField: FieldState | undefined;
+    let textField: FieldState<'text'> | undefined;
     if (block.type === 'fallback') {
       ir.assign(['model'], block.to.model);
     } else if (block.type === 'text') {
@@ -96,13 +97,13 @@ export const irFromAnthropicMessages = async function* (
       part = item.part({ type: 'text', text: '', ...(annotations === undefined ? {} : { annotations }) });
       annotationCount = Array.isArray(annotations) ? annotations.length : undefined;
       if (block.text !== '') {
-        textField = createFieldState();
+        textField = createFieldState('text');
         part.append('text', block.text, [appendField(options.roundTrip.builder, textField, block.text)]);
       }
     } else if (block.type === 'thinking') {
       item = ir.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') {
-        textField = createFieldState();
+        textField = createFieldState('text');
         item.append(['summary', 0], block.thinking, [appendField(options.roundTrip.builder, textField, block.thinking)]);
       }
     } else if (block.type === 'tool_use') {
@@ -149,7 +150,7 @@ export const irFromAnthropicMessages = async function* (
       case 'text_delta':
         if (d.text !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState();
+            block.textField = createFieldState('text');
             block.fieldState = { text: block.textField };
           }
           const partId = appendField(options.roundTrip.builder, block.textField, d.text);
@@ -160,7 +161,7 @@ export const irFromAnthropicMessages = async function* (
       case 'thinking_delta':
         if (d.thinking !== '') {
           if (block.textField === undefined) {
-            block.textField = createFieldState();
+            block.textField = createFieldState('text');
             block.fieldState = { thinking: block.textField };
           }
           block.item.append(['summary', 0], d.thinking, [appendField(options.roundTrip.builder, block.textField, d.thinking)]);
@@ -168,8 +169,15 @@ export const irFromAnthropicMessages = async function* (
         break;
       case 'signature_delta': break;
       case 'input_json_delta':
-        if (block.custom) block.wrappedInput += d.partial_json;
-        else if (d.partial_json !== '') block.item.append('arguments', d.partial_json);
+        if (d.partial_json !== '') {
+          if (block.jsonField === undefined) {
+            block.jsonField = createFieldState('json');
+            block.fieldState = { input: block.jsonField };
+          }
+          const partId = appendField(options.roundTrip.builder, block.jsonField, d.partial_json);
+          if (block.custom) block.wrappedInput += d.partial_json;
+          else block.item.append('arguments', d.partial_json, [partId]);
+        }
         break;
       case 'citations_delta': {
         if (block.part === undefined) throw new TypeError('Messages citation requires a text block');

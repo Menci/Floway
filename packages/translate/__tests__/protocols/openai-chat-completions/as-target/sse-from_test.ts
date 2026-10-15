@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest';
 
+import type { IRRecord } from '../../../../src/ir/stream.ts';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import type { RoundTripReader } from '../../../../src/round-trip/stream.ts';
-import { createReferenceBuilder } from '../../../../src/round-trip/thin/reference-builder.ts';
+import { hydrateAssistantTurn } from '../../../../src/round-trip/thin/hydrate.ts';
+import { appendContent, collectContentViews, createContentState, createReferenceBuilder, finalizeAssistantTurnReferences } from '../../../../src/round-trip/thin/reference-builder.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -65,4 +67,89 @@ test('collects every native Chat choice when a sibling omits delta', async () =>
     [0, { role: 'assistant', content: null, refusal: null }],
     [1, { role: 'assistant', content: 'Hello world', refusal: null, reasoning_content: 'Think', provider_specific_fields: { trace: 'native' } }],
   ]);
+});
+
+const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string> } = {}) => {
+  const builder = createReferenceBuilder();
+  const content = createContentState(builder, 'text');
+  let text = options.prefix ?? '';
+  appendContent(builder, content, text);
+  let captured: Parameters<RoundTripReader<'openaiChatCompletions'>['onAssistantTurn']> | undefined;
+  const appends: Extract<IRRecord, { type: 'operation'; operation: 'append' }>[] = [];
+  const roundTrip: RoundTripReader<'openaiChatCompletions'> = {
+    builder,
+    onAssistantTurn: (...args) => { captured = args; },
+  };
+  for await (const record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames })) {
+    if (record.type !== 'operation' || record.operation !== 'append') continue;
+    const field = record.path.at(-1);
+    if (field !== 'arguments' && field !== 'input') continue;
+    appends.push(record);
+    appendContent(builder, content, record.value, record.partIds);
+    text += record.value;
+  }
+  if (captured === undefined) throw new Error('Native Chat turn was not collected');
+  const [, turn, fieldState] = captured;
+  const finalized = await finalizeAssistantTurnReferences(turn, fieldState, builder, collectContentViews(text, content));
+  const hydrated = await hydrateAssistantTurn('openaiChatCompletions', [text], finalized.assistantTurn, finalized.referencedContents);
+  expect(hydrated).toEqual({ ok: true, turn });
+  return { turn, fieldState, appends, finalized };
+};
+
+test('keeps merged pre-name arguments in one IR append with every original atom ID', async () => {
+  const result = await traceTools([
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call', type: 'function', function: { arguments: '{"x":' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '1}' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'lookup' } }] }, finish_reason: 'tool_calls' }]),
+  ], { prefix: 'p:' });
+
+  expect(result.appends.map(record => ({ text: record.value, partIds: record.partIds }))).toEqual([{ text: '{"x":1}', partIds: [0, 1] }]);
+  expect(result.fieldState).toMatchObject({ tool_calls: [{ function: { arguments: expect.any(Object) } }] });
+  expect(result.finalized.assistantTurn).toMatchObject({ tool_calls: [{ function: { arguments: '{"x":1}' } }] });
+  expect(result.finalized).not.toHaveProperty('referencedContents');
+});
+
+test('tracks native custom input and legacy function arguments in their own input fields', async () => {
+  const custom = await traceTools([
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'custom', type: 'custom', custom: { name: 'freeform', input: 'ab' } }] }, finish_reason: null }]),
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, custom: { input: 'cd' } }] }, finish_reason: 'tool_calls' }]),
+  ]);
+  expect(custom.finalized.assistantTurn).toMatchObject({ tool_calls: [{ type: 'custom', custom: { input: 'abcd' } }] });
+  expect(custom.finalized).not.toHaveProperty('referencedContents');
+
+  const legacy = await traceTools([
+    chunk([{ index: 0, delta: { function_call: { name: 'legacy', arguments: '{"x":1}' } }, finish_reason: 'function_call' }]),
+  ]);
+  expect(legacy.finalized.assistantTurn).toMatchObject({ function_call: { arguments: '{"x":1}' } });
+  expect(legacy.finalized).not.toHaveProperty('referencedContents');
+  expect(legacy.fieldState).not.toHaveProperty('tool_calls');
+});
+
+test('sorts native tool state with sparse wire indices without rebuilding field nodes', async () => {
+  const result = await traceTools([
+    chunk([{
+      index: 0, delta: {
+        tool_calls: [
+          { index: 3, id: 'b', type: 'function', function: { name: 'second', arguments: '{"b":2}' } },
+          { index: 1, id: 'a', type: 'function', function: { name: 'first', arguments: '{"a":1}' } },
+        ],
+      }, finish_reason: 'tool_calls',
+    }]),
+  ]);
+  expect(result.finalized.assistantTurn).toMatchObject({
+    tool_calls: [
+      { id: 'a', function: { arguments: '{"a":1}' } },
+      { id: 'b', function: { arguments: '{"b":2}' } },
+    ],
+  });
+  expect(result.finalized).not.toHaveProperty('referencedContents');
+});
+
+test('keeps a transformed wrapped tool field literal', async () => {
+  const result = await traceTools([
+    chunk([{ index: 0, delta: { tool_calls: [{ index: 0, id: 'wrapped', type: 'function', function: { name: 'wrapped', arguments: '{"input":"hello"}' } }] }, finish_reason: 'tool_calls' }]),
+  ], { customToolNames: new Set(['wrapped']) });
+  expect(result.appends.map(record => ({ text: record.value, partIds: record.partIds }))).toEqual([{ text: 'hello', partIds: undefined }]);
+  expect(result.finalized.assistantTurn).toEqual(result.turn);
+  expect(result.finalized).not.toHaveProperty('referencedContents');
 });

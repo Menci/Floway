@@ -35,6 +35,7 @@ interface GenerateContentUnit {
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';
   opened: boolean;
   pendingData?: { sourceStart: number; sourceEnd: number; partIds?: readonly number[] }[];
+  pendingArguments?: { sourceStart: number; sourceEnd: number; partIds?: readonly number[] }[];
   nextPending?: GenerateContentUnit;
 }
 
@@ -141,7 +142,7 @@ export const geminiGenerateContentFromIR = async function* (
       const state = partsState(choice);
       const partState = state[partIndex];
       const existing = partState !== undefined && 'text' in partState ? partState.text : undefined;
-      const content = existing ?? createContentState(options.roundTrip.builder);
+      const content = existing ?? createContentState(options.roundTrip.builder, 'text');
       if (existing === undefined) state[partIndex] = { text: content };
       appendContent(options.roundTrip.builder, content, text, partIds);
     }
@@ -242,11 +243,11 @@ export const geminiGenerateContentFromIR = async function* (
             };
             const transcriptAtoms = content.type === 'audio' ? takePendingText(choice, unit) : [];
             const partIndex = occupyPart(choice, 'other');
-            const dataState = createContentState(options.roundTrip.builder);
+            const dataState = createContentState(options.roundTrip.builder, 'text');
             appendPendingContent(dataState, inlineMedia.data, unit.pendingData ?? []);
-            let transcriptState: ReferenceContentState | undefined;
+            let transcriptState: ReferenceContentState<'text'> | undefined;
             if (content.type === 'audio' && content.audio.transcript !== undefined) {
-              transcriptState = createContentState(options.roundTrip.builder);
+              transcriptState = createContentState(options.roundTrip.builder, 'text');
               appendPendingContent(transcriptState, content.audio.transcript, transcriptAtoms);
             }
             partsState(choice)[partIndex] = {
@@ -275,7 +276,7 @@ export const geminiGenerateContentFromIR = async function* (
             else {
               const parsed = parseJSONObjectAtCompletion(item.arguments, completion, options.parseToolArguments);
               if (parsed.completion === 'complete') {
-                occupyPart(choice, 'other');
+                const partIndex = occupyPart(choice, 'other');
                 part = {
                   functionCall: {
                     name: item.name,
@@ -283,6 +284,11 @@ export const geminiGenerateContentFromIR = async function* (
                     args: parsed.value,
                   },
                 };
+                const argumentState = createContentState(options.roundTrip.builder, 'json');
+                const serialized = JSON.stringify(parsed.value);
+                if (serialized === item.arguments) appendPendingContent(argumentState, serialized, unit.pendingArguments ?? []);
+                else appendContent(options.roundTrip.builder, argumentState, serialized);
+                partsState(choice)[partIndex] = { functionCall: { args: argumentState } };
               }
             }
           }
@@ -366,7 +372,8 @@ export const geminiGenerateContentFromIR = async function* (
     registerUnits(record, state);
     const pendingUnit = units.forRecord(record, state);
     if (pendingUnit !== undefined && record.type === 'operation' && record.operation === 'append') {
-      const field = pendingUnit.kind === 'audio' && record.path.at(-1) === 'data' ? 'pendingData' : undefined;
+      const field = pendingUnit.kind === 'audio' && record.path.at(-1) === 'data' ? 'pendingData'
+        : pendingUnit.kind === 'function_call' && record.path[4] === 'arguments' ? 'pendingArguments' : undefined;
       if (field !== undefined) {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing GenerateContent pending field');

@@ -41,9 +41,10 @@ interface ResponsesOutputUnitBase {
 }
 
 type ResponsesOutputUnit = ResponsesOutputUnitBase & (
-  | { readonly kind: 'image' | 'function_call' | 'custom_tool_call' }
+  | { readonly kind: 'image' }
   | { readonly kind: 'message'; readonly contentState: ResponsesMessageState }
   | { readonly kind: 'reasoning'; readonly contentState: ResponsesReasoningState }
+  | { readonly kind: 'function_call' | 'custom_tool_call'; toolContentState?: ContentState<'text'> }
 );
 
 type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
@@ -200,14 +201,14 @@ export const openaiResponsesFromIR = async function* (
   };
 
   const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, partIds?: readonly number[]): void => {
-    let content: ContentState;
+    let content: ContentState<'text'>;
     if (unit.kind === 'message') {
       const index = unit.contentOrdinals.get(path.slice(0, 6));
       const parts = unit.contentState.content ??= [];
       const part = parts[index];
       const refusal = path.at(-1) === 'refusal';
       if (part === undefined) {
-        content = createContentState(options.roundTrip.builder);
+        content = createContentState(options.roundTrip.builder, 'text');
         parts[index] = refusal ? { refusal: content } : { text: content };
       } else if (refusal) {
         if (!('refusal' in part) || part.refusal === undefined) throw new Error('Responses refusal state has the wrong kind');
@@ -222,7 +223,10 @@ export const openaiResponsesFromIR = async function* (
       if ((field !== 'summary' && field !== 'content') || typeof index !== 'number') throw new Error('Responses reasoning text requires a native part');
       const parts = unit.contentState[field] ??= [];
       const part = parts[index] ??= {};
-      content = part.text ??= createContentState(options.roundTrip.builder);
+      content = part.text ??= createContentState(options.roundTrip.builder, 'text');
+    } else if (unit.kind === 'function_call' || unit.kind === 'custom_tool_call') {
+      if (unit.toolContentState === undefined) throw new Error('Responses tool text requires an opened native field');
+      content = unit.toolContentState;
     } else return;
     appendContent(options.roundTrip.builder, content, text, partIds);
   };
@@ -479,6 +483,7 @@ export const openaiResponsesFromIR = async function* (
   };
 
   const openToolUnit = (unit: ResponsesOutputUnit, item: IRToolCallItem, callId: string | typeof IRNone, outputIndex: number): OpenedUnit => {
+    if (unit.kind !== 'function_call' && unit.kind !== 'custom_tool_call') throw new Error('Responses tool opening requires a tool unit');
     const custom = unit.kind === 'custom_tool_call';
     const id = createRandomOpenAIResponsesItemId(custom ? 'custom_tool_call' : 'function_call');
     const resolvedCallId = callId === IRNone ? createRandomOpenAIResponsesItemId('function_call') : callId;
@@ -487,7 +492,12 @@ export const openaiResponsesFromIR = async function* (
     const added: OpenAIResponsesOutputItemEx = custom
       ? { type: 'custom_tool_call', id, call_id: resolvedCallId, name: item.name, input: '', status: 'in_progress' }
       : { type: 'function_call', id, call_id: resolvedCallId, name: item.name, arguments: '', status: 'in_progress' };
+    const restored = restoreNamespaceOutputItem(added, options.namespaceToolNames, 'in_progress');
+    const content = createContentState(options.roundTrip.builder, 'text');
+    unit.toolContentState = content;
+    nativeState[outputIndex] = restored.type === 'custom_tool_call' ? { input: content } : { arguments: content };
     const followUps: OpenAIResponsesStreamEventEx[] = [];
+    appendPendingText(unit, [...unit.path, item.type === 'custom_tool_call' ? 'input' : 'arguments'], item.type === 'custom_tool_call' ? item.input : item.arguments);
     if (item.type === 'custom_tool_call') {
       if (item.input !== '') followUps.push({ type: 'response.custom_tool_call_input.delta', item_id: id, output_index: outputIndex, delta: item.input });
     } else if (item.arguments !== '') {
@@ -658,7 +668,7 @@ export const openaiResponsesFromIR = async function* (
 
     registerUnits(record, state);
     const unit = units.forRecord(record, state);
-    if ((unit?.kind === 'message' || unit?.kind === 'reasoning') && record.type === 'operation' && record.operation === 'append') {
+    if (unit !== undefined && unit.kind !== 'image' && record.type === 'operation' && record.operation === 'append') {
       if (unit.opened) appendUnitText(unit, record.path, record.value, record.partIds);
       else {
         const text = collector.value<string>(record.path);

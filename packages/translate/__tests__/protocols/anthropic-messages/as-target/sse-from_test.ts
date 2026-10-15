@@ -23,7 +23,7 @@ test('keeps native-shaped field state aligned through sparse block ordering and 
     ...end,
   ];
   const builder = createReferenceBuilder();
-  const content = createContentState(builder);
+  const content = createContentState(builder, 'text');
   let captured: { turn: AnthropicMessagesInputAssistantTurn; state: AnthropicMessagesAssistantState<FieldStates> } | undefined;
   for await (const record of irFromAnthropicMessages((async function* () { yield* frames; })(), {
     roundTrip: { builder, onAssistantTurn: (_choice, turn, state) => { captured = { turn, state }; } },

@@ -29,16 +29,16 @@ const message = (text: string, status: OutputMessage['status']): OutputMessage =
   content: text === '' ? [] : [{ type: 'output_text', text, annotations: [], logprobs: [] }],
 });
 
-const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[]) => {
+const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[], field: 'text' | 'arguments' | 'input' = 'text') => {
   const capture = createRoundTripReaderCapture<'openaiResponses'>();
-  const content = createContentState(capture.builder);
+  const content = createContentState(capture.builder, 'text');
   const appends: { text: string; partIds?: readonly number[] }[] = [];
   const frames = (async function* () {
     for (const event of events) yield eventFrame(event);
   })();
 
   for await (const record of irFromOpenAIResponses(frames, { roundTrip: capture.roundTrip })) {
-    if (record.type !== 'operation' || record.operation !== 'append' || record.path.at(-1) !== 'text') continue;
+    if (record.type !== 'operation' || record.operation !== 'append' || record.path.at(-1) !== field) continue;
     appends.push({ text: record.value, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
     appendContent(capture.builder, content, record.value, record.partIds);
   }
@@ -106,4 +106,75 @@ test('keeps a tiny complete snapshot-only atom literal and hydrates the native R
     finalized.assistantTurn,
     finalized.referencedContents,
   )).toEqual({ ok: true, turn: captured.turn });
+});
+
+type ToolItem = Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' | 'custom_tool_call' }>;
+
+const toolItem = (type: ToolItem['type'], text: string, status: 'in_progress' | 'completed'): ToolItem => type === 'function_call'
+  ? { type, id: 'tool', call_id: 'call', name: 'lookup', arguments: text, status }
+  : { type, id: 'tool', call_id: 'call', name: 'lookup', input: text, status };
+
+const toolCases = [
+  { type: 'function_call', field: 'arguments', prefix: '{"x":', suffix: '1}' },
+  { type: 'custom_tool_call', field: 'input', prefix: 'hel', suffix: 'lo' },
+] as const;
+
+const toolDelta = (type: ToolItem['type'], delta: string): OpenAIResponsesStreamEventEx => type === 'function_call'
+  ? { type: 'response.function_call_arguments.delta', item_id: 'tool', output_index: 0, delta }
+  : { type: 'response.custom_tool_call_input.delta', item_id: 'tool', output_index: 0, delta };
+
+const toolDone = (type: ToolItem['type'], text: string): OpenAIResponsesStreamEventEx => type === 'function_call'
+  ? { type: 'response.function_call_arguments.done', item_id: 'tool', output_index: 0, name: 'lookup', arguments: text }
+  : { type: 'response.custom_tool_call_input.done', item_id: 'tool', output_index: 0, input: text };
+
+test.each(toolCases)('collects streamed native $type text through its existing state node and inlines the tiny field', async ({ type, field, prefix, suffix }) => {
+  const text = prefix + suffix;
+  const done = toolItem(type, text, 'completed');
+  const captured = await collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: toolItem(type, '', 'in_progress') },
+    toolDelta(type, prefix), toolDelta(type, suffix), toolDone(type, text),
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done], 'completed') },
+  ], field);
+  expect(captured.appends).toEqual([{ text: prefix, partIds: [0] }, { text: suffix, partIds: [1] }]);
+  expect(captured.fieldState[0]).toHaveProperty(field, expect.any(Object));
+  const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews(text, captured.content));
+  expect(finalized.assistantTurn[0]).toHaveProperty(field, text);
+  expect(finalized).not.toHaveProperty('referencedContents');
+  expect(await hydrateAssistantTurn('openaiResponses', [text], finalized.assistantTurn, finalized.referencedContents)).toEqual({ ok: true, turn: captured.turn });
+});
+
+test.each(toolCases)('collects a snapshot-only native $type atom and inlines the tiny field', async ({ type, field, prefix, suffix }) => {
+  const text = prefix + suffix;
+  const done = toolItem(type, text, 'completed');
+  const captured = await collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: toolItem(type, '', 'in_progress') },
+    toolDone(type, text),
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done], 'completed') },
+  ], field);
+  expect(captured.appends).toEqual([{ text, partIds: [0] }]);
+  const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews(text, captured.content));
+  expect(finalized.assistantTurn[0]).toHaveProperty(field, text);
+  expect(finalized).not.toHaveProperty('referencedContents');
+  expect(await hydrateAssistantTurn('openaiResponses', [text], finalized.assistantTurn, finalized.referencedContents)).toEqual({ ok: true, turn: captured.turn });
+});
+
+test.each(toolCases)('invalidates native $type provenance when its done snapshot extends a delta', async ({ type, field, prefix, suffix }) => {
+  const text = prefix + suffix;
+  const done = toolItem(type, text, 'completed');
+  const captured = await collectProvenance([
+    { type: 'response.created', response: response([], 'in_progress') },
+    { type: 'response.output_item.added', output_index: 0, item: toolItem(type, '', 'in_progress') },
+    toolDelta(type, prefix), toolDone(type, text),
+    { type: 'response.output_item.done', output_index: 0, item: done },
+    { type: 'response.completed', response: response([done], 'completed') },
+  ], field);
+  expect(captured.appends).toEqual([{ text: prefix, partIds: [0] }, { text: suffix }]);
+  expect(captured.fieldState[0]).toEqual({});
+  const finalized = await finalizeAssistantTurnReferences<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectContentViews(text, captured.content));
+  expect(finalized.assistantTurn).toEqual(captured.turn);
+  expect(finalized).not.toHaveProperty('referencedContents');
 });

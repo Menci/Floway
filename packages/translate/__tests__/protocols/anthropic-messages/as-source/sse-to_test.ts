@@ -9,7 +9,7 @@ import { type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 
 test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against the emitted Messages text field', async kind => {
   const references = createReferenceBuilder();
-  const field = createFieldState();
+  const field = createFieldState('text');
   const parts = ['H', 'i'].map(text => appendField(references, field, text));
   const source = createIRBuilder();
   source.choice(0);
@@ -49,8 +49,8 @@ test.each(['text', 'refusal', 'audio'] as const)('resolves blocked %s against th
 
 test('resolves blocked reasoning in emitted summary/content order before live appends', async () => {
   const references = createReferenceBuilder();
-  const summary = createFieldState();
-  const content = createFieldState();
+  const summary = createFieldState('text');
+  const content = createFieldState('text');
   const a = appendField(references, summary, 'A');
   const x = appendField(references, content, 'X');
   const b = appendField(references, summary, 'B');
@@ -87,4 +87,33 @@ test('resolves blocked reasoning in emitted summary/content order before live ap
   expect(await finalizer.finalizeField('ABC', summary)).toMatchObject({ value: [[0, 0, 2], [0, 3, 4]] });
   expect(await finalizer.finalizeField('X', content)).toMatchObject({ value: [[0, 2, 3]] });
   expect(finalizer.referencedContents).toEqual([await hashRoundTripContent('ABXC')]);
+});
+
+test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view without resolving transformed atoms: %s', async original => {
+  const references = createReferenceBuilder();
+  const field = createFieldState('text');
+  const partId = appendField(references, field, original);
+  const source = createIRBuilder();
+  source.choice(0);
+  source.assign(['model'], 'model');
+  source.event({ type: 'start', id: 'response' });
+  const tool = source.item(0, { type: 'function_call', name: 'tool', call_id: 'call', arguments: '' });
+  tool.append('arguments', original, [partId]);
+  tool.end();
+  source.choice(0).end('tool_calls');
+  source.event({ type: 'finish', status: 'completed' });
+  let prepared = false;
+  const roundTrip: RoundTripWriter<'anthropicMessages'> = {
+    builder: references,
+    prepareSidecar: async (_choice, _check, turn, state) => {
+      const views = collectContentViews(turn, state);
+      expect([...views.values()]).toContain('{"x":1}');
+      const finalizer = await createReferenceFinalizer(references, views);
+      expect(await finalizer.finalizeField(original, field)).toBe(original);
+      prepared = true;
+      return 'sidecar';
+    },
+  };
+  for await (const _frame of anthropicMessagesFromIR((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
+  expect(prepared).toBe(true);
 });

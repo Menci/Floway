@@ -1,6 +1,8 @@
 import { Tag } from 'cbor-x';
 
-import { contentHashKey, THIN_TAGS, type AssistantTurnStateFor, type ReferencePart, type TextReference, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import { contentHashKey, THIN_TAGS, type AssistantTurnStateFor, type JSONReference, type ReferencePart, type TextReference, type ThinAssistantTurnFor, type ThinReference } from './assistant-turn.ts';
+import type { IRJSONObject } from '../../ir/types.ts';
+import { parseJSONObject, requireJSONObject } from '../../shared/json/object.ts';
 import type { AssistantTurnByProtocol, AssistantTurnFor } from '../assistant-turn.ts';
 import { encodeSidecarValue } from '../codec.ts';
 import { hashRoundTripContent } from '../replay-check.ts';
@@ -11,16 +13,30 @@ const contentStateBrand: unique symbol = Symbol('ContentState');
 
 export type PartId = number;
 type ContentId = number;
+type Restoration = 'text' | 'json';
 
 export interface ReferenceBuilder { readonly [builderBrand]: true }
 
-export interface FieldState { readonly [fieldStateBrand]: true }
+type OriginalFor<Kind extends Restoration> = Kind extends 'text' ? string : IRJSONObject;
+type ThinReferenceFor<Kind extends Restoration> = Kind extends 'text' ? TextReference : JSONReference;
 
-export interface ContentState { readonly [contentStateBrand]: true }
+export interface FieldState<Kind extends Restoration = Restoration> {
+  readonly [fieldStateBrand]: Kind;
+}
 
-export interface FieldStates { readonly text: FieldState; readonly json: never }
+export interface ContentState<Kind extends Restoration = Restoration> {
+  readonly [contentStateBrand]: Kind;
+}
 
-export interface ContentStates { readonly text: ContentState; readonly json: never }
+export interface FieldStates {
+  readonly text: FieldState<'text'>;
+  readonly json: FieldState<'json'>;
+}
+
+export interface ContentStates {
+  readonly text: ContentState<'text'>;
+  readonly json: ContentState<'json'>;
+}
 
 interface Resolution {
   readonly contentId: ContentId;
@@ -29,11 +45,13 @@ interface Resolution {
 }
 
 interface FieldData {
+  readonly restoration: Restoration;
   text: string;
   readonly partIds: PartId[];
 }
 
 interface ContentData {
+  readonly restoration: Restoration;
   readonly contentId: ContentId;
   text: string;
 }
@@ -72,9 +90,9 @@ const contentData = (content: ContentState): ContentData => {
   return data;
 };
 
-export const createFieldState = (): FieldState => {
-  const field: FieldState = { [fieldStateBrand]: true };
-  fieldStates.set(field, { text: '', partIds: [] });
+export const createFieldState = <Kind extends Restoration>(restoration: Kind): FieldState<Kind> => {
+  const field: FieldState<Kind> = { [fieldStateBrand]: restoration };
+  fieldStates.set(field, { restoration, text: '', partIds: [] });
   return field;
 };
 
@@ -88,10 +106,10 @@ export const appendField = (builder: ReferenceBuilder, field: FieldState, text: 
   return partId;
 };
 
-export const createContentState = (builder: ReferenceBuilder): ContentState => {
+export const createContentState = <Kind extends Restoration>(builder: ReferenceBuilder, restoration: Kind): ContentState<Kind> => {
   const state = stateOf(builder);
-  const content: ContentState = { [contentStateBrand]: true };
-  contentStates.set(content, { contentId: state.nextContentId++, text: '' });
+  const content: ContentState<Kind> = { [contentStateBrand]: restoration };
+  contentStates.set(content, { restoration, contentId: state.nextContentId++, text: '' });
   return content;
 };
 
@@ -117,6 +135,12 @@ const isFieldState = (value: unknown): value is FieldState =>
 const isContentState = (value: unknown): value is ContentState =>
   typeof value === 'object' && value !== null && contentStates.has(value);
 
+const textView = (kind: Restoration, value: unknown): string | undefined => {
+  if (kind === 'text') return typeof value === 'string' ? value : undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  return JSON.stringify(value);
+};
+
 const pairedChildren = function* (value: unknown, state: unknown): Generator<readonly [unknown, unknown]> {
   if (Array.isArray(state)) {
     if (!Array.isArray(value)) throw new TypeError('ReferenceBuilder state array does not match its assistant turn');
@@ -141,7 +165,8 @@ export function collectContentViews(turn: unknown, contentState: unknown): Map<C
   const visit = (value: unknown, state: unknown): void => {
     if (isContentState(state)) {
       const data = contentData(state);
-      if (typeof value === 'string' && value === data.text) views.set(data.contentId, value);
+      const view = textView(data.restoration, value);
+      if (view === data.text) views.set(data.contentId, view);
       return;
     }
     for (const [childValue, childState] of pairedChildren(value, state)) visit(childValue, childState);
@@ -149,6 +174,18 @@ export function collectContentViews(turn: unknown, contentState: unknown): Map<C
   visit(turn, contentState);
   return views;
 }
+
+const restoresOriginal = <Kind extends Restoration>(field: FieldState<Kind>, original: OriginalFor<Kind>): boolean => {
+  const data = fieldData(field);
+  if (data.restoration === 'text') return typeof original === 'string' && data.text === original;
+  if (typeof original !== 'object' || original === null || Array.isArray(original)) return false;
+  try {
+    return JSON.stringify(parseJSONObject(data.text)) === JSON.stringify(original);
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+};
 
 interface ReferenceSegment {
   readonly hashIndex: number;
@@ -172,7 +209,10 @@ interface FinalizationState {
 
 interface ReferenceFinalizer {
   readonly referencedContents: Uint8Array[];
-  finalizeField: (original: string, field: FieldState) => Promise<string | TextReference>;
+  finalizeField: <Kind extends Restoration>(
+    original: OriginalFor<Kind>,
+    field: FieldState<Kind>,
+  ) => Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>>;
 }
 
 export const createReferenceFinalizer = async (builder: ReferenceBuilder, contentViews: ReadonlyMap<ContentId, string>): Promise<ReferenceFinalizer> => {
@@ -198,9 +238,12 @@ export const createReferenceFinalizer = async (builder: ReferenceBuilder, conten
     return index;
   };
 
-  const finalizeField = async (original: string, field: FieldState): Promise<string | TextReference> => {
+  const finalizeField = async <Kind extends Restoration>(
+    original: OriginalFor<Kind>,
+    field: FieldState<Kind>,
+  ): Promise<OriginalFor<Kind> | ThinReferenceFor<Kind>> => {
     const fieldState = fieldData(field);
-    if (fieldState.partIds.length === 0 || fieldState.text !== original) return original;
+    if (fieldState.partIds.length === 0 || !restoresOriginal(field, original)) return original;
     const resolved: ResolvedSegment[] = [];
     for (const partId of fieldState.partIds) {
       const piece = builderState.pieces[partId];
@@ -220,7 +263,7 @@ export const createReferenceFinalizer = async (builder: ReferenceBuilder, conten
     const payload: ReferencePart[] = segments.map(segment => segment.start === 0 && segment.endExclusive === segment.contentLength
       ? segment.hashIndex
       : [segment.hashIndex, segment.start, segment.endExclusive]);
-    return new Tag(payload, THIN_TAGS.text) as TextReference;
+    return new Tag(payload, fieldState.restoration === 'text' ? THIN_TAGS.text : THIN_TAGS.json) as ThinReferenceFor<Kind>;
   };
 
   return { referencedContents: state.referencedContents, finalizeField };
@@ -238,6 +281,9 @@ interface ReferenceChoice {
   readonly savings: number;
 }
 
+const isReference = (value: string | IRJSONObject | ThinReference): value is ThinReference =>
+  value instanceof Tag && (value.tag === THIN_TAGS.text || value.tag === THIN_TAGS.json);
+
 export const finalizeAssistantTurnReferences = async <Protocol extends keyof AssistantTurnByProtocol>(
   turn: AssistantTurnFor<Protocol>,
   fieldState: AssistantTurnStateFor<Protocol, FieldStates>,
@@ -249,12 +295,15 @@ export const finalizeAssistantTurnReferences = async <Protocol extends keyof Ass
   const choices: ReferenceChoice[] = [];
   const collect = async (value: unknown, state: unknown): Promise<void> => {
     if (isFieldState(state)) {
-      if (typeof value !== 'string') throw new TypeError('Text field state does not match its assistant turn');
-      const original = value;
+      let original: string | IRJSONObject;
+      if (fieldData(state).restoration === 'text') {
+        if (typeof value !== 'string') throw new TypeError('Text field state does not match its assistant turn');
+        original = value;
+      } else original = requireJSONObject(value);
       const literalCost = encodeSidecarValue(original).byteLength;
       if (literalCost <= minimumReferenceCost) return;
       const reference = await finalizer.finalizeField(original, state);
-      if (typeof reference !== 'string') {
+      if (isReference(reference)) {
         const savings = literalCost - encodeSidecarValue(reference).byteLength;
         if (savings > 0) choices.push({ field: state, reference, hashes: [...new Set(reference.value.map(part => Array.isArray(part) ? part[0] : part))], savings });
       }

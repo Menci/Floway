@@ -112,19 +112,34 @@ export const openaiChatCompletionsFromIR = async function* (
     }
     return state;
   };
-  const textState = (choice: number, field: ChatTextField): ContentState => {
+  const textState = (choice: number, field: ChatTextField): ContentState<'text'> => {
     const state = outputState(choice);
     if (field === 'content') {
-      state.content ??= createContentState(options.roundTrip.builder);
+      state.content ??= createContentState(options.roundTrip.builder, 'text');
       return state.content;
     }
     if (field === 'refusal') {
-      state.refusal ??= createContentState(options.roundTrip.builder);
+      state.refusal ??= createContentState(options.roundTrip.builder, 'text');
       return state.refusal;
     }
-    state.reasoning_text ??= createContentState(options.roundTrip.builder);
+    state.reasoning_text ??= createContentState(options.roundTrip.builder, 'text');
     return state.reasoning_text;
   };
+  const toolState = (choice: number, ordinal: number, custom: boolean): ContentState<'text'> => {
+    const choiceState = outputState(choice);
+    const toolCalls = choiceState.tool_calls ?? [];
+    choiceState.tool_calls = toolCalls;
+    const current = toolCalls[ordinal];
+    if (current !== undefined) {
+      if (custom && 'custom' in current && current.custom?.input !== undefined) return current.custom.input;
+      if (!custom && 'function' in current && current.function?.arguments !== undefined) return current.function.arguments;
+      throw new TypeError(`ChatCompletions tool state kind changed at ordinal ${ordinal}`);
+    }
+    const state = createContentState(options.roundTrip.builder, 'text');
+    toolCalls[ordinal] = custom ? { custom: { input: state } } : { function: { arguments: state } };
+    return state;
+  };
+
   // Continuous usage is cumulative metadata on emitted choice chunks.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/chat_completion/serving.py#L798-L871
   const chunk = (choices: ChatChoiceChunk[], fields: ChatChunkFields = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => {
@@ -288,6 +303,7 @@ export const openaiChatCompletionsFromIR = async function* (
           if (itemType !== 'function_call' && itemType !== 'custom_tool_call') throw new TypeError('ChatCompletions tool delta requires a tool item');
           const ordinal = tools.get(choice)!.get(path.slice(0, 4));
           const custom = itemType === 'custom_tool_call';
+          appendContent(options.roundTrip.builder, toolState(choice, ordinal, custom), record.value, record.partIds);
           const call = custom
             ? { index: ordinal, custom: { input: record.value } }
             : { index: ordinal, function: { arguments: record.value } };

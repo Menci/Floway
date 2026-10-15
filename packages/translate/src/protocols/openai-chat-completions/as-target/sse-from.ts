@@ -10,7 +10,7 @@ import {
 } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
-import { appendField, createFieldState, type FieldStates, type FieldState } from '../../../round-trip/thin/reference-builder.ts';
+import { appendField, createFieldState, type FieldStates, type FieldState, type PartId } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -24,11 +24,15 @@ import {
   type OpenAIChatCompletionsUsageEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
+type ChatToolFieldState = NonNullable<NonNullable<OpenAIChatCompletionsOutputAssistantState<FieldStates>['tool_calls']>[number]>;
+
 interface ChatToolState {
   item?: IRItemHandle;
   id?: string;
   name: string;
   pendingInput: string;
+  pendingPartIds: PartId[];
+  fieldState?: ChatToolFieldState;
   custom: boolean;
   wrapped: boolean;
   callIdAssigned: boolean;
@@ -146,7 +150,7 @@ export const irFromOpenAIChatCompletions = async function* (
     handle: IRWriteHandle,
     field: IRRelativePath,
     text: string,
-    state: FieldState,
+    state: FieldState<'text'>,
   ): void => {
     const partId = appendField(options.roundTrip.builder, state, text);
     handle.append(field, text, [partId]);
@@ -248,6 +252,7 @@ export const irFromOpenAIChatCompletions = async function* (
     if (tool.wrapped) {
       const input = unwrapCustomToolInput(tool.pendingInput);
       if (input !== '') tool.item.append('input', input);
+      tool.pendingPartIds = [];
     }
     tool.item.end(status);
   };
@@ -277,19 +282,19 @@ export const irFromOpenAIChatCompletions = async function* (
       closeMessage(choice);
       const reasoning = choice.reasoning ??= createItem(index, choice, { type: 'reasoning', summary: [''] });
       reasoning.ensure('summary', ['']);
-      const fieldState = choice.fieldState[field] ??= createFieldState();
+      const fieldState = choice.fieldState[field] ??= createFieldState('text');
       appendFieldAtom(reasoning, ['summary', 0], text, fieldState);
     }
   };
 
   const readMessage = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
     if (typeof delta.content === 'string' && delta.content !== '') {
-      const field = choice.fieldState.content ??= createFieldState();
+      const field = choice.fieldState.content ??= createFieldState('text');
       messagePart(index, choice, 'text').append('text', delta.content, [appendField(options.roundTrip.builder, field, delta.content)]);
       choice.coordinateIndex?.append(delta.content);
     }
     if (typeof delta.refusal === 'string' && delta.refusal !== '') {
-      const field = choice.fieldState.refusal ??= createFieldState();
+      const field = choice.fieldState.refusal ??= createFieldState('text');
       appendFieldAtom(messagePart(index, choice, 'refusal'), 'refusal', delta.refusal, field);
     }
     if (delta.audio != null) {
@@ -346,19 +351,45 @@ export const irFromOpenAIChatCompletions = async function* (
       tool = {
         name: '',
         pendingInput: '',
+        pendingPartIds: [],
         custom: call.type === 'custom' || call.custom !== undefined,
         wrapped: false,
         callIdAssigned: false,
       };
       choice.tools.set(call.index, tool);
+      if (call.index >= 0) (choice.fieldState.tool_calls ??= [])[call.index] = undefined;
       choice.currentTool = tool;
     }
     const fn: ToolFragment | undefined = call.custom ?? call.function;
     if (call.id !== undefined) tool.id = call.id;
     if (fn?.name !== undefined) tool.name = fn.name;
     const fragment = fn?.arguments ?? fn?.input;
+    let fragmentPartId: PartId | undefined;
+    if (typeof fragment === 'string' && fragment !== '') {
+      let field: FieldStates['text'];
+      if (call.index === -1) {
+        const state = choice.fieldState.function_call ??= {};
+        field = state.arguments ??= createFieldState('text');
+      } else {
+        const state = tool.fieldState;
+        if (call.custom !== undefined) {
+          const existing = state !== undefined && 'custom' in state ? state.custom?.input : undefined;
+          field = existing ?? createFieldState('text');
+          if (existing === undefined) tool.fieldState = { custom: { input: field } };
+        } else {
+          const existing = state !== undefined && 'function' in state ? state.function?.arguments : undefined;
+          field = existing ?? createFieldState('text');
+          if (existing === undefined) tool.fieldState = { function: { arguments: field } };
+        }
+        (choice.fieldState.tool_calls ??= [])[call.index] = tool.fieldState;
+      }
+      fragmentPartId = appendField(options.roundTrip.builder, field, fragment);
+    }
     tool.wrapped = !tool.custom && options.customToolNames?.has(tool.name) === true;
-    if (tool.item === undefined && fragment !== undefined) tool.pendingInput += fragment;
+    if (tool.item === undefined && fragment !== undefined) {
+      tool.pendingInput += fragment;
+      if (fragmentPartId !== undefined) tool.pendingPartIds.push(fragmentPartId);
+    }
 
     if (tool.item === undefined && tool.name !== '') {
       // Waiting here delays no supported target: Messages and Responses need the name when
@@ -377,8 +408,10 @@ export const irFromOpenAIChatCompletions = async function* (
       tool.callIdAssigned = callId !== undefined;
       tool.emittedName = tool.name;
       if (!tool.wrapped && tool.pendingInput !== '') {
-        tool.item.append(custom ? 'input' : 'arguments', tool.pendingInput);
+        const partIds = tool.pendingPartIds;
+        tool.item.append(custom ? 'input' : 'arguments', tool.pendingInput, partIds.length > 0 ? partIds : undefined);
         tool.pendingInput = '';
+        tool.pendingPartIds = [];
       }
     } else if (tool.item !== undefined) {
       if (tool.id !== undefined && !tool.callIdAssigned) {
@@ -389,7 +422,7 @@ export const irFromOpenAIChatCompletions = async function* (
         tool.item.assign('name', tool.name);
         tool.emittedName = tool.name;
       }
-      if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment);
+      if (fragment !== undefined && fragment !== '' && !tool.wrapped) tool.item.append(tool.custom ? 'input' : 'arguments', fragment, fragmentPartId === undefined ? undefined : [fragmentPartId]);
       if (fragment !== undefined && tool.wrapped) tool.pendingInput += fragment;
     }
   };
@@ -401,6 +434,10 @@ export const irFromOpenAIChatCompletions = async function* (
     for (const item of choice.items) item.end(status);
     const nativeChoice = nativeAccumulator(index).result().choices.find(resultChoice => resultChoice.index === index);
     if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${index} at choice_end`);
+    if (choice.fieldState.tool_calls !== undefined) choice.fieldState.tool_calls = [...choice.tools]
+      .filter(([wireIndex]) => wireIndex >= 0)
+      .toSorted(([left], [right]) => left - right)
+      .map(([, tool]) => tool.fieldState);
     const input = toOpenAIChatCompletionsInputAssistantTurn<FieldStates>(nativeChoice.message, choice.fieldState);
     options.roundTrip.onAssistantTurn(index, input.turn, input.state);
     ir.choice(index).end(finishReason === 'function_call'
