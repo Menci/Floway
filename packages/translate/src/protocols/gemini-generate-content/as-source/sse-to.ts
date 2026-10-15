@@ -6,7 +6,7 @@ import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream
 import { IRNone, type IR, type IRErrorPayload, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/unit-queue.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
-import { appendContent, createContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
+import { appendContent, createContentState, type ContentStates, type ContentState as ReferenceContentState } from '../../../round-trip/thin/reference-builder.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
@@ -34,6 +34,7 @@ interface GenerateContentUnit {
   readonly path: IRPath;
   readonly kind: 'text' | 'refusal' | 'audio' | 'image' | 'reasoning' | 'function_call';
   opened: boolean;
+  pendingData?: { sourceStart: number; sourceEnd: number; partIds?: readonly number[] }[];
   nextPending?: GenerateContentUnit;
 }
 
@@ -77,6 +78,16 @@ export const geminiGenerateContentFromIR = async function* (
     let state = partStates.get(choice);
     if (state === undefined) { state = []; partStates.set(choice, state); }
     return state;
+  };
+
+  const appendPendingContent = (content: ReferenceContentState, text: string, atoms: readonly { sourceStart: number; sourceEnd: number; partIds?: readonly number[] }[]): void => {
+    let offset = 0;
+    for (const atom of atoms) {
+      if (atom.sourceStart > offset) appendContent(options.roundTrip.builder, content, text.slice(offset, atom.sourceStart));
+      appendContent(options.roundTrip.builder, content, text.slice(atom.sourceStart, atom.sourceEnd), atom.partIds);
+      offset = atom.sourceEnd;
+    }
+    if (offset < text.length) appendContent(options.roundTrip.builder, content, text.slice(offset));
   };
 
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
@@ -141,11 +152,13 @@ export const geminiGenerateContentFromIR = async function* (
     unit.kind === 'reasoning' ? 'thought'
       : unit.kind === 'text' || unit.kind === 'refusal' || unit.kind === 'audio' && path.at(-1) === 'transcript' ? 'text' : undefined;
 
-  const discardPendingText = (choice: number, unit: GenerateContentUnit): void => {
+  const takePendingText = (choice: number, unit: GenerateContentUnit): PendingTextQueue['values'] => {
     const queue = pendingText.get(choice);
-    if (queue === undefined) return;
+    if (queue === undefined) return [];
+    const taken = queue.values.slice(queue.head).filter(value => value.unit === unit);
     queue.values = [...queue.values.slice(0, queue.head), ...queue.values.slice(queue.head).filter(value => value.unit !== unit)];
     if (queue.head === queue.values.length) pendingText.delete(choice);
+    return taken;
   };
 
   const drainPendingText = (choice: number, collector: IRCollector): GeminiGenerateContentPart[] => {
@@ -227,8 +240,19 @@ export const geminiGenerateContentFromIR = async function* (
               inlineData: { mimeType: mime, data: inlineMedia.data },
               ...(content.type === 'audio' && content.audio.transcript !== undefined ? { audioTranscription: { text: content.audio.transcript } } : {}),
             };
-            if (content.type === 'audio') discardPendingText(choice, unit);
-            occupyPart(choice, 'other');
+            const transcriptAtoms = content.type === 'audio' ? takePendingText(choice, unit) : [];
+            const partIndex = occupyPart(choice, 'other');
+            const dataState = createContentState(options.roundTrip.builder);
+            appendPendingContent(dataState, inlineMedia.data, unit.pendingData ?? []);
+            let transcriptState: ReferenceContentState | undefined;
+            if (content.type === 'audio' && content.audio.transcript !== undefined) {
+              transcriptState = createContentState(options.roundTrip.builder);
+              appendPendingContent(transcriptState, content.audio.transcript, transcriptAtoms);
+            }
+            partsState(choice)[partIndex] = {
+              inlineData: { data: dataState },
+              ...(transcriptState === undefined ? {} : { audioTranscription: { text: transcriptState } }),
+            };
           } else if (content.type === 'audio' && content.audio.transcript !== undefined) part = undefined;
         } else if (unit.kind === 'reasoning') {
           if (item.type !== 'reasoning') throw new TypeError('GenerateContent reasoning unit requires a reasoning item');
@@ -340,6 +364,15 @@ export const geminiGenerateContentFromIR = async function* (
     }
     if (!started) continue;
     registerUnits(record, state);
+    const pendingUnit = units.forRecord(record, state);
+    if (pendingUnit !== undefined && record.type === 'operation' && record.operation === 'append') {
+      const field = pendingUnit.kind === 'audio' && record.path.at(-1) === 'data' ? 'pendingData' : undefined;
+      if (field !== undefined) {
+        const text = collector.value<string>(record.path);
+        if (text === undefined) throw new Error('Missing GenerateContent pending field');
+        (pendingUnit[field] ??= []).push({ sourceStart: text.length - record.value.length, sourceEnd: text.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+      }
+    }
     yield* openPendingUnits(record, state, collector);
 
     const unit = units.forRecord(record, state);

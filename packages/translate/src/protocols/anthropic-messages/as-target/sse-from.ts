@@ -101,7 +101,10 @@ export const irFromAnthropicMessages = async function* (
       }
     } else if (block.type === 'thinking') {
       item = ir.item(0, { type: 'reasoning', summary: [''] });
-      if (block.thinking !== '') item.append(['summary', 0], block.thinking);
+      if (block.thinking !== '') {
+        textField = createFieldState();
+        item.append(['summary', 0], block.thinking, [appendField(options.roundTrip.builder, textField, block.thinking)]);
+      }
     } else if (block.type === 'tool_use') {
       custom = options.customToolNames?.has(block.name) === true;
       item = ir.item(0, custom
@@ -112,7 +115,7 @@ export const irFromAnthropicMessages = async function* (
     }
     const state: MessagesBlockState = {
       item, part, custom, annotationCount, wrappedInput: '', textField,
-      fieldState: textField === undefined ? undefined : { text: textField },
+      fieldState: textField === undefined ? undefined : block.type === 'text' ? { text: textField } : { thinking: textField },
     };
     blocks.set(index, state);
     blockStates.set(index, state);
@@ -155,7 +158,13 @@ export const irFromAnthropicMessages = async function* (
         }
         break;
       case 'thinking_delta':
-        if (d.thinking !== '') block.item.append(['summary', 0], d.thinking);
+        if (d.thinking !== '') {
+          if (block.textField === undefined) {
+            block.textField = createFieldState();
+            block.fieldState = { thinking: block.textField };
+          }
+          block.item.append(['summary', 0], d.thinking, [appendField(options.roundTrip.builder, block.textField, d.thinking)]);
+        }
         break;
       case 'signature_delta': break;
       case 'input_json_delta':

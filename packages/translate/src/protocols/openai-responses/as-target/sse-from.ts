@@ -23,21 +23,26 @@ import type {
   OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
+type ReasoningFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, FieldStates>;
 type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, FieldStates>;
 type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
 
-interface ResponsesItemState {
+interface ResponsesItemStateBase {
   readonly outputIndex: number;
-  readonly type: string;
   readonly id: string;
   item?: IRItemHandle;
   readonly parts: Map<number, ResponsesPartState>;
-  readonly reasoningLengths: Record<'summary' | 'content', number>;
+  readonly reasoning: Record<'summary' | 'content', ResponsesTextTarget[]>;
   readonly logprobs: Map<number, { readonly index: number }>;
   closed: boolean;
   finalSnapshot?: OpenAIResponsesOutputItemEx;
-  fieldState?: MessageFieldState;
 }
+
+type ResponsesItemState = ResponsesItemStateBase & (
+      | { readonly type: 'message'; fieldState?: MessageFieldState }
+      | { readonly type: 'reasoning'; fieldState?: ReasoningFieldState }
+      | { readonly type: Exclude<OpenAIResponsesOutputItemEx['type'], 'message' | 'reasoning'>; fieldState?: never }
+    );
 
 interface ResponsesTextPartState extends ResponsesTextTarget {
   readonly type: 'output_text' | 'refusal';
@@ -162,16 +167,19 @@ export const irFromOpenAIResponses = async function* (
     if (typeof id !== 'string') throw new TypeError('Responses output items require an id');
     const seed = irItemSeed(item);
     const handle = seed === undefined ? undefined : ir.item(0, seed);
-    const state: ResponsesItemState = {
+    const base: ResponsesItemStateBase = {
       outputIndex,
-      type: item.type,
       id,
       item: handle,
       parts: new Map(),
-      reasoningLengths: { summary: 0, content: 0 },
+      reasoning: { summary: [], content: [] },
       logprobs: new Map(),
       closed: false,
     };
+    const state: ResponsesItemState = item.type === 'message' ? { ...base, type: item.type, fieldState: { content: [] } }
+      : item.type === 'reasoning' ? { ...base, type: item.type, fieldState: { summary: [] } }
+        : { ...base, type: item.type };
+    if (state.type === 'message' || state.type === 'reasoning') outputState[outputIndex] = state.fieldState;
     if (item.type === 'function_call' || item.type === 'custom_tool_call') hasTools = true;
     items.set(outputIndex, state);
     return state;
@@ -240,17 +248,24 @@ export const irFromOpenAIResponses = async function* (
     }
   };
 
-  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): WriteTarget => {
+  const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): ResponsesTextTarget => {
     if (state.type !== 'reasoning') throw new TypeError('Responses reasoning text requires a reasoning item');
     state.item ??= ir.item(0, { type: 'reasoning' });
     state.item.ensure(field, []);
-    const length = state.reasoningLengths[field];
+    const targets = state.reasoning[field];
+    const length = targets.length;
     if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
-      state.reasoningLengths[field]++;
+      const fieldState = createFieldState();
+      const fieldStateNode = { text: fieldState };
+      const nativeState = state.fieldState ??= {};
+      const parts = nativeState[field] ??= [];
+      parts[index] = fieldStateNode;
+      outputState[state.outputIndex] = nativeState;
+      targets.push({ handle: state.item, path: [field, index], fieldState, fieldStateNode });
     }
-    return { handle: state.item, path: [field, index] };
+    return targets[index];
   };
 
   const ensureMessagePart = (
@@ -277,7 +292,13 @@ export const irFromOpenAIResponses = async function* (
           annotationsInitialized: part.annotations !== undefined,
         };
       } else if (part.type === 'refusal') {
-        partState = { type: part.type, path: 'refusal', handle: state.item.part({ type: 'refusal', refusal: '' }), annotationsInitialized: false };
+        const fieldState = createFieldState();
+        const fieldStateNode = { refusal: fieldState };
+        const nativeState = state.fieldState ??= {};
+        const content = nativeState.content ??= [];
+        content[contentIndex] = fieldStateNode;
+        outputState[state.outputIndex] = nativeState;
+        partState = { type: part.type, path: 'refusal', handle: state.item.part({ type: 'refusal', refusal: '' }), annotationsInitialized: false, fieldState, fieldStateNode };
       } else throw new TypeError(`Responses message cannot contain ${part.type}`);
       state.parts.set(contentIndex, partState);
     }
@@ -354,7 +375,7 @@ export const irFromOpenAIResponses = async function* (
         reconcilePartText(partState, part.text);
         reconcileAnnotations(partState, part.text, part.annotations);
         reconcileLogprobs(state, contentIndex, partState, part.logprobs);
-      } else if (part.type === 'refusal') reconcileAppend({ handle: partState.handle, path: 'refusal' }, part.refusal);
+      } else if (part.type === 'refusal') reconcileAppend(partState, part.refusal);
     } else if (state.type === 'reasoning') {
       if (part.type !== 'reasoning_text') throw new TypeError(`Responses reasoning cannot contain ${part.type}`);
       reconcileAppend(ensureReasoningText(state, 'content', contentIndex), part.text);
@@ -405,7 +426,12 @@ export const irFromOpenAIResponses = async function* (
       const status = 'status' in snapshot ? snapshot.status : undefined;
       state.item.end(status === 'incomplete' ? 'incomplete' : undefined);
     }
-    if (snapshot.type === 'message' && state.fieldState?.content !== undefined) state.fieldState.content.length = snapshot.content.length;
+    if (snapshot.type === 'message' && state.type === 'message' && state.fieldState?.content !== undefined) state.fieldState.content.length = snapshot.content.length;
+    if (snapshot.type === 'reasoning' && state.type === 'reasoning' && state.fieldState !== undefined) {
+      if (state.fieldState.summary !== undefined) state.fieldState.summary.length = snapshot.summary.length;
+      if (snapshot.content === undefined) delete state.fieldState.content;
+      else if (state.fieldState.content !== undefined) state.fieldState.content.length = snapshot.content.length;
+    }
     state.closed = true;
     state.finalSnapshot = snapshot;
   };
@@ -509,13 +535,13 @@ export const irFromOpenAIResponses = async function* (
               appendTextAtom(part, e.delta);
               part.coordinateIndex?.append(e.delta);
               part.text = `${part.text ?? ''}${e.delta}`;
-            } else part.handle.append(field, e.delta);
+            } else appendTextAtom(part, e.delta);
           }
           if (e.type === 'response.output_text.delta' && e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.output_text.done' || e.type === 'response.refusal.done') {
           const part = ensureMessagePart(state, e.content_index, { type: e.type === 'response.refusal.done' ? 'refusal' : 'output_text', annotations: [] });
           if (e.type === 'response.output_text.done') reconcilePartText(part, e.text);
-          else reconcileAppend({ handle: part.handle, path: 'refusal' }, e.refusal);
+          else reconcileAppend(part, e.refusal);
           if (e.type === 'response.output_text.done' && e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.output_text.annotation.added') {
           if (e.annotation !== null) {
@@ -546,7 +572,7 @@ export const irFromOpenAIResponses = async function* (
           const summary = e.type === 'response.reasoning_summary_text.delta';
           const index = e.type === 'response.reasoning_summary_text.delta' ? e.summary_index : e.content_index;
           const target = ensureReasoningText(state, summary ? 'summary' : 'content', index);
-          if (e.delta !== '') target.handle.append(target.path, e.delta);
+          if (e.delta !== '') appendTextAtom(target, e.delta);
         } else if (e.type === 'response.reasoning_summary_text.done' || e.type === 'response.reasoning_text.done' || e.type === 'response.reasoning.done') {
           const summary = e.type === 'response.reasoning_summary_text.done';
           const index = e.type === 'response.reasoning_summary_text.done' ? e.summary_index : e.content_index;

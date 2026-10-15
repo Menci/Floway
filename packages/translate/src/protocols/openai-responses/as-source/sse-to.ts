@@ -41,8 +41,9 @@ interface ResponsesOutputUnitBase {
 }
 
 type ResponsesOutputUnit = ResponsesOutputUnitBase & (
-  | { readonly kind: 'image' | 'reasoning' | 'function_call' | 'custom_tool_call' }
-  | { readonly kind: 'message'; readonly contentState: ResponsesOutputItemState }
+  | { readonly kind: 'image' | 'function_call' | 'custom_tool_call' }
+  | { readonly kind: 'message'; readonly contentState: ResponsesMessageState }
+  | { readonly kind: 'reasoning'; readonly contentState: ResponsesReasoningState }
 );
 
 type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
@@ -59,7 +60,9 @@ interface OpenedUnit {
 
 type ReasoningField = 'summary' | 'content';
 type MessagePart = IRMessageItem['content'][number];
-type ResponsesOutputItemState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
+
+type ResponsesMessageState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
+type ResponsesReasoningState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }>, ContentStates>;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -197,18 +200,30 @@ export const openaiResponsesFromIR = async function* (
   };
 
   const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, partIds?: readonly number[]): void => {
-    if (unit.kind !== 'message' || path.at(-1) !== 'text') return;
-    const index = unit.contentOrdinals.get(path.slice(0, 6));
-    const parts = unit.contentState.content ??= [];
-    const part = parts[index];
     let content: ContentState;
-    if (part === undefined) {
-      content = createContentState(options.roundTrip.builder);
-      parts[index] = { text: content };
-    } else {
-      if (!('text' in part) || part.text === undefined) throw new Error('Responses text content state has the wrong kind');
-      content = part.text;
-    }
+    if (unit.kind === 'message') {
+      const index = unit.contentOrdinals.get(path.slice(0, 6));
+      const parts = unit.contentState.content ??= [];
+      const part = parts[index];
+      const refusal = path.at(-1) === 'refusal';
+      if (part === undefined) {
+        content = createContentState(options.roundTrip.builder);
+        parts[index] = refusal ? { refusal: content } : { text: content };
+      } else if (refusal) {
+        if (!('refusal' in part) || part.refusal === undefined) throw new Error('Responses refusal state has the wrong kind');
+        content = part.refusal;
+      } else {
+        if (!('text' in part) || part.text === undefined) throw new Error('Responses text state has the wrong kind');
+        content = part.text;
+      }
+    } else if (unit.kind === 'reasoning') {
+      const field = path[4];
+      const index = path[5];
+      if ((field !== 'summary' && field !== 'content') || typeof index !== 'number') throw new Error('Responses reasoning text requires a native part');
+      const parts = unit.contentState[field] ??= [];
+      const part = parts[index] ??= {};
+      content = part.text ??= createContentState(options.roundTrip.builder);
+    } else return;
     appendContent(options.roundTrip.builder, content, text, partIds);
   };
 
@@ -344,15 +359,16 @@ export const openaiResponsesFromIR = async function* (
       } else if (isIRItemPath(record.path, state)) {
         const type = initializedType(record.value);
         if (type === 'reasoning' || type === 'function_call' || type === 'custom_tool_call') {
-          addUnit({
+          const unit: ResponsesOutputUnitBase = {
             path: record.path,
-            kind: type,
             parts: [],
             contentOrdinals: createIROrdinalMapper(),
             annotationProgress: new Map(),
             coordinateIndexes: new Map(),
             opened: false,
-          });
+          };
+          if (type === 'reasoning') addUnit({ ...unit, kind: type, contentState: {} });
+          else addUnit({ ...unit, kind: type });
         }
       } else if (isIRPartPath(record.path, state)) {
         const itemIndex = record.path[3] as number;
@@ -405,7 +421,7 @@ export const openaiResponsesFromIR = async function* (
     for (const partPath of unit.parts) {
       const part = textOrRefusalPart(state, partPath);
       const contentIndex = unit.contentOrdinals.open(partPath);
-      if (part.type === 'text') appendPendingText(unit, [...partPath, 'text'], part.text);
+      appendPendingText(unit, [...partPath, part.type === 'text' ? 'text' : 'refusal'], part.type === 'text' ? part.text : part.refusal);
       followUps.push({
         type: 'response.content_part.added',
         item_id: id,
@@ -455,6 +471,7 @@ export const openaiResponsesFromIR = async function* (
     unit.id = id;
     const followUps: OpenAIResponsesStreamEventEx[] = [];
     for (const field of ['summary', 'content'] as const) (reasoning?.[field] ?? []).forEach((text, part) => {
+      appendPendingText(unit, [...unit.path, field, part], text);
       followUps.push(reasoningPartAdded(field, id, outputIndex, part));
       if (text !== '') followUps.push(reasoningTextDelta(field, id, outputIndex, part, text));
     });
@@ -496,7 +513,7 @@ export const openaiResponsesFromIR = async function* (
       pending.dequeue();
       const outputIndex = outputUnits.length;
       unit.outputIndex = outputIndex;
-      if (unit.kind === 'message') nativeState[outputIndex] = unit.contentState;
+      if (unit.kind === 'message' || unit.kind === 'reasoning') nativeState[outputIndex] = unit.contentState;
       const { added, followUps } = tool !== undefined ? openToolUnit(unit, tool.item, tool.callId, outputIndex)
         : unit.kind === 'message' ? openMessageUnit(unit, state, outputIndex)
           : unit.kind === 'image' ? openImageUnit(unit)
@@ -641,7 +658,7 @@ export const openaiResponsesFromIR = async function* (
 
     registerUnits(record, state);
     const unit = units.forRecord(record, state);
-    if (unit?.kind === 'message' && record.type === 'operation' && record.operation === 'append' && record.path.at(-1) === 'text') {
+    if ((unit?.kind === 'message' || unit?.kind === 'reasoning') && record.type === 'operation' && record.operation === 'append') {
       if (unit.opened) appendUnitText(unit, record.path, record.value, record.partIds);
       else {
         const text = collector.value<string>(record.path);

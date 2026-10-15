@@ -187,9 +187,9 @@ export const anthropicMessagesFromIR = async function* (
       if (block === undefined) { units.delete(unit.path); continue; }
       unit.opened = true;
       const index = ordinals.open(unit.path);
-      if (block.type === 'text') {
+      if (block.type === 'text' || block.type === 'thinking') {
         unit.textContentState = createContentState(options.roundTrip.builder);
-        contentState[index] = { text: unit.textContentState };
+        contentState[index] = block.type === 'thinking' ? { thinking: unit.textContentState } : { text: unit.textContentState };
       }
       nextBlockIndex = Math.max(nextBlockIndex, index + 1);
       pendingEvents.push({ type: 'content_block_start', index, content_block: block });
@@ -203,6 +203,11 @@ export const anthropicMessagesFromIR = async function* (
         appendPendingText(unit, path, text, unit.textContentState);
         if (text !== '') delta({ type: 'text_delta', text });
       } else if (item.type === 'reasoning' && block.type === 'thinking') {
+        const content = unit.textContentState;
+        if (content === undefined) throw new Error('Missing Messages thinking content state');
+        for (const field of ['summary', 'content'] as const) (item[field] ?? []).forEach((text, index) => {
+          appendPendingText(unit, [...unit.path, field, index], text, content);
+        });
         const text = [...item.summary ?? [], ...item.content ?? []].join('');
         if (text !== '') delta({ type: 'thinking_delta', thinking: text });
       } else if (item.type === 'function_call' && options.parseToolArguments === undefined && item.arguments !== '') {
@@ -254,8 +259,9 @@ export const anthropicMessagesFromIR = async function* (
 
     registerUnits(record, state);
     const pendingUnit = units.forRecord(record, state);
-    if (pendingUnit !== undefined && record.type === 'operation' && record.operation === 'append' && outputTextKind(pendingUnit, record) === 'text') {
-      if (!pendingUnit.opened) {
+    if (pendingUnit !== undefined && record.type === 'operation' && record.operation === 'append') {
+      const kind = outputTextKind(pendingUnit, record);
+      if (kind !== undefined && kind !== 'input' && !pendingUnit.opened) {
         const text = collector.value<string>(record.path);
         if (text === undefined) throw new Error('Missing pending Messages text');
         const fields = pendingUnit.pendingText ??= new Map();
@@ -263,7 +269,7 @@ export const anthropicMessagesFromIR = async function* (
         const atoms = fields.get(key) ?? [];
         atoms.push({ start: text.length - record.value.length, endExclusive: text.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
         fields.set(key, atoms);
-      } else {
+      } else if (kind !== undefined && kind !== 'input') {
         if (pendingUnit.textContentState === undefined) throw new Error('Missing Messages text content state');
         appendContent(options.roundTrip.builder, pendingUnit.textContentState, record.value, record.partIds);
       }

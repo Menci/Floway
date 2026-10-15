@@ -5,7 +5,7 @@ import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
-import { appendContent, createContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
+import { appendContent, createContentState, type ContentStates, type ContentState } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -76,6 +76,8 @@ const isIRTokenLogprob = (value: unknown): value is IRTokenLogprob =>
 // Emitted deltas carry the assistant extension fields (reasoning, annotations) beside the standard ones.
 type ChatChoiceChunk = Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx };
 type ChatChunkFields = Partial<Pick<OpenAIChatCompletionsStreamEvent, 'service_tier' | 'usage'>>;
+type ChatTextField = 'content' | 'refusal' | 'reasoning_text';
+interface PendingTranscriptPart { length: number; partIds?: readonly number[] }
 
 export const openaiChatCompletionsFromIR = async function* (
   records: AsyncIterable<IRRecord>,
@@ -99,6 +101,9 @@ export const openaiChatCompletionsFromIR = async function* (
     return accumulator;
   };
   const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
+  const pendingTranscripts = new Map<string, PendingTranscriptPart[]>();
+  let usage: OpenAIChatCompletionsUsageEx | undefined;
+
   const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<ContentStates> => {
     let state = outputStates.get(choice);
     if (state === undefined) {
@@ -107,8 +112,19 @@ export const openaiChatCompletionsFromIR = async function* (
     }
     return state;
   };
-  let usage: OpenAIChatCompletionsUsageEx | undefined;
-
+  const textState = (choice: number, field: ChatTextField): ContentState => {
+    const state = outputState(choice);
+    if (field === 'content') {
+      state.content ??= createContentState(options.roundTrip.builder);
+      return state.content;
+    }
+    if (field === 'refusal') {
+      state.refusal ??= createContentState(options.roundTrip.builder);
+      return state.refusal;
+    }
+    state.reasoning_text ??= createContentState(options.roundTrip.builder);
+    return state.reasoning_text;
+  };
   // Continuous usage is cumulative metadata on emitted choice chunks.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/openai/chat_completion/serving.py#L798-L871
   const chunk = (choices: ChatChoiceChunk[], fields: ChatChunkFields = {}): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => {
@@ -234,11 +250,7 @@ export const openaiChatCompletionsFromIR = async function* (
 
       if (record.operation === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
-          if (path[6] === 'text') {
-            const state = outputState(choice);
-            const content = state.content ??= createContentState(options.roundTrip.builder);
-            appendContent(options.roundTrip.builder, content, record.value, record.partIds);
-          }
+          appendContent(options.roundTrip.builder, textState(choice, path[6] === 'text' ? 'content' : 'refusal'), record.value, record.partIds);
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -246,6 +258,11 @@ export const openaiChatCompletionsFromIR = async function* (
           const partPath = path.slice(0, 6);
           if (partTypes.get(irPathKey(partPath)) !== 'audio') throw new TypeError('ChatCompletions audio delta requires an audio part');
           const audioPath = irPathKey(partPath);
+          if (path[7] === 'transcript' && !startedAudio.has(audioPath)) {
+            const parts = pendingTranscripts.get(audioPath) ?? [];
+            parts.push({ length: record.value.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+            pendingTranscripts.set(audioPath, parts);
+          }
           if (path[7] === 'data') {
             const audioMetadata = options.audioMetadata?.(choice);
             if (audioMetadata === undefined) throw new Error('ChatCompletions audio requires replay ID and expiry metadata');
@@ -255,12 +272,14 @@ export const openaiChatCompletionsFromIR = async function* (
             if (part?.type !== 'audio') throw new TypeError('ChatCompletions audio delta requires an audio part');
             const first = !startedAudio.has(audioPath);
             startedAudio.add(audioPath);
+            pendingTranscripts.delete(audioPath);
             const audio = { ...(first ? audioMetadata : {}), data: record.value, ...(first ? { transcript: part.audio.transcript ?? '' } : {}) };
             yield deltaFrame(choice, { audio }, tier);
           } else if (startedAudio.has(audioPath)) yield deltaFrame(choice, { audio: { transcript: record.value } }, tier);
           continue;
         }
         if (path.length === 6 && path[2] === 'items' && (path[4] === 'summary' || path[4] === 'content')) {
+          appendContent(options.roundTrip.builder, textState(choice, 'reasoning_text'), record.value, record.partIds);
           yield deltaFrame(choice, { reasoning_text: record.value }, tier);
           continue;
         }
@@ -322,9 +341,13 @@ export const openaiChatCompletionsFromIR = async function* (
       const item = state.choices[record.choice].items[record.item];
       const part = item.type === 'message' ? item.content[record.part] : undefined;
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
-        const state = outputState(record.choice);
-        const content = state.content ??= createContentState(options.roundTrip.builder);
-        appendContent(options.roundTrip.builder, content, part.audio.transcript);
+        let offset = 0;
+        const content = textState(record.choice, 'content');
+        for (const pending of pendingTranscripts.get(irPathKey(path)) ?? []) {
+          appendContent(options.roundTrip.builder, content, part.audio.transcript.slice(offset, offset + pending.length), pending.partIds);
+          offset += pending.length;
+        }
+        pendingTranscripts.delete(irPathKey(path));
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
       }
       continue;
@@ -358,6 +381,7 @@ export const openaiChatCompletionsFromIR = async function* (
       });
       if (annotations.length > 0) yield deltaFrame(record.choice, { annotations }, tier);
       if (choice.refusal?.explanation != null) {
+        appendContent(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal.explanation }, tier);
       }
       const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;

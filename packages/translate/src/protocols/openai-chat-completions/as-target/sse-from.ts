@@ -5,10 +5,12 @@ import {
   type IRRecord,
   type IRItemHandle,
   type IRPartHandle,
+  type IRWriteHandle,
+  type IRRelativePath,
 } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
-import { appendField, createFieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
+import { appendField, createFieldState, type FieldStates, type FieldState } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -140,6 +142,15 @@ export const irFromOpenAIChatCompletions = async function* (
     return choice;
   };
 
+  const appendFieldAtom = (
+    handle: IRWriteHandle,
+    field: IRRelativePath,
+    text: string,
+    state: FieldState,
+  ): void => {
+    const partId = appendField(options.roundTrip.builder, state, text);
+    handle.append(field, text, [partId]);
+  };
   const createItem = (index: number, choice: ChatChoiceState, value: unknown): IRItemHandle => {
     const item = ir.item(index, value);
     choice.items.push(item);
@@ -259,12 +270,15 @@ export const irFromOpenAIChatCompletions = async function* (
   };
 
   const readReasoning = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
-    const text = choice.reasoningField === undefined ? undefined : delta[choice.reasoningField];
+    const field = choice.reasoningField;
+    if (field === undefined) return;
+    const text = delta[field];
     if (typeof text === 'string' && text !== '') {
       closeMessage(choice);
-      if (choice.reasoning === undefined) choice.reasoning = createItem(index, choice, { type: 'reasoning', summary: [''] });
-      else choice.reasoning.ensure('summary', ['']);
-      choice.reasoning.append(['summary', 0], text);
+      const reasoning = choice.reasoning ??= createItem(index, choice, { type: 'reasoning', summary: [''] });
+      reasoning.ensure('summary', ['']);
+      const fieldState = choice.fieldState[field] ??= createFieldState();
+      appendFieldAtom(reasoning, ['summary', 0], text, fieldState);
     }
   };
 
@@ -274,7 +288,10 @@ export const irFromOpenAIChatCompletions = async function* (
       messagePart(index, choice, 'text').append('text', delta.content, [appendField(options.roundTrip.builder, field, delta.content)]);
       choice.coordinateIndex?.append(delta.content);
     }
-    if (typeof delta.refusal === 'string' && delta.refusal !== '') messagePart(index, choice, 'refusal').append('refusal', delta.refusal);
+    if (typeof delta.refusal === 'string' && delta.refusal !== '') {
+      const field = choice.fieldState.refusal ??= createFieldState();
+      appendFieldAtom(messagePart(index, choice, 'refusal'), 'refusal', delta.refusal, field);
+    }
     if (delta.audio != null) {
       const part = messagePart(index, choice, 'audio');
       for (const field of ['data', 'transcript'] as const) {

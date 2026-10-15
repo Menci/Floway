@@ -238,7 +238,8 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   const translation = await trip(serverSecret);
   const fixture = {
     text: ['return ', 'path'],
-    ...(b === 'openai-responses' ? { thinking: ['upstream thought'], signature: 'native B encrypted content' } : {}),
+    thinking: ['upstream thought'],
+    signature: 'native B encrypted content',
   };
   const frames = await collect(translation.events(iterate(fixtureFrames(b, fixture))));
   const assistant = await collectAssistantTurn(a, frames);
