@@ -2,10 +2,12 @@ import type { Context } from 'hono';
 
 import { ANCHORS, isIpV4, isIpV6 } from './egress-probe.ts';
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
-import { type CtxWithJson } from '../../middleware/zod-validator.ts';
+import { resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
+import { userFromContext } from '../../middleware/auth.ts';
+import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { shortId } from '../../shared/short-id.ts';
-import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
+import type { createProxyBody, proxyOptionsQuery, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
@@ -20,6 +22,14 @@ const proxyUriValidationError = (err: unknown): string => {
 export const listProxies = async (c: Context) => {
   const proxies = await getRepo().proxies.list();
   return c.json(proxies.map(proxyRecordToJson));
+};
+
+export const listProxyOptions = async (c: CtxWithQuery<typeof proxyOptionsQuery>) => {
+  const upstreamId = c.req.valid('query').upstream_id;
+  if (await resolveUpstreamEditLevel(userFromContext(c), upstreamId) !== 'full') {
+    return c.json({ error: 'Upstream not found' }, 404);
+  }
+  return c.json((await getRepo().proxies.list()).map(proxy => ({ id: proxy.id, name: proxy.name })));
 };
 
 export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {

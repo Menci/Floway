@@ -10,8 +10,8 @@ import { createGroup, deleteGroup, listGroups, updateGroup } from './groups/rout
 import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
-import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { accessRecordBody, upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, resetBackoffBody, resolveAccessBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, listProxyOptions, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
+import { accessRecordBody, upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, proxyOptionsQuery, resetBackoffBody, resolveAccessBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
@@ -59,6 +59,27 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .get('/api/search-usage', zValidator('query', webSearchUsageQuery), webSearchUsage)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
+  .get('/api/upstreams', listUpstreams)
+  .get('/api/upstreams/blueprint', adminOnlyMiddleware, getUpstreamBlueprint)
+  .get('/api/upstreams/:id', getUpstream)
+  .patch('/api/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
+  .post('/api/upstreams/:id/list-models', fetchSavedModels)
+  .post('/api/upstreams/copilot/oauth/device-login/start', zValidator('json', copilotOAuthDeviceLoginStartBody), copilotOAuthDeviceLoginStart)
+  .post('/api/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOAuthDeviceLoginPollBody), copilotOAuthDeviceLoginPoll)
+  .post('/api/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuota)
+  .post('/api/upstreams/codex/import/exchange', zValidator('json', codexImportExchangeBody), codexImportExchange)
+  .post('/api/upstreams/codex/oauth/authorize-url', zValidator('json', codexOAuthAuthorizeUrlBody), codexOAuthAuthorizeUrl)
+  .post('/api/upstreams/codex/oauth/refresh', zValidator('json', codexOAuthRefreshBody), codexOAuthRefresh)
+  .post('/api/upstreams/codex/reset-credits', zValidator('json', codexRateLimitResetCreditsBody), codexRateLimitResetCredits)
+  .post('/api/upstreams/codex/reset-credits/consume', zValidator('json', codexRateLimitResetConsumeBody), codexRateLimitResetConsume)
+  .post('/api/upstreams/claude-code/oauth/authorize-url', zValidator('json', claudeCodeOAuthAuthorizeUrlBody), claudeCodeOAuthAuthorizeUrl)
+  .post('/api/upstreams/claude-code/oauth/exchange', zValidator('json', claudeCodeOAuthExchangeBody), claudeCodeOAuthExchange)
+  .post('/api/upstreams/claude-code/oauth/refresh', zValidator('json', claudeCodeOAuthRefreshBody), claudeCodeOAuthRefresh)
+  .post('/api/upstreams/claude-code/setup-token/authorize-url', zValidator('json', claudeCodeSetupTokenAuthorizeUrlBody), claudeCodeSetupTokenAuthorizeUrl)
+  .post('/api/upstreams/claude-code/setup-token/exchange', zValidator('json', claudeCodeSetupTokenExchangeBody), claudeCodeSetupTokenExchange)
+  .post('/api/upstreams/claude-code/probe', zValidator('json', claudeCodeProbeBody), claudeCodeProbe)
+  .post('/api/upstreams/ollama/usage', zValidator('json', ollamaUsageBody), ollamaUsage)
+  .get('/api/proxy-options', zValidator('query', proxyOptionsQuery), listProxyOptions)
   // Minimal upstream picker exposed to non-admin users so they can scope a key
   // to specific upstreams. Returns id/name/provider/enabled only — no config,
   // no flag overrides, no model lists. Model.Use remains the authorization
@@ -90,28 +111,9 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .delete('/access-records/:id', deleteAccessRecord)
     .post('/access-resolve', zValidator('json', resolveAccessBody), resolveAccess)
     .get('/upstreams', listUpstreams)
-    .get('/upstreams/blueprint', getUpstreamBlueprint)
-    .post('/upstreams/copilot/oauth/device-login/start', zValidator('json', copilotOAuthDeviceLoginStartBody), copilotOAuthDeviceLoginStart)
-    .post('/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOAuthDeviceLoginPollBody), copilotOAuthDeviceLoginPoll)
-    .post('/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuota)
     .post('/upstreams/codex/import/preview', zValidator('json', codexImportPreviewBody), codexImportPreview)
-    .post('/upstreams/codex/import/exchange', zValidator('json', codexImportExchangeBody), codexImportExchange)
-    .post('/upstreams/codex/oauth/authorize-url', zValidator('json', codexOAuthAuthorizeUrlBody), codexOAuthAuthorizeUrl)
-    .post('/upstreams/codex/oauth/refresh', zValidator('json', codexOAuthRefreshBody), codexOAuthRefresh)
-    .post('/upstreams/codex/reset-credits', zValidator('json', codexRateLimitResetCreditsBody), codexRateLimitResetCredits)
-    .post('/upstreams/codex/reset-credits/consume', zValidator('json', codexRateLimitResetConsumeBody), codexRateLimitResetConsume)
-    .post('/upstreams/claude-code/oauth/authorize-url', zValidator('json', claudeCodeOAuthAuthorizeUrlBody), claudeCodeOAuthAuthorizeUrl)
-    .post('/upstreams/claude-code/oauth/exchange', zValidator('json', claudeCodeOAuthExchangeBody), claudeCodeOAuthExchange)
-    .post('/upstreams/claude-code/oauth/refresh', zValidator('json', claudeCodeOAuthRefreshBody), claudeCodeOAuthRefresh)
-    .post('/upstreams/claude-code/setup-token/authorize-url', zValidator('json', claudeCodeSetupTokenAuthorizeUrlBody), claudeCodeSetupTokenAuthorizeUrl)
-    .post('/upstreams/claude-code/setup-token/exchange', zValidator('json', claudeCodeSetupTokenExchangeBody), claudeCodeSetupTokenExchange)
-    .post('/upstreams/claude-code/probe', zValidator('json', claudeCodeProbeBody), claudeCodeProbe)
-    .post('/upstreams/ollama/usage', zValidator('json', ollamaUsageBody), ollamaUsage)
     .post('/upstreams/preview-models', zValidator('json', previewModelsBody), previewModels)
-    .post('/upstreams/:id/list-models', fetchSavedModels)
     .post('/upstreams', zValidator('json', createUpstreamBody), createUpstream)
-    .get('/upstreams/:id', getUpstream)
-    .patch('/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
     .delete('/upstreams/:id', deleteUpstream)
     // Proxies. Literal `/proxies/backoffs` is registered before any `/:id`
     // route so Hono matches the literal segment first.

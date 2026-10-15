@@ -611,6 +611,8 @@ export const resetBackoffBody = z.object({
   upstream_id: z.string().min(1).optional(),
 });
 
+export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
+
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({

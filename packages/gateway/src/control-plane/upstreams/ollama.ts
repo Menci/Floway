@@ -9,6 +9,8 @@
 
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
+import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { ollamaUsageBody } from '../schemas.ts';
@@ -24,6 +26,8 @@ import {
 
 export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   const { record } = c.req.valid('json');
+  const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
+  if (accessError) return c.json({ error: accessError.error }, accessError.status);
   if (record.kind !== 'ollama') return c.json({ error: 'Upstream is not an Ollama upstream' }, 400);
 
   let config: OllamaUpstreamConfig;
