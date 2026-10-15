@@ -551,10 +551,6 @@ const aggregateMemoryOverview = (
   const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
   const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
   for (const axis of axes) {
-    if (axis === 'userId' && !opts.isAdmin) {
-      result.set(axis, []);
-      continue;
-    }
     const aggregates = new Map<string, UsageOverviewRecord>();
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
@@ -628,20 +624,25 @@ class MemoryUsageRepo implements UsageRepo {
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
-    const scoped = !opts.isAdmin || opts.groupBy === 'keyId'
+    const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(memoryUsageUserIdForKey(record.keyId, keyToUser))
+      || (record.upstream !== null && visibleUpstreams.has(record.upstream)));
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       keyId: {
         value: record => record.keyId,
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
       userId: {
         value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       model: { value: record => record.model },
       upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
@@ -812,14 +813,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const scoped = opts.groupBy === 'keyId'
       ? records.filter(record => visibleKeyIds.has(record.keyId))
       : records;
-    const partitioned = partitionTelemetryOverviewRecords(scoped, {
+    const visibleUserIds = new Set(opts.visibleUserIds);
+    const visibleUpstreams = new Set(opts.visibleUpstreams);
+    const authorized = scoped.filter(record => opts.isAdmin
+      || visibleUserIds.has(keyToUser.get(record.keyId) ?? tokenUsageUnattributedUserId)
+      || visibleUpstreams.has(record.upstream));
+    const partitioned = partitionTelemetryOverviewRecords(authorized, {
       model: { value: record => record.model },
       upstream: { value: record => record.upstream },
       operation: { value: record => record.operation },
       runtimeLocation: { value: record => record.runtimeLocation },
       userId: {
         value: record => keyToUser.get(record.keyId)?.toString() ?? null,
-        includeFacet: () => opts.isAdmin,
+        includeFacet: () => true,
       },
       keyId: {
         value: record => record.keyId,
@@ -845,7 +851,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     }, keyToUser, visibleKeyIds);
     return {
       series,
-      axes: { ...axes, userId: opts.isAdmin ? axes.userId : [] },
+      axes,
       dimensionValues: {
         models: partitioned.dimensionValues.model,
         upstreams: partitioned.dimensionValues.upstream,

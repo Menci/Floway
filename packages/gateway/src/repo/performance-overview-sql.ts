@@ -88,7 +88,7 @@ const performanceBreakdownSql: readonly PerformanceBreakdownSql[] = [
   {
     axis: 'userId',
     group: source => `CAST(${source}.user_id AS TEXT)`,
-    where: source => `settings.is_admin = 1 AND ${source}.user_id IS NOT NULL`,
+    where: source => `${source}.user_id IS NOT NULL`,
   },
   { axis: 'model', group: source => `${source}.model` },
   { axis: 'upstream', group: source => `${source}.upstream` },
@@ -171,7 +171,7 @@ const histogramAggregateSql = boundedUnionAll([histogramSeriesSql, ...histogramB
 const facetRowsSql = boundedUnionAll(performanceBreakdownSql
   .filter(({ axis }) => axis !== 'none')
   .map(({ axis, group, where }) => {
-    const source = 'scoped_summary';
+    const source = 'authorized_summary';
     const groupSql = group(source);
     return `SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
     '${axis}' AS dimension, ${groupSql} AS facet_value,
@@ -213,6 +213,12 @@ user_filter(value) AS MATERIALIZED (
 key_filter(value) AS MATERIALIZED (
   SELECT CAST(value AS TEXT) FROM json_each(?)
 ),
+visible_user(value) AS MATERIALIZED (
+  SELECT CAST(value AS INTEGER) FROM json_each(?)
+),
+visible_upstream(value) AS MATERIALIZED (
+  SELECT CAST(value AS TEXT) FROM json_each(?)
+),
 bucket_map(hour, bucket) AS MATERIALIZED (
   SELECT key, CAST(value AS TEXT) FROM json_each(?)
 ),
@@ -240,9 +246,17 @@ orphan_buckets AS MATERIALIZED (
     AND performance_summary.hour IS NULL
   LIMIT 1
 ),
-filtered_summary AS MATERIALIZED (
+authorized_summary AS MATERIALIZED (
   SELECT *
   FROM scoped_summary
+  CROSS JOIN settings
+  WHERE settings.is_admin = 1
+    OR user_id IN (SELECT value FROM visible_user)
+    OR upstream IN (SELECT value FROM visible_upstream)
+),
+filtered_summary AS MATERIALIZED (
+  SELECT *
+  FROM authorized_summary
   WHERE
     (NOT EXISTS (SELECT 1 FROM model_filter) OR model IN (SELECT value FROM model_filter))
     AND (NOT EXISTS (SELECT 1 FROM upstream_filter) OR upstream IN (SELECT value FROM upstream_filter))
@@ -495,9 +509,6 @@ export const querySqlPerformanceOverview = async (
   db: SqlDatabase,
   opts: PerformanceOverviewQueryOptions,
 ): Promise<PerformanceOverviewResult> => {
-  if (!opts.isAdmin && (opts.groupBy === 'userId' || opts.filters.userIds.length > 0)) {
-    throw new Error('Performance user attribution requires administrator privileges');
-  }
   const scoped = opts.groupBy === 'keyId';
   const range = rangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
@@ -515,6 +526,8 @@ export const querySqlPerformanceOverview = async (
       JSON.stringify(opts.filters.runtimeLocations),
       JSON.stringify(opts.filters.userIds),
       JSON.stringify(opts.filters.keyIds),
+      JSON.stringify(opts.visibleUserIds),
+      JSON.stringify(opts.visibleUpstreams),
       JSON.stringify(buckets),
       ...range,
       ...range,

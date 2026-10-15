@@ -153,9 +153,10 @@ test('/api/performance/overview keeps API-key axes actor-scoped under a cross-us
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Both users' rows feed the model breakdown...
-  assertEquals(body.axes.model.map((r: { requests: number }) => r.requests), [2]);
-  // ...while the key dimension still names only the actor's own key.
+  // The model breakdown contains only cells visible through the actor's
+  // default self User.Audit grant.
+  assertEquals(body.axes.model.map((r: { requests: number }) => r.requests), [1]);
+  // The key dimension likewise names only the actor's own key.
   assertEquals(body.axes.keyId.map((r: { group: string }) => r.group), [apiKey.id]);
   assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
 });
@@ -226,7 +227,7 @@ test('/api/performance/overview aggregates over every user\'s keys', async () =>
   assertEquals(body.axes.model[0].requests, 2);
 });
 
-test('/api/performance/overview gives a non-admin the global aggregate without per-user attribution', async () => {
+test('/api/performance/overview keeps only the none axis global for a non-admin', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_admin_owned',
@@ -258,31 +259,30 @@ test('/api/performance/overview gives a non-admin the global aggregate without p
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Both users' rows land in the aggregate...
+  assertEquals(body.axes.none[0].requests, 2);
+  // Resource and user breakdowns remain scoped to visible cells.
   assertEquals(body.axes.model.length, 1);
-  assertEquals(body.axes.model[0].requests, 2);
-  // ...but nothing in the payload names who produced them.
-  assertEquals(body.axes.userId, []);
-  assertEquals(body.users, []);
-  assertEquals(body.dimensionValues.userIds, []);
+  assertEquals(body.axes.model[0].requests, 1);
+  assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['2', 1]]);
+  assertEquals(body.users.map((user: { id: number }) => user.id), [2]);
+  assertEquals(body.dimensionValues.userIds, [2]);
 });
 
-test('/api/performance/overview rejects group_by=userId from a non-admin', async () => {
+test('/api/performance/overview permits group_by=userId for visible users', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
 
-  assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'group_by=userId requires administrator privileges' });
+  assertEquals(response.status, 200);
 });
 
-test('/api/performance/overview rejects filter_user_id from a non-admin', async () => {
+test('/api/performance/overview treats a hidden filter_user_id as an empty visible query', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=1', { headers: { 'x-api-key': apiKey.key } });
 
-  assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'filter_user_id requires administrator privileges' });
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).series, []);
 });
 
 test('/api/performance/overview narrows an administrator to their own keys under group_by=keyId too', async () => {
@@ -428,7 +428,7 @@ test('/api/performance/overview series stays per-model under a cross-user breakd
   assertEquals(body.dimensionValues.userIds.sort((a: number, b: number) => a - b), [1, 2]);
 });
 
-test('/api/performance/overview leaves dimensionValues.userIds empty for a non-admin', async () => {
+test('/api/performance/overview includes userIds revealed by User.Audit', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -446,14 +446,10 @@ test('/api/performance/overview leaves dimensionValues.userIds empty for a non-a
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Self-view rows all belong to the actor; the dashboard hides the user
-  // dropdown for this view, and the backend confirms it by never surfacing
-  // a single-element list that would encourage a downstream client to
-  // render it.
-  assertEquals(body.dimensionValues.userIds, []);
+  assertEquals(body.dimensionValues.userIds, [2]);
 });
 
-test('/api/performance/overview delegates every dashboard axis to one overview read', async () => {
+test('/api/performance/overview reads the visible view and explicit global baseline', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
   const originalQuery = repo.performance.queryOverview.bind(repo.performance);
@@ -478,7 +474,7 @@ test('/api/performance/overview delegates every dashboard axis to one overview r
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(queryCount, 1);
+  assertEquals(queryCount, 2);
   assertEquals(body.series[0].group, 'claude-sonnet-4-5');
   assertEquals(body.axes.none[0].bucket, 'all');
   assertEquals(body.axes.model[0].group, 'claude-sonnet-4-5');

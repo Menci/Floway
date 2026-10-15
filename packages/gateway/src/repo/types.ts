@@ -83,6 +83,8 @@ export interface UsageOverviewFilters {
 export interface UsageOverviewQueryOptions {
   actorUserId: number;
   isAdmin: boolean;
+  visibleUserIds: readonly number[];
+  visibleUpstreams: readonly string[];
   start: string;
   end: string;
   groupBy: UsageOverviewGroupBy;
@@ -220,6 +222,8 @@ export interface PerformanceOverviewFilters {
 export interface PerformanceOverviewQueryOptions {
   actorUserId: number;
   isAdmin: boolean;
+  visibleUserIds: readonly number[];
+  visibleUpstreams: readonly string[];
   start: string;
   end: string;
   groupBy: PerformanceOverviewGroupBy;
