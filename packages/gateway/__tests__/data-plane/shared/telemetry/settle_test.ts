@@ -1,6 +1,6 @@
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
-import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
+import { settle, settleUsageMeasurement } from '../../../../src/data-plane/shared/telemetry/settle.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -102,4 +102,45 @@ test('settle records the perf sample without waiting on the usage write', async 
   // ~100_000us (200ms / 2). 50_000us fences the regression while
   // tolerating scheduler jitter.
   expect(rows[0].tpotUsSum).toBeLessThan(50_000);
+});
+
+test.each(['tokens', 'measurement'])('settle %s keeps start-time prices when a request finishes in another window', async mode => {
+  const startedAt = Date.parse('2026-10-16T01:59:59.999Z');
+  const timeWindow = { timeZone: 'UTC', weekdays: [5], start: '01:00', end: '02:00' };
+  const identity: TelemetryModelIdentity = {
+    ...testTelemetryModelIdentity,
+    pricing: {
+      entries: [
+        { rates: { input_tokens: '1', input_cache_read_tokens: '0.1', output_tokens: '3' } },
+        { selector: { timeWindow }, rates: { input_tokens: '2', input_cache_read_tokens: '0.2', output_tokens: '6' } },
+      ],
+    },
+  };
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(new Date('2026-10-16T02:00:05Z'));
+    for (const requestStartedAt of [startedAt, Date.now()]) {
+      const gatewayCtx = { ...ctx(), requestStartedAt };
+      if (mode === 'tokens') settle(gatewayCtx, undefined, identity, { input: 10, input_cache_read: 20, output: 5 }, false);
+      else settleUsageMeasurement(gatewayCtx, undefined, identity, {
+        quantities: { input_tokens: '10', input_cache_read_tokens: '20', output_tokens: '5' }, pricingFacts: {}, dumpTokenUsage: null,
+      }, false);
+    }
+    await Promise.all(background);
+    const rows = await repo.usage.listAll();
+    expect(rows).toHaveLength(2);
+    expect(rows.map(row => row.hour)).toEqual(['2026-10-16T02', '2026-10-16T02']);
+    expect(rows.find(row => row.pricingSelector.timeWindow)?.metrics).toEqual([
+      { metric: 'input_tokens', quantity: '10', unitPrice: '2' },
+      { metric: 'input_cache_read_tokens', quantity: '20', unitPrice: '0.2' },
+      { metric: 'output_tokens', quantity: '5', unitPrice: '6' },
+    ]);
+    expect(rows.find(row => !row.pricingSelector.timeWindow)?.metrics).toEqual([
+      { metric: 'input_tokens', quantity: '10', unitPrice: '1' },
+      { metric: 'input_cache_read_tokens', quantity: '20', unitPrice: '0.1' },
+      { metric: 'output_tokens', quantity: '5', unitPrice: '3' },
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

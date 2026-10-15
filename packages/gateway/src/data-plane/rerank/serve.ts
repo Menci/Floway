@@ -39,7 +39,7 @@ const settleRerank = (
   if (usage?.searchUnits !== undefined) quantities.rerank_searches = parseDecimalString(String(usage.searchUnits));
   if (usage?.totalTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.totalTokens));
   const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts, ctx.requestStartedAt).catch(error => {
     console.error('Failed to record rerank usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());
