@@ -1,6 +1,6 @@
-
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
+import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
@@ -169,34 +169,31 @@ const buildTools = (payload: GeminiGenerateContentPayload): OpenAIResponsesTool[
 };
 
 export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model: string): CanonicalOpenAIResponsesPayload => {
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
   const request: CanonicalOpenAIResponsesPayload = {
     model,
     stream: true,
-    input: [],
+    input,
   };
-  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = {};
+  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
 
   const instructions = geminiGenerateContentText(payload.systemInstruction);
   if (instructions !== null) request.instructions = instructions;
 
-  const input = request.input as CanonicalOpenAIResponsesInputItem[];
-  payload.contents?.forEach((content, turnIndex) => {
-    if ((content.parts?.length ?? 0) === 0 && (content.role === 'model' || content.role === 'user' || content.role === undefined)) {
-      input.push({ type: 'message', role: content.role === 'model' ? 'assistant' : 'user', content: '' });
-      return;
+  let contentIndex = 0;
+  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+    if (turn.role === 'assistant') {
+      for (const [index, content] of turn.items.entries()) {
+        if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'assistant', content: '' }); continue; }
+        input.push(...buildAssistantInputItems(content, contentIndex + index, unmatchedToolCallIds));
+      }
+    } else for (const [index, content] of turn.items.entries()) {
+      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+      if ((content.parts?.length ?? 0) === 0) { input.push({ type: 'message', role: 'user', content: '' }); continue; }
+      input.push(...buildUserInputItems(content, contentIndex + index, unmatchedToolCallIds));
     }
-    switch (content.role) {
-    case 'model':
-      input.push(...buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds));
-      return;
-    case 'user':
-    case undefined:
-      input.push(...buildUserInputItems(content, turnIndex, unmatchedToolCallIds));
-      return;
-    default:
-      throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-    }
-  });
+    contentIndex += turn.items.length;
+  }
 
   applyGenerationConfig(request, payload.generationConfig);
 

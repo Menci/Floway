@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
+import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiGenerateContentReasoningEffort } from '../as-source/reasoning.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
@@ -223,32 +224,28 @@ export const buildTargetRequest = (payload: GeminiGenerateContentPayload, model:
     stream: true,
     messages: [],
   };
-  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = {};
+  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
 
   const systemText = geminiGenerateContentText(payload.systemInstruction);
   if (systemText !== null) {
     request.messages.push({ role: 'system', content: systemText });
   }
 
-  payload.contents?.forEach((content, turnIndex) => {
-    if ((content.parts?.length ?? 0) === 0 && (content.role === 'model' || content.role === 'user' || content.role === undefined)) {
-      request.messages.push({ role: content.role === 'model' ? 'assistant' : 'user', content: '' });
-      return;
+  let contentIndex = 0;
+  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+    if (turn.role === 'assistant') {
+      for (const [index, content] of turn.items.entries()) {
+        if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'assistant', content: '' }); continue; }
+        const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
+        if (message) request.messages.push(message);
+      }
+    } else for (const [index, content] of turn.items.entries()) {
+      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+      if ((content.parts?.length ?? 0) === 0) { request.messages.push({ role: 'user', content: '' }); continue; }
+      request.messages.push(...buildUserMessages(content, contentIndex + index, unmatchedToolCallIds));
     }
-    switch (content.role) {
-    case 'model': {
-      const message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
-      if (message) request.messages.push(message);
-      return;
-    }
-    case 'user':
-    case undefined:
-      request.messages.push(...buildUserMessages(content, turnIndex, unmatchedToolCallIds));
-      return;
-    default:
-      throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
-    }
-  });
+    contentIndex += turn.items.length;
+  }
 
   applyGenerationConfig(request, payload.generationConfig);
 

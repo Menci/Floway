@@ -1,23 +1,22 @@
-
 import { klona } from 'klona/json';
 
 import { anthropicMessagesReasoningBlockToOpenAIResponsesReasoning } from './reasoning.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
-import {
-  type AnthropicMessagesAssistantMessage,
-  type AnthropicMessagesClientTool,
-  type AnthropicMessagesMessage,
-  type AnthropicMessagesPayload,
-  type AnthropicMessagesMetadataEx,
-  type AnthropicMessagesServerToolUseBlockParam,
-  type AnthropicMessagesSystemMessage,
-  type AnthropicMessagesTextBlockParam,
-  type AnthropicMessagesToolResultBlock,
-  type AnthropicMessagesToolUseBlockParam,
-  type AnthropicMessagesUserContentBlock,
-  type AnthropicMessagesUserMessage,
-  type AnthropicMessagesWebSearchToolResultBlockParam,
+import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
+import type {
+  AnthropicMessagesAssistantMessage,
+  AnthropicMessagesClientTool,
+  AnthropicMessagesPayload,
+  AnthropicMessagesMetadataEx,
+  AnthropicMessagesServerToolUseBlockParam,
+  AnthropicMessagesSystemMessage,
+  AnthropicMessagesTextBlockParam,
+  AnthropicMessagesToolResultBlock,
+  AnthropicMessagesToolUseBlockParam,
+  AnthropicMessagesUserContentBlock,
+  AnthropicMessagesUserMessage,
+  AnthropicMessagesWebSearchToolResultBlockParam,
 } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
@@ -174,16 +173,6 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[]): CanonicalOpenAIResponsesInputItem[] =>
-  messages.flatMap((message, messageIdx): CanonicalOpenAIResponsesInputItem[] => {
-    switch (message.role) {
-    case 'user': return translateUserMessage(message, messageIdx);
-    case 'assistant': return translateAssistantMessage(message, messageIdx);
-    case 'system': return translateAnthropicMessagesSystem(message);
-    default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
-    }
-  });
-
 // OpenAI Responses' `instructions` field is `string | null` — it cannot carry
 // multiple text blocks faithfully. When the source `AnthropicMessagesPayload.system`
 // is a single string or a single block, the canonical `instructions` slot
@@ -285,6 +274,20 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   // https://platform.openai.com/docs/guides/fast-mode
   const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
   const toolChoice = translateToolChoice(payload.tool_choice, clientTools);
+  const input = [...prependItems];
+  let messageIndex = 0;
+  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+    if (turn.role === 'assistant') {
+      input.push(...turn.items.flatMap((message, index) => translateAssistantMessage(message, messageIndex + index)));
+    } else for (const [index, message] of turn.items.entries()) {
+      switch (message.role) {
+      case 'user': input.push(...translateUserMessage(message, messageIndex + index)); break;
+      case 'system': input.push(...translateAnthropicMessagesSystem(message)); break;
+      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      }
+    }
+    messageIndex += turn.items.length;
+  }
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
@@ -293,7 +296,7 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): Canonical
   // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
-    input: [...prependItems, ...translateAnthropicMessagesInput(payload.messages)],
+    input,
     ...(instructions !== null ? { instructions } : {}),
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),

@@ -3,11 +3,11 @@ import { klona } from 'klona/json';
 import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from './reasoning.ts';
 import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { filterAnthropicMessagesClientTools } from '../as-source/client-tools.ts';
+import { partitionAnthropicMessagesTurns } from '../as-source/conversation-turns.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
   AnthropicMessagesClientTool,
-  AnthropicMessagesMessage,
   AnthropicMessagesPayload,
   AnthropicMessagesServerToolUseBlockParam,
   AnthropicMessagesSystemMessage,
@@ -236,30 +236,6 @@ const translateAnthropicMessagesSystem = (message: AnthropicMessagesSystemMessag
   },
 ];
 
-const translateAnthropicMessagesInput = (messages: AnthropicMessagesMessage[], system: string | AnthropicMessagesTextBlockParam[] | undefined): OpenAIChatCompletionsMessage[] => {
-  const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
-  const systemMessages: OpenAIChatCompletionsMessage[] = isEmptySystem
-    ? []
-    : [
-        {
-          role: 'system',
-          content: systemContentFromBlocks(system),
-        },
-      ];
-
-  return [
-    ...systemMessages,
-    ...messages.flatMap((message, messageIdx): OpenAIChatCompletionsMessage[] => {
-      switch (message.role) {
-      case 'user': return translateAnthropicMessagesUser(message, messageIdx);
-      case 'assistant': return translateAnthropicMessagesAssistant(message, messageIdx);
-      case 'system': return translateAnthropicMessagesSystem(message);
-      default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
-      }
-    }),
-  ];
-};
-
 const translateAnthropicMessagesTools = (tools?: AnthropicMessagesClientTool[]): OpenAIChatCompletionsTool[] | undefined =>
   // Do not hide target-side function-name constraints by renaming tools here;
   // the Anthropic Messages source contract has no reverse mapping surface for that.
@@ -313,10 +289,26 @@ export const buildTargetRequest = (payload: AnthropicMessagesPayload): OpenAICha
   // https://docs.claude.com/en/build-with-claude/fast-mode
   // https://platform.openai.com/docs/guides/fast-mode
   const serviceTier = payload.speed === 'fast' ? FAST_SERVICE_TIER : payload.speed === undefined ? payload.service_tier : undefined;
+  const messages: OpenAIChatCompletionsMessage[] = payload.system == null || (typeof payload.system === 'string' ? payload.system === '' : payload.system.length === 0)
+    ? []
+    : [{ role: 'system', content: systemContentFromBlocks(payload.system) }];
+  let messageIndex = 0;
+  for (const turn of partitionAnthropicMessagesTurns(payload.messages)) {
+    if (turn.role === 'assistant') {
+      messages.push(...turn.items.flatMap((message, index) => translateAnthropicMessagesAssistant(message, messageIndex + index)));
+    } else for (const [index, message] of turn.items.entries()) {
+      switch (message.role) {
+      case 'user': messages.push(...translateAnthropicMessagesUser(message, messageIndex + index)); break;
+      case 'system': messages.push(...translateAnthropicMessagesSystem(message)); break;
+      default: throw new TranslatorInputError(`messages.${messageIndex + index}.role: role '${(message as { role: string }).role}' is not supported on this model`);
+      }
+    }
+    messageIndex += turn.items.length;
+  }
 
   return {
     model: payload.model,
-    messages: translateAnthropicMessagesInput(payload.messages, payload.system),
+    messages,
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
     stop: klona(payload.stop_sequences),

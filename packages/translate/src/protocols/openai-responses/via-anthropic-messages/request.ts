@@ -9,6 +9,7 @@ import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-mess
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { restrictAllowedTools } from '../as-source/allowed-tools.ts';
+import { partitionOpenAIResponsesTurns } from '../as-source/conversation-turns.ts';
 import { flattenNamespaceTools, type NamespaceToolNames } from '../as-source/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../as-source/programmatic-tooling.ts';
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-payload.ts';
@@ -216,100 +217,6 @@ const appendUserBlock = (messages: AnthropicMessagesMessage[], block: AnthropicM
   messages.push({ role: 'user', content: [block] });
 };
 
-const translateOpenAIResponsesInput = async (
-  input: CanonicalOpenAIResponsesInputItem[],
-  loadRemoteImage: RemoteImageLoader,
-): Promise<{ messages: AnthropicMessagesMessage[]; systemBlocks: AnthropicMessagesTextBlockParam[] }> => {
-  // Hoist the leading contiguous run of system/developer input messages into
-  // systemBlocks (→ top-level Anthropic Messages.system), preserving each input_text
-  // part as its own AnthropicMessagesTextBlockParam so part boundaries survive the hoist.
-  // Non-leading system/developer messages stay inline as AnthropicMessagesSystemMessage.
-  const systemBlocks: AnthropicMessagesTextBlockParam[] = [];
-  let prefixEnd = 0;
-  for (const item of input) {
-    if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
-    systemBlocks.push(...openaiResponsesSystemBlocks(item));
-    prefixEnd++;
-  }
-
-  const messages: AnthropicMessagesMessage[] = [];
-
-  for (const item of input.slice(prefixEnd)) {
-    rejectProgramCaller(item);
-    switch (item.type) {
-    case 'message':
-      switch (item.role) {
-      case 'user':
-        messages.push(await translateUserMessage(item, loadRemoteImage));
-        break;
-      case 'assistant':
-        messages.push(translateAssistantMessage(item));
-        break;
-      case 'system':
-      case 'developer': {
-        // The leading prefix was lifted above; keep later instruction messages
-        // inline so chronology reaches the target role-compatibility pass.
-        const blocks = openaiResponsesSystemBlocks(item);
-        messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
-        break;
-      }
-      default:
-        throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
-      }
-      break;
-    case 'function_call': {
-      appendAssistantBlock(messages, {
-        type: 'tool_use',
-        id: item.call_id,
-        name: item.name,
-        input: parseToolArgumentsObject(item.arguments),
-      });
-      break;
-    }
-    case 'function_call_output':
-    case 'custom_tool_call_output':
-      appendUserBlock(messages, {
-        type: 'tool_result',
-        tool_use_id: item.call_id,
-        content: await translateToolOutput(item.output, loadRemoteImage),
-        is_error: item.type === 'function_call_output' && item.status === 'incomplete' ? true : undefined,
-      });
-      break;
-    case 'custom_tool_call':
-      // Project the freeform invocation back into the wrapped function-tool
-      // shape so the translated target sees a coherent history.
-      appendAssistantBlock(messages, {
-        type: 'tool_use',
-        id: item.call_id,
-        name: item.name,
-        input: { input: item.input },
-      });
-      break;
-    case 'reasoning': {
-      const block = openaiResponsesReasoningToAnthropicMessagesUpstreamBlock(item);
-      if (block) appendAssistantBlock(messages, block);
-      break;
-    }
-    case 'item_reference':
-      throw new TranslatorInputError("Invalid input item type 'item_reference'.");
-    case 'web_search_call':
-      // The shim must translate echoed web_search_call input items
-      // into function_call + function_call_output pairs before this
-      // translator runs. Reaching here means the reverse path was
-      // skipped.
-      throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
-    case 'image_generation_call':
-      throw new TranslatorInputError("Invalid input item type 'image_generation_call'.");
-    default:
-      // Exhaustiveness guard: a future OpenAIResponsesInputItem variant must
-      // explicitly opt into translator behavior.
-      throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
-    }
-  }
-
-  return { messages, systemBlocks };
-};
-
 const translateTools = (
   tools: OpenAIResponsesTool[] | null | undefined,
   customToolNames: Set<string>,
@@ -375,15 +282,89 @@ const translateToolChoice = (
 };
 
 export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
-  const { payload, names: namespaceToolNames } = flattenNamespaceTools(canonicalizeOpenAIResponsesPayload(source));
+  const canonical = canonicalizeOpenAIResponsesPayload(source);
+  const { payload, names: namespaceToolNames, flattenInput } = flattenNamespaceTools(canonical);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
   const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
   const tools = translateTools(allowed.tools, customToolNames);
-  const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
-    payload.input,
-    options.loadRemoteImage ?? unavailableRemoteImageLoader,
-  );
+  const hoistedSystemBlocks: AnthropicMessagesTextBlockParam[] = [];
+  const hoistedItems = new Set<CanonicalOpenAIResponsesInputItem>();
+  for (const item of canonical.input) {
+    if (item.type === 'additional_tools' || item.type === 'tool_search_output') continue;
+    if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
+    hoistedSystemBlocks.push(...openaiResponsesSystemBlocks(item));
+    hoistedItems.add(item);
+  }
+
+  const translateAssistantTurn = (input: CanonicalOpenAIResponsesInputItem[]): AnthropicMessagesMessage[] => {
+    const messages: AnthropicMessagesMessage[] = [];
+    for (const item of flattenInput(input)) {
+      rejectProgramCaller(item);
+      switch (item.type) {
+      case 'message':
+        if (item.role !== 'assistant') throw new TranslatorInputError(`Invalid assistant message role '${item.role}'.`);
+        messages.push(translateAssistantMessage(item));
+        break;
+      case 'function_call':
+        appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArgumentsObject(item.arguments) });
+        break;
+      case 'custom_tool_call':
+        appendAssistantBlock(messages, { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } });
+        break;
+      case 'reasoning': {
+        const block = openaiResponsesReasoningToAnthropicMessagesUpstreamBlock(item);
+        if (block) appendAssistantBlock(messages, block);
+        break;
+      }
+      case 'item_reference':
+      case 'web_search_call':
+      case 'image_generation_call':
+        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+      default:
+        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+      }
+    }
+
+    return messages;
+  };
+
+  const translateNonAssistantInput = async (input: CanonicalOpenAIResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesMessage[]> => {
+    const messages: AnthropicMessagesMessage[] = [];
+    for (const item of flattenInput(input).filter(item => !hoistedItems.has(item))) {
+      rejectProgramCaller(item);
+      switch (item.type) {
+      case 'message':
+        switch (item.role) {
+        case 'user': messages.push(await translateUserMessage(item, loadRemoteImage)); break;
+        case 'system':
+        case 'developer': {
+          const blocks = openaiResponsesSystemBlocks(item);
+          messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
+          break;
+        }
+        default: throw new TranslatorInputError(`Invalid role '${item.role}' in input message.`);
+        }
+        break;
+      case 'function_call_output':
+      case 'custom_tool_call_output':
+        appendUserBlock(messages, {
+          type: 'tool_result', tool_use_id: item.call_id,
+          content: await translateToolOutput(item.output, loadRemoteImage),
+          is_error: item.type === 'function_call_output' && item.status === 'incomplete' ? true : undefined,
+        });
+        break;
+      case 'item_reference':
+      case 'web_search_call':
+      case 'image_generation_call':
+        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+      default:
+        throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
+      }
+    }
+
+    return messages;
+  };
   // `payload.instructions` is the OpenAI Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
   // after it. Each source — the instructions field and each leading input
@@ -398,7 +379,6 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
-  applyLastMessageCacheBreakpoint(messages);
 
   // Merge reasoning effort + structured-output format into a single
   // `output_config`. `effort === 'none'` still maps to `thinking: {type:
@@ -429,7 +409,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
   // semantics.
   const target: AnthropicMessagesPayload = {
     model: payload.model,
-    messages,
+    messages: [],
     max_tokens: maxTokens,
     ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
@@ -442,5 +422,11 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayloadEx
     ...serviceTierFields,
   };
 
+  for (const turn of partitionOpenAIResponsesTurns(canonical.input)) {
+    if (turn.role !== 'assistant') { target.messages.push(...await translateNonAssistantInput(turn.items, options.loadRemoteImage ?? unavailableRemoteImageLoader)); continue; }
+
+    target.messages.push(...translateAssistantTurn(turn.items));
+  }
+  applyLastMessageCacheBreakpoint(target.messages);
   return { target, customToolNames, namespaceToolNames };
 };

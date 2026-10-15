@@ -7,6 +7,7 @@ import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyL
 import { anthropicMessagesReasoningFieldsFromEffort } from '../../anthropic-messages/as-target/reasoning-effort.ts';
 import { resolveImageUrlToAnthropicMessagesImage, unavailableRemoteImageLoader } from '../../anthropic-messages/as-target/remote-images.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
+import { partitionOpenAIChatCompletionsTurns } from '../as-source/conversation-turns.ts';
 import { openAIChatCompletionsScalarReasoningText } from '../common/reasoning.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesAssistantInputContentBlock, type AnthropicMessagesMessage, type AnthropicMessagesPayload, type AnthropicMessagesTextBlockParam, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
@@ -139,19 +140,15 @@ const convertSystemContent = (content: OpenAIChatCompletionsMessage['content']):
   return blocks;
 };
 
-const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessage[], loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesMessage[]> => {
-  const result: AnthropicMessagesMessage[] = [];
-
+const translateNonAssistantMessages = async (
+  messages: Exclude<OpenAIChatCompletionsMessage, { role: 'assistant' }>[],
+  loadRemoteImage: RemoteImageLoader,
+  result: AnthropicMessagesMessage[],
+): Promise<void> => {
   for (const message of messages) {
     switch (message.role) {
     case 'user':
       appendUserBlocks(result, await convertUserContent(message, loadRemoteImage));
-      break;
-    case 'assistant':
-      result.push({
-        role: 'assistant',
-        content: buildAssistantBlocks(message),
-      });
       break;
     case 'tool':
       if (!message.tool_call_id) {
@@ -186,8 +183,6 @@ const buildAnthropicMessagesInput = async (messages: OpenAIChatCompletionsMessag
       throw new TranslatorInputError(`Invalid role '${message.role}'.`);
     }
   }
-
-  return result;
 };
 
 const translateOpenAIChatCompletionsTools = (tools: OpenAIChatCompletionsTool[]): AnthropicMessagesPayload['tools'] =>
@@ -229,7 +224,15 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
     prefixEnd++;
   }
 
-  const messages = await buildAnthropicMessagesInput(payload.messages.slice(prefixEnd), options.loadRemoteImage ?? unavailableRemoteImageLoader);
+  const messages: AnthropicMessagesMessage[] = [];
+
+  for (const turn of partitionOpenAIChatCompletionsTurns(payload.messages.slice(prefixEnd))) {
+    if (turn.role === 'assistant') {
+      const message = turn.items[0];
+
+      messages.push({ role: 'assistant', content: buildAssistantBlocks(message) });
+    } else await translateNonAssistantMessages(turn.items, options.loadRemoteImage ?? unavailableRemoteImageLoader, messages);
+  }
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
   const allowedTools = typeof payload.tool_choice === 'object' && payload.tool_choice?.type === 'allowed_tools'

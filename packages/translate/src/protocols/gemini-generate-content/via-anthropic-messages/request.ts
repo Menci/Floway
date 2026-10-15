@@ -4,6 +4,7 @@ import { TranslatorInputError } from '../../../translator-input-error.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../anthropic-messages/as-target/cache-breakpoints.ts';
 import { anthropicMessagesToolInputSchema } from '../../anthropic-messages/as-target/tool-input-schema.ts';
 import { geminiGenerateContentInlineData, geminiGenerateContentPartKind, geminiGenerateContentPartText, geminiGenerateContentText, geminiGenerateContentThoughtText, geminiGenerateContentVisibleText } from '../as-source/content.ts';
+import { partitionGeminiGenerateContentTurns } from '../as-source/conversation-turns.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from '../as-source/schema.ts';
 import { geminiGenerateContentFunctionCallingIntent, geminiGenerateContentFunctionCallPart, geminiGenerateContentFunctionDeclarations, geminiGenerateContentFunctionResponsePart, type GeminiGenerateContentToolCallIds } from '../as-source/tools.ts';
 import {
@@ -227,7 +228,7 @@ export const buildTargetRequest = (
     max_tokens: fallbackMaxOutputTokens,
     messages: [],
   };
-  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = {};
+  const unmatchedToolCallIds: GeminiGenerateContentToolCallIds = Object.create(null);
 
   const system = geminiGenerateContentText(payload.systemInstruction);
   if (system !== null) {
@@ -236,21 +237,20 @@ export const buildTargetRequest = (
     request.system = systemBlocks;
   }
 
-  payload.contents?.forEach((content, turnIndex) => {
-    let message: AnthropicMessagesPayload['messages'][number] | null;
-    switch (content.role) {
-    case 'model':
-      message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
-      break;
-    case 'user':
-    case undefined:
-      message = buildUserMessage(content, turnIndex, unmatchedToolCallIds);
-      break;
-    default:
-      throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+  let contentIndex = 0;
+  for (const turn of partitionGeminiGenerateContentTurns(payload.contents ?? [])) {
+    if (turn.role === 'assistant') {
+      for (const [index, content] of turn.items.entries()) {
+        const message = buildAssistantMessage(content, contentIndex + index, unmatchedToolCallIds);
+        if (message) request.messages.push(message);
+      }
+    } else for (const [index, content] of turn.items.entries()) {
+      if (content.role !== 'user' && content.role !== undefined) throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
+      const message = buildUserMessage(content, contentIndex + index, unmatchedToolCallIds);
+      if (message) request.messages.push(message);
     }
-    if (message) request.messages.push(message);
-  });
+    contentIndex += turn.items.length;
+  }
 
   const generationOutputConfig = applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
   const { thinking, outputConfig: thinkingOutputConfig } = applyThinkingConfig(payload.generationConfig?.thinkingConfig);

@@ -17,13 +17,22 @@ interface CallableIdentity {
   type: 'function_call' | 'custom_tool_call';
 }
 
-// Both translated targets require flat callable names. Build the map from the
-// full inventory and replay before selecting allowed tools so an excluded
+type ObjectToolChoice = Exclude<OpenAIResponsesToolChoice, string | null | undefined>;
+type NamedToolChoice = Extract<ObjectToolChoice, { type: 'function' | 'custom' }>;
+
+const isNamedToolChoice = (value: Record<string, unknown>): value is Record<string, unknown> & NamedToolChoice =>
+  (value.type === 'function' || value.type === 'custom')
+  && typeof value.name === 'string'
+  && (value.namespace === undefined || typeof value.namespace === 'string');
+
+// Both translated targets require flat callable names. Reserve names from the
+// full inventory and raw history before projecting declarations so an excluded
 // historical call cannot acquire a different identity on a later turn.
 // https://github.com/lidge-jun/opencodex/blob/e45692f8d8e4dedfb4e9b0217fc245080fb2fba8/src/responses/plaintext-v2-agent-messages.ts#L347-L427
 export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload): {
   payload: CanonicalOpenAIResponsesPayload;
   names: NamespaceToolNames;
+  flattenInput: (input: readonly CanonicalOpenAIResponsesInputItem[]) => CanonicalOpenAIResponsesInputItem[];
 } => {
   const inventories = [payload.tools ?? [], ...payload.input.flatMap(item =>
     item.type === 'additional_tools' || item.type === 'tool_search_output' ? [item.tools] : [])];
@@ -96,14 +105,14 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
       }
     }
   }
-  const input = payload.input.flatMap<CanonicalOpenAIResponsesInputItem>(item => {
+  const flattenInput = (input: readonly CanonicalOpenAIResponsesInputItem[]) => input.flatMap<CanonicalOpenAIResponsesInputItem>(item => {
     if (item.type === 'additional_tools' || item.type === 'tool_search_output') return [];
     if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return [item];
     if (item.namespace === undefined) return [item];
     const { namespace, ...rest } = item;
     return [{ ...rest, name: allocate(namespace, item.name, item.type === 'function_call' ? 'function' : 'custom') }];
   });
-  const selector = (choice: Exclude<OpenAIResponsesToolChoice, string | null | undefined>): Exclude<OpenAIResponsesToolChoice, string | null | undefined> => {
+  const selector = (choice: ObjectToolChoice): ObjectToolChoice => {
     if (choice.type !== 'function' && choice.type !== 'custom') return choice;
     const namespace = choice.namespace;
     const key = namespace === undefined ? choice.name : `${namespace}.${choice.name}`;
@@ -134,7 +143,10 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
             if (Object.keys(tool).some(key => key !== 'type' && key !== 'name')) throw new TranslatorInputError('Cannot translate namespace selector extensions.');
             return children;
           }
-          return [selector(tool as Exclude<OpenAIResponsesToolChoice, string | null | undefined>) as Record<string, unknown>];
+          if (tool.type !== 'function' && tool.type !== 'custom') return [tool];
+          if (!isNamedToolChoice(tool)) throw new TranslatorInputError('Cannot translate malformed allowed_tools selector.');
+          const selected = selector(tool);
+          return selected === tool ? [tool] : [{ ...selected }];
         }),
       };
       if (choice.tools.length === original.tools.length && choice.tools.every((tool, index) => tool === original.tools[index])) choice = original;
@@ -144,7 +156,7 @@ export const flattenNamespaceTools = (payload: CanonicalOpenAIResponsesPayload):
   names.toolChoiceChanged = choice !== payload.tool_choice;
   names.sourceTools = names.toolsChanged ? payload.tools : undefined;
   names.sourceToolChoice = names.toolChoiceChanged ? payload.tool_choice : undefined;
-  return { payload: { ...payload, input, ...(payload.tools == null && inventories.length === 1 ? {} : { tools }), ...(choice === undefined ? {} : { tool_choice: choice }) }, names };
+  return { payload: { ...payload, ...(payload.tools == null && inventories.length === 1 ? {} : { tools }), ...(choice === undefined ? {} : { tool_choice: choice }) }, names, flattenInput };
 };
 
 export const restoreNamespaceEvents = async function* (
