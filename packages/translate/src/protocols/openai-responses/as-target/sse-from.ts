@@ -1,4 +1,4 @@
-import { toOpenAIResponsesInputAssistantTurn } from './assistant-turn.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import {
   createIRBuilder,
@@ -10,6 +10,7 @@ import {
 } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -22,6 +23,9 @@ import type {
   OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
+type MessageFieldState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, FieldStates>;
+type TextFieldStateNode = NonNullable<NonNullable<MessageFieldState['content']>[number]>;
+
 interface ResponsesItemState {
   readonly outputIndex: number;
   readonly type: string;
@@ -32,14 +36,22 @@ interface ResponsesItemState {
   readonly logprobs: Map<number, { readonly index: number }>;
   closed: boolean;
   finalSnapshot?: OpenAIResponsesOutputItemEx;
+  fieldState?: MessageFieldState;
 }
 
-interface ResponsesPartState {
-  readonly type: string;
+interface ResponsesTextPartState extends ResponsesTextTarget {
+  readonly type: 'output_text' | 'refusal';
   readonly handle: IRPartHandle;
+  readonly path: 'text' | 'refusal';
   coordinateIndex?: TextCoordinateIndex;
   text?: string;
   annotationsInitialized: boolean;
+}
+interface ResponsesImagePartState { readonly type: 'image'; readonly handle: IRPartHandle }
+type ResponsesPartState = ResponsesTextPartState | ResponsesImagePartState;
+interface ResponsesTextTarget extends WriteTarget {
+  fieldState?: FieldState | null;
+  fieldStateNode?: TextFieldStateNode;
 }
 
 interface WriteTarget {
@@ -109,6 +121,7 @@ export const irFromOpenAIResponses = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const items = new Map<number, ResponsesItemState>();
+  const outputState: OpenAIResponsesOutputAssistantState<FieldStates> = [];
   let started = false;
   let finished = false;
   let responseIdentity: { id: string; model: string } | undefined;
@@ -178,7 +191,12 @@ export const irFromOpenAIResponses = async function* (
     if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
   };
 
-  const reconcileAppend = ({ handle, path }: WriteTarget, snapshot: unknown): string => {
+  const appendTextAtom = (target: ResponsesTextTarget, text: string): void => {
+    if (target.fieldState === undefined || target.fieldState === null) target.handle.append(target.path, text);
+    else target.handle.append(target.path, text, [appendField(options.roundTrip.builder, target.fieldState, text)]);
+  };
+  const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
+    const { handle, path } = target;
     const absolutePath = handle.resolve(path);
     if (typeof snapshot !== 'string') throw new TypeError(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
     const current = handle.current<string>(path);
@@ -193,14 +211,23 @@ export const irFromOpenAIResponses = async function* (
     if (current === snapshot) return snapshot;
     if (current === undefined) {
       handle.initialize(path, '');
-      if (snapshot !== '') handle.append(path, snapshot);
+      if (snapshot !== '') appendTextAtom(target, snapshot);
       return snapshot;
     }
     if (!snapshot.startsWith(current)) {
       throw new TypeError(`Responses snapshot cannot replace streamed text at ${JSON.stringify(absolutePath)}`);
     }
     const suffix = snapshot.slice(current.length);
-    if (suffix !== '') handle.append(path, suffix);
+    if (suffix !== '') {
+      if (current === '') appendTextAtom(target, suffix);
+      else {
+        if (target.fieldState !== undefined) {
+          target.fieldState = null;
+          if (target.fieldStateNode !== undefined) for (const key of Object.keys(target.fieldStateNode)) Reflect.deleteProperty(target.fieldStateNode, key);
+        }
+        handle.append(path, suffix);
+      }
+    }
     return snapshot;
   };
 
@@ -230,25 +257,32 @@ export const irFromOpenAIResponses = async function* (
     state: ResponsesItemState,
     contentIndex: number,
     part: { readonly type: string; readonly annotations?: readonly unknown[] },
-  ): ResponsesPartState => {
+  ): ResponsesTextPartState => {
     if (state.item === undefined || state.type !== 'message') throw new TypeError('Responses content part requires a message item');
     if (contentIndex > state.parts.size) throw new TypeError('Responses content indexes must be contiguous');
     if (contentIndex === state.parts.size) {
-      let partState: ResponsesPartState;
+      let partState: ResponsesTextPartState;
       if (part.type === 'output_text') {
+        const fieldState = createFieldState();
+        const fieldStateNode = { text: fieldState };
+        const nativeState = state.fieldState ??= { content: [] };
+        const content = nativeState.content ??= [];
+        content[contentIndex] = fieldStateNode;
+        outputState[state.outputIndex] = nativeState;
         partState = {
+          path: 'text', fieldState, fieldStateNode,
           type: part.type,
           handle: state.item.part({ type: 'text', text: '', ...(part.annotations === undefined ? {} : { annotations: [] }) }),
           text: '',
           annotationsInitialized: part.annotations !== undefined,
         };
       } else if (part.type === 'refusal') {
-        partState = { type: part.type, handle: state.item.part({ type: 'refusal', refusal: '' }), annotationsInitialized: false };
+        partState = { type: part.type, path: 'refusal', handle: state.item.part({ type: 'refusal', refusal: '' }), annotationsInitialized: false };
       } else throw new TypeError(`Responses message cannot contain ${part.type}`);
       state.parts.set(contentIndex, partState);
     }
     const partState = state.parts.get(contentIndex);
-    if (partState === undefined) throw new TypeError('Responses content indexes must be contiguous');
+    if (partState === undefined || partState.type === 'image') throw new TypeError('Responses content indexes must be contiguous');
     return partState;
   };
 
@@ -272,7 +306,7 @@ export const irFromOpenAIResponses = async function* (
   const reconcileLogprobs = (
     state: ResponsesItemState,
     contentIndex: number,
-    part: ResponsesPartState,
+    part: ResponsesTextPartState,
     tokens: readonly OpenAIResponsesStreamLogprobEx[] | undefined,
   ): void => {
     if (tokens === undefined || tokens.length === 0) return;
@@ -282,7 +316,7 @@ export const irFromOpenAIResponses = async function* (
   };
 
   const reconcileAnnotations = (
-    part: ResponsesPartState,
+    part: ResponsesTextPartState,
     text: string,
     annotations: readonly (OpenAIResponsesAnnotation | null)[] | undefined,
   ): void => {
@@ -303,10 +337,10 @@ export const irFromOpenAIResponses = async function* (
     converted.forEach((annotation, index) => reconcileAssign({ handle: part.handle, path: ['annotations', index] }, annotation));
   };
 
-  const reconcilePartText = (part: ResponsesPartState, snapshot: string): string => {
+  const reconcilePartText = (part: ResponsesTextPartState, snapshot: string): string => {
     const previous = part.text;
     if (previous === undefined) throw new TypeError('Responses output text state is invalid');
-    const text = reconcileAppend({ handle: part.handle, path: 'text' }, snapshot);
+    const text = reconcileAppend(part, snapshot);
     if (!text.startsWith(previous)) throw new TypeError('Responses output text state cannot move backwards');
     part.coordinateIndex?.append(text.slice(previous.length));
     part.text = text;
@@ -353,7 +387,7 @@ export const irFromOpenAIResponses = async function* (
           type: 'image',
           image: { data: item.result, ...(item.output_format == null ? {} : { mime_type: `image/${item.output_format}` }) },
         });
-        state.parts.set(0, { type: 'image', handle, annotationsInitialized: false });
+        state.parts.set(0, { type: 'image', handle });
       } else {
         const part = state.parts.get(0);
         if (part === undefined) throw new TypeError('Responses image state is invalid');
@@ -371,6 +405,7 @@ export const irFromOpenAIResponses = async function* (
       const status = 'status' in snapshot ? snapshot.status : undefined;
       state.item.end(status === 'incomplete' ? 'incomplete' : undefined);
     }
+    if (snapshot.type === 'message' && state.fieldState?.content !== undefined) state.fieldState.content.length = snapshot.content.length;
     state.closed = true;
     state.finalSnapshot = snapshot;
   };
@@ -423,7 +458,9 @@ export const irFromOpenAIResponses = async function* (
         }
         const policy = response.error?.code === 'cyber_policy' ? 'cyber' : response.error?.code === 'bio_policy' ? 'bio' : undefined;
         if (policy !== undefined) ir.choice(0).assign('refusal', { category: policy, explanation: response.error?.message });
-        options.roundTrip.onAssistantTurn(0, toOpenAIResponsesInputAssistantTurn(response.output));
+        outputState.length = response.output.length;
+        const input = toOpenAIResponsesInputAssistantTurn<FieldStates>(response.output, outputState);
+        options.roundTrip.onAssistantTurn(0, input.turn, input.state);
         const incompleteReason = response.incomplete_details?.reason === 'content_filter' ? 'content_filter' : 'length';
         const finishReason = policy !== undefined ? 'content_filter'
           : e.type === 'response.incomplete' ? incompleteReason
@@ -468,8 +505,11 @@ export const irFromOpenAIResponses = async function* (
           const part = ensureMessagePart(state, e.content_index, { type: e.type === 'response.refusal.delta' ? 'refusal' : 'output_text', annotations: [] });
           const field = e.type === 'response.refusal.delta' ? 'refusal' : 'text';
           if (e.delta !== '') {
-            if (field === 'text') reconcilePartText(part, `${part.text ?? ''}${e.delta}`);
-            else part.handle.append(field, e.delta);
+            if (field === 'text') {
+              appendTextAtom(part, e.delta);
+              part.coordinateIndex?.append(e.delta);
+              part.text = `${part.text ?? ''}${e.delta}`;
+            } else part.handle.append(field, e.delta);
           }
           if (e.type === 'response.output_text.delta' && e.logprobs !== undefined) reconcileLogprobs(state, e.content_index, part, e.logprobs);
         } else if (e.type === 'response.output_text.done' || e.type === 'response.refusal.done') {

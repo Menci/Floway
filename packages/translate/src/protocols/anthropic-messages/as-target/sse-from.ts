@@ -1,16 +1,18 @@
+import type { AnthropicMessagesAssistantState } from './assistant-turn.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRecord } from '../../../ir/stream.ts';
 import type { IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { appendField, createFieldState, type FieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
-import type {
-  AnthropicMessagesAssistantContentBlock,
-  AnthropicMessagesStreamEventEx,
-  AnthropicMessagesTextCitation,
-  AnthropicMessagesUsageDeltaEx,
+import {
+  type AnthropicMessagesAssistantContentBlock,
+  type AnthropicMessagesStreamEventEx,
+  type AnthropicMessagesTextCitation,
+  type AnthropicMessagesUsageDeltaEx,
+  createAnthropicMessagesEventAccumulator,
 } from '@floway-dev/protocols/anthropic-messages';
-import { createAnthropicMessagesEventAccumulator } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IRSourceCitation | undefined => {
@@ -45,11 +47,15 @@ const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
   'container_upload',
 ];
 
+type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']>[number]>;
+
 interface MessagesBlockState {
   readonly item?: IRItemHandle;
   readonly part?: IRPartHandle;
   readonly custom: boolean;
   annotationCount?: number;
+  textField?: FieldState;
+  fieldState?: MessagesBlockFieldState;
   wrappedInput: string;
 }
 
@@ -59,6 +65,7 @@ export const irFromAnthropicMessages = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const blocks = new Map<number, MessagesBlockState>();
+  const blockStates = new Map<number, MessagesBlockState>();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
   let started = false;
   let finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' = 'stop';
@@ -77,6 +84,7 @@ export const irFromAnthropicMessages = async function* (
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
     let custom = false;
+    let textField: FieldState | undefined;
     if (block.type === 'fallback') {
       ir.assign(['model'], block.to.model);
     } else if (block.type === 'text') {
@@ -87,7 +95,10 @@ export const irFromAnthropicMessages = async function* (
       });
       part = item.part({ type: 'text', text: '', ...(annotations === undefined ? {} : { annotations }) });
       annotationCount = Array.isArray(annotations) ? annotations.length : undefined;
-      if (block.text !== '') part.append('text', block.text);
+      if (block.text !== '') {
+        textField = createFieldState();
+        part.append('text', block.text, [appendField(options.roundTrip.builder, textField, block.text)]);
+      }
     } else if (block.type === 'thinking') {
       item = ir.item(0, { type: 'reasoning', summary: [''] });
       if (block.thinking !== '') item.append(['summary', 0], block.thinking);
@@ -99,7 +110,12 @@ export const irFromAnthropicMessages = async function* (
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
       throw new TypeError(`Cannot translate Messages content block ${block.type}`);
     }
-    blocks.set(index, { item, part, custom, annotationCount, wrappedInput: '' });
+    const state: MessagesBlockState = {
+      item, part, custom, annotationCount, wrappedInput: '', textField,
+      fieldState: textField === undefined ? undefined : { text: textField },
+    };
+    blocks.set(index, state);
+    blockStates.set(index, state);
   };
 
   for await (const frame of frames) {
@@ -129,8 +145,13 @@ export const irFromAnthropicMessages = async function* (
       switch (d.type) {
       case 'text_delta':
         if (d.text !== '') {
-          if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text);
-          else block.part.append('text', d.text);
+          if (block.textField === undefined) {
+            block.textField = createFieldState();
+            block.fieldState = { text: block.textField };
+          }
+          const partId = appendField(options.roundTrip.builder, block.textField, d.text);
+          if (block.part === undefined) block.item.append(['content', 0, 'text'], d.text, [partId]);
+          else block.part.append('text', d.text, [partId]);
         }
         break;
       case 'thinking_delta':
@@ -192,8 +213,13 @@ export const irFromAnthropicMessages = async function* (
       if (!started) throw new Error('Messages message_stop arrived before message_start');
       if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
       const nativeResult = nativeAccumulator.result();
+      const contentState: NonNullable<AnthropicMessagesAssistantState<FieldStates>['content']> = [];
+      contentState.length = nativeResult.content.length;
+      [...blockStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
+        if (block.fieldState !== undefined) contentState[index] = block.fieldState;
+      });
       const content = nativeResult.content.map(block => block.type === 'tool_use' ? { ...block, input: requireJSONObject(block.input) } : block);
-      options.roundTrip.onAssistantTurn(0, { role: 'assistant', content });
+      options.roundTrip.onAssistantTurn(0, { role: 'assistant', content }, { content: contentState });
       ir.choice(0).end(finishReason);
       ir.event({ type: 'finish', status: finishReason === 'length' ? 'incomplete' : 'completed' });
       finished = true;

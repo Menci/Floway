@@ -1,3 +1,4 @@
+import { Tag } from 'cbor-x';
 import { test } from 'vitest';
 
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
@@ -10,6 +11,7 @@ import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-respon
 import { inspectOpenAIResponsesAssistantTurn } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { toOpenAIResponsesInputAssistantTurn } from '../../src/protocols/openai-responses/as-target/assistant-turn.ts';
 import { createAssistantTurnSidecarCodec } from '../../src/round-trip/codec.ts';
+import { hydrateAssistantTurn } from '../../src/round-trip/thin/hydrate.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
 import { collect, iterate } from '../ir/helpers.ts';
 import { fixtureFrames, type nativeResult } from '../ir/translation-cases.ts';
@@ -181,6 +183,13 @@ const sidecarPayload = (assistant: AssistantTurn): string | undefined => {
   return inspectGeminiGenerateContentAssistantTurn(assistant.turn).sidecars[0];
 };
 
+const replayCandidates = (assistant: AssistantTurn) => {
+  if (assistant.protocol === 'openai-responses') return inspectOpenAIResponsesAssistantTurn(assistant.turn).candidates;
+  if (assistant.protocol === 'openai-chat-completions') return inspectOpenAIChatCompletionsAssistantTurn(assistant.turn).candidates;
+  if (assistant.protocol === 'anthropic-messages') return inspectAnthropicMessagesAssistantTurn([assistant.turn]).candidates;
+  return inspectGeminiGenerateContentAssistantTurn(assistant.turn).candidates;
+};
+
 type TargetPayload =
   | { protocol: 'openai-responses'; payload: CanonicalOpenAIResponsesPayload }
   | { protocol: 'openai-chat-completions'; payload: OpenAIChatCompletionsPayload }
@@ -217,6 +226,13 @@ const targetAssistantTurn = (target: TargetPayload) => {
   return partitionAnthropicMessagesTurns(target.payload.messages).find(turn => turn.role === 'assistant')?.items[0];
 };
 
+const tagsIn = (value: unknown): Tag[] => {
+  if (value instanceof Tag) return [value];
+  if (Array.isArray(value)) return value.flatMap(tagsIn);
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value).flatMap(tagsIn);
+};
+
 test.each(returnedTrips)('$a via $b returns generated content and a decodable sidecar through its public TranslateTrip', async ({ a, b, trip }) => {
   const codec = createAssistantTurnSidecarCodec(serverSecret);
   const translation = await trip(serverSecret);
@@ -234,10 +250,64 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   assert(sidecar !== undefined);
   assertEquals(sidecar.source, protocolKeys[a]);
   assertEquals(sidecar.target, protocolKeys[b]);
-  assertEquals(sidecar.assistantTurn, (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn);
+  const expected = (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn;
+  const hydrated = await hydrateAssistantTurn(protocolKeys[b], replayCandidates(assistant), sidecar.assistantTurn, sidecar.referencedContents);
+  assert(hydrated.ok);
+  assertEquals(hydrated.turn, expected);
+  assertEquals(sidecar.assistantTurn, expected);
+  assertEquals(sidecar.referencedContents, undefined);
   assert(sidecar.replayCheck.version > 0);
   assert(sidecar.replayCheck.digest instanceof Uint8Array && sidecar.replayCheck.digest.byteLength > 0);
 
   const replayed = await replayAssistantTurn(assistant, b);
-  assertEquals(targetAssistantTurn(replayed), sidecar.assistantTurn);
+  assertEquals(targetAssistantTurn(replayed), hydrated.turn);
+});
+
+test.each(returnedTrips)('$a via $b references a profitable native body through its public TranslateTrip', async ({ a, b, trip }) => {
+  const translation = await trip(serverSecret);
+  const fixture = { text: ['A long native assistant body. '.repeat(20)] };
+  const assistant = await collectAssistantTurn(a, await collect(translation.events(iterate(fixtureFrames(b, fixture)))));
+  const carrier = sidecarPayload(assistant);
+  assert(typeof carrier === 'string');
+  const sidecar = await createAssistantTurnSidecarCodec(serverSecret).decode(protocolKeys[a], carrier);
+  assert(sidecar !== undefined);
+  assertEquals(sidecar.referencedContents?.length, 1);
+  const references = tagsIn(sidecar.assistantTurn);
+  assert(references.length > 0);
+  assert(references.every(reference => Array.isArray(reference.value) && reference.value.every(part => part === 0)));
+  const expected = (await collectAssistantTurn(b, fixtureFrames(b, fixture))).turn;
+  const hydrated = await hydrateAssistantTurn(protocolKeys[b], replayCandidates(assistant), sidecar.assistantTurn, sidecar.referencedContents);
+  assert(hydrated.ok);
+  assertEquals(hydrated.turn, expected);
+  assertEquals(targetAssistantTurn(await replayAssistantTurn(assistant, b)), expected);
+});
+
+test('Gemini via Responses restores literal reasoning when optional thought text is not replayed', async () => {
+  const fixture = {
+    text: ['visible ', 'answer'],
+    thinking: ['optional thought'],
+    signature: 'native B encrypted content',
+  };
+  const firstTrip = await routeGeminiGenerateContent(gemini).viaOpenAIResponses({ serverSecret, model: 'm' });
+  const frames = await collect(firstTrip.events(iterate(fixtureFrames('openai-responses', fixture))));
+  const assistant = await collectAssistantTurn('gemini-generate-content', frames);
+  if (assistant.protocol !== 'gemini-generate-content') throw new Error('Expected a Gemini assistant turn');
+  const content = assistant.turn[0];
+  if (content === undefined) throw new Error('Expected a Gemini model turn');
+  const carrier = sidecarPayload(assistant);
+  assert(typeof carrier === 'string');
+  const sidecar = await createAssistantTurnSidecarCodec(serverSecret).decode('geminiGenerateContent', carrier);
+  assert(sidecar?.target === 'openaiResponses');
+  const reasoning = sidecar.assistantTurn.find(item => item.type === 'reasoning');
+  const message = sidecar.assistantTurn.find(item => item.type === 'message');
+  assert(reasoning?.type === 'reasoning' && message?.type === 'message' && Array.isArray(message.content));
+  assertEquals(reasoning.summary[0]?.text, 'optional thought');
+  assertEquals(message.content.flatMap(part => part.type === 'output_text' ? [part.text] : []).join(''), 'visible answer');
+
+  const replayed = await replayAssistantTurn({
+    protocol: 'gemini-generate-content',
+    turn: [{ ...content, parts: content.parts?.filter(part => !(part.thought === true && typeof part.text === 'string')) }],
+  }, 'openai-responses');
+  const expected = await collectAssistantTurn('openai-responses', fixtureFrames('openai-responses', fixture));
+  assertEquals(targetAssistantTurn(replayed), expected.turn);
 });

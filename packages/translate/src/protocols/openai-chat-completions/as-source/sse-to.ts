@@ -5,16 +5,18 @@ import { createIROrdinalMapper } from '../../../ir/ordinal-mapper.ts';
 import { consumeIRRecords, type IRRecord } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRItem, type IRMessageItem, type IRTokenLogprob } from '../../../ir/types.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import { appendContent, createContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type {
-  OpenAIChatCompletionsAnnotation,
-  OpenAIChatCompletionsAssistantDeltaEx,
-  OpenAIChatCompletionsStreamEvent,
-  OpenAIChatCompletionsTokenLogprob,
-  OpenAIChatCompletionsUsageEx,
+import {
+  type OpenAIChatCompletionsAnnotation,
+  type OpenAIChatCompletionsAssistantDeltaEx,
+  type OpenAIChatCompletionsStreamEvent,
+  type OpenAIChatCompletionsTokenLogprob,
+  type OpenAIChatCompletionsUsageEx,
+  createOpenAIChatCompletionsEventAccumulator,
 } from '@floway-dev/protocols/openai-chat-completions';
-import { createOpenAIChatCompletionsEventAccumulator } from '@floway-dev/protocols/openai-chat-completions';
 
 const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   message: error.message,
@@ -24,7 +26,7 @@ const irChatError = (error: IRErrorPayload): IRErrorPayload => ({
   ...(error.provider_specific_fields === undefined ? {} : { provider_specific_fields: error.provider_specific_fields }),
 });
 
-interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions {
+interface OpenAIChatCompletionsSSEOutputOptions extends RoundTripOutputOptions<'openaiChatCompletions'> {
   // Replay identity belongs to the newly emitted target audio, not the source IR content.
   audioMetadata?: (choice: number) => { id: string; expires_at: number };
   continuousUsageStats?: boolean;
@@ -95,6 +97,15 @@ export const openaiChatCompletionsFromIR = async function* (
       nativeAccumulators.set(choice, accumulator);
     }
     return accumulator;
+  };
+  const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantState<ContentStates>>();
+  const outputState = (choice: number): OpenAIChatCompletionsOutputAssistantState<ContentStates> => {
+    let state = outputStates.get(choice);
+    if (state === undefined) {
+      state = {};
+      outputStates.set(choice, state);
+    }
+    return state;
   };
   let usage: OpenAIChatCompletionsUsageEx | undefined;
 
@@ -223,6 +234,11 @@ export const openaiChatCompletionsFromIR = async function* (
 
       if (record.operation === 'append') {
         if (path.length === 7 && path[2] === 'items' && path[4] === 'content' && (path[6] === 'text' || path[6] === 'refusal')) {
+          if (path[6] === 'text') {
+            const state = outputState(choice);
+            const content = state.content ??= createContentState(options.roundTrip.builder);
+            appendContent(options.roundTrip.builder, content, record.value, record.partIds);
+          }
           yield deltaFrame(choice, path[6] === 'text' ? { content: record.value } : { refusal: record.value }, tier);
           continue;
         }
@@ -306,6 +322,9 @@ export const openaiChatCompletionsFromIR = async function* (
       const item = state.choices[record.choice].items[record.item];
       const part = item.type === 'message' ? item.content[record.part] : undefined;
       if (part?.type === 'audio' && !startedAudio.has(irPathKey(path)) && part.audio.transcript !== undefined) {
+        const state = outputState(record.choice);
+        const content = state.content ??= createContentState(options.roundTrip.builder);
+        appendContent(options.roundTrip.builder, content, part.audio.transcript);
         yield deltaFrame(record.choice, { content: part.audio.transcript }, tier);
       }
       continue;
@@ -348,7 +367,8 @@ export const openaiChatCompletionsFromIR = async function* (
       const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const replayCheck = await computeOpenAIChatCompletionsReplayCheck(nativeChoice.message);
-      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck);
+      const input = toOpenAIChatCompletionsInputAssistantTurn<ContentStates>(nativeChoice.message, outputState(record.choice));
+      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, input.turn, input.state);
       yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarCarrier(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;

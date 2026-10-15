@@ -1,4 +1,4 @@
-import type { ThinValue, TextRule, JSONRule } from '../../../round-trip/thin/assistant-turn.ts';
+import type { ThinState, ThinStateLeaves, ThinValue, TextRule, JSONRule } from '../../../round-trip/thin/assistant-turn.ts';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 
 type GeminiPartRule = {
@@ -8,6 +8,6 @@ type GeminiPartRule = {
   functionCall: { args: JSONRule };
 };
 
-export type GeminiGenerateContentThinAssistantTurn<Reference> = ThinValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], Reference>;
-
 export type GeminiGenerateContentInputAssistantTurn = Array<Omit<GeminiGenerateContentContent, 'role'> & { role: 'model' }>;
+export type GeminiGenerateContentThinAssistantTurn<Reference> = ThinValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], Reference>;
+export type GeminiGenerateContentAssistantState<States extends ThinStateLeaves> = ThinState<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], States>;

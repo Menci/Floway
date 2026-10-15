@@ -1,4 +1,4 @@
-import type { ThinValue, TextRule } from '../../../round-trip/thin/assistant-turn.ts';
+import type { ThinState, ThinStateLeaves, ThinValue, TextRule } from '../../../round-trip/thin/assistant-turn.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 
 type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
@@ -14,17 +14,23 @@ type OpenAIResponsesItemRule<T> = T extends { type: 'message' }
 export type OpenAIResponsesThinItem<T, Reference> = T extends unknown
   ? OpenAIResponsesItemRule<T> extends never ? T : ThinValue<T, OpenAIResponsesItemRule<T>, Reference>
   : never;
+export type OpenAIResponsesItemState<T, States extends ThinStateLeaves> = T extends unknown
+  ? OpenAIResponsesItemRule<T> extends never ? never : ThinState<T, OpenAIResponsesItemRule<T>, States>
+  : never;
 
 export type OpenAIResponsesThinAssistantTurn<Reference> = OpenAIResponsesThinItem<CanonicalOpenAIResponsesInputItem, Reference>[];
+export type OpenAIResponsesOutputAssistantTurn = readonly OpenAIResponsesOutputItemEx[];
+export type OpenAIResponsesOutputAssistantState<States extends ThinStateLeaves> = Array<OpenAIResponsesItemState<OpenAIResponsesOutputItemEx, States> | undefined>;
+export type OpenAIResponsesAssistantState<States extends ThinStateLeaves> = Array<OpenAIResponsesItemState<CanonicalOpenAIResponsesInputItem, States> | undefined>;
+
+type OpenAIResponsesOutputMessage = Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>;
+type OpenAIResponsesOutputContent = OpenAIResponsesOutputMessage['content'][number];
 
 const stripCreatedBy = (item: OpenAIResponsesOutputItemEx): OpenAIResponsesOutputItemEx => {
   if (!('created_by' in item)) return item;
   const { created_by: _createdBy, ...historyItem } = item;
   return historyItem;
 };
-
-type OpenAIResponsesOutputMessage = Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>;
-type OpenAIResponsesOutputContent = OpenAIResponsesOutputMessage['content'][number];
 
 const outputContentToHistoryContent = (part: OpenAIResponsesOutputContent): OpenAIResponsesOutputContent => {
   if ((part.type !== 'output_text' && part.type !== 'refusal') || !('parsed' in part)) return part;
@@ -40,10 +46,8 @@ const asInputItem = (item: OpenAIResponsesOutputItemEx): CanonicalOpenAIResponse
 const outputItemToHistoryItem = (item: OpenAIResponsesOutputItemEx): CanonicalOpenAIResponsesInputItem | null => {
   const historyItem = stripCreatedBy(item);
   if (historyItem.type === 'message') {
-    const content = historyItem.content.map(outputContentToHistoryContent);
-    return asInputItem(content.every((part, index) => part === historyItem.content[index])
-      ? historyItem
-      : { ...historyItem, content });
+    const content = historyItem.content.map(part => outputContentToHistoryContent(part));
+    return asInputItem(content.every((part, index) => part === historyItem.content[index]) ? historyItem : { ...historyItem, content });
   }
   if (historyItem.type === 'function_call') {
     if (!('parsed_arguments' in historyItem)) return asInputItem(historyItem);
@@ -52,10 +56,7 @@ const outputItemToHistoryItem = (item: OpenAIResponsesOutputItemEx): CanonicalOp
   }
   if (historyItem.type === 'additional_tools') return historyItem.role === 'developer' ? asInputItem(historyItem) : null;
   if (historyItem.type === 'shell_call_output') {
-    return asInputItem({
-      ...historyItem,
-      output: historyItem.output.map(({ created_by: _createdBy, ...output }) => output),
-    });
+    return asInputItem({ ...historyItem, output: historyItem.output.map(({ created_by: _createdBy, ...output }) => output) });
   }
   if (historyItem.type === 'computer_call_output') return historyItem.status === 'failed' ? null : asInputItem(historyItem);
   if (historyItem.type === 'custom_tool_call_output') {
@@ -66,9 +67,32 @@ const outputItemToHistoryItem = (item: OpenAIResponsesOutputItemEx): CanonicalOp
   return asInputItem(historyItem);
 };
 
-export const toOpenAIResponsesInputAssistantTurn = (
-  turn: readonly OpenAIResponsesOutputItemEx[],
-): CanonicalOpenAIResponsesInputItem[] => turn.flatMap(item => {
-  const historyItem = outputItemToHistoryItem(item);
-  return historyItem === null ? [] : [historyItem];
-});
+export function toOpenAIResponsesInputAssistantTurn(
+  turn: OpenAIResponsesOutputAssistantTurn,
+): CanonicalOpenAIResponsesInputItem[];
+export function toOpenAIResponsesInputAssistantTurn<States extends ThinStateLeaves>(
+  turn: OpenAIResponsesOutputAssistantTurn,
+  state: OpenAIResponsesOutputAssistantState<States>,
+): { turn: CanonicalOpenAIResponsesInputItem[]; state: OpenAIResponsesAssistantState<States> };
+export function toOpenAIResponsesInputAssistantTurn<States extends ThinStateLeaves>(
+  turn: OpenAIResponsesOutputAssistantTurn,
+  state?: OpenAIResponsesOutputAssistantState<States>,
+) {
+  // Match the official SDK's history normalization for SDK-owned fields and replay-only item transforms.
+  // https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L41-L67
+  // https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L115-L160
+  const items = turn.flatMap((item, index) => {
+    const historyItem = outputItemToHistoryItem(item);
+    return historyItem === null ? [] : [{ turn: historyItem, sourceIndex: index }];
+  });
+  const inputTurn = items.map(item => item.turn);
+  if (state === undefined) return inputTurn;
+  const inputState: OpenAIResponsesAssistantState<States> = [];
+  inputState.length = items.length;
+  items.forEach(({ turn: inputItem, sourceIndex }, index) => {
+    if (!Object.hasOwn(state, sourceIndex)) return;
+    const sourceState = state[sourceIndex];
+    inputState[index] = sourceState === undefined || inputItem === turn[sourceIndex] ? sourceState : { ...sourceState };
+  });
+  return { turn: inputTurn, state: inputState };
+}

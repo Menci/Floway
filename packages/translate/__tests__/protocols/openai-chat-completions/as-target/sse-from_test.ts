@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import type { OpenAIChatCompletionsInputAssistantTurn } from '../../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { irFromOpenAIChatCompletions } from '../../../../src/protocols/openai-chat-completions/as-target/sse-from.ts';
 import type { RoundTripReader } from '../../../../src/round-trip/stream.ts';
+import { createReferenceBuilder } from '../../../../src/round-trip/thin/reference-builder.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -13,6 +14,7 @@ const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']) => eventFra
 const drain = async (frames: ReturnType<typeof chunk>[]): Promise<Map<number, OpenAIChatCompletionsInputAssistantTurn>> => {
   const turns = new Map<number, OpenAIChatCompletionsInputAssistantTurn>();
   const roundTrip: RoundTripReader<'openaiChatCompletions'> = {
+    builder: createReferenceBuilder(),
     onAssistantTurn: (choice, turn) => { turns.set(choice, turn); },
   };
   for await (const _record of irFromOpenAIChatCompletions((async function* () { yield* frames; yield doneFrame(); })(), { maxChoices: 2, roundTrip })) {}

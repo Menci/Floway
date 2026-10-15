@@ -1,4 +1,4 @@
-import { toOpenAIChatCompletionsInputAssistantTurn } from './assistant-turn.ts';
+import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantState } from './assistant-turn.ts';
 import { usageToIR } from './usage.ts';
 import {
   createIRBuilder,
@@ -8,17 +8,18 @@ import {
 } from '../../../ir/stream.ts';
 import { IRNone, type IRErrorPayload, type IRSourceCitation } from '../../../ir/types.ts';
 import type { RoundTripReader } from '../../../round-trip/stream.ts';
+import { appendField, createFieldState, type FieldStates } from '../../../round-trip/thin/reference-builder.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { unwrapCustomToolInput } from '../../openai-responses/common/custom-tool-wrap.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { createOpenAIChatCompletionsEventAccumulator } from '@floway-dev/protocols/openai-chat-completions';
-import type {
-  OpenAIChatCompletionsAnnotation,
-  OpenAIChatCompletionsAssistantDeltaEx,
-  OpenAIChatCompletionsLogprobs,
-  OpenAIChatCompletionsStreamEvent,
-  OpenAIChatCompletionsToolCallDeltaEx,
-  OpenAIChatCompletionsUsageEx,
+import {
+  createOpenAIChatCompletionsEventAccumulator,
+  type OpenAIChatCompletionsAnnotation,
+  type OpenAIChatCompletionsAssistantDeltaEx,
+  type OpenAIChatCompletionsLogprobs,
+  type OpenAIChatCompletionsStreamEvent,
+  type OpenAIChatCompletionsToolCallDeltaEx,
+  type OpenAIChatCompletionsUsageEx,
 } from '@floway-dev/protocols/openai-chat-completions';
 
 interface ChatToolState {
@@ -98,6 +99,7 @@ interface ChatChoiceState {
   readonly logprobParts: Map<string, { item: IRItemHandle; part: IRPartHandle }>;
   readonly logprobGroups: Map<IRPartHandle, { index: number; length: number }>;
   readonly annotatedParts: Set<IRPartHandle>;
+  readonly fieldState: OpenAIChatCompletionsOutputAssistantState<FieldStates>;
   ended: boolean;
   incomplete: boolean;
 }
@@ -129,6 +131,7 @@ export const irFromOpenAIChatCompletions = async function* (
         logprobParts: new Map(),
         logprobGroups: new Map(),
         annotatedParts: new Set(),
+        fieldState: {},
         ended: false,
         incomplete: false,
       };
@@ -267,7 +270,8 @@ export const irFromOpenAIChatCompletions = async function* (
 
   const readMessage = (index: number, choice: ChatChoiceState, delta: ChatDelta): void => {
     if (typeof delta.content === 'string' && delta.content !== '') {
-      messagePart(index, choice, 'text').append('text', delta.content);
+      const field = choice.fieldState.content ??= createFieldState();
+      messagePart(index, choice, 'text').append('text', delta.content, [appendField(options.roundTrip.builder, field, delta.content)]);
       choice.coordinateIndex?.append(delta.content);
     }
     if (typeof delta.refusal === 'string' && delta.refusal !== '') messagePart(index, choice, 'refusal').append('refusal', delta.refusal);
@@ -380,7 +384,8 @@ export const irFromOpenAIChatCompletions = async function* (
     for (const item of choice.items) item.end(status);
     const nativeChoice = nativeAccumulator(index).result().choices.find(resultChoice => resultChoice.index === index);
     if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${index} at choice_end`);
-    options.roundTrip.onAssistantTurn(index, toOpenAIChatCompletionsInputAssistantTurn(nativeChoice.message));
+    const input = toOpenAIChatCompletionsInputAssistantTurn<FieldStates>(nativeChoice.message, choice.fieldState);
+    options.roundTrip.onAssistantTurn(index, input.turn, input.state);
     ir.choice(index).end(finishReason === 'function_call'
       ? 'tool_calls'
       : finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter');

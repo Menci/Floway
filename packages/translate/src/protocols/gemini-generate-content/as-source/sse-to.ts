@@ -1,4 +1,4 @@
-import { computeGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier, type GeminiGenerateContentAssistantTurn } from './round-trip.ts';
+import { computeGeminiGenerateContentReplayCheck, createGeminiGenerateContentSidecarCarrier } from './round-trip.ts';
 import { usageFromIR } from './usage.ts';
 import type { IRCollector } from '../../../ir/collector.ts';
 import { irItemPath, irPartPath, irPathKey, isIRItemPath, isIRPartPath } from '../../../ir/operation-paths.ts';
@@ -6,19 +6,21 @@ import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream
 import { IRNone, type IR, type IRErrorPayload, type IRJSONObject, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry, type IRUnitQueue } from '../../../ir/unit-queue.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import { appendContent, createContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import type { GeminiGenerateContentAssistantState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
 import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
-import type {
-  GeminiGenerateContentCandidate,
-  GeminiGenerateContentErrorResponse,
-  GeminiGenerateContentGroundingChunk,
-  GeminiGenerateContentPart,
-  GeminiGenerateContentResult,
-  GeminiGenerateContentStreamEvent,
+import {
+  type GeminiGenerateContentCandidate,
+  type GeminiGenerateContentErrorResponse,
+  type GeminiGenerateContentGroundingChunk,
+  type GeminiGenerateContentPart,
+  type GeminiGenerateContentResult,
+  type GeminiGenerateContentStreamEvent,
+  createGeminiGenerateContentEventAccumulator,
 } from '@floway-dev/protocols/gemini-generate-content';
-import { createGeminiGenerateContentEventAccumulator } from '@floway-dev/protocols/gemini-generate-content';
 
 const irGenerateContentError = (error: IRErrorPayload): GeminiGenerateContentErrorResponse['error'] => {
   const code = error.code ?? error.type;
@@ -36,7 +38,7 @@ interface GenerateContentUnit {
 }
 
 interface PendingTextQueue {
-  values: { unit: GenerateContentUnit; source: IRPath; sourceStart: number; sourceEnd: number; thought: boolean }[];
+  values: { unit: GenerateContentUnit; source: IRPath; sourceStart: number; sourceEnd: number; thought: boolean; partIds?: readonly number[] }[];
   head: number;
 }
 
@@ -48,7 +50,7 @@ interface TextSegment {
   targetStart: number;
 }
 
-interface GeminiGenerateContentSSEOutputOptions extends RoundTripOutputOptions {
+interface GeminiGenerateContentSSEOutputOptions extends RoundTripOutputOptions<'geminiGenerateContent'> {
   parseToolArguments?: (text: string) => IRJSONObject;
 }
 
@@ -67,6 +69,16 @@ export const geminiGenerateContentFromIR = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
+  type ContentState = NonNullable<GeminiGenerateContentAssistantState<ContentStates>[number]>;
+  type PartsState = NonNullable<ContentState['parts']>;
+  const partStates = new Map<number, PartsState>();
+
+  const partsState = (choice: number): PartsState => {
+    let state = partStates.get(choice);
+    if (state === undefined) { state = []; partStates.set(choice, state); }
+    return state;
+  };
+
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
     const frame = eventFrame({ responseId: metadata.id, modelVersion: metadata.model, ...event });
     nativeAccumulator.accept(frame.event);
@@ -89,7 +101,7 @@ export const geminiGenerateContentFromIR = async function* (
     return next;
   };
 
-  const appendText = (choice: number, source: IRPath, text: string, thought: boolean): GeminiGenerateContentPart | undefined => {
+  const appendText = (choice: number, source: IRPath, text: string, thought: boolean, partIds?: readonly number[]): GeminiGenerateContentPart | undefined => {
     if (text === '') return undefined;
     const kind = thought ? 'thought' : 'text';
     const partIndex = occupyPart(choice, kind);
@@ -114,6 +126,14 @@ export const geminiGenerateContentFromIR = async function* (
       byPart.set(partIndex, partSegments);
     }
     mappings.set(irPathKey(source), segments);
+    if (!thought) {
+      const state = partsState(choice);
+      const partState = state[partIndex];
+      const existing = partState !== undefined && 'text' in partState ? partState.text : undefined;
+      const content = existing ?? createContentState(options.roundTrip.builder);
+      if (existing === undefined) state[partIndex] = { text: content };
+      appendContent(options.roundTrip.builder, content, text, partIds);
+    }
     return { text, ...(thought ? { thought: true } : {}) };
   };
 
@@ -136,7 +156,7 @@ export const geminiGenerateContentFromIR = async function* (
       const pending = queue.values[queue.head++];
       const source = collector.value<string>(pending.source);
       if (source === undefined) throw new TypeError(`GenerateContent pending text source is missing: ${JSON.stringify(pending.source)}`);
-      const part = appendText(choice, pending.source, source.slice(pending.sourceStart, pending.sourceEnd), pending.thought);
+      const part = appendText(choice, pending.source, source.slice(pending.sourceStart, pending.sourceEnd), pending.thought, pending.partIds);
       if (part !== undefined) parts.push(part);
     }
     if (queue.head === queue.values.length) pendingText.delete(choice);
@@ -343,9 +363,10 @@ export const geminiGenerateContentFromIR = async function* (
             sourceStart,
             sourceEnd,
             thought: kind === 'thought',
+            ...(record.partIds === undefined ? {} : { partIds: record.partIds }),
           });
         } else {
-          const part = appendText(choice, record.path, record.value, kind === 'thought');
+          const part = appendText(choice, record.path, record.value, kind === 'thought', record.partIds);
           if (part !== undefined) yield emitPart(choice, part);
         }
       }
@@ -359,9 +380,12 @@ export const geminiGenerateContentFromIR = async function* (
 
     if (record.type === 'choice_end') {
       const nativeCandidate = nativeAccumulator.result().candidates?.find(candidate => candidate.index === record.choice);
-      const assistantTurn: GeminiGenerateContentAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
+      const assistantTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
+      const stateParts = partsState(record.choice);
+      stateParts.length = assistantTurn[0].parts?.length ?? 0;
+      const assistantState: GeminiGenerateContentAssistantState<ContentStates> = [{ parts: stateParts }];
       const replayCheck = await computeGeminiGenerateContentReplayCheck(assistantTurn);
-      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck);
+      const data = await options.roundTrip.prepareSidecar(record.choice, replayCheck, assistantTurn, assistantState);
       yield emitPart(record.choice, createGeminiGenerateContentSidecarCarrier(data));
       yield emit({ candidates: [terminalCandidate(record, state, collector)] });
     }

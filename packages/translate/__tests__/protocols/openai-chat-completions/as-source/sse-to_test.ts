@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { createIRBuilder } from '../../../../src/ir/stream.ts';
 import { openaiChatCompletionsFromIR } from '../../../../src/protocols/openai-chat-completions/as-source/sse-to.ts';
 import type { RoundTripWriter } from '../../../../src/round-trip/stream.ts';
+import { createReferenceBuilder } from '../../../../src/round-trip/thin/reference-builder.ts';
 
 test('prepares each Chat choice independently while another choice has partial audio', async () => {
   const source = createIRBuilder(2);
@@ -31,7 +32,8 @@ test('prepares each Chat choice independently while another choice has partial a
   source.event({ type: 'finish', status: 'completed' });
 
   const prepared: number[] = [];
-  const roundTrip: RoundTripWriter = {
+  const roundTrip: RoundTripWriter<'openaiChatCompletions'> = {
+    builder: createReferenceBuilder(),
     prepareSidecar: async choice => { prepared.push(choice); return `sidecar-${choice}`; },
   };
   const frames = [];

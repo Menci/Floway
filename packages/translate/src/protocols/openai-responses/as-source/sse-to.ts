@@ -9,8 +9,10 @@ import { consumeIRRecords, type IRPath, type IRRecord } from '../../../ir/stream
 import { IRNone, type IR, type IRItem, type IRMessageItem, type IRSourceCitation, type IRTokenLogprob } from '../../../ir/types.ts';
 import { createIRUnitQueue, createIRUnitRegistry } from '../../../ir/unit-queue.ts';
 import type { RoundTripOutputOptions } from '../../../round-trip/stream.ts';
+import { appendContent, createContentState, type ContentState, type ContentStates } from '../../../round-trip/thin/reference-builder.ts';
 import { isCompleteJSONObject, parseJSONObjectAtCompletion } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantState } from '../as-target/assistant-turn.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
@@ -23,13 +25,13 @@ import {
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 
-interface ResponsesOutputUnit {
+interface ResponsesOutputUnitBase {
   readonly path: IRPath;
-  readonly kind: 'message' | 'image' | 'reasoning' | 'function_call' | 'custom_tool_call';
   readonly parts: IRPath[];
   readonly contentOrdinals: ReturnType<typeof createIROrdinalMapper>;
   readonly annotationProgress: Map<string, { seen: number; emitted: number }>;
   readonly coordinateIndexes: Map<string, TextCoordinateIndex>;
+  pendingText?: Map<string, { start: number; endExclusive: number; partIds?: readonly number[] }[]>;
   opened: boolean;
   outputIndex?: number;
   id?: string;
@@ -38,7 +40,12 @@ interface ResponsesOutputUnit {
   nextPending?: ResponsesOutputUnit;
 }
 
-type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions & { namespaceToolNames: NamespaceToolNames };
+type ResponsesOutputUnit = ResponsesOutputUnitBase & (
+  | { readonly kind: 'image' | 'reasoning' | 'function_call' | 'custom_tool_call' }
+  | { readonly kind: 'message'; readonly contentState: ResponsesOutputItemState }
+);
+
+type OpenAIResponsesSSEOutputOptions = RoundTripOutputOptions<'openaiResponses'> & { namespaceToolNames: NamespaceToolNames };
 
 const IMAGE_OUTPUT_FORMATS = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp' } as const;
 
@@ -52,6 +59,7 @@ interface OpenedUnit {
 
 type ReasoningField = 'summary' | 'content';
 type MessagePart = IRMessageItem['content'][number];
+type ResponsesOutputItemState = OpenAIResponsesItemState<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>, ContentStates>;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -172,6 +180,7 @@ export const openaiResponsesFromIR = async function* (
   let sequence = 0;
   let finishReason: Extract<IRRecord, { type: 'choice_end' }>['finish_reason'] = 'stop';
   const outputUnits: ResponsesOutputUnit[] = [];
+  const nativeState: OpenAIResponsesOutputAssistantState<ContentStates> = [];
   const units = createIRUnitRegistry<ResponsesOutputUnit>();
   const messageUnits = new Map<number, ResponsesOutputUnit[]>();
   const logprobGroups = new Map<string, number>();
@@ -185,6 +194,34 @@ export const openaiResponsesFromIR = async function* (
   const addUnit = (unit: ResponsesOutputUnit): void => {
     pending.enqueue(unit);
     units.set(unit.path, unit);
+  };
+
+  const appendUnitText = (unit: ResponsesOutputUnit, path: IRPath, text: string, partIds?: readonly number[]): void => {
+    if (unit.kind !== 'message' || path.at(-1) !== 'text') return;
+    const index = unit.contentOrdinals.get(path.slice(0, 6));
+    const parts = unit.contentState.content ??= [];
+    const part = parts[index];
+    let content: ContentState;
+    if (part === undefined) {
+      content = createContentState(options.roundTrip.builder);
+      parts[index] = { text: content };
+    } else {
+      if (!('text' in part) || part.text === undefined) throw new Error('Responses text content state has the wrong kind');
+      content = part.text;
+    }
+    appendContent(options.roundTrip.builder, content, text, partIds);
+  };
+
+  const appendPendingText = (unit: ResponsesOutputUnit, path: IRPath, text: string): void => {
+    let offset = 0;
+    const key = irPathKey(path);
+    for (const atom of unit.pendingText?.get(key) ?? []) {
+      if (atom.start > offset) appendUnitText(unit, path, text.slice(offset, atom.start));
+      appendUnitText(unit, path, text.slice(atom.start, atom.endExclusive), atom.partIds);
+      offset = atom.endExclusive;
+    }
+    if (offset < text.length) appendUnitText(unit, path, text.slice(offset));
+    unit.pendingText?.delete(key);
   };
 
   const coordinateIndexFor = (unit: ResponsesOutputUnit, path: IRPath, text: string): TextCoordinateIndex => {
@@ -338,6 +375,7 @@ export const openaiResponsesFromIR = async function* (
               contentOrdinals: createIROrdinalMapper(),
               annotationProgress: new Map(),
               coordinateIndexes: new Map(),
+              contentState: {},
               opened: false,
             };
             itemUnits.push(unit);
@@ -367,6 +405,7 @@ export const openaiResponsesFromIR = async function* (
     for (const partPath of unit.parts) {
       const part = textOrRefusalPart(state, partPath);
       const contentIndex = unit.contentOrdinals.open(partPath);
+      if (part.type === 'text') appendPendingText(unit, [...partPath, 'text'], part.text);
       followUps.push({
         type: 'response.content_part.added',
         item_id: id,
@@ -457,6 +496,7 @@ export const openaiResponsesFromIR = async function* (
       pending.dequeue();
       const outputIndex = outputUnits.length;
       unit.outputIndex = outputIndex;
+      if (unit.kind === 'message') nativeState[outputIndex] = unit.contentState;
       const { added, followUps } = tool !== undefined ? openToolUnit(unit, tool.item, tool.callId, outputIndex)
         : unit.kind === 'message' ? openMessageUnit(unit, state, outputIndex)
           : unit.kind === 'image' ? openImageUnit(unit)
@@ -600,10 +640,22 @@ export const openaiResponsesFromIR = async function* (
     }
 
     registerUnits(record, state);
+    const unit = units.forRecord(record, state);
+    if (unit?.kind === 'message' && record.type === 'operation' && record.operation === 'append' && record.path.at(-1) === 'text') {
+      if (unit.opened) appendUnitText(unit, record.path, record.value, record.partIds);
+      else {
+        const text = collector.value<string>(record.path);
+        if (text === undefined) throw new Error('Missing Responses pending text');
+        const fields = unit.pendingText ??= new Map();
+        const key = irPathKey(record.path);
+        const atoms = fields.get(key) ?? [];
+        atoms.push({ start: text.length - record.value.length, endExclusive: text.length, ...(record.partIds === undefined ? {} : { partIds: record.partIds }) });
+        fields.set(key, atoms);
+      }
+    }
     const { events: pendingEvents, justOpened } = openPendingUnits(state, collector);
     for (const event of pendingEvents) yield emit(event);
 
-    const unit = units.forRecord(record, state);
     if (unit?.opened && !justOpened.has(irPathKey(unit.path)) && record.type === 'operation') {
       for (const event of openedUnitEvents(unit, record, state)) yield emit(event);
     }
@@ -735,8 +787,10 @@ export const openaiResponsesFromIR = async function* (
       }
       const status = record.status === 'completed' && finishReason === 'content_filter' ? 'incomplete' : record.status;
       const nativeOutput = outputUnits.map(unit => restoreNamespaceOutputItem(outputItem(state, unit), options.namespaceToolNames, 'completed'));
+      nativeState.length = nativeOutput.length;
       const replayCheck = await computeOpenAIResponsesReplayCheck(nativeOutput);
-      const data = await options.roundTrip.prepareSidecar(0, replayCheck);
+      const input = toOpenAIResponsesInputAssistantTurn<ContentStates>(nativeOutput, nativeState);
+      const data = await options.roundTrip.prepareSidecar(0, replayCheck, input.turn, input.state);
       sidecar = { ...createOpenAIResponsesSidecarCarrier(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });
