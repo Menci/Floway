@@ -247,8 +247,9 @@ export const recordUsage = async (
   modelIdentity: TelemetryModelIdentity,
   quantities: UsageQuantities,
   pricingFacts: PricingRuntimeFacts,
+  requestStartedAt: number,
 ): Promise<void> => {
-  const priced = priceRequest(modelIdentity.pricing, pricingFacts);
+  const priced = priceRequest(modelIdentity.pricing, { ...pricingFacts, requestStartedAt });
   const metrics = usageMetrics(quantities, priced.rates);
   await Promise.all([
     getRepo().usage.record({
@@ -265,9 +266,9 @@ export const recordUsage = async (
   ]);
 };
 
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null, requestStartedAt: number): Promise<void> => {
   const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
+  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts, requestStartedAt);
 };
 
 // `BillableUsage` is already the canonical exclusive/split shape, so pricing is

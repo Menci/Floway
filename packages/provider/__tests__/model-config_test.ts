@@ -472,3 +472,16 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
     'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
 });
+
+test('pricingField retains configured time windows and validates calendar conditions', () => {
+  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [5, 1], start: '09:00', end: '12:00', excludedDates: ['2026-10-01'] };
+  const value = {
+    entries: [
+      { rates: { input_tokens: '1' } },
+      { selector: { timeWindow }, rates: { input_tokens: '2' } },
+    ],
+  };
+  expect(pricingField(JSON.parse(JSON.stringify(value)), 'pricing')?.entries[1]?.selector?.timeWindow).toEqual({ ...timeWindow, weekdays: [1, 5] });
+  value.entries[1]!.selector!.timeWindow.end = '08:00';
+  expect(() => pricingField(value, 'pricing')).toThrow(/start < end/);
+});

@@ -1,5 +1,8 @@
 import { divideDecimalString, parseNonNegativeDecimalString, type DecimalString } from './decimal.ts';
+import { canonicalPricingTimeWindow, compilePricingTimeWindow, pricingTimeWindowsOverlap, type PricingTimeWindowCoordinate } from './pricing-time-window.ts';
 import { billableServiceTier } from './usage.ts';
+
+export type { PricingTimeWindowCoordinate } from './pricing-time-window.ts';
 
 // Disjoint billing metrics a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
@@ -37,12 +40,13 @@ export interface PricingThresholdCoordinate {
   value: number;
 }
 
-export type PricingCoordinateValue = string | PricingThresholdCoordinate;
+export type PricingCoordinateValue = string | PricingThresholdCoordinate | PricingTimeWindowCoordinate;
 export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
 
 export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;
   inputTokens?: number;
+  requestStartedAt?: number;
 }>;
 
 type PricingRuntimeFactKey<Value> = {
@@ -51,13 +55,15 @@ type PricingRuntimeFactKey<Value> = {
 
 export type PricingAxis =
   | { id: string; kind: 'equality'; label: string; fact: PricingRuntimeFactKey<string> }
-  | { id: string; kind: 'threshold'; label: string; fact: PricingRuntimeFactKey<number> };
+  | { id: string; kind: 'threshold'; label: string; fact: PricingRuntimeFactKey<number> }
+  | { id: string; kind: 'time-window'; label: string; fact: 'requestStartedAt' };
 
 // Each axis binds its authoring metadata to the runtime fact used for request
 // projection, so a new registry entry cannot silently remain runtime-inert.
 export const PRICING_AXES = [
   { id: 'serviceTier', kind: 'equality', label: 'Service Tier', fact: 'serviceTier' },
   { id: 'inputTokens', kind: 'threshold', label: 'Input Tokens', fact: 'inputTokens' },
+  { id: 'timeWindow', kind: 'time-window', label: 'Time Window', fact: 'requestStartedAt' },
 ] as const satisfies readonly PricingAxis[];
 
 export interface PricingEntry {
@@ -80,6 +86,7 @@ export interface PricedRequest {
 }
 
 export type ModelPricingIssue =
+  | { code: 'time-window-conflict'; entryIndexes: readonly [number, number]; error: Error }
   | { code: 'empty-catalog'; error: Error }
   | { code: 'empty-rates'; entryIndex: number; error: Error }
   | { code: 'invalid-rate'; entryIndex: number; metric: BillingMetric; error: Error }
@@ -118,7 +125,7 @@ const canonicalThreshold = (value: PricingCoordinateValue, path: string): Pricin
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${path} must be a threshold object`);
   const unknownKeys = Object.keys(value).filter(key => key !== 'operator' && key !== 'value');
   if (unknownKeys.length > 0) throw new RangeError(`${path} has unknown fields: ${unknownKeys.join(', ')}`);
-  const { operator, value: threshold } = value;
+  const { operator, value: threshold } = value as PricingThresholdCoordinate;
   if (operator !== 'gt' && operator !== 'gte') throw new RangeError(`${path}.operator must be "gt" or "gte"`);
   if (!Number.isSafeInteger(threshold) || threshold <= 0) throw new RangeError(`${path}.value must be a positive safe integer`);
   return { operator, value: threshold };
@@ -133,6 +140,8 @@ export const canonicalizePricingSelector = (selector: PricingSelector | undefine
     if (axis.kind === 'equality') {
       if (typeof value !== 'string' || value.length === 0) throw new RangeError(`pricing selector ${axisId} must be a non-empty string`);
       canonical[axisId] = value;
+    } else if (axis.kind === 'time-window') {
+      canonical[axisId] = canonicalPricingTimeWindow(value, `pricing selector ${axisId}`);
     } else {
       canonical[axisId] = canonicalThreshold(value, `pricing selector ${axisId}`);
     }
@@ -156,6 +165,15 @@ const selectorCoordinatesByKind = (selector: PricingSelector, kind: PricingAxis[
 
 const equalityScopeKey = (selector: PricingSelector): string =>
   JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
+
+const thresholdScope = (selector: PricingSelector): PricingSelector =>
+  Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)!.kind !== 'threshold'));
+
+const scopeMatches = (scope: PricingSelector, selector: PricingSelector): boolean =>
+  Object.entries(scope).every(([axisId, coordinate]) => JSON.stringify(coordinate) === JSON.stringify(selector[axisId]));
+
+const scopesOverlap = (a: PricingSelector, b: PricingSelector): boolean =>
+  Object.entries(a).every(([axisId, coordinate]) => b[axisId] === undefined || JSON.stringify(coordinate) === JSON.stringify(b[axisId]));
 
 const pricingMetrics = (rates: PriceVector): readonly BillingMetric[] =>
   BILLING_METRICS.filter(metric => rates[metric] !== undefined);
@@ -275,12 +293,11 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
     const key = JSON.stringify(selector);
     if (selectorKeys.has(key)) continue;
     selectorKeys.add(key);
-    const scopeKey = equalityScopeKey(selector);
+    const scope = thresholdScope(selector);
+    const scopeKey = JSON.stringify(scope);
     for (const [axisId, coordinate] of Object.entries(selector)) {
-      if (typeof coordinate === 'string') continue;
-      const overlappingScopes = scopeKey === '{}'
-        ? [...thresholdOperatorsByScope.keys()]
-        : ['{}', scopeKey];
+      if (typeof coordinate === 'string' || !('operator' in coordinate)) continue;
+      const overlappingScopes = [...thresholdOperatorsByScope.keys()].filter(key => scopesOverlap(scope, JSON.parse(key) as PricingSelector));
       for (const overlappingScope of overlappingScopes) {
         const existing = thresholdOperatorsByScope.get(overlappingScope)?.get(axisId)?.get(coordinate.value);
         if (existing !== undefined && existing.operator !== coordinate.operator) {
@@ -289,11 +306,29 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
             axisId,
             value: coordinate.value,
             entryIndexes: [existing.entryIndex, entryIndex],
-            error: new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value} in overlapping equality scopes`),
+            error: new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value} in overlapping pricing scopes`),
           });
         }
       }
       operatorsFor(scopeKey, axisId).set(coordinate.value, { operator: coordinate.operator, entryIndex });
+    }
+  }
+  for (let i = 0; i < selectors.length; i++) {
+    const a = selectors[i];
+    const aw = a?.timeWindow as PricingTimeWindowCoordinate | undefined;
+    if (!a || !aw) continue;
+    for (let j = 0; j < i; j++) {
+      const b = selectors[j];
+      const bw = b?.timeWindow as PricingTimeWindowCoordinate | undefined;
+      if (!b || !bw) continue;
+      const differentZone = aw.timeZone !== bw.timeZone;
+      const overlapping = JSON.stringify(aw) !== JSON.stringify(bw)
+        && scopesOverlap(selectorCoordinatesByKind(a, 'equality'), selectorCoordinatesByKind(b, 'equality'))
+        && pricingTimeWindowsOverlap(aw, bw);
+      if (differentZone || overlapping) issues.push({
+        code: 'time-window-conflict', entryIndexes: [j, i],
+        error: new Error(differentZone ? 'pricing time windows must use the same time zone' : 'pricing time windows must not overlap in compatible service tiers'),
+      });
     }
   }
   return issues;
@@ -306,7 +341,8 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
 
 interface CompiledModelPricing {
   ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
-  thresholdBandsByAxisAndEqualityScope: ReadonlyMap<string, ReadonlyMap<string, readonly PricingThresholdCoordinate[]>>;
+  timeWindows: readonly { scope: PricingSelector; coordinate: PricingTimeWindowCoordinate; matches: (timestamp: number) => boolean }[];
+  thresholdBandsByAxisAndScope: ReadonlyMap<string, ReadonlyMap<string, readonly PricingThresholdCoordinate[]>>;
 }
 
 const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
@@ -318,30 +354,38 @@ const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
   if (existing) return existing;
   validateModelPricing(pricing);
   const ratesBySelectorKey = new Map<string, PriceVector>();
-  const bandsByAxisAndEqualityScope = new Map<string, Map<string, Map<number, PricingThresholdCoordinate>>>();
+  const timeWindows: CompiledModelPricing['timeWindows'][number][] = [];
+  const seenWindows = new Set<string>();
+  const bandsByAxisAndScope = new Map<string, Map<string, Map<number, PricingThresholdCoordinate>>>();
   for (const entry of pricing.entries) {
     const selector = canonicalizePricingSelector(entry.selector);
     ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
+    const coordinate = selector.timeWindow as PricingTimeWindowCoordinate | undefined;
+    const windowKey = JSON.stringify([equalityScopeKey(selector), coordinate]);
+    if (coordinate && !seenWindows.has(windowKey)) {
+      seenWindows.add(windowKey);
+      timeWindows.push({ scope: selectorCoordinatesByKind(selector, 'equality'), coordinate, matches: compilePricingTimeWindow(coordinate) });
+    }
     for (const axis of PRICING_AXES) {
       if (axis.kind !== 'threshold') continue;
       const coordinate = selector[axis.id];
-      if (typeof coordinate !== 'object') continue;
-      const scopeKey = equalityScopeKey(selector);
-      const bandsByScope = bandsByAxisAndEqualityScope.get(axis.id) ?? new Map<string, Map<number, PricingThresholdCoordinate>>();
-      bandsByAxisAndEqualityScope.set(axis.id, bandsByScope);
+      if (typeof coordinate !== 'object' || !('operator' in coordinate)) continue;
+      const scopeKey = JSON.stringify(thresholdScope(selector));
+      const bandsByScope = bandsByAxisAndScope.get(axis.id) ?? new Map<string, Map<number, PricingThresholdCoordinate>>();
+      bandsByAxisAndScope.set(axis.id, bandsByScope);
       const bands = bandsByScope.get(scopeKey) ?? new Map<number, PricingThresholdCoordinate>();
       bands.set(coordinate.value, coordinate);
       bandsByScope.set(scopeKey, bands);
     }
   }
-  const thresholdBandsByAxisAndEqualityScope = new Map(
-    [...bandsByAxisAndEqualityScope].map(([axisId, bandsByScope]) => [
+  const thresholdBandsByAxisAndScope = new Map(
+    [...bandsByAxisAndScope].map(([axisId, bandsByScope]) => [
       axisId,
       new Map([...bandsByScope].map(([scopeKey, bands]) =>
         [scopeKey, [...bands.values()].toSorted((a, b) => b.value - a.value)] as const)),
     ] as const),
   );
-  const compiled = { ratesBySelectorKey, thresholdBandsByAxisAndEqualityScope };
+  const compiled = { ratesBySelectorKey, thresholdBandsByAxisAndScope, timeWindows };
   compiledPricing.set(pricing, compiled);
   return compiled;
 };
@@ -378,16 +422,21 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
     const fact = facts[axis.fact];
     if (fact != null) selector[axis.id] = fact;
   }
-  const scopeKey = equalityScopeKey(canonicalizePricingSelector(selector));
+  if (compiled && compiled.timeWindows.length > 0) {
+    const timestamp = facts.requestStartedAt;
+    if (timestamp === undefined || !Number.isFinite(new Date(timestamp).getTime())) throw new RangeError('time-window pricing requires a valid requestStartedAt timestamp');
+    const window = compiled.timeWindows.find(window => scopeMatches(window.scope, selector) && window.matches(timestamp));
+    if (window) selector.timeWindow = window.coordinate;
+  }
   for (const axis of PRICING_AXES) {
     if (axis.kind !== 'threshold') continue;
     const fact = facts[axis.fact];
     if (fact === undefined) continue;
-    const bandsByScope = compiled?.thresholdBandsByAxisAndEqualityScope.get(axis.id);
-    const bands = [
-      ...(bandsByScope?.get('{}') ?? []),
-      ...(scopeKey === '{}' ? [] : (bandsByScope?.get(scopeKey) ?? [])),
-    ].toSorted((a, b) => b.value - a.value);
+    const bandsByScope = compiled?.thresholdBandsByAxisAndScope.get(axis.id);
+    const bands = [...(bandsByScope ?? [])]
+      .filter(([scopeKey]) => scopeMatches(JSON.parse(scopeKey) as PricingSelector, selector))
+      .flatMap(([, bands]) => bands)
+      .toSorted((a, b) => b.value - a.value);
     const band = bands.find(coordinate => thresholdMatches(coordinate, fact));
     if (band) selector[axis.id] = band;
   }

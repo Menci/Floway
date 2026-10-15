@@ -484,3 +484,15 @@ test('SQL usage overview returns grouped term cardinality rather than raw storag
     metrics: [{ metric: 'input_tokens', quantity: '3240' }], cost: '1620',
   });
 });
+
+for (const backend of backends) test(`${backend.name}: time-window selectors and price snapshots survive persistence in the same hour`, async () => {
+  const repo = await backend.make();
+  const timeWindow = { timeZone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00', excludedDates: ['2026-10-01'] };
+  await repo.usage.record(record({ pricingSelector: { timeWindow }, metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: '2' }] }));
+  await repo.usage.record(record({ pricingSelector: {}, metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: '1' }] }));
+  const rows = await repo.usage.listAll();
+  assertEquals(rows.length, 2);
+  assertEquals(rows.find(row => row.pricingSelector.timeWindow)?.pricingSelector, { timeWindow });
+  assertEquals(rows.find(row => row.pricingSelector.timeWindow)?.metrics, [{ metric: 'input_tokens', quantity: '10', unitPrice: '2' }]);
+  assertEquals(rows.find(row => !row.pricingSelector.timeWindow)?.metrics, [{ metric: 'input_tokens', quantity: '10', unitPrice: '1' }]);
+});

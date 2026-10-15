@@ -909,7 +909,7 @@ interface ShimState {
   imageDispatchCount: number;
 }
 
-const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
+const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown, requestStartedAt: number): void => {
   const usage = tokenUsageFromOpenAIImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
@@ -917,7 +917,7 @@ const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderM
     upstream: provider.upstreamId,
     modelKey,
     pricing: model.pricing ?? null,
-  }, usage).catch((error: unknown) => {
+  }, usage, requestStartedAt).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });
   state.backgroundScheduler(promise);
@@ -1121,6 +1121,7 @@ const consumeImageResponse = async (
   modelKey: string,
   response: Response,
   state: ShimState,
+  requestStartedAt: number,
 ): Promise<ImageOutcome> => {
   const text = await response.text();
   if (!response.ok) {
@@ -1143,7 +1144,7 @@ const consumeImageResponse = async (
   if (b64 === null) {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }
-  recordImageUsage(state, provider, model, modelKey, parsed);
+  recordImageUsage(state, provider, model, modelKey, parsed, requestStartedAt);
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
@@ -1244,6 +1245,7 @@ const streamImageGeneration = (
   sources: readonly ImageSource[],
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
+  const requestStartedAt = Date.now();
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { provider, fetcher } = resolved.candidate;
@@ -1287,7 +1289,7 @@ const streamImageGeneration = (
   }
 
   if (!wantsPartials) {
-    return finish(await consumeImageResponse(provider, model, modelKey, response, state));
+    return finish(await consumeImageResponse(provider, model, modelKey, response, state, requestStartedAt));
   }
 
   if (!response.ok) {
@@ -1317,7 +1319,7 @@ const streamImageGeneration = (
   if (finalB64 === undefined) {
     return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
-  recordImageUsage(state, provider, model, modelKey, { usage });
+  recordImageUsage(state, provider, model, modelKey, { usage }, requestStartedAt);
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 

@@ -50,7 +50,7 @@ const piCost = (model: PublicModel): PiModel['cost'] => {
     const selector = entry.selector;
     if (selector === undefined || Object.keys(selector).length !== 1) return [];
     const inputTokens = selector.inputTokens;
-    if (typeof inputTokens !== 'object') return [];
+    if (typeof inputTokens !== 'object' || !('operator' in inputTokens)) return [];
     return [{
       ...piCostRates(entry.rates),
       inputTokensAbove: inputTokens.value - (inputTokens.operator === 'gte' ? 1 : 0),
