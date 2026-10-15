@@ -6,7 +6,7 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
-import { getSocketDial } from '@floway-dev/platform';
+import { getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
 const proxyUriValidationError = (err: unknown): string => {
@@ -138,6 +138,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       },
       {
         socketDial: getSocketDial(),
+        contentDecoders: getHttpContentDecoders(),
         ...(body.dial_timeout_seconds == null ? {} : { dialTimeoutMs: body.dial_timeout_seconds * 1000 }),
       },
     );

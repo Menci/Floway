@@ -21,6 +21,9 @@ export type FetchInit = Omit<RequestInit, 'body'> & {
 
 export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
 
+/** Runtime codecs supplementing the portable gzip/deflate response decoders. */
+export type HttpContentDecoders = ReadonlyMap<string, () => ReadableWritablePair<Uint8Array, Uint8Array>>;
+
 /**
  * Request header block in wire order. A name may repeat, because a repeated
  * name is the only way to send several values whose combined form would be a

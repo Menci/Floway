@@ -81,6 +81,9 @@ packageExtensions:
 # served by Workers Static Assets in production and by the Node target in the
 # docker-compose topology.
 overrides:
+  # Require correct cancellation and error propagation through the Node/Web stream bridge.
+  # https://developers.cloudflare.com/workers/runtime-apis/nodejs/streams/
+  'workerd@1.20260405.1': 1.20261006.1
   '@react-router/dev>@react-router/serve': '-'
   # monaco-editor 0.54.0 pins dompurify at exactly 3.1.7, which is behind every
   # advisory published since. 3.4.12 is the first release no advisory still

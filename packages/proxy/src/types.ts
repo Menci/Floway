@@ -5,6 +5,8 @@
 // SNI, ALPN, and HTTP-shaped concerns live one layer up in the
 // orchestrator (runProxiedRequest).
 
+import type { HttpContentDecoders } from '@floway-dev/http';
+
 /** Pure transport target: where the proxy should land us. */
 export interface DialTarget {
   /**
@@ -100,6 +102,8 @@ export interface DialResult {
 }
 
 export interface DialOptions {
+  /** Runtime response codecs used by the HTTP request runners after dialing. */
+  contentDecoders?: HttpContentDecoders;
   /** Caller-supplied cancellation, threaded through every dial leg. */
   signal?: AbortSignal;
   /** Per-call dial-stage deadline override (ms). Falls back to
