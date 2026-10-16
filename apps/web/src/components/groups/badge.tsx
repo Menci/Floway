@@ -17,18 +17,19 @@ export function GroupBadge({ group }: { group: Pick<ControlPlaneGroup, 'name' | 
   </TruncationTooltip>;
 }
 
-export function GroupTag({ group }: { group: ControlPlaneGroup }) {
+export function GroupTag({ disabled, group }: { disabled: boolean; group: ControlPlaneGroup }) {
   const { t } = useTranslation();
   const hue = useBadgeHue(hueBadgeTone(group.hue));
   return <Tag
     appearance="outline"
     className={`max-w-full ${hue.className}`}
+    disabled={disabled}
     dismissIcon={{ 'aria-label': t('dashboard.groupsManagement.actions.leave', { name: group.name }) }}
     icon={<PeopleTeam16Regular />}
     primaryText={{ className: 'truncate !pb-0' }}
     shape="circular"
     size="small"
-    style={hue.style}
+    style={disabled ? undefined : hue.style}
     value={String(group.id)}
   >{group.name}</Tag>;
 }

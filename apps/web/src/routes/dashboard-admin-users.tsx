@@ -190,8 +190,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
       <div className="flex items-center justify-between gap-3 flex-wrap -mb-1">
         <TabList aria-label={t('dashboard.nav.users')} onTabSelect={(_, event) => { setTab(event.value === 'groups' ? 'groups' : 'users'); setQuery(''); }} selectedValue={tab}>
-          <Tab value="users"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.users')}{users && <Text className="text-fui-fg3 tabular-nums">{users.length}</Text>}</span></Tab>
-          <Tab value="groups"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.groups')}{groups && <Text className="text-fui-fg3 tabular-nums">{groups.length}</Text>}</span></Tab>
+          <Tab value="users"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.users')}{users && <Text className="text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
+          <Tab value="groups"><span className="inline-flex items-baseline gap-1.5">{t('dashboard.users.tabs.groups')}{groups && <Text className="text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
         </TabList>
         <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} className="w-[260px] max-[560px]:w-full" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} value={query} />
       </div>

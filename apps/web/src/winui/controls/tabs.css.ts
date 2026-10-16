@@ -22,10 +22,9 @@
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L21-L25
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L40-L46
 //
-// Focus stays Fluent's: PivotHeaderItem draws no per-item focus visual, and
-// transcribing that silence would leave the strip looking unfocusable.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L486
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Pivot_themeresources.xaml#L587
+// The inline strip takes SelectorBarItem's system focus visual with a -2
+// margin; the bottom selection indicator keeps its own pseudo-element.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml#L34
 //
 // The disabled foreground is left to Fluent: it withholds `aria-selected` from
 // a disabled tab, so no selector below reaches one, and its disabled atom
@@ -40,6 +39,12 @@ const inlineStrip = ".fui-TabList:not([data-winui-appearance$='-circular'])";
 const subtleChip = ".fui-TabList[data-winui-appearance='subtle-circular']";
 
 export const tabsCss = `
+${inlineStrip} .fui-Tab.fui-Tab[data-fui-focus-visible] {
+  outline: var(--winui-focus-visual-primary-thickness) solid var(--winui-focus-stroke-outer);
+  outline-offset: 0;
+  box-shadow: inset 0 0 0 var(--winui-focus-visual-secondary-thickness) var(--winui-focus-stroke-inner);
+}
+
 /* TabViewItemHeaderForegroundPointerOver resolves to the same
    TextFillColorSecondary as rest, so the pointer alone carries the state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L15

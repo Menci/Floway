@@ -150,7 +150,7 @@ export function UserDialog(props: UserDialogProps) {
             validationMessage={errors.username?.message ? t(errors.username.message) : undefined}
             validationState={errors.username ? 'error' : undefined}
           >
-            <Input {...field} autoComplete="off" disabled={saving} />
+            <Input {...field} autoComplete="off" disabled={saving} spellCheck={false} />
           </Field>
         )}
       />

@@ -52,15 +52,15 @@ export function UsersTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]">
-        <TableColumns widths={['22%', '120px', null, '120px', '120px', TABLE_ACTIONS_WIDTH]} />
+      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
+        <TableColumns widths={['22%', null, null, null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
             <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
           </TableRow>
         </TableHeader>
@@ -70,7 +70,7 @@ export function UsersTable({
             return (
               <TableRow key={user.id}>
                 <TableCell><div className="flex items-center gap-2 min-w-0">
-                  <Avatar color="colorful" idForColor={user.username} name={user.username} size={24} />
+                  <Avatar aria-hidden color="neutral" name={user.username} size={24} />
                   <Tooltip content={user.username} relationship="label"><RowTitleButton onClick={() => onEdit(user)}>{user.username}</RowTitleButton></Tooltip>
                 </div></TableCell>
                 <TableCell>
@@ -83,7 +83,7 @@ export function UsersTable({
                   {user.groupIds.slice(0, 2).map(id => <span className="min-w-0 max-w-[160px] inline-flex" key={id}><GroupBadge group={groups.find(group => group.id === id)!} /></span>)}
                   {user.groupIds.length > 2 && <Tooltip content={groups.filter(group => user.groupIds.slice(2).includes(group.id)).map(group => group.name).join('\n')} relationship="description"><Chip className="winui-focus-rect flex-none" tabIndex={0}>{`+${user.groupIds.length - 2}`}</Chip></Tooltip>}
                 </div></TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')
                     : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}

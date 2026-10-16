@@ -1,4 +1,5 @@
 import { accordionCss } from './controls/accordion.css';
+import { avatarCss } from './controls/avatar.css';
 import { badgeTagCss } from './controls/badge-tag.css';
 import { buttonCss } from './controls/button.css';
 import { calendarRangeCss } from './controls/calendar-range.css';
@@ -19,6 +20,7 @@ import { selectCss } from './controls/select.css';
 import { switchCss } from './controls/switch.css';
 import { tableCss } from './controls/table.css';
 import { tabsCss } from './controls/tabs.css';
+import { tagPickerCss } from './controls/tag-picker.css';
 import { telemetryRangeCss } from './controls/telemetry-range.css';
 import { textInputCss } from './controls/text-input.css';
 import { textCss } from './controls/text.css';
@@ -36,6 +38,7 @@ export const winuiCss = [
   pageTransitionCss,
   focusRectCss,
   accordionCss,
+  avatarCss,
   badgeTagCss,
   buttonCss,
   cardCss,
@@ -56,6 +59,7 @@ export const winuiCss = [
   switchCss,
   tableCss,
   tabsCss,
+  tagPickerCss,
   textInputCss,
   textCss,
   toastCss,

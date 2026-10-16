@@ -29,7 +29,7 @@ export function UserGroupsField({ disabled, groups, onChange, value }: {
         <Text className="text-fui-fg2 flex-none" size={200}>{t('dashboard.groupsManagement.members.count', { count: group.memberIds.length })}</Text>
       </span>;
     }}
-    renderTag={option => <GroupTag group={byId.get(option.value)!} key={option.value} />}
+    renderTag={option => <GroupTag disabled={disabled} group={byId.get(option.value)!} key={option.value} />}
     value={value}
   /></Field>;
 }

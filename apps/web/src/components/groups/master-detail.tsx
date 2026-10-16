@@ -13,7 +13,7 @@ import { StatusBadge } from '../ui/status-badge';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Avatar, Button, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Avatar, Button, List, ListItem, Popover, PopoverSurface, PopoverTrigger, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   layout: {
@@ -47,21 +47,24 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
   const selected = groups.find(group => group.id === selectedId) ?? groups[0]!;
   const members = new Set(selected.memberIds);
   return <Panel className={mergeClasses(styles.layout, 'overflow-hidden')} padding="flush">
-    <nav aria-label={t('dashboard.users.table.groups')} className={mergeClasses(styles.navigation, 'p-1.5 grid content-start gap-0.5 min-w-0')}>
-      {groups.map(group => {
-        const active = group.id === selected.id;
-        return <button
-          aria-current={active ? 'true' : undefined}
-          className={`winui-focus-rect relative flex items-center justify-between gap-2 min-w-0 h-10 px-3 rounded-[var(--winui-control-corner-radius)] border-0 cursor-pointer text-left text-fui-fg1 ${active ? 'bg-[var(--winui-subtle-fill-secondary)]' : 'bg-transparent hover:bg-[var(--winui-subtle-fill-secondary)]'}`}
+    <nav aria-label={t('dashboard.users.table.groups')} className={mergeClasses(styles.navigation, 'p-1.5 min-w-0')}>
+      <List
+        aria-label={t('dashboard.users.table.groups')}
+        className="grid content-start gap-0.5"
+        onSelectionChange={(_, data) => { const id = data.selectedItems[0]; if (typeof id === 'number') onSelect(id); }}
+        selectedItems={[selected.id]}
+        selectionMode="single"
+      >{groups.map(group => <ListItem
+          aria-label={group.name}
+          checkmark={null}
+          className="!flex items-center justify-between gap-2 min-w-0"
           key={group.id}
-          onClick={() => onSelect(group.id)}
-          type="button"
+          value={group.id}
         >
-          {active && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-[var(--winui-accent-fill-default)]" />}
           <span className="min-w-0 inline-flex"><GroupBadge group={group} /></span>
-          <Text className="text-fui-fg2 flex-none tabular-nums" size={200}>{group.memberIds.length}</Text>
-        </button>;
-      })}
+          <Text className="text-fui-fg2 flex-none proportional-nums" size={200}>{group.memberIds.length}</Text>
+        </ListItem>)}
+      </List>
     </nav>
     <section className="grid content-start min-w-0">
       <header className="flex items-center justify-between gap-3 flex-wrap px-[var(--floway-panel-inset)] py-3 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]">
@@ -76,18 +79,18 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
         </div>
       </header>
       {members.size === 0 ? <EmptyState title={t('dashboard.groupsManagement.members.empty')} /> : <ScrollArea axes="horizontal" className="min-w-0">
-        <Table aria-label={t('dashboard.groupsManagement.fields.members')} className="min-w-[520px]">
-          <TableColumns widths={[null, '120px', '120px', '56px']} />
+        <Table aria-label={t('dashboard.groupsManagement.fields.members')} className="min-w-[520px]" style={{ tableLayout: 'auto' }}>
+          <TableColumns widths={[null, null, null, '56px']} />
           <TableHeader><TableRow>
             <TableHeaderCell className="!pl-[var(--floway-panel-inset)]">{t('dashboard.users.table.username')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.role')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell><span className="sr-only">{t('dashboard.users.table.actions')}</span></TableHeaderCell>
           </TableRow></TableHeader>
           <TableBody>{users.filter(user => members.has(user.id)).map(user => <TableRow className="h-11" key={user.id}>
             <TableCell className="!pl-[var(--floway-panel-inset)]"><UserIdentity user={user} /></TableCell>
             <TableCell><StatusBadge tone={user.isAdmin ? 'accent' : 'neutral'}>{t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}</StatusBadge></TableCell>
-            <TableCell>{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
+            <TableCell className="whitespace-nowrap">{user.upstreamIds === null ? t('dashboard.users.upstreams.all') : t('dashboard.users.upstreams.count', { count: user.upstreamIds.length })}</TableCell>
             <TableCell><TooltipIconButton disabled={disabled} icon={<DismissRegular />} label={t('dashboard.groupsManagement.actions.remove', { username: user.username })} onClick={() => void onMemberChange(selected, user, false)} /></TableCell>
           </TableRow>)}</TableBody>
         </Table>
@@ -98,7 +101,7 @@ export function GroupsMasterDetail({ disabled, groups, onCreate, onDelete, onEdi
 
 export function UserIdentity({ user }: { user: ControlPlaneUser }) {
   return <div className="flex items-center gap-2 min-w-0">
-    <Avatar color="colorful" idForColor={user.username} name={user.username} size={24} />
+    <Avatar aria-hidden color="neutral" name={user.username} size={24} />
     <span className="truncate">{user.username}</span>
   </div>;
 }
@@ -117,10 +120,12 @@ function AddMember({ disabled, group, onAdd, users }: {
     <PopoverTrigger disableButtonEnhancement><Button disabled={disabled} icon={<PersonAddRegular />}>{t('dashboard.groupsManagement.actions.add')}</Button></PopoverTrigger>
     <PopoverSurface aria-label={group.name} className="w-[min(320px,calc(100vw-32px))] !p-2 grid gap-1">
       <Input aria-label={t('dashboard.users.search')} autoFocus contentBefore={<SearchRegular />} onChange={(_, data) => setQuery(data.value)} placeholder={t('dashboard.users.search')} value={query} />
-      <div className="grid max-h-[260px] overflow-auto">
+      <ScrollArea axes="vertical" className="max-h-[260px]">
         {visible.length === 0 && <Text className="text-fui-fg2 px-2 py-2" role="status">{t(users.length === 0 ? 'dashboard.groupsManagement.members.allAdded' : 'dashboard.groupsManagement.members.noMatches')}</Text>}
-        {visible.map(user => <Button appearance="subtle" className="!justify-start" disabled={disabled} key={user.id} onClick={() => { setOpen(false); void onAdd(user); }}><UserIdentity user={user} /></Button>)}
-      </div>
+        <List aria-label={t('dashboard.groupsManagement.fields.members')} navigationMode="items">
+          {visible.map(user => <ListItem aria-label={user.username} aria-disabled={disabled} key={user.id} onAction={() => { if (!disabled) { setOpen(false); void onAdd(user); } }} value={user.id}><UserIdentity user={user} /></ListItem>)}
+        </List>
+      </ScrollArea>
     </PopoverSurface>
   </Popover>;
 }

@@ -27,3 +27,12 @@ test('searches unselected groups, joins one, and removes a selected tag', async 
   await act(async () => { fireEvent.click(screen.getByLabelText(i18n.t('dashboard.groupsManagement.actions.leave', { name: 'Platform' }))); });
   expect(screen.getByRole('status').textContent).toBe('["2"]');
 });
+
+test('a saving form disables tag removal and releases the identity paint', () => {
+  renderInApp(<UserGroupsField disabled groups={groups} onChange={() => { throw new Error('Disabled tags cannot change membership'); }} value={['1']} />);
+  const input = screen.getByRole('combobox');
+  expect((input as HTMLInputElement).disabled).toBe(true);
+  const tag = screen.getByRole('option', { name: /Platform/ }) as HTMLButtonElement;
+  expect(tag.disabled).toBe(true);
+  expect(tag.style.color).toBe('');
+});
