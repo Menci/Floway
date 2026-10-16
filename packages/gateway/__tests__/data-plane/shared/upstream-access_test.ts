@@ -82,7 +82,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       assertEquals(catalog.data.map((model: { id: string }) => model.id).sort(), models);
       assertEquals(geminiCatalog.models.map((model: { baseModelId: string }) => model.baseModelId).sort(), models);
     } else {
-      const message = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
+      const message = 'No upstream provider configured — add and enable an upstream in the dashboard';
       assertEquals(catalog, { error: { message, type: 'api_error' } });
       assertEquals(geminiCatalog, { error: { code: 502, message, status: 'UNAVAILABLE' } });
     }

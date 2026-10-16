@@ -53,10 +53,11 @@ inventory; there is no separate documentation list to reconcile.
 
 ## Extra constraints
 
-- **Live probes follow `probing-copilot`** — credential discovery, token
-  exchange, headers, proxy fallback order, and direct upstream calls all live
-  there. Do not ask the human for credentials and do not route probes through
-  Floway.
+- **Live probes require an explicit human request to probe.** An audit request
+  alone does not authorize production configuration reads or upstream calls.
+  Once authorized, follow `probing-prod-upstream` for credential discovery,
+  headers, proxy fallback order, and direct upstream calls. Never use refresh
+  tokens; an independent refresh can interrupt production token renewal.
 - **Full-matrix evidence.** Test every applicable model from `GET /models` on
   every account in D1; different accounts can diverge. One model on one account
   is never enough to delete a workaround.

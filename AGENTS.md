@@ -33,7 +33,7 @@
 | Gateway behavior | Preserve upstream status, headers, and body directly and surface internal failures with stack traces. | Data-plane tests |
 | Upstream-owned values | Derive endpoint capability from metadata and operator configuration, forward open-string protocol values verbatim, and keep vendor knowledge inside the owning provider. | Protocol, translation, and provider tests |
 | Vendor constants | Attach a reference URL to every vendor constant and wire workaround. | Owning code review |
-| Upstream research | Compare a Copilot quirk with another Copilot gateway; compare generic adapter behavior with both a Copilot gateway and a general LLM gateway. | Research evidence |
+| Upstream research | Compare upstream quirks and generic adapter behavior across multiple LLM gateways. | Research evidence |
 | Workspace dependencies | Keep foundation packages runtime-independent and preserve the dependency direction encoded by workspace manifests and ESLint. | Package manifests, ESLint, and typecheck |
 | Cross-package imports | Reach runtime code through declared package exports and keep platform-target apps isolated from one another. | ESLint |
 | Runtime composition | Keep deployment-specific implementations and entrypoints in `apps/platform-*` and portable contracts in `packages/platform`. | Package manifests and typecheck |
@@ -53,7 +53,7 @@
 | Skill | `$backfill-usage-pricing` | Reprices recorded model usage. |
 | Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
 | Skill | `$fetching-models-pricing` | Researches provider model pricing. |
-| Skill | `$probing-copilot` | Probes Copilot upstream behavior. |
+| Skill | `$probing-prod-upstream` | Probes production upstreams only when explicitly requested. |
 | Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
 | Package | `apps/platform-node` | Hosts Floway on Node. |
 | Package | `apps/web` | Provides the operator dashboard. |
