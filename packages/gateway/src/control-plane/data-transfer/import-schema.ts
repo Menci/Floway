@@ -6,7 +6,7 @@ import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-mode
 import { isOpenAIResponsesRetentionSeconds, OPENAI_RESPONSES_RETENTION_MAX_SECONDS, OPENAI_RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/openai-responses-retention.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, Group, UpstreamMetricRecord, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -33,6 +33,7 @@ export interface SerializedProxy {
 
 export interface ParsedImportData {
   users: User[];
+  groups: Array<Group & { memberIds: number[] }>;
   apiKeys: ApiKey[];
   upstreams: UpstreamRecord[];
   proxies: SerializedProxy[];
@@ -255,6 +256,14 @@ const userSchema = z.object({
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
 });
+
+const groupTransferSchema = z.object({
+  id: positiveIntegerSchema('id'),
+  name: nonEmptyStringWithError('name must be a non-empty string').max(64, { error: 'name must be 64 characters or fewer' }),
+  createdAt: nonEmptyStringSchema('createdAt'),
+  deletedAt: nullableStringSchema('deletedAt'),
+  memberIds: z.array(positiveIntegerSchema('memberIds entries')).refine(ids => new Set(ids).size === ids.length, { error: 'memberIds contains duplicates' }),
+}).strict();
 
 const sequentialArraySchema = <T>(
   schema: z.ZodType<T>,
@@ -491,6 +500,26 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
   }
   const userIds = new Set(users.records.map(user => user.id));
+  const groups = parseCollection('groups', groupTransferSchema, value.groups, {
+    arrayError: 'groups must be an array',
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const id = parseValue(positiveIntegerSchema('id'), wire.id);
+        return prior.some(candidate => candidate.id === id) ? `duplicate group id ${id}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (groups.type === 'invalid') return groups;
+  for (let groupIndex = 0; groupIndex < groups.records.length; groupIndex++) {
+    for (const userId of groups.records[groupIndex].memberIds) {
+      if (!userIds.has(userId)) {
+        return { type: 'invalid', error: `invalid groups at index ${groupIndex}: member user ${userId} does not match any user in the payload` };
+      }
+    }
+  }
   for (let index = 0; index < apiKeys.records.length; index++) {
     if (!userIds.has(apiKeys.records[index].userId)) {
       return { type: 'invalid', error: `invalid apiKeys at index ${index}: user_id ${apiKeys.records[index].userId} does not match any user in the payload` };
@@ -551,6 +580,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     type: 'ok',
     data: {
       users: users.records,
+      groups: groups.records,
       apiKeys: apiKeys.records,
       upstreams: upstreams.records,
       proxies: proxies.records,

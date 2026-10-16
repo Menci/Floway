@@ -46,6 +46,13 @@ export interface User {
   deletedAt: string | null;
 }
 
+export interface Group {
+  id: number;
+  name: string;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
 export interface Session {
   id: string;
   userId: number;
@@ -281,6 +288,22 @@ export interface UsersRepo {
   // duplicate-username races surface instead of silently overwriting state.
   save(user: User): Promise<void>;
   softDelete(id: number): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
+export interface GroupsRepo {
+  list(): Promise<Group[]>;
+  listIncludingDeleted(): Promise<Group[]>;
+  getById(id: number): Promise<Group | null>;
+  findByName(name: string): Promise<Group | null>;
+  create(name: string): Promise<Group>;
+  save(group: Group): Promise<void>;
+  softDelete(id: number): Promise<boolean>;
+  listMemberIds(groupId: number): Promise<number[]>;
+  listIdsByUserId(userId: number): Promise<number[]>;
+  listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>>;
+  replaceMembers(groupId: number, userIds: readonly number[]): Promise<void>;
+  deleteMembershipsByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -581,6 +604,7 @@ export interface Repo {
   upstreamMetrics: UpstreamMetricsRepo;
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
+  groups: GroupsRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;

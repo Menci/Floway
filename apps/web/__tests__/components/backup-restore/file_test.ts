@@ -4,6 +4,7 @@ import { BACKUP_FILE_VERSION, parseBackupFile } from '../../../src/components/ba
 
 const data = {
   users: [],
+  groups: [],
   apiKeys: [],
   upstreams: [],
   proxies: [],

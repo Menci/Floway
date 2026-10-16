@@ -92,7 +92,7 @@ const en = {
         requests: 'Requests',
         usage: 'Usage',
         performance: 'Performance',
-        users: 'Users',
+        users: 'Users & Groups',
         backupRestore: 'Backup / Restore',
         settings: 'Settings',
       },
@@ -118,7 +118,7 @@ const en = {
         performance:
             'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users, permissions, telemetry access, and upstream scopes',
+            'Manage console users, groups, and upstream access',
         backupRestore:
             'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
@@ -254,11 +254,16 @@ const en = {
           label: 'Floway users',
           username: 'Username',
           role: 'Role',
+          groups: 'Groups',
           upstreams: 'Upstream access',
           created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
+        groups: {
+          count_one: '{{count, number}} group',
+          count_other: '{{count, number}} groups',
+        },
         upstreams: {
           all: 'All upstreams',
           count_one: '{{count, number}} upstream',
@@ -293,6 +298,20 @@ const en = {
               'Delete {{username}}? Their sessions will be revoked and their API keys will stop working. This cannot be undone.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
+      },
+      groupsManagement: {
+        empty: 'No groups found',
+        actions: { create: 'New group', edit: 'Edit group', delete: 'Delete group', refresh: 'Refresh groups' },
+        table: { label: 'Floway groups', name: 'Name', members: 'Members', created: 'Created', actions: 'Actions' },
+        members: { count_one: '{{count, number}} member', count_other: '{{count, number}} members' },
+        dialog: { createTitle: 'New group', editTitle: 'Edit {{name}}' },
+        fields: { name: 'Name', members: 'Members' },
+        delete: { title: 'Delete group', message: 'Delete {{name}}? Its membership will be removed.' },
+        toast: {
+          create: { pending: 'Creating group {{name}}', success: 'Created group {{name}}' },
+          edit: { pending: 'Saving group {{name}}', success: 'Saved group {{name}}' },
+          delete: { pending: 'Deleting group {{name}}', success: 'Deleted group {{name}}' },
+        },
       },
       upstreamAccess: {
         title: 'Limit available upstreams',

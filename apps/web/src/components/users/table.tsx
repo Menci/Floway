@@ -46,12 +46,13 @@ export function UsersTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
-        <TableColumns widths={[null, null, null, null, TABLE_ACTIONS_WIDTH]} />
+      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]">
+        <TableColumns widths={[null, null, null, null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
             <TableTrailingHeader>{t('dashboard.users.table.actions')}</TableTrailingHeader>
@@ -71,6 +72,7 @@ export function UsersTable({
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
                   </StatusBadge>
                 </TableCell>
+                <TableCell>{t('dashboard.users.groups.count', { count: user.groupIds.length })}</TableCell>
                 <TableCell>
                   {user.upstreamIds === null
                     ? t('dashboard.users.upstreams.all')

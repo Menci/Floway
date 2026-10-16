@@ -266,6 +266,16 @@ export const updateUserBody = z.object({
   upstreamIds: upstreamIdsValueSchema.optional(),
 });
 
+export const createGroupBody = z.object({
+  name: z.string().trim().min(1).max(64),
+  memberIds: z.array(z.number().int().positive()).optional(),
+});
+
+export const updateGroupBody = z.object({
+  name: z.string().trim().min(1).max(64).optional(),
+  memberIds: z.array(z.number().int().positive()).optional(),
+});
+
 export const changeOwnPasswordBody = z.object({
   currentPassword: passwordSchema,
   newPassword: passwordSchema,
@@ -741,7 +751,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(21, { error: 'version must be 21 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

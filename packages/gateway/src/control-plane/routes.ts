@@ -5,11 +5,12 @@ import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
+import { createGroup, deleteGroup, listGroups, updateGroup } from './groups/routes.ts';
 import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, resetBackoffBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
+import { upstreamMetricsQuery, authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexImportExchangeBody, codexImportPreviewBody, codexOAuthAuthorizeUrlBody, codexOAuthRefreshBody, codexRateLimitResetConsumeBody, codexRateLimitResetCreditsBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createGroupBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, modelsQuery, ollamaUsageBody, performanceQuery, previewModelsBody, resetBackoffBody, rotateKeyBody, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateGroupBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody, webSearchConfigSchema, webSearchUsageQuery } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
@@ -79,6 +80,10 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/users', zValidator('json', createUserBody), createUser)
     .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
     .delete('/users/:id', deleteUser)
+    .get('/groups', listGroups)
+    .post('/groups', zValidator('json', createGroupBody), createGroup)
+    .patch('/groups/:id', zValidator('json', updateGroupBody), updateGroup)
+    .delete('/groups/:id', deleteGroup)
     .get('/upstreams', listUpstreams)
     .get('/upstreams/blueprint', getUpstreamBlueprint)
     .post('/upstreams/copilot/oauth/device-login/start', zValidator('json', copilotOAuthDeviceLoginStartBody), copilotOAuthDeviceLoginStart)

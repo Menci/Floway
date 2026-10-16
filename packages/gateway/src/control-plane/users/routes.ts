@@ -17,8 +17,10 @@ const parseUserId = (raw: string): number | null => {
 };
 
 export const listUsers = async (c: AuthedContext) => {
-  const [users, knownUpstreamIds] = await Promise.all([getRepo().users.list(), loadKnownUpstreamIds()]);
-  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds)));
+  const repo = getRepo();
+  const [users, knownUpstreamIds] = await Promise.all([repo.users.list(), loadKnownUpstreamIds()]);
+  const groupIdsByUser = await repo.groups.listIdsByUserIds(users.map(user => user.id));
+  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds, groupIdsByUser.get(user.id) ?? [])));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -57,7 +59,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.apiKeys.save(defaultKey);
 
-  return c.json({ user: userToAdminWire(user, knownUpstreamIds) }, 201);
+  return c.json({ user: userToAdminWire(user, knownUpstreamIds, []) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -98,7 +100,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next, knownUpstreamIds));
+  return c.json(userToAdminWire(next, knownUpstreamIds, await repo.groups.listIdsByUserId(id)));
 };
 
 export const deleteUser = async (c: AuthedContext) => {
@@ -119,6 +121,7 @@ export const deleteUser = async (c: AuthedContext) => {
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  await repo.groups.deleteMembershipsByUserId(id);
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });

@@ -16,6 +16,8 @@ import type {
   ApiKeyRepo,
   ApiKeyUpdate,
   ExpirationSweepsRepo,
+  Group,
+  GroupsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -374,6 +376,118 @@ class SqlUsersRepo implements UsersRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM users').run();
+  }
+}
+
+interface GroupRow {
+  id: number;
+  name: string;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+const GROUP_COLUMNS = 'id, name, created_at, deleted_at';
+const toGroup = (row: GroupRow): Group => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+class SqlGroupsRepo implements GroupsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE deleted_at IS NULL ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async listIncludingDeleted(): Promise<Group[]> {
+    const { results } = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups ORDER BY id`).all<GroupRow>();
+    return results.map(toGroup);
+  }
+
+  async getById(id: number): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE id = ? AND deleted_at IS NULL`).bind(id).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async findByName(name: string): Promise<Group | null> {
+    const row = await this.db.prepare(`SELECT ${GROUP_COLUMNS} FROM groups WHERE name = ? AND deleted_at IS NULL`).bind(name).first<GroupRow>();
+    return row ? toGroup(row) : null;
+  }
+
+  async create(name: string): Promise<Group> {
+    const now = new Date().toISOString();
+    const row = await this.db.prepare(
+      `INSERT INTO groups (id, name, created_at, deleted_at)
+       SELECT COALESCE(MAX(id), 0) + 1, ?, ?, NULL FROM groups
+       RETURNING ${GROUP_COLUMNS}`,
+    ).bind(name, now).first<GroupRow>();
+    if (!row) throw new Error('groups.create: insert returned no rows');
+    return toGroup(row);
+  }
+
+  async save(group: Group): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO groups (${GROUP_COLUMNS}) VALUES (?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name, deleted_at = excluded.deleted_at`,
+    ).bind(group.id, group.name, group.createdAt, group.deletedAt).run();
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    const result = await this.db.prepare('UPDATE groups SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async listMemberIds(groupId: number): Promise<number[]> {
+    const { results } = await this.db.prepare('SELECT user_id FROM group_members WHERE group_id = ? ORDER BY user_id')
+      .bind(groupId).all<{ user_id: number }>();
+    return results.map(row => row.user_id);
+  }
+
+  async listIdsByUserId(userId: number): Promise<number[]> {
+    const { results } = await this.db.prepare(
+      `SELECT group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id = ? AND groups.deleted_at IS NULL
+       ORDER BY group_members.group_id`,
+    ).bind(userId).all<{ group_id: number }>();
+    return results.map(row => row.group_id);
+  }
+
+  async listIdsByUserIds(userIds: readonly number[]): Promise<Map<number, number[]>> {
+    const result = new Map<number, number[]>(userIds.map(id => [id, []]));
+    if (userIds.length === 0) return result;
+    const { results } = await this.db.prepare(
+      `SELECT group_members.user_id, group_members.group_id
+       FROM group_members JOIN groups ON groups.id = group_members.group_id
+       WHERE group_members.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+         AND groups.deleted_at IS NULL
+       ORDER BY group_members.user_id, group_members.group_id`,
+    ).bind(JSON.stringify([...new Set(userIds)])).all<{ user_id: number; group_id: number }>();
+    for (const row of results) result.get(row.user_id)?.push(row.group_id);
+    return result;
+  }
+
+  async replaceMembers(groupId: number, userIds: readonly number[]): Promise<void> {
+    await this.db.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId).run();
+    const createdAt = new Date().toISOString();
+    for (const userId of [...new Set(userIds)].toSorted((a, b) => a - b)) {
+      await this.db.prepare('INSERT INTO group_members (group_id, user_id, created_at) VALUES (?, ?, ?)')
+        .bind(groupId, userId, createdAt).run();
+    }
+  }
+
+  async deleteMembershipsByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(userId).run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM group_members').run();
+    await this.db.prepare('DELETE FROM groups').run();
   }
 }
 
@@ -1694,6 +1808,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 export class SqlRepo implements Repo {
   upstreamMetrics: SqlUpstreamMetricsRepo;
   users: UsersRepo;
+  groups: GroupsRepo;
   sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -1714,6 +1829,7 @@ export class SqlRepo implements Repo {
   constructor(db: SqlDatabase) {
     this.upstreamMetrics = new SqlUpstreamMetricsRepo(db);
     this.users = new SqlUsersRepo(db);
+    this.groups = new SqlGroupsRepo(db);
     this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
