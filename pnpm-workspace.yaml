@@ -13,7 +13,7 @@ onlyBuiltDependencies:
   - unrs-resolver
   - workerd
 
-# The @fluentui/react-charts patch carries five fixes, all in code the package
+# The @fluentui/react-charts patch carries six fixes, all in code the package
 # ships prebuilt, so none of them can be reached from a prop:
 #
 #   - CartesianChart measures its parent in an effect and publishes the result
@@ -33,6 +33,12 @@ onlyBuiltDependencies:
 #     the chart's own vertical line and callout never appeared. The width now
 #     comes from the scale's range, which is the plot's own right edge.
 #   - LineChart pushes two elements into `pointsForLine` without a key.
+#   - LineChart anchors its hover callout on the highlighted data point and only
+#     re-anchors when that point changes, so the callout jumps between points and
+#     then stands still while the pointer keeps travelling inside one point's
+#     span. Its AreaChart sibling anchors on the pointer instead. The callout now
+#     follows the pointer on hover and keeps the data point as the anchor for a
+#     keyboard focus, which has no pointer to follow.
 #   - The date axis rounds its domain outward twice — unconditionally through
 #     d3's `nice()`, and again by 10% per side in markers mode — so the first
 #     and last of the `tickValues` we pass land inside the plot instead of at
